@@ -1,3 +1,5 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";

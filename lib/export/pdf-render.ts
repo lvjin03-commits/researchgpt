@@ -1,3 +1,5 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import PDFDocument from "pdfkit";
 import {
   inlineSpansToPlainText,

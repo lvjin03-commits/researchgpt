@@ -1,3 +1,5 @@
+// Client-only module. Do not import from API routes.
+
 import {
   ensureFileName,
   getAttachmentKind,

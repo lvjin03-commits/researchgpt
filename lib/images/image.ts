@@ -1,3 +1,5 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import type { ChatMessage } from "@/lib/ai/types";
 import {
   getFileExtension,

@@ -1,3 +1,5 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import { UploadError } from "@/lib/uploads/errors";
 
 function normalizeExtractedText(text: string): string {

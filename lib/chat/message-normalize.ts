@@ -1,3 +1,5 @@
+// Shared chat helper safe for /api/chat. Contains no document/export/PDF imports.
+
 import type { ChatMessage, ChatRole } from "@/lib/ai/types";
 import type { DisplayAttachment, DisplayChatMessage } from "@/lib/chat/types";
 

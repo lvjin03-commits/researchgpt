@@ -1,0 +1,36 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
+import { AIProviderError } from "@/lib/ai/errors";
+import type { ChatMessage } from "@/lib/ai/types";
+import { getTextFromMessageContent } from "@/lib/ai/types";
+import { withExportGuidance } from "@/lib/chat/export-guidance";
+
+export async function prepareChatMessages(
+  messages: ChatMessage[],
+  files: File[],
+): Promise<ChatMessage[]> {
+  let prepared = messages;
+
+  if (files.length > 0) {
+    const lastMessage = messages.at(-1);
+
+    if (lastMessage?.role !== "user") {
+      throw new AIProviderError("The last message must be from the user", {
+        statusCode: 400,
+      });
+    }
+
+    const userMessage = getTextFromMessageContent(lastMessage.content);
+    const { injectAttachmentsIntoMessages } = await import(
+      "@/lib/chat/server/attachments"
+    );
+
+    prepared = await injectAttachmentsIntoMessages(
+      messages,
+      userMessage,
+      files,
+    );
+  }
+
+  return withExportGuidance(prepared);
+}

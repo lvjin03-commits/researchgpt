@@ -1,3 +1,5 @@
+// Client-only module. Do not import from API routes.
+
 import type { ChatMessage } from "@/lib/ai/types";
 
 export class ChatClientError extends Error {
@@ -52,14 +54,23 @@ export async function streamChatResponse(
 
   if (!response.ok) {
     let message = "Failed to send message";
+    let code: string | undefined;
 
     try {
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        code?: string;
+      };
       if (payload.error) {
         message = payload.error;
       }
+      code = payload.code;
     } catch {
       // Response body is not JSON; keep default message.
+    }
+
+    if (process.env.NODE_ENV !== "production" && code) {
+      message = `${message} (${code})`;
     }
 
     throw new ChatClientError(message, response.status);

@@ -1,3 +1,5 @@
+// Client-only module. Do not import from API routes.
+
 import { downloadBlob } from "@/lib/export/download";
 import { ExportError } from "@/lib/export/errors";
 import type { ExportFormat, ExportResponse } from "@/lib/export/types";

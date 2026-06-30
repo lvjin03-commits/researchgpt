@@ -1,3 +1,5 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import { promises as fs } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";

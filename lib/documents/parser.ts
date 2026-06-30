@@ -1,3 +1,5 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import mammoth from "mammoth";
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
@@ -7,6 +9,7 @@ import {
   toDocumentContext,
 } from "@/lib/documents/prompt";
 import { truncateText } from "@/lib/documents/truncate";
+import type { ParsedDocument } from "@/lib/documents/types";
 import type { ChatMessage } from "@/lib/ai/types";
 import {
   getFileExtension,
@@ -16,12 +19,7 @@ import {
 } from "@/lib/uploads/constants";
 import { UploadError } from "@/lib/uploads/errors";
 
-export type ParsedDocument = {
-  fileName: string;
-  text: string;
-  truncated: boolean;
-  originalLength: number;
-};
+export type { ParsedDocument } from "@/lib/documents/types";
 
 function normalizeExtractedText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\u0000/g, "").trim();

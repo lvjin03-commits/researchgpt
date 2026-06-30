@@ -1,3 +1,5 @@
+// Client-only module. Do not import from API routes.
+
 import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "@/lib/supabase/database.types";
 import { getSupabaseEnv } from "@/lib/supabase/env";

@@ -1,3 +1,5 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import OpenAI from "openai";
 import { AIProviderError } from "@/lib/ai/errors";
 import type { AIProviderAdapter, ChatMessage, StreamChatOptions } from "@/lib/ai/types";

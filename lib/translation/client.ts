@@ -1,3 +1,5 @@
+// Client-only module. Do not import from API routes.
+
 import { downloadBlob } from "@/lib/export/download";
 import type { TranslationProgressEvent } from "@/lib/translation/types";
 import type {

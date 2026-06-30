@@ -1,3 +1,5 @@
+// Shared chat helper safe for /api/chat. Contains no document/export/PDF imports.
+
 import type { ChatMessage } from "@/lib/ai/types";
 
 export const EXPORT_GUIDANCE_SYSTEM_MESSAGE: ChatMessage = {

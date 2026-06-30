@@ -1,10 +1,7 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import type { ChatMessage, MessageContentPart } from "@/lib/ai/types";
-import type { ParsedDocument } from "@/lib/documents/parser";
-import {
-  augmentUserMessageWithDocuments,
-  toDocumentContext,
-} from "@/lib/documents/prompt";
-import { parseImageFile, type ParsedImage } from "@/lib/images/image";
+import type { ParsedDocument } from "@/lib/documents/types";
 import {
   getFileExtension,
   getUnsupportedFileMessage,
@@ -67,13 +64,14 @@ export async function injectAttachmentsIntoMessages(
     return messages;
   }
 
-  const images: ParsedImage[] = [];
+  const images: { dataUrl: string }[] = [];
   const documents: ParsedDocument[] = [];
 
   for (const file of files) {
     const extension = getFileExtension(file.name);
 
     if (isImageExtension(extension)) {
+      const { parseImageFile } = await import("@/lib/images/image");
       images.push(await parseImageFile(file));
       continue;
     }
@@ -86,6 +84,10 @@ export async function injectAttachmentsIntoMessages(
 
     throw new UploadError(getUnsupportedFileMessage());
   }
+
+  const { augmentUserMessageWithDocuments, toDocumentContext } = await import(
+    "@/lib/documents/prompt"
+  );
 
   const textBody = augmentUserMessageWithDocuments(
     buildDefaultUserMessage(userMessage, images.length, documents.length),

@@ -1,6 +1,8 @@
+// Server-only module. Do not import from client components or /api/chat route entry.
+
 import { buildExportFilename } from "@/lib/export/filename";
 import { ExportError } from "@/lib/export/errors";
-import { generateExportBuffer } from "@/lib/export/generators";
+import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
 import { saveExport } from "@/lib/export/store";
 import {
   EXPORT_MIME_TYPES,

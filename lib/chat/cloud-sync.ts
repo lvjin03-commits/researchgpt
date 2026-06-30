@@ -1,3 +1,5 @@
+// Client-only module. Do not import from API routes.
+
 import type { ChatConversation } from "@/lib/chat/history";
 import type { DisplayChatMessage } from "@/lib/chat/types";
 import {
