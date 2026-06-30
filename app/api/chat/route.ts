@@ -3,7 +3,7 @@ import {
   createConnectedChatStream,
   validateChatMessages,
 } from "@/lib/ai/provider";
-import type { ChatMessage } from "@/lib/ai/types";
+import type { ChatMessage, MessageContent } from "@/lib/ai/types";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
 import {
@@ -17,15 +17,70 @@ type ChatRequestBody = {
   messages?: unknown;
 };
 
+function summarizeContentForDebug(content: MessageContent): unknown {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  return content.map((part) => {
+    if (part.type === "text") {
+      return { type: "text", text: part.text };
+    }
+
+    const url = part.image_url.url;
+    const preview =
+      url.length > 80 ? `${url.slice(0, 80)}… (${url.length} chars)` : url;
+
+    return {
+      type: "image_url",
+      image_url: { url: preview, detail: part.image_url.detail },
+    };
+  });
+}
+
+function summarizeMessagesForDebug(messages: unknown): unknown {
+  if (!Array.isArray(messages)) {
+    return messages;
+  }
+
+  return messages.map((message) => {
+    if (typeof message !== "object" || message === null) {
+      return message;
+    }
+
+    const record = message as Record<string, unknown>;
+    return {
+      role: record.role,
+      content: summarizeContentForDebug(record.content as MessageContent),
+    };
+  });
+}
+
 export async function POST(request: Request) {
   try {
     await requireChatUser();
 
     const body = (await request.json()) as ChatRequestBody;
+
+    console.log(
+      "[api/chat] before sanitize:",
+      JSON.stringify(summarizeMessagesForDebug(body.messages)),
+    );
+
+    const sanitized = sanitizeIncomingChatMessages(body.messages);
+
+    console.log(
+      "[api/chat] after sanitize:",
+      JSON.stringify(summarizeMessagesForDebug(sanitized)),
+    );
+
     const messages = withExportGuidance(
-      validateChatMessages(
-        sanitizeIncomingChatMessages(body.messages) as ChatMessage[],
-      ),
+      validateChatMessages(sanitized as ChatMessage[]),
+    );
+
+    console.log(
+      "[api/chat] before OpenAI call:",
+      JSON.stringify(summarizeMessagesForDebug(messages)),
     );
 
     const stream = await createConnectedChatStream({

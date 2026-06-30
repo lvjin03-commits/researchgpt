@@ -81,12 +81,44 @@ export async function openChatCompletionStream({
 > {
   const client = getClient();
   const model = getModelForMessages(messages);
+  const openaiMessages = toOpenAIMessages(messages);
+
+  console.log(
+    "[api/chat] OpenAI chat.completions.create payload:",
+    JSON.stringify(
+      openaiMessages.map((message) => ({
+        role: message.role,
+        content:
+          message.role === "user" && Array.isArray(message.content)
+            ? message.content.map((part) => {
+                if (part.type === "text") {
+                  return { type: "text", text: part.text };
+                }
+                if (part.type === "image_url") {
+                  const url = part.image_url.url;
+                  return {
+                    type: "image_url",
+                    image_url: {
+                      url:
+                        url.length > 80
+                          ? `${url.slice(0, 80)}… (${url.length} chars)`
+                          : url,
+                      detail: part.image_url.detail,
+                    },
+                  };
+                }
+                return part;
+              })
+            : message.content,
+      })),
+    ),
+  );
 
   try {
     return await client.chat.completions.create(
       {
         model,
-        messages: toOpenAIMessages(messages),
+        messages: openaiMessages,
         stream: true,
       },
       { signal },

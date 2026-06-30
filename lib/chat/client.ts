@@ -20,22 +20,55 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-async function parseApiError(response: Response, fallback: string): Promise<never> {
+type AttachmentErrorPayload = {
+  error?: string;
+  details?: string;
+  fileName?: string;
+  fileType?: string;
+  stage?: string;
+  code?: string;
+};
+
+async function parseApiError(
+  response: Response,
+  fallback: string,
+  responseBodyText?: string,
+): Promise<never> {
   let message = fallback;
   let code: string | undefined;
+  let payload: AttachmentErrorPayload | undefined;
 
-  try {
-    const payload = (await response.json()) as {
-      error?: string;
-      code?: string;
-    };
-    if (payload.error) {
-      message = payload.error;
+  if (responseBodyText !== undefined) {
+    try {
+      payload = JSON.parse(responseBodyText) as AttachmentErrorPayload;
+    } catch {
+      // Body is not JSON; keep default message.
     }
-    code = payload.code;
-  } catch {
-    // Response body is not JSON; keep default message.
+  } else {
+    try {
+      payload = (await response.json()) as AttachmentErrorPayload;
+    } catch {
+      // Response body is not JSON; keep default message.
+    }
   }
+
+  if (payload?.error) {
+    message = payload.error;
+  }
+
+  if (payload?.details) {
+    message = `${message}: ${payload.details}`;
+    if (payload.fileName || payload.stage) {
+      console.error("[upload-debug] attachment error context", {
+        fileName: payload.fileName,
+        fileType: payload.fileType,
+        stage: payload.stage,
+        details: payload.details,
+      });
+    }
+  }
+
+  code = payload?.code;
 
   if (process.env.NODE_ENV !== "production" && code) {
     message = `${message} (${code})`;
@@ -49,6 +82,16 @@ async function prepareMessagesWithAttachments(
   files: File[],
   signal?: AbortSignal,
 ): Promise<ChatMessage[]> {
+  for (const file of files) {
+    console.log("[upload-debug] selected file", {
+      name: file.name,
+      type: file.type || "(empty)",
+      size: file.size,
+    });
+  }
+
+  console.log("[upload-debug] calling /api/chat/attachments");
+
   const formData = new FormData();
   formData.append("messages", JSON.stringify(messages));
 
@@ -62,11 +105,26 @@ async function prepareMessagesWithAttachments(
     signal,
   });
 
+  const responseBodyText = await response.text();
+
+  console.log("[upload-debug] attachments response status", response.status);
+  console.log("[upload-debug] attachments response body", responseBodyText);
+
   if (!response.ok) {
-    await parseApiError(response, "Failed to process attachments");
+    await parseApiError(
+      response,
+      "Failed to process attachments",
+      responseBodyText,
+    );
   }
 
-  const payload = (await response.json()) as { messages?: ChatMessage[] };
+  let payload: { messages?: ChatMessage[] };
+
+  try {
+    payload = JSON.parse(responseBodyText) as { messages?: ChatMessage[] };
+  } catch {
+    throw new ChatClientError("Invalid attachment preparation response", 502);
+  }
 
   if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
     throw new ChatClientError("Invalid attachment preparation response", 502);
@@ -83,14 +141,23 @@ export async function streamChatResponse(
     onChunk: (chunk: string) => void;
   },
 ): Promise<void> {
-  const preparedMessages =
-    options.files && options.files.length > 0
-      ? await prepareMessagesWithAttachments(
-          messages,
-          options.files,
-          options.signal,
-        )
-      : messages;
+  const hasFiles = Boolean(options.files && options.files.length > 0);
+
+  if (!hasFiles) {
+    console.log(
+      "[upload-debug] flow stopped before attachments: no files on send (text-only path to /api/chat)",
+    );
+  }
+
+  const preparedMessages = hasFiles
+    ? await prepareMessagesWithAttachments(
+        messages,
+        options.files!,
+        options.signal,
+      )
+    : messages;
+
+  console.log("[upload-debug] calling /api/chat");
 
   const response = await fetch("/api/chat", {
     method: "POST",
@@ -98,6 +165,8 @@ export async function streamChatResponse(
     body: JSON.stringify({ messages: preparedMessages }),
     signal: options.signal,
   });
+
+  console.log("[upload-debug] chat response status", response.status);
 
   if (!response.ok) {
     await parseApiError(response, "Failed to send message");

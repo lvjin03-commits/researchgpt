@@ -1,11 +1,16 @@
 // Shared chat helper safe for /api/chat. Contains no document/export/PDF imports.
 
-import type { ChatMessage, ChatRole } from "@/lib/ai/types";
+import type {
+  ChatMessage,
+  ChatRole,
+  MessageContent,
+  MessageContentPart,
+} from "@/lib/ai/types";
 import type { DisplayAttachment, DisplayChatMessage } from "@/lib/chat/types";
 
 export type ApiTextMessage = {
   role: ChatRole;
-  content: string;
+  content: MessageContent;
 };
 
 const UI_ONLY_MESSAGE_KEYS = new Set([
@@ -56,6 +61,156 @@ export function normalizeMessageContent(content: unknown): string {
   }
 
   return String(content);
+}
+
+function coerceContentParts(
+  rawParts: unknown[],
+  role: ChatRole,
+): MessageContentPart[] {
+  const parts: MessageContentPart[] = [];
+
+  for (const part of rawParts) {
+    if (typeof part !== "object" || part === null) {
+      continue;
+    }
+
+    const record = part as Record<string, unknown>;
+
+    if (record.type === "text" && typeof record.text === "string") {
+      parts.push({ type: "text", text: record.text });
+      continue;
+    }
+
+    if (
+      role === "user" &&
+      record.type === "image_url" &&
+      typeof record.image_url === "object" &&
+      record.image_url !== null
+    ) {
+      const imageUrl = record.image_url as Record<string, unknown>;
+      const url = imageUrl.url;
+
+      if (typeof url === "string" && url.trim().length > 0) {
+        const detail = imageUrl.detail;
+        parts.push({
+          type: "image_url",
+          image_url: {
+            url: url.trim(),
+            ...(detail === "auto" || detail === "low" || detail === "high"
+              ? { detail }
+              : {}),
+          },
+        });
+      }
+    }
+  }
+
+  return parts;
+}
+
+function finalizeMessageContent(content: MessageContent): MessageContent {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  const parts: MessageContentPart[] = [];
+
+  for (const part of content) {
+    if (part.type === "text") {
+      const text = part.text.trim();
+      if (text) {
+        parts.push({ type: "text", text });
+      }
+      continue;
+    }
+
+    if (part.type === "image_url") {
+      const url = part.image_url.url.trim();
+      if (url) {
+        parts.push({
+          type: "image_url",
+          image_url: {
+            url,
+            ...(part.image_url.detail ? { detail: part.image_url.detail } : {}),
+          },
+        });
+      }
+    }
+  }
+
+  if (parts.some((part) => part.type === "image_url")) {
+    return parts;
+  }
+
+  if (parts.length === 1 && parts[0]?.type === "text") {
+    return parts[0].text;
+  }
+
+  return parts
+    .filter((part): part is Extract<MessageContentPart, { type: "text" }> =>
+      part.type === "text",
+    )
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
+export function messageContentIsNonEmpty(
+  content: MessageContent,
+  role: ChatRole,
+): boolean {
+  if (typeof content === "string") {
+    return content.trim().length > 0;
+  }
+
+  const hasText = content.some(
+    (part) => part.type === "text" && part.text.trim().length > 0,
+  );
+
+  if (role === "user") {
+    const hasImage = content.some(
+      (part) =>
+        part.type === "image_url" && part.image_url.url.trim().length > 0,
+    );
+    return hasText || hasImage;
+  }
+
+  return hasText;
+}
+
+function coerceRawMessageContent(
+  rawContent: unknown,
+  role: ChatRole,
+): MessageContent | null {
+  if (typeof rawContent === "string") {
+    const trimmed = rawContent.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (rawContent == null) {
+    return null;
+  }
+
+  if (Array.isArray(rawContent)) {
+    const parts = coerceContentParts(rawContent, role);
+    if (parts.length === 0) {
+      return null;
+    }
+
+    const finalized = finalizeMessageContent(parts);
+    return messageContentIsNonEmpty(finalized, role) ? finalized : null;
+  }
+
+  if (typeof rawContent === "object") {
+    return null;
+  }
+
+  const asString = String(rawContent).trim();
+  return asString.length > 0 ? asString : null;
+}
+
+function apiMessageHasValidContent(message: ApiTextMessage): boolean {
+  return messageContentIsNonEmpty(message.content, message.role);
 }
 
 export function defaultContentForAttachments(
@@ -127,9 +282,15 @@ export function coerceRawToApiMessage(
     return null;
   }
 
-  const content = normalizeMessageContent(record.content).trim();
+  const coercedContent = coerceRawMessageContent(record.content, role);
+  const textPreview =
+    coercedContent === null
+      ? ""
+      : typeof coercedContent === "string"
+        ? coercedContent
+        : normalizeMessageContent(coercedContent);
   const attachmentOnly =
-    role === "user" && !content && hasAttachmentMetadata(record);
+    role === "user" && !textPreview.trim() && hasAttachmentMetadata(record);
 
   if (attachmentOnly && !options.allowAttachmentPlaceholder) {
     if (options.index !== undefined) {
@@ -141,7 +302,7 @@ export function coerceRawToApiMessage(
     return null;
   }
 
-  if (!content) {
+  if (!coercedContent || !messageContentIsNonEmpty(coercedContent, role)) {
     if (role === "assistant" || role === "system") {
       if (options.index !== undefined) {
         console.error(
@@ -188,7 +349,13 @@ export function coerceRawToApiMessage(
     }
   }
 
-  return { role, content };
+  return {
+    role,
+    content:
+      typeof coercedContent === "string"
+        ? coercedContent.trim()
+        : finalizeMessageContent(coercedContent),
+  };
 }
 
 export function sanitizeIncomingChatMessages(rawMessages: unknown): ApiTextMessage[] {
@@ -221,7 +388,7 @@ function findLastValidUserFromRaw(rawMessages: unknown[]): ApiTextMessage | null
       allowAttachmentPlaceholder: true,
     });
 
-    if (apiMessage?.role === "user" && apiMessage.content.trim()) {
+    if (apiMessage?.role === "user" && apiMessageHasValidContent(apiMessage)) {
       return apiMessage;
     }
   }
@@ -236,7 +403,7 @@ function ensureLastValidUserMessage(
   const result = [...sanitized];
   const last = result.at(-1);
 
-  if (last?.role === "user" && last.content.trim()) {
+  if (last?.role === "user" && apiMessageHasValidContent(last)) {
     return result;
   }
 
@@ -249,7 +416,7 @@ function ensureLastValidUserMessage(
   }
 
   const trailingUser = result.at(-1);
-  if (trailingUser?.role === "user" && trailingUser.content.trim()) {
+  if (trailingUser?.role === "user" && apiMessageHasValidContent(trailingUser)) {
     return result;
   }
 
@@ -319,7 +486,7 @@ export function buildChatApiMessages(
     allowAttachmentPlaceholder: true,
   });
 
-  if (!current || current.role !== "user" || !current.content.trim()) {
+  if (!current || current.role !== "user" || !apiMessageHasValidContent(current)) {
     return ensureLastValidUserMessage(historyMessages, [
       ...history,
       currentUserMessage,

@@ -8,7 +8,7 @@ import {
   isDocumentExtension,
   isImageExtension,
 } from "@/lib/uploads/constants";
-import { UploadError } from "@/lib/uploads/errors";
+import { UploadError, AttachmentParseError } from "@/lib/uploads/errors";
 
 function buildDefaultUserMessage(
   userMessage: string,
@@ -44,6 +44,44 @@ function buildDefaultUserMessage(
   return trimmed;
 }
 
+function describeParser(extension: string): string {
+  if (isImageExtension(extension)) {
+    return "image";
+  }
+
+  if (isDocumentExtension(extension)) {
+    return `document${extension}`;
+  }
+
+  return "unsupported";
+}
+
+function toAttachmentParseError(
+  file: File,
+  stage: string,
+  error: unknown,
+): AttachmentParseError {
+  const details =
+    error instanceof Error && error.message
+      ? error.message
+      : "Unknown parsing error";
+
+  if (error instanceof Error) {
+    console.error("[attachments] exact error stack:", error.stack);
+    if (error.cause instanceof Error) {
+      console.error("[attachments] cause stack:", error.cause.stack);
+    }
+  }
+
+  return new AttachmentParseError({
+    fileName: file.name,
+    fileType: file.type || "(empty)",
+    stage,
+    details,
+    cause: error,
+  });
+}
+
 export async function injectAttachmentsIntoMessages(
   messages: ChatMessage[],
   userMessage: string,
@@ -69,19 +107,41 @@ export async function injectAttachmentsIntoMessages(
 
   for (const file of files) {
     const extension = getFileExtension(file.name);
+    const parser = describeParser(extension);
+
+    console.log("[attachments] parser selected", parser, "for", file.name);
 
     if (isImageExtension(extension)) {
-      const { parseImageFile } = await import("@/lib/images/image");
-      images.push(await parseImageFile(file));
+      console.log("[attachments] parsing started", file.name);
+      try {
+        const { parseImageFile } = await import("@/lib/images/image");
+        images.push(await parseImageFile(file));
+        console.log("[attachments] parsing completed", file.name);
+      } catch (error) {
+        if (error instanceof UploadError) {
+          throw toAttachmentParseError(file, "parse_image", error);
+        }
+        throw toAttachmentParseError(file, "parse_image", error);
+      }
       continue;
     }
 
     if (isDocumentExtension(extension)) {
-      const { parseDocumentFile } = await import("@/lib/documents/parser");
-      documents.push(await parseDocumentFile(file));
+      console.log("[attachments] parsing started", file.name);
+      try {
+        const { parseDocumentFile } = await import("@/lib/documents/parser");
+        documents.push(await parseDocumentFile(file));
+        console.log("[attachments] parsing completed", file.name);
+      } catch (error) {
+        if (error instanceof UploadError) {
+          throw toAttachmentParseError(file, `parse_document${extension}`, error);
+        }
+        throw toAttachmentParseError(file, `parse_document${extension}`, error);
+      }
       continue;
     }
 
+    console.error("[attachments] unsupported file type", file.name, extension);
     throw new UploadError(getUnsupportedFileMessage());
   }
 

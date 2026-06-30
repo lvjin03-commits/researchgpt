@@ -6,8 +6,11 @@ import type {
   AIProviderAdapter,
   AIProviderName,
   ChatMessage,
+  MessageContent,
+  MessageContentPart,
   StreamChatOptions,
 } from "@/lib/ai/types";
+import { messageContentIsNonEmpty } from "@/lib/chat/message-normalize";
 
 export type { ChatMessage, ChatRole, StreamChatOptions } from "@/lib/ai/types";
 export { AIProviderError };
@@ -153,6 +156,102 @@ function normalizeStreamError(
   });
 }
 
+function validateMessageContent(
+  content: unknown,
+  role: ChatMessage["role"],
+  index: number,
+): MessageContent {
+  if (typeof content === "string") {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      throw new AIProviderError(`Invalid content at index ${index}`, {
+        statusCode: 400,
+      });
+    }
+    return trimmed;
+  }
+
+  if (!Array.isArray(content)) {
+    throw new AIProviderError(`Invalid content at index ${index}`, {
+      statusCode: 400,
+    });
+  }
+
+  const parts: MessageContentPart[] = [];
+
+  for (const part of content) {
+    if (typeof part !== "object" || part === null) {
+      continue;
+    }
+
+    const record = part as Record<string, unknown>;
+
+    if (record.type === "text" && typeof record.text === "string") {
+      const text = record.text.trim();
+      if (text) {
+        parts.push({ type: "text", text });
+      }
+      continue;
+    }
+
+    if (
+      record.type === "image_url" &&
+      role === "user" &&
+      typeof record.image_url === "object" &&
+      record.image_url !== null
+    ) {
+      const imageUrl = record.image_url as Record<string, unknown>;
+      const url = imageUrl.url;
+
+      if (typeof url !== "string" || url.trim().length === 0) {
+        throw new AIProviderError(`Invalid image_url at index ${index}`, {
+          statusCode: 400,
+        });
+      }
+
+      const detail = imageUrl.detail;
+      parts.push({
+        type: "image_url",
+        image_url: {
+          url: url.trim(),
+          ...(detail === "auto" || detail === "low" || detail === "high"
+            ? { detail }
+            : {}),
+        },
+      });
+    }
+  }
+
+  if (parts.some((part) => part.type === "image_url")) {
+    if (!messageContentIsNonEmpty(parts, role)) {
+      throw new AIProviderError(`Invalid content at index ${index}`, {
+        statusCode: 400,
+      });
+    }
+    return parts;
+  }
+
+  if (parts.length === 1 && parts[0]?.type === "text") {
+    return parts[0].text;
+  }
+
+  const merged = parts
+    .filter((part): part is Extract<MessageContentPart, { type: "text" }> =>
+      part.type === "text",
+    )
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+
+  if (!merged) {
+    throw new AIProviderError(`Invalid content at index ${index}`, {
+      statusCode: 400,
+    });
+  }
+
+  return merged;
+}
+
 export function validateChatMessages(messages: unknown): ChatMessage[] {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new AIProviderError("messages must be a non-empty array", {
@@ -182,13 +281,9 @@ export function validateChatMessages(messages: unknown): ChatMessage[] {
       });
     }
 
-    if (typeof content !== "string" || content.trim().length === 0) {
-      throw new AIProviderError(`Invalid content at index ${index}`, {
-        statusCode: 400,
-      });
-    }
+    const validatedContent = validateMessageContent(content, role, index);
 
-    validated.push({ role, content: content.trim() });
+    validated.push({ role, content: validatedContent });
   }
 
   const lastMessage = validated.at(-1);
