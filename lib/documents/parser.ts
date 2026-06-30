@@ -1,6 +1,5 @@
 import mammoth from "mammoth";
 import JSZip from "jszip";
-import { PDFParse } from "pdf-parse";
 import * as XLSX from "xlsx";
 import { MAX_EXTRACTED_TEXT_CHARS } from "@/lib/documents/constants";
 import {
@@ -68,14 +67,8 @@ async function parseDocx(buffer: Buffer): Promise<string> {
 }
 
 async function parsePdf(buffer: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: buffer });
-
-  try {
-    const result = await parser.getText();
-    return normalizeExtractedText(result.text);
-  } finally {
-    await parser.destroy();
-  }
+  const { parsePdfBuffer } = await import("@/lib/documents/formats/pdf");
+  return parsePdfBuffer(buffer);
 }
 
 function parsePlainText(buffer: Buffer): string {

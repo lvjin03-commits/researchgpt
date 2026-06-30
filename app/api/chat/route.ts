@@ -7,7 +7,7 @@ import { injectAttachmentsIntoMessages } from "@/lib/attachments/prepare";
 import { getTextFromMessageContent } from "@/lib/ai/types";
 import type { ChatMessage } from "@/lib/ai/types";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
-import { withExportGuidance } from "@/lib/export/chat-guidance";
+import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { createClient } from "@/lib/supabase/server";
 import { UploadError } from "@/lib/uploads/errors";
 

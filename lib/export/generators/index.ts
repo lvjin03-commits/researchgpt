@@ -1,6 +1,5 @@
 import type { ExportFormat } from "@/lib/export/types";
 import { generateDocxBuffer } from "@/lib/export/generators/docx";
-import { renderMarkdownToPdfBuffer } from "@/lib/export/pdf-render";
 
 export async function generateExportBuffer(
   format: ExportFormat,
@@ -31,8 +30,10 @@ export async function generateExportBuffer(
       );
     case "docx":
       return generateDocxBuffer(input.content);
-    case "pdf":
+    case "pdf": {
+      const { renderMarkdownToPdfBuffer } = await import("@/lib/export/pdf-render");
       return renderMarkdownToPdfBuffer(input.content);
+    }
     default: {
       const exhaustive: never = format;
       throw new Error(`Unsupported export format: ${exhaustive}`);

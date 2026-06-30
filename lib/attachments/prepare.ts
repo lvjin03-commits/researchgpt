@@ -1,9 +1,9 @@
 import type { ChatMessage, MessageContentPart } from "@/lib/ai/types";
+import type { ParsedDocument } from "@/lib/documents/parser";
 import {
   augmentUserMessageWithDocuments,
   toDocumentContext,
 } from "@/lib/documents/prompt";
-import { parseDocumentFile, type ParsedDocument } from "@/lib/documents/parser";
 import { parseImageFile, type ParsedImage } from "@/lib/images/image";
 import {
   getFileExtension,
@@ -79,6 +79,7 @@ export async function injectAttachmentsIntoMessages(
     }
 
     if (isDocumentExtension(extension)) {
+      const { parseDocumentFile } = await import("@/lib/documents/parser");
       documents.push(await parseDocumentFile(file));
       continue;
     }
