@@ -20,6 +20,61 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+async function parseApiError(response: Response, fallback: string): Promise<never> {
+  let message = fallback;
+  let code: string | undefined;
+
+  try {
+    const payload = (await response.json()) as {
+      error?: string;
+      code?: string;
+    };
+    if (payload.error) {
+      message = payload.error;
+    }
+    code = payload.code;
+  } catch {
+    // Response body is not JSON; keep default message.
+  }
+
+  if (process.env.NODE_ENV !== "production" && code) {
+    message = `${message} (${code})`;
+  }
+
+  throw new ChatClientError(message, response.status);
+}
+
+async function prepareMessagesWithAttachments(
+  messages: ChatMessage[],
+  files: File[],
+  signal?: AbortSignal,
+): Promise<ChatMessage[]> {
+  const formData = new FormData();
+  formData.append("messages", JSON.stringify(messages));
+
+  for (const file of files) {
+    formData.append("files", file);
+  }
+
+  const response = await fetch("/api/chat/attachments", {
+    method: "POST",
+    body: formData,
+    signal,
+  });
+
+  if (!response.ok) {
+    await parseApiError(response, "Failed to process attachments");
+  }
+
+  const payload = (await response.json()) as { messages?: ChatMessage[] };
+
+  if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
+    throw new ChatClientError("Invalid attachment preparation response", 502);
+  }
+
+  return payload.messages;
+}
+
 export async function streamChatResponse(
   messages: ChatMessage[],
   options: {
@@ -28,52 +83,24 @@ export async function streamChatResponse(
     onChunk: (chunk: string) => void;
   },
 ): Promise<void> {
-  let response: Response;
+  const preparedMessages =
+    options.files && options.files.length > 0
+      ? await prepareMessagesWithAttachments(
+          messages,
+          options.files,
+          options.signal,
+        )
+      : messages;
 
-  if (options.files && options.files.length > 0) {
-    const formData = new FormData();
-    formData.append("messages", JSON.stringify(messages));
-
-    for (const file of options.files) {
-      formData.append("files", file);
-    }
-
-    response = await fetch("/api/chat", {
-      method: "POST",
-      body: formData,
-      signal: options.signal,
-    });
-  } else {
-    response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages }),
-      signal: options.signal,
-    });
-  }
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages: preparedMessages }),
+    signal: options.signal,
+  });
 
   if (!response.ok) {
-    let message = "Failed to send message";
-    let code: string | undefined;
-
-    try {
-      const payload = (await response.json()) as {
-        error?: string;
-        code?: string;
-      };
-      if (payload.error) {
-        message = payload.error;
-      }
-      code = payload.code;
-    } catch {
-      // Response body is not JSON; keep default message.
-    }
-
-    if (process.env.NODE_ENV !== "production" && code) {
-      message = `${message} (${code})`;
-    }
-
-    throw new ChatClientError(message, response.status);
+    await parseApiError(response, "Failed to send message");
   }
 
   if (!response.body) {

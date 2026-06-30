@@ -4,8 +4,8 @@ import {
   validateChatMessages,
 } from "@/lib/ai/provider";
 import type { ChatMessage } from "@/lib/ai/types";
+import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
-import { prepareChatMessages } from "@/lib/chat/server/prepare-messages";
 import {
   requireChatUser,
   toChatApiErrorResponse,
@@ -17,62 +17,19 @@ type ChatRequestBody = {
   messages?: unknown;
 };
 
-type ParsedChatRequest = {
-  messages: ChatMessage[];
-  files: File[];
-};
-
-async function parseChatRequest(request: Request): Promise<ParsedChatRequest> {
-  const contentType = request.headers.get("content-type") ?? "";
-
-  if (contentType.includes("multipart/form-data")) {
-    const formData = await request.formData();
-    const messagesField = formData.get("messages");
-
-    if (typeof messagesField !== "string") {
-      throw new AIProviderError("messages field is required", {
-        statusCode: 400,
-      });
-    }
-
-    let parsedMessages: unknown;
-
-    try {
-      parsedMessages = JSON.parse(messagesField);
-    } catch {
-      throw new AIProviderError("messages must be valid JSON", {
-        statusCode: 400,
-      });
-    }
-
-    const messages = validateChatMessages(
-      sanitizeIncomingChatMessages(parsedMessages) as ChatMessage[],
-    );
-    const files = formData
-      .getAll("files")
-      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
-
-    return { messages, files };
-  }
-
-  const body = (await request.json()) as ChatRequestBody;
-
-  return {
-    messages: validateChatMessages(
-      sanitizeIncomingChatMessages(body.messages) as ChatMessage[],
-    ),
-    files: [],
-  };
-}
-
 export async function POST(request: Request) {
   try {
     await requireChatUser();
 
-    const { messages, files } = await parseChatRequest(request);
-    const preparedMessages = await prepareChatMessages(messages, files);
+    const body = (await request.json()) as ChatRequestBody;
+    const messages = withExportGuidance(
+      validateChatMessages(
+        sanitizeIncomingChatMessages(body.messages) as ChatMessage[],
+      ),
+    );
+
     const stream = await createConnectedChatStream({
-      messages: preparedMessages,
+      messages,
       signal: request.signal,
     });
 

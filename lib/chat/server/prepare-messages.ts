@@ -1,4 +1,4 @@
-// Server-only module. Do not import from client components or /api/chat route entry.
+// Server-only module. Used by /api/chat/attachments only — not /api/chat.
 
 import { AIProviderError } from "@/lib/ai/errors";
 import type { ChatMessage } from "@/lib/ai/types";
