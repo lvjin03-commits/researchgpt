@@ -94,18 +94,27 @@ export function removePendingAttachment(
   return attachments.filter((attachment) => attachment.id !== id);
 }
 
+function isUsableClipboardFile(file: File): boolean {
+  return file.size > 0 || file.name.trim().length > 0;
+}
+
 export function filesFromClipboard(
   clipboardData: DataTransfer | null,
 ): File[] {
   if (!clipboardData) return [];
 
+  const fromFiles = Array.from(clipboardData.files).filter(isUsableClipboardFile);
+  if (fromFiles.length > 0) {
+    return fromFiles;
+  }
+
   const files: File[] = [];
 
   for (const item of clipboardData.items) {
-    if (!item.type.startsWith("image/")) continue;
+    if (item.kind !== "file") continue;
 
     const file = item.getAsFile();
-    if (file) {
+    if (file && isUsableClipboardFile(file)) {
       files.push(file);
     }
   }

@@ -115,6 +115,8 @@ export function ChatInput({
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (disabled || isStreaming) return;
+
     const pastedFiles = filesFromClipboard(event.clipboardData);
 
     if (pastedFiles.length === 0) {
