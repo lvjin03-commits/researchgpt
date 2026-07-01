@@ -95,11 +95,14 @@ export async function translateBatch(
   }
 
   const client = getClient();
+  const model = getTextModel();
 
   try {
+    console.log("[translate] OpenAI chat.completions.create model:", model);
+
     const completion = await client.chat.completions.create(
       {
-        model: getTextModel(),
+        model,
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
@@ -114,6 +117,11 @@ export async function translateBatch(
         ],
       },
       { signal: options.signal },
+    );
+
+    console.log(
+      "[translate] OpenAI chat.completions.create response.model:",
+      completion.model,
     );
 
     const content = completion.choices[0]?.message?.content;

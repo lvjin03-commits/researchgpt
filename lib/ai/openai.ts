@@ -114,8 +114,10 @@ export async function openChatCompletionStream({
     ),
   );
 
+  console.log("[api/chat] OpenAI chat.completions.create model:", model);
+
   try {
-    return await client.chat.completions.create(
+    const stream = await client.chat.completions.create(
       {
         model,
         messages: openaiMessages,
@@ -123,8 +125,28 @@ export async function openChatCompletionStream({
       },
       { signal },
     );
+
+    return logStreamResponseModel(stream);
   } catch (error) {
     throw toProviderError(error);
+  }
+}
+
+async function* logStreamResponseModel(
+  stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+): AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> {
+  let loggedResponseModel = false;
+
+  for await (const chunk of stream) {
+    if (!loggedResponseModel && chunk.model) {
+      console.log(
+        "[api/chat] OpenAI chat.completions.create response.model:",
+        chunk.model,
+      );
+      loggedResponseModel = true;
+    }
+
+    yield chunk;
   }
 }
 

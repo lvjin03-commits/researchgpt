@@ -5,6 +5,7 @@ import {
 } from "@/lib/ai/provider";
 import type { ChatMessage, MessageContent } from "@/lib/ai/types";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
+import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
 import {
   requireChatUser,
@@ -74,8 +75,8 @@ export async function POST(request: Request) {
       JSON.stringify(summarizeMessagesForDebug(sanitized)),
     );
 
-    const messages = withExportGuidance(
-      validateChatMessages(sanitized as ChatMessage[]),
+    const messages = withModelIdentity(
+      withExportGuidance(validateChatMessages(sanitized as ChatMessage[])),
     );
 
     console.log(
