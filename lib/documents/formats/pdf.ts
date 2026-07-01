@@ -62,11 +62,17 @@ export async function renderScannedPdfPages(
   images: { dataUrl: string }[];
   pageNote: string;
 }> {
+  let stage = "init";
+
   try {
+    stage = "load_unpdf";
     const { getDocumentProxy, renderPageAsImage } = await import("unpdf");
+
+    stage = "get_document_proxy";
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
     const totalPages = pdf.numPages;
 
+    stage = "validate_pages";
     if (totalPages === 0) {
       throw new UploadError(SCANNED_PDF_RENDER_FAILED_MESSAGE, 422);
     }
@@ -75,6 +81,7 @@ export async function renderScannedPdfPages(
     const images: { dataUrl: string }[] = [];
 
     for (let pageNumber = 1; pageNumber <= pagesToRender; pageNumber += 1) {
+      stage = `render_page_${pageNumber}`;
       const dataUrl = await renderPageAsImage(pdf, pageNumber, {
         canvasImport: loadCanvasImport,
         toDataURL: true,
@@ -86,6 +93,7 @@ export async function renderScannedPdfPages(
       }
     }
 
+    stage = "validate_images";
     if (images.length === 0) {
       throw new UploadError(SCANNED_PDF_RENDER_FAILED_MESSAGE, 422);
     }
@@ -102,7 +110,24 @@ export async function renderScannedPdfPages(
       throw error;
     }
 
-    throw new UploadError(SCANNED_PDF_RENDER_FAILED_MESSAGE, 422);
+    console.error("[pdf/render-scanned] Rendering failed:", {
+      stage,
+      name: error instanceof Error ? error.name : "UnknownError",
+      message:
+        error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    const isDev = process.env.NODE_ENV !== "production";
+    const detail =
+      error instanceof Error && error.message
+        ? error.message
+        : "Unknown rendering error";
+    const message = isDev
+      ? `${SCANNED_PDF_RENDER_FAILED_MESSAGE} (${stage}: ${detail})`
+      : SCANNED_PDF_RENDER_FAILED_MESSAGE;
+
+    throw new UploadError(message, 422);
   }
 }
 
