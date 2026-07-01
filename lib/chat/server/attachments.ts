@@ -104,7 +104,6 @@ export async function injectAttachmentsIntoMessages(
 
   const images: { dataUrl: string }[] = [];
   const documents: ParsedDocument[] = [];
-  const scannedPdfNotes: string[] = [];
 
   for (const file of files) {
     const extension = getFileExtension(file.name);
@@ -137,12 +136,7 @@ export async function injectAttachmentsIntoMessages(
           file.name,
         );
 
-        if (result.kind === "text") {
-          documents.push(result.document);
-        } else {
-          scannedPdfNotes.push(result.pageNote);
-          images.push(...result.images);
-        }
+        documents.push(result);
 
         console.log("[attachments] parsing completed", file.name);
       } catch (error) {
@@ -177,15 +171,11 @@ export async function injectAttachmentsIntoMessages(
     "@/lib/documents/prompt"
   );
 
-  let messageBody = buildDefaultUserMessage(
+  const messageBody = buildDefaultUserMessage(
     userMessage,
     images.length,
     documents.length,
   );
-
-  if (scannedPdfNotes.length > 0) {
-    messageBody = [messageBody, ...scannedPdfNotes].filter(Boolean).join("\n\n");
-  }
 
   const textBody = augmentUserMessageWithDocuments(
     messageBody,
