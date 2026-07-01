@@ -62,6 +62,8 @@ export async function renderScannedPdfPages(
   images: { dataUrl: string }[];
   pageNote: string;
 }> {
+  console.log("[pdf/render-scanned] enter");
+
   let stage = "init";
 
   try {
@@ -74,7 +76,8 @@ export async function renderScannedPdfPages(
 
     stage = "validate_pages";
     if (totalPages === 0) {
-      throw new UploadError(SCANNED_PDF_RENDER_FAILED_MESSAGE, 422);
+      console.log("[pdf/render-scanned] images count: 0");
+      return { images: [], pageNote: "" };
     }
 
     const pagesToRender = Math.min(totalPages, MAX_SCANNED_PDF_PAGES);
@@ -94,8 +97,10 @@ export async function renderScannedPdfPages(
     }
 
     stage = "validate_images";
+    console.log("[pdf/render-scanned] images count:", images.length);
+
     if (images.length === 0) {
-      throw new UploadError(SCANNED_PDF_RENDER_FAILED_MESSAGE, 422);
+      return { images: [], pageNote: "" };
     }
 
     let pageNote = `[Note: "${fileName}" appears to be a scanned PDF. Analyzing the first ${pagesToRender} page${pagesToRender === 1 ? "" : "s"} via vision.]`;
@@ -106,10 +111,6 @@ export async function renderScannedPdfPages(
 
     return { images, pageNote };
   } catch (error) {
-    if (error instanceof UploadError) {
-      throw error;
-    }
-
     console.error("[pdf/render-scanned] Rendering failed:", {
       stage,
       name: error instanceof Error ? error.name : "UnknownError",
@@ -118,16 +119,7 @@ export async function renderScannedPdfPages(
       stack: error instanceof Error ? error.stack : undefined,
     });
 
-    const isDev = process.env.NODE_ENV !== "production";
-    const detail =
-      error instanceof Error && error.message
-        ? error.message
-        : "Unknown rendering error";
-    const message = isDev
-      ? `${SCANNED_PDF_RENDER_FAILED_MESSAGE} (${stage}: ${detail})`
-      : SCANNED_PDF_RENDER_FAILED_MESSAGE;
-
-    throw new UploadError(message, 422);
+    throw error;
   }
 }
 
@@ -153,14 +145,44 @@ export async function parsePdfAttachment(
     };
   }
 
-  const scanned = await renderScannedPdfPages(buffer, fileName);
+  console.log("[pdf/render-scanned] enter");
 
-  return {
-    kind: "scanned",
-    fileName,
-    images: scanned.images,
-    pageNote: scanned.pageNote,
-  };
+  try {
+    const scanned = await renderScannedPdfPages(buffer, fileName);
+    console.log("[pdf/render-scanned] images count:", scanned.images.length);
+
+    if (scanned.images.length > 0) {
+      return {
+        kind: "scanned",
+        fileName,
+        images: scanned.images,
+        pageNote: scanned.pageNote,
+      };
+    }
+  } catch (error) {
+    const isDev = process.env.NODE_ENV !== "production";
+    const detail =
+      error instanceof Error && error.message
+        ? error.message
+        : "Unknown rendering error";
+
+    console.error("[pdf/render-scanned] parsePdfAttachment render failed:", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      message: detail,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    if (isDev) {
+      throw new UploadError(
+        `${SCANNED_PDF_RENDER_FAILED_MESSAGE} (${detail})`,
+        422,
+      );
+    }
+
+    throw new UploadError(SCANNED_PDF_RENDER_FAILED_MESSAGE, 422);
+  }
+
+  throw new UploadError(SCANNED_PDF_RENDER_FAILED_MESSAGE, 422);
 }
 
 /** Used by parseDocument for text-layer PDFs and diagnostics. */
