@@ -6,7 +6,8 @@ import {
   requireChatUser,
   toChatApiErrorResponse,
 } from "@/lib/chat/server/errors";
-import { AttachmentParseError } from "@/lib/uploads/errors";
+import { validateUploadFile } from "@/lib/uploads/constants";
+import { AttachmentParseError, UploadError } from "@/lib/uploads/errors";
 
 export const runtime = "nodejs";
 
@@ -89,6 +90,14 @@ export async function POST(request: Request) {
       throw new AIProviderError("At least one file is required", {
         statusCode: 400,
       });
+    }
+
+    for (const file of files) {
+      const validationError = validateUploadFile(file);
+
+      if (validationError) {
+        throw new UploadError(validationError, 400);
+      }
     }
 
     const preparedMessages = await prepareChatMessages(messages, files);

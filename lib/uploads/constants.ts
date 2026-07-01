@@ -38,6 +38,11 @@ export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 export const MAX_UPLOAD_MB = MAX_UPLOAD_BYTES / (1024 * 1024);
 
+/** Vercel serverless request body limit (~4.5 MB); PDF-only cap. */
+export const MAX_PDF_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+export const MAX_PDF_UPLOAD_MB = MAX_PDF_UPLOAD_BYTES / (1024 * 1024);
+
 export const IMAGE_MIME_TYPES: Record<SupportedImageExtension, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -120,6 +125,10 @@ export function validateUploadFile(file: {
 
   if (file.size === 0) {
     return `"${file.name}" is empty.`;
+  }
+
+  if (extension === ".pdf" && file.size > MAX_PDF_UPLOAD_BYTES) {
+    return `"${file.name}" exceeds the ${MAX_PDF_UPLOAD_MB}MB PDF size limit.`;
   }
 
   if (file.size > MAX_UPLOAD_BYTES) {

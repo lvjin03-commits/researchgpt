@@ -6,3 +6,12 @@ export type ParsedDocument = {
   truncated: boolean;
   originalLength: number;
 };
+
+export type PdfAttachmentResult =
+  | { kind: "text"; document: ParsedDocument }
+  | {
+      kind: "scanned";
+      fileName: string;
+      images: { dataUrl: string }[];
+      pageNote: string;
+    };

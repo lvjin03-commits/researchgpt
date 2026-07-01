@@ -104,6 +104,7 @@ export async function injectAttachmentsIntoMessages(
 
   const images: { dataUrl: string }[] = [];
   const documents: ParsedDocument[] = [];
+  const scannedPdfNotes: string[] = [];
 
   for (const file of files) {
     const extension = getFileExtension(file.name);
@@ -122,6 +123,33 @@ export async function injectAttachmentsIntoMessages(
           throw toAttachmentParseError(file, "parse_image", error);
         }
         throw toAttachmentParseError(file, "parse_image", error);
+      }
+      continue;
+    }
+
+    if (extension === ".pdf") {
+      console.log("[attachments] parsing started", file.name);
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const { parsePdfAttachment } = await import("@/lib/documents/formats/pdf");
+        const result = await parsePdfAttachment(
+          Buffer.from(arrayBuffer),
+          file.name,
+        );
+
+        if (result.kind === "text") {
+          documents.push(result.document);
+        } else {
+          scannedPdfNotes.push(result.pageNote);
+          images.push(...result.images);
+        }
+
+        console.log("[attachments] parsing completed", file.name);
+      } catch (error) {
+        if (error instanceof UploadError) {
+          throw toAttachmentParseError(file, "parse_document.pdf", error);
+        }
+        throw toAttachmentParseError(file, "parse_document.pdf", error);
       }
       continue;
     }
@@ -149,8 +177,18 @@ export async function injectAttachmentsIntoMessages(
     "@/lib/documents/prompt"
   );
 
+  let messageBody = buildDefaultUserMessage(
+    userMessage,
+    images.length,
+    documents.length,
+  );
+
+  if (scannedPdfNotes.length > 0) {
+    messageBody = [messageBody, ...scannedPdfNotes].filter(Boolean).join("\n\n");
+  }
+
   const textBody = augmentUserMessageWithDocuments(
-    buildDefaultUserMessage(userMessage, images.length, documents.length),
+    messageBody,
     documents.map((document) =>
       toDocumentContext(document.fileName, {
         text: document.text,
