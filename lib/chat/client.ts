@@ -1,6 +1,8 @@
 // Client-only module. Do not import from API routes.
 
 import type { ChatMessage } from "@/lib/ai/types";
+import { uploadChatAttachments } from "@/lib/uploads/storage-client";
+import type { AttachmentStorageMetadata } from "@/lib/uploads/types";
 
 export class ChatClientError extends Error {
   readonly statusCode: number;
@@ -58,14 +60,6 @@ async function parseApiError(
 
   if (payload?.details) {
     message = `${message}: ${payload.details}`;
-    if (payload.fileName || payload.stage) {
-      console.error("[upload-debug] attachment error context", {
-        fileName: payload.fileName,
-        fileType: payload.fileType,
-        stage: payload.stage,
-        details: payload.details,
-      });
-    }
   }
 
   code = payload?.code;
@@ -82,33 +76,29 @@ async function prepareMessagesWithAttachments(
   files: File[],
   signal?: AbortSignal,
 ): Promise<ChatMessage[]> {
-  for (const file of files) {
-    console.log("[upload-debug] selected file", {
-      name: file.name,
-      type: file.type || "(empty)",
-      size: file.size,
-    });
-  }
+  let storageAttachments: AttachmentStorageMetadata[];
 
-  console.log("[upload-debug] calling /api/chat/attachments");
-
-  const formData = new FormData();
-  formData.append("messages", JSON.stringify(messages));
-
-  for (const file of files) {
-    formData.append("files", file);
+  try {
+    storageAttachments = await uploadChatAttachments(files);
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : "Failed to upload attachments to storage.";
+    throw new ChatClientError(message, 502);
   }
 
   const response = await fetch("/api/chat/attachments", {
     method: "POST",
-    body: formData,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages,
+      attachments: storageAttachments,
+    }),
     signal,
   });
 
   const responseBodyText = await response.text();
-
-  console.log("[upload-debug] attachments response status", response.status);
-  console.log("[upload-debug] attachments response body", responseBodyText);
 
   if (!response.ok) {
     await parseApiError(
@@ -143,12 +133,6 @@ export async function streamChatResponse(
 ): Promise<void> {
   const hasFiles = Boolean(options.files && options.files.length > 0);
 
-  if (!hasFiles) {
-    console.log(
-      "[upload-debug] flow stopped before attachments: no files on send (text-only path to /api/chat)",
-    );
-  }
-
   const preparedMessages = hasFiles
     ? await prepareMessagesWithAttachments(
         messages,
@@ -157,16 +141,12 @@ export async function streamChatResponse(
       )
     : messages;
 
-  console.log("[upload-debug] calling /api/chat");
-
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages: preparedMessages }),
     signal: options.signal,
   });
-
-  console.log("[upload-debug] chat response status", response.status);
 
   if (!response.ok) {
     await parseApiError(response, "Failed to send message");

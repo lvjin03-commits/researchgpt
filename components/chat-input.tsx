@@ -5,6 +5,7 @@ import { AttachmentPreview } from "@/components/attachment-preview";
 import { PaperclipIcon, SendIcon, StopIcon } from "@/components/icons";
 import {
   ACCEPTED_FILE_TYPES,
+  MAX_IMAGE_UPLOAD_MB,
   MAX_UPLOAD_MB,
 } from "@/lib/uploads/constants";
 import {
@@ -265,7 +266,7 @@ export function ChatInput({
 
         <p className="mt-2 text-center text-xs text-gray-400">
           ResearchGPT can make mistakes. Verify important information. Max{" "}
-          {MAX_UPLOAD_MB}MB per file.
+          {MAX_IMAGE_UPLOAD_MB}MB images, {MAX_UPLOAD_MB}MB documents.
         </p>
       </form>
     </div>

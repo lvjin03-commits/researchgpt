@@ -15,8 +15,6 @@ import {
   getFileExtension,
   getUnsupportedFileMessage,
   isDocumentExtension,
-  MAX_PDF_UPLOAD_BYTES,
-  MAX_PDF_UPLOAD_MB,
   MAX_UPLOAD_BYTES,
 } from "@/lib/uploads/constants";
 import { UploadError } from "@/lib/uploads/errors";
@@ -104,13 +102,6 @@ export async function parseDocument(
   }
 
   const extension = getFileExtension(fileName);
-
-  if (extension === ".pdf" && buffer.byteLength > MAX_PDF_UPLOAD_BYTES) {
-    throw new UploadError(
-      `File exceeds the ${MAX_PDF_UPLOAD_MB}MB PDF size limit.`,
-      413,
-    );
-  }
 
   if (buffer.byteLength > MAX_UPLOAD_BYTES) {
     throw new UploadError(

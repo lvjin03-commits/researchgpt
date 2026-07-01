@@ -7,8 +7,7 @@ import {
 import { truncateText } from "@/lib/documents/truncate";
 import type { ParsedDocument } from "@/lib/documents/types";
 import {
-  MAX_PDF_UPLOAD_BYTES,
-  MAX_PDF_UPLOAD_MB,
+  MAX_UPLOAD_BYTES,
 } from "@/lib/uploads/constants";
 import { UploadError } from "@/lib/uploads/errors";
 
@@ -21,9 +20,9 @@ function assertPdfSize(buffer: Buffer): void {
     throw new UploadError("The uploaded file is empty.");
   }
 
-  if (buffer.byteLength > MAX_PDF_UPLOAD_BYTES) {
+  if (buffer.byteLength > MAX_UPLOAD_BYTES) {
     throw new UploadError(
-      `File exceeds the ${MAX_PDF_UPLOAD_MB}MB PDF size limit.`,
+      `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB size limit.`,
       413,
     );
   }

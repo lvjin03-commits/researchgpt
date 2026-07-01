@@ -9,6 +9,7 @@ import {
   isImageExtension,
 } from "@/lib/uploads/constants";
 import { UploadError, AttachmentParseError } from "@/lib/uploads/errors";
+import type { AttachmentInput } from "@/lib/uploads/types";
 
 function buildDefaultUserMessage(
   userMessage: string,
@@ -57,7 +58,7 @@ function describeParser(extension: string): string {
 }
 
 function toAttachmentParseError(
-  file: File,
+  file: Pick<AttachmentInput, "name" | "type">,
   stage: string,
   error: unknown,
 ): AttachmentParseError {
@@ -85,7 +86,7 @@ function toAttachmentParseError(
 export async function injectAttachmentsIntoMessages(
   messages: ChatMessage[],
   userMessage: string,
-  files: File[],
+  files: AttachmentInput[],
 ): Promise<ChatMessage[]> {
   if (messages.length === 0) {
     throw new UploadError("messages must be a non-empty array");
@@ -114,8 +115,8 @@ export async function injectAttachmentsIntoMessages(
     if (isImageExtension(extension)) {
       console.log("[attachments] parsing started", file.name);
       try {
-        const { parseImageFile } = await import("@/lib/images/image");
-        images.push(await parseImageFile(file));
+        const { imageBufferToDataUrl } = await import("@/lib/images/image");
+        images.push(imageBufferToDataUrl(file.buffer, file.name));
         console.log("[attachments] parsing completed", file.name);
       } catch (error) {
         if (error instanceof UploadError) {
@@ -129,12 +130,8 @@ export async function injectAttachmentsIntoMessages(
     if (extension === ".pdf") {
       console.log("[attachments] parsing started", file.name);
       try {
-        const arrayBuffer = await file.arrayBuffer();
         const { parsePdfAttachment } = await import("@/lib/documents/formats/pdf");
-        const result = await parsePdfAttachment(
-          Buffer.from(arrayBuffer),
-          file.name,
-        );
+        const result = await parsePdfAttachment(file.buffer, file.name);
 
         documents.push(result);
 
@@ -151,8 +148,8 @@ export async function injectAttachmentsIntoMessages(
     if (isDocumentExtension(extension)) {
       console.log("[attachments] parsing started", file.name);
       try {
-        const { parseDocumentFile } = await import("@/lib/documents/parser");
-        documents.push(await parseDocumentFile(file));
+        const { parseDocument } = await import("@/lib/documents/parser");
+        documents.push(await parseDocument(file.buffer, file.name));
         console.log("[attachments] parsing completed", file.name);
       } catch (error) {
         if (error instanceof UploadError) {

@@ -34,14 +34,13 @@ export type AttachmentKind = "document" | "image";
 
 export const ACCEPTED_FILE_TYPES = SUPPORTED_FILE_EXTENSIONS.join(",");
 
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 export const MAX_UPLOAD_MB = MAX_UPLOAD_BYTES / (1024 * 1024);
 
-/** Vercel serverless request body limit (~4.5 MB); PDF-only cap. */
-export const MAX_PDF_UPLOAD_BYTES = 4 * 1024 * 1024;
+export const MAX_IMAGE_UPLOAD_BYTES = 20 * 1024 * 1024;
 
-export const MAX_PDF_UPLOAD_MB = MAX_PDF_UPLOAD_BYTES / (1024 * 1024);
+export const MAX_IMAGE_UPLOAD_MB = MAX_IMAGE_UPLOAD_BYTES / (1024 * 1024);
 
 export const IMAGE_MIME_TYPES: Record<SupportedImageExtension, string> = {
   ".png": "image/png",
@@ -108,6 +107,16 @@ export function getAttachmentKind(fileName: string): AttachmentKind | undefined 
   return undefined;
 }
 
+export function getMaxUploadBytesForFileName(fileName: string): number {
+  const extension = getFileExtension(fileName);
+
+  if (isImageExtension(extension)) {
+    return MAX_IMAGE_UPLOAD_BYTES;
+  }
+
+  return MAX_UPLOAD_BYTES;
+}
+
 export function validateUploadFile(file: {
   name: string;
   size: number;
@@ -127,12 +136,11 @@ export function validateUploadFile(file: {
     return `"${file.name}" is empty.`;
   }
 
-  if (extension === ".pdf" && file.size > MAX_PDF_UPLOAD_BYTES) {
-    return `"${file.name}" exceeds the ${MAX_PDF_UPLOAD_MB}MB PDF size limit.`;
-  }
+  const maxBytes = getMaxUploadBytesForFileName(file.name);
+  const maxMb = maxBytes / (1024 * 1024);
 
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return `"${file.name}" exceeds the ${MAX_UPLOAD_MB}MB size limit.`;
+  if (file.size > maxBytes) {
+    return `"${file.name}" exceeds the ${maxMb}MB size limit.`;
   }
 
   return null;

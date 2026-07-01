@@ -5,9 +5,11 @@ import type { ChatMessage } from "@/lib/ai/types";
 import { getTextFromMessageContent } from "@/lib/ai/types";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
 
+import type { AttachmentInput } from "@/lib/uploads/types";
+
 export async function prepareChatMessages(
   messages: ChatMessage[],
-  files: File[],
+  files: AttachmentInput[],
 ): Promise<ChatMessage[]> {
   let prepared = messages;
 

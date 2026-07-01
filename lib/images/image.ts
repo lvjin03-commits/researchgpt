@@ -5,7 +5,7 @@ import {
   getFileExtension,
   IMAGE_MIME_TYPES,
   isImageExtension,
-  MAX_UPLOAD_BYTES,
+  MAX_IMAGE_UPLOAD_BYTES,
 } from "@/lib/uploads/constants";
 import { UploadError } from "@/lib/uploads/errors";
 
@@ -35,9 +35,9 @@ export function imageBufferToDataUrl(
     throw new UploadError("The uploaded image is empty.");
   }
 
-  if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+  if (buffer.byteLength > MAX_IMAGE_UPLOAD_BYTES) {
     throw new UploadError(
-      `Image exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB size limit.`,
+      `Image exceeds the ${MAX_IMAGE_UPLOAD_BYTES / (1024 * 1024)}MB size limit.`,
     );
   }
 
