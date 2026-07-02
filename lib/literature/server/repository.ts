@@ -6,6 +6,12 @@ import path from "path";
 import { randomUUID } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LiteratureError } from "@/lib/literature/errors";
+import { normalizeLiteratureSettings } from "@/lib/literature/normalize-settings";
+import {
+  DEFAULT_LITERATURE_DISCIPLINE,
+  isValidDisciplineId,
+} from "@/lib/literature/source-taxonomy";
+import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
 import type {
   ArxivPaperDraft,
   LiteraturePaper,
@@ -26,6 +32,8 @@ type DbSettingsRow = {
   keywords: string;
   exclude_keywords: string;
   source: string;
+  discipline: string | null;
+  selected_sources: string[] | null;
   date_range_days: number;
 };
 
@@ -47,13 +55,46 @@ type DbPaperRow = {
   fetched_at: string;
 };
 
-const DEFAULT_SETTINGS: LiteratureSettings = {
-  researchDirection: "",
-  keywords: "",
-  excludeKeywords: "",
-  source: "arxiv",
+const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
+  discipline: DEFAULT_LITERATURE_DISCIPLINE,
+  selectedSources: ["arxiv"],
   dateRangeDays: 7,
-};
+});
+
+function parseSelectedSourcesColumn(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item): item is string => typeof item === "string");
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function mapSettingsRow(row: DbSettingsRow): LiteratureSettings {
+  const discipline = isValidDisciplineId(row.discipline ?? "")
+    ? (row.discipline as LiteratureDisciplineId)
+    : DEFAULT_LITERATURE_DISCIPLINE;
+
+  return normalizeLiteratureSettings({
+    researchDirection: row.research_direction ?? "",
+    keywords: row.keywords ?? "",
+    excludeKeywords: row.exclude_keywords ?? "",
+    discipline,
+    selectedSources: parseSelectedSourcesColumn(row.selected_sources),
+    source: row.source,
+    dateRangeDays: row.date_range_days ?? 7,
+  });
+}
 
 function storePath(userId: string): string {
   return path.join(LITERATURE_DIR, `${userId}.json`);
@@ -106,7 +147,7 @@ async function readFileStore(userId: string): Promise<LiteratureStore> {
     const raw = await fs.readFile(storePath(userId), "utf8");
     const parsed = JSON.parse(raw) as LiteratureStore;
     return {
-      settings: parsed.settings ?? DEFAULT_SETTINGS,
+      settings: normalizeLiteratureSettings(parsed.settings ?? {}),
       papers: Array.isArray(parsed.papers) ? parsed.papers : [],
     };
   } catch {
@@ -174,13 +215,7 @@ export async function getLiteratureSettings(
 
   const row = data as DbSettingsRow & { user_id: string };
 
-  return {
-    researchDirection: row.research_direction ?? "",
-    keywords: row.keywords ?? "",
-    excludeKeywords: row.exclude_keywords ?? "",
-    source: row.source === "arxiv" ? "arxiv" : "arxiv",
-    dateRangeDays: row.date_range_days ?? 7,
-  };
+  return mapSettingsRow(row);
 }
 
 export async function saveLiteratureSettings(
@@ -194,7 +229,9 @@ export async function saveLiteratureSettings(
       research_direction: settings.researchDirection,
       keywords: settings.keywords,
       exclude_keywords: settings.excludeKeywords,
-      source: settings.source,
+      source: settings.selectedSources.includes("arxiv") ? "arxiv" : "arxiv",
+      discipline: settings.discipline,
+      selected_sources: settings.selectedSources,
       date_range_days: settings.dateRangeDays,
       updated_at: new Date().toISOString(),
     },

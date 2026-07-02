@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   LITERATURE_DATE_RANGE_DAYS,
   LITERATURE_PRIORITY_LABELS,
-  LITERATURE_SOURCE_OPTIONS,
 } from "@/lib/literature/constants";
 import {
   fetchLiteratureState,
@@ -13,19 +12,26 @@ import {
   updateLiteraturePaperStatus,
   updateLiteraturePapers,
 } from "@/lib/literature/client";
+import { normalizeLiteratureSettings } from "@/lib/literature/normalize-settings";
+import {
+  DEFAULT_LITERATURE_DISCIPLINE,
+  getDefaultSelectedSources,
+  getDisciplineSources,
+  isSourceAvailable,
+  LITERATURE_DISCIPLINES,
+} from "@/lib/literature/source-taxonomy";
+import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
 import type {
   LiteraturePaper,
   LiteraturePriority,
   LiteratureSettings,
 } from "@/lib/literature/types";
 
-const DEFAULT_SETTINGS: LiteratureSettings = {
-  researchDirection: "",
-  keywords: "",
-  excludeKeywords: "",
-  source: "arxiv",
+const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
+  discipline: DEFAULT_LITERATURE_DISCIPLINE,
+  selectedSources: ["arxiv"],
   dateRangeDays: LITERATURE_DATE_RANGE_DAYS,
-};
+});
 
 function priorityClassName(priority: LiteraturePriority | null): string {
   switch (priority) {
@@ -227,9 +233,8 @@ export function LiteratureShell() {
     try {
       const result = await updateLiteraturePapers(settings);
       setPapers(result.papers);
-      setStatusMessage(
-        `Updated ${result.added + result.updated} paper(s): ${result.added} new, ${result.updated} refreshed.`,
-      );
+      const summary = `Updated ${result.added + result.updated} paper(s): ${result.added} new, ${result.updated} refreshed.`;
+      setStatusMessage(result.message ? `${summary} ${result.message}` : summary);
     } catch (err) {
       const message =
         err instanceof LiteratureError
@@ -253,6 +258,37 @@ export function LiteratureShell() {
 
   const visiblePapers = papers.filter((paper) => paper.status !== "skipped");
 
+  const fetchableSelectedSources = useMemo(
+    () => settings.selectedSources.filter((sourceId) => isSourceAvailable(sourceId)),
+    [settings.selectedSources],
+  );
+
+  const canUpdate =
+    settings.keywords.trim().length > 0 && fetchableSelectedSources.length > 0;
+
+  const handleDisciplineChange = (discipline: LiteratureDisciplineId) => {
+    setSettings((current) => ({
+      ...current,
+      discipline,
+      selectedSources: getDefaultSelectedSources(discipline),
+    }));
+  };
+
+  const handleSourceToggle = (sourceId: string, available: boolean) => {
+    if (!available) {
+      return;
+    }
+
+    setSettings((current) => ({
+      ...current,
+      selectedSources: current.selectedSources.includes(sourceId)
+        ? current.selectedSources.filter((item) => item !== sourceId)
+        : [...current.selectedSources, sourceId],
+    }));
+  };
+
+  const disciplineSources = getDisciplineSources(settings.discipline);
+
   return (
     <div className="min-h-dvh bg-white">
       <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
@@ -262,7 +298,7 @@ export function LiteratureShell() {
               Literature Tracker
             </h1>
             <p className="text-sm text-gray-500">
-              Track recent arXiv papers with AI relevance scoring and Chinese summaries.
+              Select a discipline and sources to track recent papers with AI relevance scoring.
             </p>
           </div>
           <Link
@@ -275,7 +311,7 @@ export function LiteratureShell() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
             <div>
               <label
@@ -348,23 +384,76 @@ export function LiteratureShell() {
 
             <div>
               <label
-                htmlFor="source"
+                htmlFor="discipline"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Source
+                Discipline
               </label>
               <select
-                id="source"
-                value={settings.source}
-                disabled
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                id="discipline"
+                value={settings.discipline}
+                disabled={isUpdating}
+                onChange={(event) =>
+                  handleDisciplineChange(event.target.value as LiteratureDisciplineId)
+                }
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50"
               >
-                {LITERATURE_SOURCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                {LITERATURE_DISCIPLINES.map((discipline) => (
+                  <option key={discipline.id} value={discipline.id}>
+                    {discipline.label}
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Sources</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Only arXiv is available for fetching. Other sources are coming soon.
+                </p>
+              </div>
+
+              <ul className="space-y-2">
+                {disciplineSources.map((source) => {
+                  const available = source.status === "available";
+
+                  return (
+                    <li key={source.id}>
+                      <label
+                        className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
+                          available
+                            ? "border-gray-200 bg-white text-gray-900"
+                            : "border-gray-100 bg-gray-50 text-gray-500"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={settings.selectedSources.includes(source.id)}
+                          disabled={!available || isUpdating}
+                          onChange={() => handleSourceToggle(source.id, available)}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium">{source.name}</span>
+                          {!available && (
+                            <span className="mt-0.5 block text-xs text-gray-400">
+                              Coming soon
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {fetchableSelectedSources.length === 0 && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  No fetchable sources for this discipline yet. Select a discipline with arXiv
+                  to update papers.
+                </p>
+              )}
             </div>
 
             <div>
@@ -377,16 +466,24 @@ export function LiteratureShell() {
               <select
                 id="date-range"
                 value={settings.dateRangeDays}
-                disabled
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                disabled={isUpdating}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    dateRangeDays: Number(event.target.value),
+                  }))
+                }
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50"
               >
                 <option value={7}>Last 7 days</option>
+                <option value={14}>Last 14 days</option>
+                <option value={30}>Last 30 days</option>
               </select>
             </div>
 
             <button
               type="button"
-              disabled={isUpdating || !settings.keywords.trim()}
+              disabled={isUpdating || !canUpdate}
               onClick={() => {
                 void handleUpdatePapers();
               }}
@@ -417,7 +514,7 @@ export function LiteratureShell() {
               <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
                 <p className="text-sm font-medium text-gray-900">No papers yet</p>
                 <p className="mt-2 text-sm text-gray-500">
-                  Enter keywords and click Update Papers to fetch recent arXiv results.
+                  Choose a discipline, select arXiv, enter keywords, and click Update Papers.
                 </p>
               </div>
             ) : (

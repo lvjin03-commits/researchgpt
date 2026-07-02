@@ -1,13 +1,14 @@
 import { AIProviderError } from "@/lib/ai/errors";
 import { LiteratureError } from "@/lib/literature/errors";
 import { analyzeArxivPapers } from "@/lib/literature/server/analyze-service";
-import { fetchArxivPapers } from "@/lib/literature/server/arxiv";
+import { fetchPapersFromSelectedSources } from "@/lib/literature/server/fetch-papers";
 import { parseLiteratureSettings } from "@/lib/literature/server/parse";
 import {
   saveLiteratureSettings,
   upsertAnalyzedPapers,
 } from "@/lib/literature/server/repository";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
+import { getSourceLabel } from "@/lib/literature/source-taxonomy";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -18,20 +19,19 @@ export async function POST(request: Request) {
   try {
     const { supabase, user } = await requireLiteratureUser();
     const body = await request.json();
-    const settings = parseLiteratureSettings(body);
+    const { settings, ignoredSources } = parseLiteratureSettings(body, {
+      requireEnabledSources: true,
+    });
 
-    console.log("[literature] source:", settings.source);
+    console.log("[literature] discipline:", settings.discipline);
+    console.log("[literature] selectedSources:", settings.selectedSources.join(", "));
     console.log("[literature] keywords:", settings.keywords);
 
     await saveLiteratureSettings(supabase, user.id, settings);
 
-    const drafts = await fetchArxivPapers({
-      keywords: settings.keywords,
-      excludeKeywords: settings.excludeKeywords,
-      dateRangeDays: settings.dateRangeDays,
-    });
+    const drafts = await fetchPapersFromSelectedSources(settings);
 
-    console.log("[literature] arxiv papers fetched:", drafts.length);
+    console.log("[literature] papers fetched:", drafts.length);
 
     const analysisById = await analyzeArxivPapers(
       drafts,
@@ -48,7 +48,16 @@ export async function POST(request: Request) {
       analysisById,
     );
 
-    return Response.json(result);
+    const message =
+      ignoredSources.length > 0
+        ? `Ignored coming-soon sources: ${ignoredSources.map(getSourceLabel).join(", ")}.`
+        : undefined;
+
+    return Response.json({
+      ...result,
+      ignoredSources: ignoredSources.length > 0 ? ignoredSources : undefined,
+      message,
+    });
   } catch (error) {
     if (error instanceof LiteratureError) {
       console.error("[literature] update error:", error.message);

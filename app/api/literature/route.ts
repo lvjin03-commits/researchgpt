@@ -32,7 +32,9 @@ export async function PUT(request: Request) {
   try {
     const { supabase, user } = await requireLiteratureUser();
     const body = await request.json();
-    const settings = parseLiteratureSettings(body);
+    const { settings } = parseLiteratureSettings(body, {
+      requireEnabledSources: false,
+    });
     await saveLiteratureSettings(supabase, user.id, settings);
 
     return Response.json({ settings });

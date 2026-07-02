@@ -1,14 +1,16 @@
-export type LiteratureSource = "arxiv";
-
 export type LiteraturePriority = "recommended" | "skim" | "skip";
 
 export type LiteraturePaperStatus = "new" | "saved" | "skipped" | "read";
+
+export type LiteratureDisciplineId =
+  import("@/lib/literature/source-taxonomy").LiteratureDisciplineId;
 
 export type LiteratureSettings = {
   researchDirection: string;
   keywords: string;
   excludeKeywords: string;
-  source: LiteratureSource;
+  discipline: LiteratureDisciplineId;
+  selectedSources: string[];
   dateRangeDays: number;
 };
 
@@ -55,4 +57,6 @@ export type UpdateLiteratureResponse = {
   added: number;
   updated: number;
   papers: LiteraturePaper[];
+  ignoredSources?: string[];
+  message?: string;
 };
