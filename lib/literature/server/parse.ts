@@ -114,7 +114,7 @@ export function parseLiteratureSettings(
     }
 
     throw new LiteratureError(
-      "Select at least one available source. Only arXiv is available for fetching right now.",
+      "Select at least one available source. arXiv and PubMed are available for fetching right now.",
       400,
     );
   }

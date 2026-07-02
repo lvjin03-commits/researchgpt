@@ -64,7 +64,7 @@ export type DisciplineDefinition = {
   sources: TaxonomySource[];
 };
 
-export const AVAILABLE_LITERATURE_SOURCE_IDS = ["arxiv"] as const;
+export const AVAILABLE_LITERATURE_SOURCE_IDS = ["arxiv", "pubmed"] as const;
 
 export type AvailableLiteratureSourceId =
   (typeof AVAILABLE_LITERATURE_SOURCE_IDS)[number];
@@ -106,6 +106,16 @@ function arxiv(): TaxonomySource {
     kind: "platform",
     status: "available",
     provider: "arxiv",
+  };
+}
+
+function pubmed(): TaxonomySource {
+  return {
+    id: "pubmed",
+    name: "PubMed",
+    kind: "platform",
+    status: "available",
+    provider: "pubmed",
   };
 }
 
@@ -166,7 +176,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
     id: "biology",
     label: "Biology",
     sources: [
-      platform("PubMed", "pubmed"),
+      pubmed(),
       platform("Europe PMC", "europe_pmc"),
       platform("OpenAlex", "openalex"),
       platform("Web of Science"),
@@ -195,7 +205,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
     id: "medicine",
     label: "Medicine",
     sources: [
-      platform("PubMed", "pubmed"),
+      pubmed(),
       platform("ClinicalTrials.gov"),
       platform("Cochrane Library"),
       platform("Embase"),

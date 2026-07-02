@@ -109,7 +109,11 @@ function PaperCard({
             {paper.authors.slice(0, 4).join(", ")}
             {paper.authors.length > 4 ? " et al." : ""} · {formatDate(paper.publishedAt)}
           </p>
-          <p className="mt-1 text-xs text-gray-400">arXiv:{paper.arxivId}</p>
+          <p className="mt-1 text-xs text-gray-400">
+            {paper.arxivId.startsWith("pubmed:")
+              ? `PubMed:${paper.arxivId.slice("pubmed:".length)}`
+              : `arXiv:${paper.arxivId}`}
+          </p>
         </div>
 
         <a
@@ -118,7 +122,7 @@ function PaperCard({
           rel="noreferrer"
           className="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
         >
-          View on arXiv
+          {paper.arxivId.startsWith("pubmed:") ? "View on PubMed" : "View on arXiv"}
         </a>
       </div>
 
@@ -411,7 +415,7 @@ export function LiteratureShell() {
               <div>
                 <p className="text-sm font-medium text-gray-700">Sources</p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Only arXiv is available for fetching. Other sources are coming soon.
+                  arXiv and PubMed are available for fetching. Other sources are coming soon.
                 </p>
               </div>
 
