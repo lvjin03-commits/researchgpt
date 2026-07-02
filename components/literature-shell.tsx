@@ -90,10 +90,10 @@ function PaperCard({
             </span>
           </div>
 
-          <h3 className="text-base font-semibold text-gray-900">
+          <h3 className="text-base font-semibold">
             <Link
               href={`/literature/papers/${paper.id}`}
-              className="transition-colors hover:text-blue-700"
+              className="text-blue-700 underline decoration-blue-300 underline-offset-2 transition-colors hover:text-blue-900 hover:decoration-blue-500"
             >
               {paper.title}
             </Link>
@@ -109,14 +109,22 @@ function PaperCard({
           </p>
         </div>
 
-        <a
-          href={paper.absUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-        >
-          {paper.arxivId.startsWith("pubmed:") ? "View on PubMed" : "View on arXiv"}
-        </a>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Link
+            href={`/literature/papers/${paper.id}`}
+            className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
+          >
+            View Details
+          </Link>
+          <a
+            href={paper.absUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+          >
+            {paper.arxivId.startsWith("pubmed:") ? "View on PubMed" : "View on arXiv"}
+          </a>
+        </div>
       </div>
 
       <p className="mt-3 text-sm leading-relaxed text-gray-700 line-clamp-3">
