@@ -14,6 +14,7 @@ export type LibraryFilters = {
   source: string;
   discipline: string;
   priority: string;
+  customCategoryId: string;
 };
 
 export function getPaperSourceId(paper: LiteraturePaper): "arxiv" | "pubmed" {
@@ -46,11 +47,19 @@ function matchesSearchQuery(paper: LiteraturePaper, query: string): boolean {
 export function filterLibraryPapers(
   papers: LiteraturePaper[],
   filters: LibraryFilters,
+  paperCategoryIds?: Map<string, string[]>,
 ): LiteraturePaper[] {
   const libraryStatuses = new Set(["saved", "read", "skipped"]);
 
   return papers.filter((paper) => {
-    if (filters.status === "all") {
+    const assignedCategoryIds =
+      paper.customCategoryIds ?? paperCategoryIds?.get(paper.id) ?? [];
+
+    if (filters.customCategoryId) {
+      if (!assignedCategoryIds.includes(filters.customCategoryId)) {
+        return false;
+      }
+    } else if (filters.status === "all") {
       if (!libraryStatuses.has(paper.status)) {
         return false;
       }

@@ -30,6 +30,18 @@ export type LiteraturePaper = {
   recommendationReason: string | null;
   status: LiteraturePaperStatus;
   fetchedAt: string;
+  customCategoryIds?: string[];
+};
+
+export type LiteratureCategory = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+export type LiteratureLibraryResponse = {
+  papers: LiteraturePaper[];
+  categories: LiteratureCategory[];
 };
 
 export type ArxivPaperDraft = {

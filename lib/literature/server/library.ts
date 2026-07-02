@@ -51,6 +51,7 @@ export function parseLibraryFilters(searchParams: URLSearchParams): LibraryFilte
     source,
     discipline,
     priority,
+    customCategoryId: searchParams.get("categoryId")?.trim() ?? "",
   };
 }
 

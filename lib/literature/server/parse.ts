@@ -187,3 +187,36 @@ export function parsePaperStatus(
     400,
   );
 }
+
+export function parseCategoryName(body: unknown): string {
+  if (typeof body !== "object" || body === null) {
+    throw new LiteratureError("Invalid category body.", 400);
+  }
+
+  const name = (body as Record<string, unknown>).name;
+
+  if (typeof name !== "string" || !name.trim()) {
+    throw new LiteratureError("Category name is required.", 400);
+  }
+
+  return name.trim();
+}
+
+export function parsePaperCategoryIds(body: unknown): string[] {
+  if (typeof body !== "object" || body === null) {
+    throw new LiteratureError("Invalid paper categories body.", 400);
+  }
+
+  const categoryIds = (body as Record<string, unknown>).categoryIds;
+
+  if (!Array.isArray(categoryIds)) {
+    throw new LiteratureError("categoryIds must be an array.", 400);
+  }
+
+  const parsed = categoryIds
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return [...new Set(parsed)];
+}

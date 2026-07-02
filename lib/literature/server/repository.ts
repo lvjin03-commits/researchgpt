@@ -284,9 +284,19 @@ export async function listLiteratureLibraryPapers(
   supabase: SupabaseClient,
   userId: string,
   filters: LibraryFilters,
+  paperCategoryIds?: Map<string, string[]>,
 ): Promise<LiteraturePaper[]> {
   const papers = await listLiteraturePapers(supabase, userId);
-  return filterLibraryPapers(papers, filters);
+  const filtered = filterLibraryPapers(papers, filters, paperCategoryIds);
+
+  if (!paperCategoryIds) {
+    return filtered;
+  }
+
+  return filtered.map((paper) => ({
+    ...paper,
+    customCategoryIds: paperCategoryIds.get(paper.id) ?? [],
+  }));
 }
 
 export async function upsertAnalyzedPapers(
