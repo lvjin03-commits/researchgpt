@@ -51,7 +51,11 @@ export function buildArxivSearchQuery(options: {
   startDate.setUTCDate(endDate.getUTCDate() - dateRangeDays);
 
   const keywordClause =
-    keywordTerms.length > 0 ? keywordTerms.join(" AND ") : "all:*";
+    keywordTerms.length === 0
+      ? "all:*"
+      : keywordTerms.length === 1
+        ? keywordTerms[0]!
+        : `(${keywordTerms.join(" OR ")})`;
 
   const dateClause = `submittedDate:[${formatArxivDate(startDate)} TO ${formatArxivDate(endDate)}]`;
 
@@ -116,6 +120,9 @@ export async function fetchArxivPapers(options: {
   url.searchParams.set("sortBy", "submittedDate");
   url.searchParams.set("sortOrder", "descending");
 
+  console.log("[arxiv] request url:", url.toString());
+  console.log("[arxiv] search_query:", searchQuery);
+
   let response: Response;
 
   try {
@@ -131,6 +138,12 @@ export async function fetchArxivPapers(options: {
   }
 
   if (!response.ok) {
+    const body = await response.text();
+    console.error(
+      "[arxiv] non-ok response:",
+      response.status,
+      body.slice(0, 500),
+    );
     throw new LiteratureError(
       `arXiv API returned ${response.status}.`,
       502,
