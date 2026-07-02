@@ -2,6 +2,7 @@ import { AIProviderError } from "@/lib/ai/errors";
 import { LiteratureError } from "@/lib/literature/errors";
 import { analyzeArxivPapers } from "@/lib/literature/server/analyze-service";
 import { fetchPapersFromSelectedSources } from "@/lib/literature/server/fetch-papers";
+import { limitPapersForAnalysis } from "@/lib/literature/server/limit-analysis-papers";
 import { parseLiteratureSettings } from "@/lib/literature/server/parse";
 import {
   listLiteraturePapers,
@@ -46,11 +47,12 @@ export async function POST(request: Request) {
     );
 
     const drafts = await fetchPapersFromSelectedSources(settings);
+    const analysisDrafts = limitPapersForAnalysis(drafts);
 
     console.log("[literature] step openai analysis: start");
     const analysisStartedAt = Date.now();
     const analysisById = await analyzeArxivPapers(
-      drafts,
+      analysisDrafts,
       settings,
       request.signal,
     );
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
 
     console.log("[literature] step save to supabase: start");
     const saveStartedAt = Date.now();
-    await upsertAnalyzedPapers(supabase, user.id, drafts, analysisById);
+    await upsertAnalyzedPapers(supabase, user.id, analysisDrafts, analysisById);
     const papers = await listLiteraturePapers(supabase, user.id);
     console.log(
       `[literature] step save to supabase: done elapsedMs=${elapsedMs(saveStartedAt)} papers=${papers.length}`,

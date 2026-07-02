@@ -2,6 +2,8 @@ export const LITERATURE_DATE_RANGE_DAYS = 30;
 
 export const LITERATURE_MAX_ARXIV_RESULTS = 50;
 
+export const LITERATURE_MAX_ANALYSIS_PAPERS = 10;
+
 export const LITERATURE_DATE_RANGE_OPTIONS = [
   { value: 30, label: "1 month" },
   { value: 365, label: "1 year" },
