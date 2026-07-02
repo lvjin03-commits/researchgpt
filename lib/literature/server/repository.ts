@@ -425,3 +425,37 @@ export async function updateLiteraturePaperStatus(
 
   return mapPaperRow(data as DbPaperRow);
 }
+
+export async function getLiteraturePaperById(
+  supabase: SupabaseClient,
+  userId: string,
+  paperId: string,
+): Promise<LiteraturePaper> {
+  const { data, error } = await supabase
+    .from("literature_papers")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("id", paperId)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      const store = await readFileStore(userId);
+      const paper = store.papers.find((item) => item.id === paperId);
+
+      if (!paper) {
+        throw new LiteratureError("Paper not found.", 404);
+      }
+
+      return paper;
+    }
+
+    throw new LiteratureError(error.message, 500);
+  }
+
+  if (!data) {
+    throw new LiteratureError("Paper not found.", 404);
+  }
+
+  return mapPaperRow(data as DbPaperRow);
+}

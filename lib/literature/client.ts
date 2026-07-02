@@ -86,6 +86,23 @@ export async function updateLiteraturePapers(
   return payload;
 }
 
+export async function fetchLiteraturePaper(paperId: string): Promise<LiteraturePaper> {
+  const response = await fetch(`/api/literature/papers/${paperId}`);
+
+  const payload = await parseJson<{ paper: LiteraturePaper; error?: string }>(
+    response,
+  );
+
+  if (!response.ok) {
+    throw new LiteratureError(
+      payload.error ?? "Failed to load literature paper.",
+      response.status,
+    );
+  }
+
+  return payload.paper;
+}
+
 export async function updateLiteraturePaperStatus(
   paperId: string,
   status: "saved" | "skipped" | "read",

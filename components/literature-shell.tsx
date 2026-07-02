@@ -13,6 +13,10 @@ import {
   updateLiteraturePaperStatus,
   updateLiteraturePapers,
 } from "@/lib/literature/client";
+import {
+  formatLiteratureDate,
+  literaturePriorityClassName,
+} from "@/lib/literature/paper-display";
 import { normalizeLiteratureSettings } from "@/lib/literature/normalize-settings";
 import {
   DEFAULT_LITERATURE_DISCIPLINE,
@@ -35,29 +39,11 @@ const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
 });
 
 function priorityClassName(priority: LiteraturePriority | null): string {
-  switch (priority) {
-    case "recommended":
-      return "bg-emerald-100 text-emerald-800";
-    case "skim":
-      return "bg-amber-100 text-amber-800";
-    case "skip":
-      return "bg-gray-200 text-gray-700";
-    default:
-      return "bg-gray-100 text-gray-600";
-  }
+  return literaturePriorityClassName(priority);
 }
 
 function formatDate(value: string | null): string {
-  if (!value) return "Unknown date";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatLiteratureDate(value);
 }
 
 function PaperCard({
@@ -104,7 +90,14 @@ function PaperCard({
             </span>
           </div>
 
-          <h3 className="text-base font-semibold text-gray-900">{paper.title}</h3>
+          <h3 className="text-base font-semibold text-gray-900">
+            <Link
+              href={`/literature/papers/${paper.id}`}
+              className="transition-colors hover:text-blue-700"
+            >
+              {paper.title}
+            </Link>
+          </h3>
           <p className="mt-1 text-sm text-gray-500">
             {paper.authors.slice(0, 4).join(", ")}
             {paper.authors.length > 4 ? " et al." : ""} · {formatDate(paper.publishedAt)}
