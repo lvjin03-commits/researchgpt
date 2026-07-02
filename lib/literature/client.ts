@@ -30,64 +30,150 @@ async function parseJson<T>(response: Response): Promise<T> {
   }
 }
 
-function isLiteratureSettings(value: unknown): value is LiteratureSettings {
+function validateLiteratureSettings(value: unknown): value is LiteratureSettings {
   if (typeof value !== "object" || value === null) {
+    console.error(
+      "[literature] update response validation failed: settings invalid (not an object)",
+    );
     return false;
   }
 
   const record = value as Record<string, unknown>;
 
-  return (
-    typeof record.researchDirection === "string" &&
-    typeof record.keywords === "string" &&
-    typeof record.excludeKeywords === "string" &&
-    typeof record.discipline === "string" &&
-    isValidDisciplineId(record.discipline) &&
-    Array.isArray(record.selectedSources) &&
-    record.selectedSources.every((item) => typeof item === "string") &&
-    typeof record.dateRangeDays === "number"
-  );
+  if (typeof record.researchDirection !== "string") {
+    console.error(
+      "[literature] update response validation failed: settings.researchDirection invalid",
+    );
+    return false;
+  }
+
+  if (typeof record.keywords !== "string") {
+    console.error(
+      "[literature] update response validation failed: settings.keywords invalid",
+    );
+    return false;
+  }
+
+  if (typeof record.excludeKeywords !== "string") {
+    console.error(
+      "[literature] update response validation failed: settings.excludeKeywords invalid",
+    );
+    return false;
+  }
+
+  if (typeof record.discipline !== "string" || !isValidDisciplineId(record.discipline)) {
+    console.error(
+      "[literature] update response validation failed: settings.discipline invalid",
+    );
+    return false;
+  }
+
+  if (
+    !Array.isArray(record.selectedSources) ||
+    !record.selectedSources.every((item) => typeof item === "string")
+  ) {
+    console.error(
+      "[literature] update response validation failed: settings.selectedSources invalid",
+    );
+    return false;
+  }
+
+  if (typeof record.dateRangeDays !== "number") {
+    console.error(
+      "[literature] update response validation failed: settings.dateRangeDays invalid",
+    );
+    return false;
+  }
+
+  return true;
 }
 
-function isLiteraturePaper(value: unknown): value is LiteraturePaper {
+function getLiteraturePaperValidationFailure(
+  value: unknown,
+  index: number,
+): string | null {
   if (typeof value !== "object" || value === null) {
-    return false;
+    return `paper[${index}] invalid (not an object)`;
   }
 
   const record = value as Record<string, unknown>;
+  const requiredStringFields = [
+    "id",
+    "arxivId",
+    "title",
+    "abstract",
+    "pdfUrl",
+    "absUrl",
+    "status",
+    "fetchedAt",
+  ] as const;
 
-  return (
-    typeof record.id === "string" &&
-    typeof record.arxivId === "string" &&
-    typeof record.title === "string" &&
-    typeof record.abstract === "string" &&
-    Array.isArray(record.authors) &&
-    typeof record.pdfUrl === "string" &&
-    typeof record.absUrl === "string" &&
-    Array.isArray(record.categories) &&
-    typeof record.status === "string" &&
-    typeof record.fetchedAt === "string"
-  );
+  for (const field of requiredStringFields) {
+    if (typeof record[field] !== "string") {
+      return `paper[${index}].${field} invalid`;
+    }
+  }
+
+  if (!Array.isArray(record.authors)) {
+    return `paper[${index}].authors invalid`;
+  }
+
+  if (!Array.isArray(record.categories)) {
+    return `paper[${index}].categories invalid`;
+  }
+
+  return null;
+}
+
+async function parseUpdateResponseBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  const contentType = response.headers.get("content-type") ?? "(none)";
+
+  console.log("[literature] update response status:", response.status);
+  console.log("[literature] update response content-type:", contentType);
+  console.log("[literature] update response body preview:", text.slice(0, 1000));
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new LiteratureError(
+      `Invalid literature API response. status=${response.status}, body=${text.slice(0, 500)}`,
+      response.status,
+    );
+  }
 }
 
 function parseUpdateLiteratureResponse(payload: unknown): UpdateLiteratureResponse {
   if (typeof payload !== "object" || payload === null) {
+    console.error(
+      "[literature] update response validation failed: top-level payload invalid",
+    );
     throw new LiteratureError("Invalid literature update response.", 502);
   }
 
   const record = payload as Record<string, unknown>;
 
-  if (!isLiteratureSettings(record.settings)) {
+  if (!validateLiteratureSettings(record.settings)) {
+    console.error("[literature] update response validation failed: settings invalid");
     throw new LiteratureError("Invalid literature update response.", 502);
   }
 
-  if (!Array.isArray(record.papers) || !record.papers.every(isLiteraturePaper)) {
+  if (!Array.isArray(record.papers)) {
+    console.error("[literature] update response validation failed: papers not array");
     throw new LiteratureError("Invalid literature update response.", 502);
+  }
+
+  for (let index = 0; index < record.papers.length; index += 1) {
+    const failure = getLiteraturePaperValidationFailure(record.papers[index], index);
+    if (failure) {
+      console.error(`[literature] update response validation failed: ${failure}`);
+      throw new LiteratureError("Invalid literature update response.", 502);
+    }
   }
 
   return {
     settings: record.settings,
-    papers: record.papers,
+    papers: record.papers as LiteraturePaper[],
   };
 }
 
@@ -168,13 +254,16 @@ export async function updateLiteraturePapers(
     body: JSON.stringify(requestBody),
   });
 
-  const payload = await parseJson<UpdateLiteratureResponse & { error?: string }>(
-    response,
-  );
+  const payload = await parseUpdateResponseBody(response);
 
   if (!response.ok) {
+    const errorPayload =
+      typeof payload === "object" && payload !== null
+        ? (payload as { error?: string })
+        : {};
+
     throw new LiteratureError(
-      payload.error ?? "Failed to update literature papers.",
+      errorPayload.error ?? "Failed to update literature papers.",
       response.status,
     );
   }
