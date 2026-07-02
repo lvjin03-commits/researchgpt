@@ -1,6 +1,7 @@
 // Server-only module.
 
 import { LiteratureError } from "@/lib/literature/errors";
+import { parseDateRangeDays } from "@/lib/literature/date-range";
 import {
   DEFAULT_LITERATURE_DISCIPLINE,
   getDefaultSelectedSources,
@@ -118,11 +119,7 @@ export function parseLiteratureSettings(
     );
   }
 
-  const dateRangeDays =
-    typeof record.dateRangeDays === "number" &&
-    Number.isFinite(record.dateRangeDays)
-      ? Math.max(1, Math.min(30, Math.round(record.dateRangeDays)))
-      : 7;
+  const dateRangeDays = parseDateRangeDays(record.dateRangeDays);
 
   if (!keywords) {
     throw new LiteratureError("Keywords are required.", 400);

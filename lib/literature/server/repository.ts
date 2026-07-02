@@ -12,6 +12,7 @@ import {
   isValidDisciplineId,
 } from "@/lib/literature/source-taxonomy";
 import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
+import { LITERATURE_DATE_RANGE_DAYS } from "@/lib/literature/constants";
 import type {
   ArxivPaperDraft,
   LiteraturePaper,
@@ -58,7 +59,7 @@ type DbPaperRow = {
 const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
   discipline: DEFAULT_LITERATURE_DISCIPLINE,
   selectedSources: ["arxiv"],
-  dateRangeDays: 7,
+  dateRangeDays: LITERATURE_DATE_RANGE_DAYS,
 });
 
 function parseSelectedSourcesColumn(value: unknown): string[] {
@@ -92,7 +93,7 @@ function mapSettingsRow(row: DbSettingsRow): LiteratureSettings {
     discipline,
     selectedSources: parseSelectedSourcesColumn(row.selected_sources),
     source: row.source,
-    dateRangeDays: row.date_range_days ?? 7,
+    dateRangeDays: row.date_range_days ?? LITERATURE_DATE_RANGE_DAYS,
   });
 }
 

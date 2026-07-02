@@ -4,6 +4,7 @@ import {
   isValidDisciplineId,
 } from "@/lib/literature/source-taxonomy";
 import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
+import { normalizeDateRangeDays } from "@/lib/literature/date-range";
 import type { LiteratureSettings } from "@/lib/literature/types";
 
 type StoredLiteratureSettings = Partial<LiteratureSettings> & {
@@ -33,10 +34,7 @@ export function normalizeLiteratureSettings(
     selectedSources = getDefaultSelectedSources(discipline);
   }
 
-  const dateRangeDays =
-    typeof raw.dateRangeDays === "number" && Number.isFinite(raw.dateRangeDays)
-      ? Math.max(1, Math.min(30, Math.round(raw.dateRangeDays)))
-      : 7;
+  const dateRangeDays = normalizeDateRangeDays(raw.dateRangeDays);
 
   return {
     researchDirection: raw.researchDirection ?? "",

@@ -45,11 +45,6 @@ export function buildArxivSearchQuery(options: {
     .filter(Boolean)
     .map((term) => `ANDNOT all:"${term.replace(/"/g, "")}"`);
 
-  const dateRangeDays = options.dateRangeDays ?? LITERATURE_DATE_RANGE_DAYS;
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setUTCDate(endDate.getUTCDate() - dateRangeDays);
-
   const keywordClause =
     keywordTerms.length === 0
       ? "all:*"
@@ -57,9 +52,20 @@ export function buildArxivSearchQuery(options: {
         ? keywordTerms[0]!
         : `(${keywordTerms.join(" OR ")})`;
 
-  const dateClause = `submittedDate:[${formatArxivDate(startDate)} TO ${formatArxivDate(endDate)}]`;
+  const queryParts = [keywordClause, ...excludeTerms];
 
-  return [keywordClause, ...excludeTerms, dateClause].join(" ");
+  const dateRangeDays = options.dateRangeDays ?? LITERATURE_DATE_RANGE_DAYS;
+
+  if (dateRangeDays !== 0) {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setUTCDate(endDate.getUTCDate() - dateRangeDays);
+    queryParts.push(
+      `submittedDate:[${formatArxivDate(startDate)} TO ${formatArxivDate(endDate)}]`,
+    );
+  }
+
+  return queryParts.join(" ");
 }
 
 function extractArxivId(entryId: string): string {
@@ -111,7 +117,10 @@ export async function fetchArxivPapers(options: {
   maxResults?: number;
 }): Promise<ArxivPaperDraft[]> {
   const searchQuery = buildArxivSearchQuery(options);
-  const maxResults = options.maxResults ?? LITERATURE_MAX_ARXIV_RESULTS;
+  const maxResults = Math.min(
+    options.maxResults ?? LITERATURE_MAX_ARXIV_RESULTS,
+    LITERATURE_MAX_ARXIV_RESULTS,
+  );
 
   const url = new URL(ARXIV_API_URL);
   url.searchParams.set("search_query", searchQuery);
