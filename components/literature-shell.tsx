@@ -8,8 +8,10 @@ import {
   LITERATURE_DATE_RANGE_OPTIONS,
 } from "@/lib/literature/constants";
 import {
+  fetchLiteratureFolders,
   fetchLiteratureState,
   LiteratureError,
+  setPaperFolders,
   updateLiteraturePaperStatus,
   updateLiteraturePapers,
 } from "@/lib/literature/client";
@@ -23,6 +25,7 @@ import {
 } from "@/lib/literature/source-taxonomy";
 import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
 import type {
+  LiteratureFolder,
   LiteraturePaper,
   LiteraturePaperStatus,
   LiteratureSettings,
@@ -37,6 +40,7 @@ const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
 export function LiteratureShell() {
   const [settings, setSettings] = useState<LiteratureSettings>(DEFAULT_SETTINGS);
   const [papers, setPapers] = useState<LiteraturePaper[]>([]);
+  const [folders, setFolders] = useState<LiteratureFolder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,10 +51,14 @@ export function LiteratureShell() {
 
     void (async () => {
       try {
-        const state = await fetchLiteratureState();
+        const [state, loadedFolders] = await Promise.all([
+          fetchLiteratureState(),
+          fetchLiteratureFolders(),
+        ]);
         if (!cancelled) {
           setSettings(state.settings);
           setPapers(state.papers);
+          setFolders(loadedFolders);
         }
       } catch (err) {
         if (!cancelled) {
@@ -92,6 +100,21 @@ export function LiteratureShell() {
       setIsUpdating(false);
     }
   }, [settings]);
+
+  const handleSaveToFolders = useCallback(
+    async (paperId: string, folderIds: string[]) => {
+      const updated = await updateLiteraturePaperStatus(paperId, "saved");
+      const savedFolderIds = await setPaperFolders(paperId, folderIds);
+      setPapers((current) =>
+        current.map((paper) =>
+          paper.id === paperId
+            ? { ...updated, folderIds: savedFolderIds }
+            : paper,
+        ),
+      );
+    },
+    [],
+  );
 
   const handleStatusChange = useCallback(
     async (paperId: string, status: LiteraturePaperStatus) => {
@@ -380,7 +403,9 @@ export function LiteratureShell() {
                   key={paper.id}
                   paper={paper}
                   variant="tracker"
+                  folders={folders}
                   onStatusChange={handleStatusChange}
+                  onSaveToFolders={handleSaveToFolders}
                 />
               ))
             )}

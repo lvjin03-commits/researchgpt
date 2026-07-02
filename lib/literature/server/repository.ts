@@ -284,18 +284,18 @@ export async function listLiteratureLibraryPapers(
   supabase: SupabaseClient,
   userId: string,
   filters: LibraryFilters,
-  paperCategoryIds?: Map<string, string[]>,
+  paperFolderIds?: Map<string, string[]>,
 ): Promise<LiteraturePaper[]> {
   const papers = await listLiteraturePapers(supabase, userId);
-  const filtered = filterLibraryPapers(papers, filters, paperCategoryIds);
+  const filtered = filterLibraryPapers(papers, filters, paperFolderIds);
 
-  if (!paperCategoryIds) {
+  if (!paperFolderIds) {
     return filtered;
   }
 
   return filtered.map((paper) => ({
     ...paper,
-    customCategoryIds: paperCategoryIds.get(paper.id) ?? [],
+    folderIds: paperFolderIds.get(paper.id) ?? [],
   }));
 }
 

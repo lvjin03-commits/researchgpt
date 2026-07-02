@@ -1,9 +1,9 @@
 import { LiteratureError } from "@/lib/literature/errors";
 import { parseLibraryFilters } from "@/lib/literature/server/library";
 import {
-  getPaperCategoryIdsMap,
-  listLiteratureCategories,
-} from "@/lib/literature/server/category-repository";
+  getPaperFolderIdsMap,
+  listLiteratureFolders,
+} from "@/lib/literature/server/folder-repository";
 import { listLiteratureLibraryPapers } from "@/lib/literature/server/repository";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 
@@ -14,18 +14,18 @@ export async function GET(request: Request) {
     const { supabase, user } = await requireLiteratureUser();
     const { searchParams } = new URL(request.url);
     const filters = parseLibraryFilters(searchParams);
-    const [paperCategoryIds, categories] = await Promise.all([
-      getPaperCategoryIdsMap(supabase, user.id),
-      listLiteratureCategories(supabase, user.id),
+    const [paperFolderIds, folders] = await Promise.all([
+      getPaperFolderIdsMap(supabase, user.id),
+      listLiteratureFolders(supabase, user.id),
     ]);
     const papers = await listLiteratureLibraryPapers(
       supabase,
       user.id,
       filters,
-      paperCategoryIds,
+      paperFolderIds,
     );
 
-    return Response.json({ papers, categories });
+    return Response.json({ papers, folders });
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });

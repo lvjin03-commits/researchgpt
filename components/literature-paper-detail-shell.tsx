@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { LiteraturePaperFolderSelector } from "@/components/literature-paper-folder-selector";
 import { LITERATURE_PRIORITY_LABELS } from "@/lib/literature/constants";
 import {
+  fetchLiteratureFolders,
   fetchLiteraturePaper,
   LiteratureError,
+  setPaperFolders,
   updateLiteraturePaperStatus,
 } from "@/lib/literature/client";
 import {
@@ -19,7 +22,7 @@ import {
   hasPaperPdfLink,
   literaturePriorityClassName,
 } from "@/lib/literature/paper-display";
-import type { LiteraturePaper } from "@/lib/literature/types";
+import type { LiteratureFolder, LiteraturePaper } from "@/lib/literature/types";
 
 type LiteraturePaperDetailShellProps = {
   paperId: string;
@@ -29,18 +32,31 @@ export function LiteraturePaperDetailShell({
   paperId,
 }: LiteraturePaperDetailShellProps) {
   const [paper, setPaper] = useState<LiteraturePaper | null>(null);
+  const [folders, setFolders] = useState<LiteratureFolder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [folderSelectorMode, setFolderSelectorMode] = useState<
+    "save" | "move" | null
+  >(null);
+
+  const folderNameById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder.name])),
+    [folders],
+  );
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
       try {
-        const loaded = await fetchLiteraturePaper(paperId);
+        const [loaded, loadedFolders] = await Promise.all([
+          fetchLiteraturePaper(paperId),
+          fetchLiteratureFolders(),
+        ]);
         if (!cancelled) {
           setPaper(loaded);
+          setFolders(loadedFolders);
         }
       } catch (err) {
         if (!cancelled) {
@@ -87,10 +103,36 @@ export function LiteraturePaperDetailShell({
     [paper],
   );
 
+  const handleSaveToFolders = useCallback(
+    async (folderIds: string[]) => {
+      if (!paper) {
+        return;
+      }
+
+      const updated = await updateLiteraturePaperStatus(paper.id, "saved");
+      const savedFolderIds = await setPaperFolders(paper.id, folderIds);
+      setPaper({ ...updated, folderIds: savedFolderIds });
+    },
+    [paper],
+  );
+
+  const handleMoveToFolders = useCallback(
+    async (folderIds: string[]) => {
+      if (!paper) {
+        return;
+      }
+
+      const savedFolderIds = await setPaperFolders(paper.id, folderIds);
+      setPaper((current) => (current ? { ...current, folderIds: savedFolderIds } : current));
+    },
+    [paper],
+  );
+
   const externalId = paper ? getPaperExternalId(paper) : null;
   const journalVenue = paper ? getPaperJournalVenue(paper) : null;
   const doi = paper ? getPaperDoi(paper) : null;
-  const tags = paper ? getPaperTags(paper) : [];
+  const subjectTags = paper ? getPaperTags(paper) : [];
+  const assignedFolderIds = paper?.folderIds ?? [];
 
   return (
     <div className="min-h-dvh bg-white">
@@ -103,10 +145,10 @@ export function LiteraturePaperDetailShell({
             </p>
           </div>
           <Link
-            href="/literature"
+            href="/literature/library"
             className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
           >
-            Back to Literature Tracker
+            Open Library
           </Link>
         </div>
       </header>
@@ -242,13 +284,49 @@ export function LiteraturePaperDetailShell({
               </section>
             )}
 
-            {tags.length > 0 && (
+            <section>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-gray-900">Folders</h3>
+                <button
+                  type="button"
+                  onClick={() => setFolderSelectorMode("move")}
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100"
+                >
+                  Move to Folder
+                </button>
+              </div>
+              {assignedFolderIds.length === 0 ? (
+                <p className="mt-2 text-sm text-gray-500">
+                  This paper is not in any folders yet.
+                </p>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {assignedFolderIds.map((folderId) => {
+                    const name = folderNameById.get(folderId);
+                    if (!name) {
+                      return null;
+                    }
+
+                    return (
+                      <span
+                        key={folderId}
+                        className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
+                      >
+                        {name}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {subjectTags.length > 0 && (
               <section>
                 <h3 className="text-sm font-semibold text-gray-900">
-                  Categories / tags
+                  Subject categories
                 </h3>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {tags.map((tag) => (
+                  {subjectTags.map((tag) => (
                     <span
                       key={tag}
                       className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700"
@@ -298,12 +376,10 @@ export function LiteraturePaperDetailShell({
               <button
                 type="button"
                 disabled={isUpdating}
-                onClick={() => {
-                  void handleStatusChange("saved");
-                }}
+                onClick={() => setFolderSelectorMode("save")}
                 className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Save
+                Save to Folder
               </button>
               <button
                 type="button"
@@ -335,6 +411,24 @@ export function LiteraturePaperDetailShell({
           </article>
         )}
       </main>
+
+      {folderSelectorMode && paper && (
+        <LiteraturePaperFolderSelector
+          title={folderSelectorMode === "save" ? "Save to Folder" : "Move to Folder"}
+          description={
+            folderSelectorMode === "save"
+              ? "Choose one or more folders for this paper. It will be marked as saved."
+              : "Add or remove folders for this paper."
+          }
+          confirmLabel={folderSelectorMode === "save" ? "Save to Folder" : "Save"}
+          folders={folders}
+          selectedFolderIds={assignedFolderIds}
+          onClose={() => setFolderSelectorMode(null)}
+          onConfirm={
+            folderSelectorMode === "save" ? handleSaveToFolders : handleMoveToFolders
+          }
+        />
+      )}
     </div>
   );
 }

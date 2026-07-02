@@ -30,18 +30,19 @@ export type LiteraturePaper = {
   recommendationReason: string | null;
   status: LiteraturePaperStatus;
   fetchedAt: string;
-  customCategoryIds?: string[];
+  folderIds?: string[];
 };
 
-export type LiteratureCategory = {
+export type LiteratureFolder = {
   id: string;
   name: string;
   createdAt: string;
+  updatedAt: string;
 };
 
 export type LiteratureLibraryResponse = {
   papers: LiteraturePaper[];
-  categories: LiteratureCategory[];
+  folders: LiteratureFolder[];
 };
 
 export type ArxivPaperDraft = {

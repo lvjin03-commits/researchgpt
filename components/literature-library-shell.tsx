@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { LiteraturePaperCard } from "@/components/literature-paper-card";
 import {
-  createLiteratureCategory,
-  deleteLiteratureCategory,
+  createLiteratureFolder,
+  deleteLiteratureFolder,
   fetchLiteratureLibrary,
   LiteratureError,
-  updateLiteratureCategory,
+  updateLiteratureFolder,
   updateLiteraturePaperStatus,
 } from "@/lib/literature/client";
 import {
@@ -20,31 +20,31 @@ import {
 } from "@/lib/literature/library-filters";
 import { LITERATURE_DISCIPLINES } from "@/lib/literature/source-taxonomy";
 import type {
-  LiteratureCategory,
+  LiteratureFolder,
   LiteraturePaper,
   LiteraturePaperStatus,
 } from "@/lib/literature/types";
 
 const DEFAULT_FILTERS: LibraryFilters = {
-  status: "saved",
+  status: "all",
   q: "",
   source: "",
   discipline: "",
   priority: "",
-  customCategoryId: "",
+  folderId: "",
 };
 
 export function LiteratureLibraryShell() {
   const [filters, setFilters] = useState<LibraryFilters>(DEFAULT_FILTERS);
   const [papers, setPapers] = useState<LiteraturePaper[]>([]);
-  const [categories, setCategories] = useState<LiteratureCategory[]>([]);
+  const [folders, setFolders] = useState<LiteratureFolder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
-  const [categoryActionError, setCategoryActionError] = useState<string | null>(null);
-  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
-  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [folderActionError, setFolderActionError] = useState<string | null>(null);
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editingFolderName, setEditingFolderName] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +57,7 @@ export function LiteratureLibraryShell() {
         const result = await fetchLiteratureLibrary(filters);
         if (!cancelled) {
           setPapers(result.papers);
-          setCategories(result.categories);
+          setFolders(result.folders);
         }
       } catch (err) {
         if (!cancelled) {
@@ -91,139 +91,130 @@ export function LiteratureLibraryShell() {
           return updated.filter((paper) => paper.id !== paperId);
         }
 
-        if (
-          !filters.customCategoryId &&
-          filters.status !== "all" &&
-          status !== filters.status
-        ) {
+        if (!filters.folderId && filters.status !== "all" && status !== filters.status) {
           return updated.filter((paper) => paper.id !== paperId);
         }
 
         return updated;
       });
     },
-    [filters.customCategoryId, filters.status],
+    [filters.folderId, filters.status],
   );
 
-  const handlePaperCategoriesChange = useCallback(
-    (paperId: string, categoryIds: string[]) => {
+  const handlePaperFoldersChange = useCallback(
+    (paperId: string, folderIds: string[]) => {
       setPapers((current) => {
         const updated = current.map((paper) =>
-          paper.id === paperId ? { ...paper, customCategoryIds: categoryIds } : paper,
+          paper.id === paperId ? { ...paper, folderIds } : paper,
         );
 
-        if (
-          filters.customCategoryId &&
-          !categoryIds.includes(filters.customCategoryId)
-        ) {
+        if (filters.folderId && !folderIds.includes(filters.folderId)) {
           return updated.filter((paper) => paper.id !== paperId);
         }
 
         return updated;
       });
     },
-    [filters.customCategoryId],
+    [filters.folderId],
   );
 
   const setStatusTab = (status: LibraryStatusTab) => {
     setFilters((current) => ({
       ...current,
       status,
-      customCategoryId: "",
+      folderId: "",
     }));
   };
 
-  const selectCustomCategory = (categoryId: string) => {
+  const selectFolder = (folderId: string) => {
     setFilters((current) => ({
       ...current,
-      customCategoryId: categoryId,
+      folderId,
     }));
   };
 
-  const handleCreateCategory = async () => {
-    const trimmed = newCategoryName.trim();
+  const handleCreateFolder = async () => {
+    const trimmed = newFolderName.trim();
     if (!trimmed) {
       return;
     }
 
-    setIsCreatingCategory(true);
-    setCategoryActionError(null);
+    setIsCreatingFolder(true);
+    setFolderActionError(null);
 
     try {
-      const created = await createLiteratureCategory(trimmed);
-      setCategories((current) => [...current, created]);
-      setNewCategoryName("");
+      const created = await createLiteratureFolder(trimmed);
+      setFolders((current) => [...current, created]);
+      setNewFolderName("");
     } catch (err) {
-      setCategoryActionError(
-        err instanceof LiteratureError ? err.message : "Failed to create category.",
+      setFolderActionError(
+        err instanceof LiteratureError ? err.message : "Failed to create folder.",
       );
     } finally {
-      setIsCreatingCategory(false);
+      setIsCreatingFolder(false);
     }
   };
 
-  const startEditingCategory = (category: LiteratureCategory) => {
-    setEditingCategoryId(category.id);
-    setEditingCategoryName(category.name);
-    setCategoryActionError(null);
+  const startEditingFolder = (folder: LiteratureFolder) => {
+    setEditingFolderId(folder.id);
+    setEditingFolderName(folder.name);
+    setFolderActionError(null);
   };
 
-  const cancelEditingCategory = () => {
-    setEditingCategoryId(null);
-    setEditingCategoryName("");
+  const cancelEditingFolder = () => {
+    setEditingFolderId(null);
+    setEditingFolderName("");
   };
 
-  const handleRenameCategory = async (categoryId: string) => {
-    const trimmed = editingCategoryName.trim();
+  const handleRenameFolder = async (folderId: string) => {
+    const trimmed = editingFolderName.trim();
     if (!trimmed) {
       return;
     }
 
-    setCategoryActionError(null);
+    setFolderActionError(null);
 
     try {
-      const updated = await updateLiteratureCategory(categoryId, trimmed);
-      setCategories((current) =>
-        current.map((category) => (category.id === categoryId ? updated : category)),
+      const updated = await updateLiteratureFolder(folderId, trimmed);
+      setFolders((current) =>
+        current.map((folder) => (folder.id === folderId ? updated : folder)),
       );
-      cancelEditingCategory();
+      cancelEditingFolder();
     } catch (err) {
-      setCategoryActionError(
-        err instanceof LiteratureError ? err.message : "Failed to rename category.",
+      setFolderActionError(
+        err instanceof LiteratureError ? err.message : "Failed to rename folder.",
       );
     }
   };
 
-  const handleDeleteCategory = async (categoryId: string) => {
-    if (!window.confirm("Delete this category? Papers will keep their other categories.")) {
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!window.confirm("Delete this folder? Papers will remain in your library.")) {
       return;
     }
 
-    setCategoryActionError(null);
+    setFolderActionError(null);
 
     try {
-      await deleteLiteratureCategory(categoryId);
-      setCategories((current) => current.filter((category) => category.id !== categoryId));
+      await deleteLiteratureFolder(folderId);
+      setFolders((current) => current.filter((folder) => folder.id !== folderId));
 
-      if (filters.customCategoryId === categoryId) {
-        setFilters((current) => ({ ...current, customCategoryId: "" }));
+      if (filters.folderId === folderId) {
+        setFilters((current) => ({ ...current, folderId: "" }));
       } else {
         setPapers((current) =>
           current.map((paper) => ({
             ...paper,
-            customCategoryIds: (paper.customCategoryIds ?? []).filter(
-              (id) => id !== categoryId,
-            ),
+            folderIds: (paper.folderIds ?? []).filter((id) => id !== folderId),
           })),
         );
       }
 
-      if (editingCategoryId === categoryId) {
-        cancelEditingCategory();
+      if (editingFolderId === folderId) {
+        cancelEditingFolder();
       }
     } catch (err) {
-      setCategoryActionError(
-        err instanceof LiteratureError ? err.message : "Failed to delete category.",
+      setFolderActionError(
+        err instanceof LiteratureError ? err.message : "Failed to delete folder.",
       );
     }
   };
@@ -235,7 +226,7 @@ export function LiteratureLibraryShell() {
           <div>
             <h1 className="text-lg font-semibold text-gray-900">Literature Library</h1>
             <p className="text-sm text-gray-500">
-              Browse saved, read, and skipped papers from your literature tracker.
+              Organize saved, read, and skipped papers into folders.
             </p>
           </div>
           <Link
@@ -251,12 +242,11 @@ export function LiteratureLibraryShell() {
         <aside className="w-full shrink-0 space-y-6 lg:w-64">
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              Status
+              Library
             </h2>
             <ul className="mt-3 space-y-1">
               {LIBRARY_STATUS_TABS.map((tab) => {
-                const isActive =
-                  !filters.customCategoryId && filters.status === tab.value;
+                const isActive = !filters.folderId && filters.status === tab.value;
 
                 return (
                   <li key={tab.value}>
@@ -279,34 +269,32 @@ export function LiteratureLibraryShell() {
 
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              My Categories
+              Folders
             </h2>
 
-            {categories.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-500">No custom categories yet.</p>
+            {folders.length === 0 ? (
+              <p className="mt-3 text-sm text-gray-500">No folders yet.</p>
             ) : (
               <ul className="mt-3 space-y-1">
-                {categories.map((category) => {
-                  const isActive = filters.customCategoryId === category.id;
-                  const isEditing = editingCategoryId === category.id;
+                {folders.map((folder) => {
+                  const isActive = filters.folderId === folder.id;
+                  const isEditing = editingFolderId === folder.id;
 
                   return (
-                    <li key={category.id}>
+                    <li key={folder.id}>
                       {isEditing ? (
                         <div className="space-y-2 rounded-lg border border-gray-200 p-2">
                           <input
                             type="text"
-                            value={editingCategoryName}
-                            onChange={(event) =>
-                              setEditingCategoryName(event.target.value)
-                            }
+                            value={editingFolderName}
+                            onChange={(event) => setEditingFolderName(event.target.value)}
                             className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
                           />
                           <div className="flex gap-1">
                             <button
                               type="button"
                               onClick={() => {
-                                void handleRenameCategory(category.id);
+                                void handleRenameFolder(folder.id);
                               }}
                               className="rounded-md bg-gray-900 px-2 py-1 text-xs font-medium text-white hover:bg-gray-800"
                             >
@@ -314,7 +302,7 @@ export function LiteratureLibraryShell() {
                             </button>
                             <button
                               type="button"
-                              onClick={cancelEditingCategory}
+                              onClick={cancelEditingFolder}
                               className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
                             >
                               Cancel
@@ -325,28 +313,28 @@ export function LiteratureLibraryShell() {
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            onClick={() => selectCustomCategory(category.id)}
+                            onClick={() => selectFolder(folder.id)}
                             className={`min-w-0 flex-1 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
                               isActive
-                                ? "bg-blue-600 text-white"
+                                ? "bg-amber-600 text-white"
                                 : "text-gray-700 hover:bg-gray-100"
                             }`}
                           >
-                            <span className="block truncate">{category.name}</span>
+                            <span className="block truncate">{folder.name}</span>
                           </button>
                           <button
                             type="button"
-                            aria-label={`Rename ${category.name}`}
-                            onClick={() => startEditingCategory(category)}
+                            aria-label={`Rename ${folder.name}`}
+                            onClick={() => startEditingFolder(folder)}
                             className="rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-900"
                           >
                             Edit
                           </button>
                           <button
                             type="button"
-                            aria-label={`Delete ${category.name}`}
+                            aria-label={`Delete ${folder.name}`}
                             onClick={() => {
-                              void handleDeleteCategory(category.id);
+                              void handleDeleteFolder(folder.id);
                             }}
                             className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50"
                           >
@@ -363,32 +351,32 @@ export function LiteratureLibraryShell() {
             <div className="mt-4 space-y-2">
               <input
                 type="text"
-                value={newCategoryName}
-                onChange={(event) => setNewCategoryName(event.target.value)}
-                placeholder="New category name"
+                value={newFolderName}
+                onChange={(event) => setNewFolderName(event.target.value)}
+                placeholder="New folder name"
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    void handleCreateCategory();
+                    void handleCreateFolder();
                   }
                 }}
               />
               <button
                 type="button"
-                disabled={isCreatingCategory || !newCategoryName.trim()}
+                disabled={isCreatingFolder || !newFolderName.trim()}
                 onClick={() => {
-                  void handleCreateCategory();
+                  void handleCreateFolder();
                 }}
                 className="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isCreatingCategory ? "Creating..." : "Create Category"}
+                {isCreatingFolder ? "Creating..." : "Create Folder"}
               </button>
             </div>
 
-            {categoryActionError && (
+            {folderActionError && (
               <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {categoryActionError}
+                {folderActionError}
               </p>
             )}
           </section>
@@ -508,7 +496,7 @@ export function LiteratureLibraryShell() {
             <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
               <p className="text-sm font-medium text-gray-900">No papers found</p>
               <p className="mt-2 text-sm text-gray-500">
-                Try another tab or adjust your search and filters.
+                Try another folder or adjust your search and filters.
               </p>
             </div>
           ) : (
@@ -518,9 +506,9 @@ export function LiteratureLibraryShell() {
                   key={paper.id}
                   paper={paper}
                   variant="library"
-                  categories={categories}
+                  folders={folders}
                   onStatusChange={handleStatusChange}
-                  onCategoriesChange={handlePaperCategoriesChange}
+                  onFoldersChange={handlePaperFoldersChange}
                 />
               ))}
             </section>

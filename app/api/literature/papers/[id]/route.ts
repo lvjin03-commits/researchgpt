@@ -1,4 +1,5 @@
 import { LiteratureError } from "@/lib/literature/errors";
+import { getPaperFolderIds } from "@/lib/literature/server/folder-repository";
 import { parsePaperStatus } from "@/lib/literature/server/parse";
 import {
   getLiteraturePaperById,
@@ -17,8 +18,9 @@ export async function GET(_request: Request, context: RouteContext) {
     const { supabase, user } = await requireLiteratureUser();
     const { id } = await context.params;
     const paper = await getLiteraturePaperById(supabase, user.id, id);
+    const folderIds = await getPaperFolderIds(supabase, user.id, id);
 
-    return Response.json({ paper });
+    return Response.json({ paper: { ...paper, folderIds } });
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });
@@ -41,8 +43,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       id,
       status,
     );
+    const folderIds = await getPaperFolderIds(supabase, user.id, id);
 
-    return Response.json({ paper });
+    return Response.json({ paper: { ...paper, folderIds } });
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });

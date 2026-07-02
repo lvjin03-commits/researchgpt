@@ -188,32 +188,32 @@ export function parsePaperStatus(
   );
 }
 
-export function parseCategoryName(body: unknown): string {
+export function parseFolderName(body: unknown): string {
   if (typeof body !== "object" || body === null) {
-    throw new LiteratureError("Invalid category body.", 400);
+    throw new LiteratureError("Invalid folder body.", 400);
   }
 
   const name = (body as Record<string, unknown>).name;
 
   if (typeof name !== "string" || !name.trim()) {
-    throw new LiteratureError("Category name is required.", 400);
+    throw new LiteratureError("Folder name is required.", 400);
   }
 
   return name.trim();
 }
 
-export function parsePaperCategoryIds(body: unknown): string[] {
+export function parsePaperFolderIds(body: unknown): string[] {
   if (typeof body !== "object" || body === null) {
-    throw new LiteratureError("Invalid paper categories body.", 400);
+    throw new LiteratureError("Invalid paper folders body.", 400);
   }
 
-  const categoryIds = (body as Record<string, unknown>).categoryIds;
+  const folderIds = (body as Record<string, unknown>).folderIds;
 
-  if (!Array.isArray(categoryIds)) {
-    throw new LiteratureError("categoryIds must be an array.", 400);
+  if (!Array.isArray(folderIds)) {
+    throw new LiteratureError("folderIds must be an array.", 400);
   }
 
-  const parsed = categoryIds
+  const parsed = folderIds
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);

@@ -9,7 +9,7 @@ import {
   isValidDisciplineId,
 } from "@/lib/literature/source-taxonomy";
 import type {
-  LiteratureCategory,
+  LiteratureFolder,
   LiteraturePaper,
   LiteraturePaperStatus,
   LiteratureSettings,
@@ -276,7 +276,7 @@ export async function updateLiteraturePapers(
 
 export async function fetchLiteratureLibrary(
   filters: LibraryFilters,
-): Promise<{ papers: LiteraturePaper[]; categories: LiteratureCategory[] }> {
+): Promise<{ papers: LiteraturePaper[]; folders: LiteratureFolder[] }> {
   const params = new URLSearchParams();
 
   params.set("status", filters.status);
@@ -284,14 +284,14 @@ export async function fetchLiteratureLibrary(
   if (filters.source) params.set("source", filters.source);
   if (filters.discipline) params.set("discipline", filters.discipline);
   if (filters.priority) params.set("priority", filters.priority);
-  if (filters.customCategoryId) {
-    params.set("categoryId", filters.customCategoryId);
+  if (filters.folderId) {
+    params.set("folderId", filters.folderId);
   }
 
   const response = await fetch(`/api/literature/library?${params.toString()}`);
   const payload = await parseJson<{
     papers: LiteraturePaper[];
-    categories: LiteratureCategory[];
+    folders: LiteratureFolder[];
     error?: string;
   }>(response);
 
@@ -304,7 +304,7 @@ export async function fetchLiteratureLibrary(
 
   return {
     papers: payload.papers ?? [],
-    categories: payload.categories ?? [],
+    folders: payload.folders ?? [],
   };
 }
 
@@ -349,55 +349,69 @@ export async function updateLiteraturePaperStatus(
   return payload.paper;
 }
 
-export async function createLiteratureCategory(
-  name: string,
-): Promise<LiteratureCategory> {
-  const response = await fetch("/api/literature/categories", {
+export async function fetchLiteratureFolders(): Promise<LiteratureFolder[]> {
+  const response = await fetch("/api/literature/folders");
+  const payload = await parseJson<{ folders: LiteratureFolder[]; error?: string }>(
+    response,
+  );
+
+  if (!response.ok) {
+    throw new LiteratureError(
+      payload.error ?? "Failed to load folders.",
+      response.status,
+    );
+  }
+
+  return payload.folders ?? [];
+}
+
+export async function createLiteratureFolder(name: string): Promise<LiteratureFolder> {
+  const response = await fetch("/api/literature/folders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
 
-  const payload = await parseJson<{ category: LiteratureCategory; error?: string }>(
+  const payload = await parseJson<{ folder: LiteratureFolder; error?: string }>(
     response,
   );
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to create category.",
+      payload.error ?? "Failed to create folder.",
       response.status,
     );
   }
 
-  return payload.category;
+  return payload.folder;
 }
 
-export async function updateLiteratureCategory(
-  categoryId: string,
+export async function updateLiteratureFolder(
+  folderId: string,
   name: string,
-): Promise<LiteratureCategory> {
-  const response = await fetch(`/api/literature/categories/${categoryId}`, {
+): Promise<LiteratureFolder> {
+  const response = await fetch(`/api/literature/folders/${folderId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
 
-  const payload = await parseJson<{ category: LiteratureCategory; error?: string }>(
+  const payload = await parseJson<{ folder: LiteratureFolder; error?: string }>(
     response,
   );
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to update category.",
+      payload.error ?? "Failed to update folder.",
       response.status,
     );
   }
 
-  return payload.category;
+  return payload.folder;
 }
 
-export async function deleteLiteratureCategory(categoryId: string): Promise<void> {
-  const response = await fetch(`/api/literature/categories/${categoryId}`, {
+export async function deleteLiteratureFolder(folderId: string): Promise<void> {
+  const response = await fetch(`/api/literature/folders/${folderId}`, {
     method: "DELETE",
   });
 
@@ -405,32 +419,30 @@ export async function deleteLiteratureCategory(categoryId: string): Promise<void
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to delete category.",
+      payload.error ?? "Failed to delete folder.",
       response.status,
     );
   }
 }
 
-export async function setPaperCategories(
+export async function setPaperFolders(
   paperId: string,
-  categoryIds: string[],
+  folderIds: string[],
 ): Promise<string[]> {
-  const response = await fetch(`/api/literature/papers/${paperId}/categories`, {
+  const response = await fetch(`/api/literature/papers/${paperId}/folders`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ categoryIds }),
+    body: JSON.stringify({ folderIds }),
   });
 
-  const payload = await parseJson<{ categoryIds: string[]; error?: string }>(
-    response,
-  );
+  const payload = await parseJson<{ folderIds: string[]; error?: string }>(response);
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to update paper categories.",
+      payload.error ?? "Failed to update paper folders.",
       response.status,
     );
   }
 
-  return payload.categoryIds ?? [];
+  return payload.folderIds ?? [];
 }

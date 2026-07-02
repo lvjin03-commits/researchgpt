@@ -14,7 +14,7 @@ export type LibraryFilters = {
   source: string;
   discipline: string;
   priority: string;
-  customCategoryId: string;
+  folderId: string;
 };
 
 export function getPaperSourceId(paper: LiteraturePaper): "arxiv" | "pubmed" {
@@ -47,16 +47,15 @@ function matchesSearchQuery(paper: LiteraturePaper, query: string): boolean {
 export function filterLibraryPapers(
   papers: LiteraturePaper[],
   filters: LibraryFilters,
-  paperCategoryIds?: Map<string, string[]>,
+  paperFolderIds?: Map<string, string[]>,
 ): LiteraturePaper[] {
   const libraryStatuses = new Set(["saved", "read", "skipped"]);
 
   return papers.filter((paper) => {
-    const assignedCategoryIds =
-      paper.customCategoryIds ?? paperCategoryIds?.get(paper.id) ?? [];
+    const assignedFolderIds = paper.folderIds ?? paperFolderIds?.get(paper.id) ?? [];
 
-    if (filters.customCategoryId) {
-      if (!assignedCategoryIds.includes(filters.customCategoryId)) {
+    if (filters.folderId) {
+      if (!assignedFolderIds.includes(filters.folderId)) {
         return false;
       }
     } else if (filters.status === "all") {
@@ -109,8 +108,8 @@ export const LIBRARY_SOURCE_OPTIONS = [
 
 export const LIBRARY_STATUS_TABS: Array<{ value: LibraryStatusTab; label: string }> =
   [
+    { value: "all", label: "All Papers" },
     { value: "saved", label: "Saved" },
     { value: "read", label: "Read" },
     { value: "skipped", label: "Skipped" },
-    { value: "all", label: "All" },
   ];

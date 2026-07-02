@@ -1,6 +1,6 @@
 import { LiteratureError } from "@/lib/literature/errors";
-import { setPaperCategoryIds } from "@/lib/literature/server/category-repository";
-import { parsePaperCategoryIds } from "@/lib/literature/server/parse";
+import { setPaperFolderIds } from "@/lib/literature/server/folder-repository";
+import { parsePaperFolderIds } from "@/lib/literature/server/parse";
 import { getLiteraturePaperById } from "@/lib/literature/server/repository";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 
@@ -15,26 +15,23 @@ export async function PUT(request: Request, context: RouteContext) {
     const { supabase, user } = await requireLiteratureUser();
     const { id } = await context.params;
     const body = await request.json();
-    const categoryIds = parsePaperCategoryIds(body);
+    const folderIds = parsePaperFolderIds(body);
 
     await getLiteraturePaperById(supabase, user.id, id);
-    const assignedCategoryIds = await setPaperCategoryIds(
+    const assignedFolderIds = await setPaperFolderIds(
       supabase,
       user.id,
       id,
-      categoryIds,
+      folderIds,
     );
 
-    return Response.json({ paperId: id, categoryIds: assignedCategoryIds });
+    return Response.json({ paperId: id, folderIds: assignedFolderIds });
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });
     }
 
-    console.error("[literature] PUT paper categories failed:", error);
-    return Response.json(
-      { error: "Failed to update paper categories." },
-      { status: 500 },
-    );
+    console.error("[literature] PUT paper folders failed:", error);
+    return Response.json({ error: "Failed to update paper folders." }, { status: 500 });
   }
 }

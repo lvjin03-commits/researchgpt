@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { LiteraturePaperCategoryManager } from "@/components/literature-paper-category-manager";
+import { LiteraturePaperFolderSelector } from "@/components/literature-paper-folder-selector";
 import { LITERATURE_PRIORITY_LABELS } from "@/lib/literature/constants";
+import { setPaperFolders } from "@/lib/literature/client";
 import {
   formatLiteratureDate,
   literaturePriorityClassName,
 } from "@/lib/literature/paper-display";
 import type {
-  LiteratureCategory,
+  LiteratureFolder,
   LiteraturePaper,
   LiteraturePaperStatus,
 } from "@/lib/literature/types";
@@ -18,27 +19,31 @@ type LiteraturePaperCardProps = {
   paper: LiteraturePaper;
   variant: "tracker" | "library";
   onStatusChange: (paperId: string, status: LiteraturePaperStatus) => Promise<void>;
-  categories?: LiteratureCategory[];
-  onCategoriesChange?: (paperId: string, categoryIds: string[]) => void;
+  folders?: LiteratureFolder[];
+  onSaveToFolders?: (paperId: string, folderIds: string[]) => Promise<void>;
+  onFoldersChange?: (paperId: string, folderIds: string[]) => void;
 };
 
 export function LiteraturePaperCard({
   paper,
   variant,
   onStatusChange,
-  categories = [],
-  onCategoriesChange,
+  folders = [],
+  onSaveToFolders,
+  onFoldersChange,
 }: LiteraturePaperCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isManagingCategories, setIsManagingCategories] = useState(false);
+  const [folderSelectorMode, setFolderSelectorMode] = useState<
+    "save" | "move" | null
+  >(null);
 
-  const categoryNameById = useMemo(
-    () => new Map(categories.map((category) => [category.id, category.name])),
-    [categories],
+  const folderNameById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder.name])),
+    [folders],
   );
 
-  const assignedCategoryIds = paper.customCategoryIds ?? [];
+  const assignedFolderIds = paper.folderIds ?? [];
 
   const handleStatus = async (status: LiteraturePaperStatus) => {
     setIsUpdating(true);
@@ -46,6 +51,18 @@ export function LiteraturePaperCard({
       await onStatusChange(paper.id, status);
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleFolderConfirm = async (folderIds: string[]) => {
+    if (folderSelectorMode === "save" && onSaveToFolders) {
+      await onSaveToFolders(paper.id, folderIds);
+      return;
+    }
+
+    if (folderSelectorMode === "move" && onFoldersChange) {
+      const savedIds = await setPaperFolders(paper.id, folderIds);
+      onFoldersChange(paper.id, savedIds);
     }
   };
 
@@ -74,16 +91,16 @@ export function LiteraturePaperCard({
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
                 {paper.status}
               </span>
-              {assignedCategoryIds.map((categoryId) => {
-                const name = categoryNameById.get(categoryId);
+              {assignedFolderIds.map((folderId) => {
+                const name = folderNameById.get(folderId);
                 if (!name) {
                   return null;
                 }
 
                 return (
                   <span
-                    key={categoryId}
-                    className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700"
+                    key={folderId}
+                    className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
                   >
                     {name}
                   </span>
@@ -165,12 +182,10 @@ export function LiteraturePaperCard({
               <button
                 type="button"
                 disabled={isUpdating}
-                onClick={() => {
-                  void handleStatus("saved");
-                }}
+                onClick={() => setFolderSelectorMode("save")}
                 className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Save
+                Save to Folder
               </button>
               <button
                 type="button"
@@ -231,23 +246,29 @@ export function LiteraturePaperCard({
               )}
               <button
                 type="button"
-                onClick={() => setIsManagingCategories(true)}
-                className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100"
+                onClick={() => setFolderSelectorMode("move")}
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100"
               >
-                Manage Categories
+                Move to Folder
               </button>
             </>
           )}
         </div>
       </article>
 
-      {isManagingCategories && onCategoriesChange && (
-        <LiteraturePaperCategoryManager
-          paperId={paper.id}
-          selectedCategoryIds={assignedCategoryIds}
-          categories={categories}
-          onClose={() => setIsManagingCategories(false)}
-          onSaved={(categoryIds) => onCategoriesChange(paper.id, categoryIds)}
+      {folderSelectorMode && (
+        <LiteraturePaperFolderSelector
+          title={folderSelectorMode === "save" ? "Save to Folder" : "Move to Folder"}
+          description={
+            folderSelectorMode === "save"
+              ? "Choose one or more folders for this paper. It will be marked as saved."
+              : "Add or remove folders for this paper."
+          }
+          confirmLabel={folderSelectorMode === "save" ? "Save to Folder" : "Save"}
+          folders={folders}
+          selectedFolderIds={assignedFolderIds}
+          onClose={() => setFolderSelectorMode(null)}
+          onConfirm={handleFolderConfirm}
         />
       )}
     </>
