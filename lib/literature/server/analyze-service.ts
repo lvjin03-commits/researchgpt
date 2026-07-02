@@ -54,7 +54,6 @@ async function analyzePaperBatch(
   const completion = await client.chat.completions.create(
     {
       model: getTextModel(),
-      temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
         {
