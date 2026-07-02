@@ -19,7 +19,9 @@ import type {
   LiteraturePaperStatus,
   LiteratureSettings,
   PaperAnalysisResult,
+  PaperWorkspaceAnalysis,
 } from "@/lib/literature/types";
+import { isValidWorkspaceAnalysis } from "@/lib/literature/paper-workspace-display";
 import type { LibraryFilters } from "@/lib/literature/library-filters";
 import { filterLibraryPapers } from "@/lib/literature/library-filters";
 
@@ -56,6 +58,8 @@ type DbPaperRow = {
   recommendation_reason: string | null;
   status: string;
   fetched_at: string;
+  personal_notes?: string | null;
+  workspace_analysis?: unknown | null;
 };
 
 const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
@@ -115,6 +119,11 @@ function isMissingTableError(error: { message?: string; code?: string }): boolea
 }
 
 function mapPaperRow(row: DbPaperRow): LiteraturePaper {
+  const workspaceAnalysis =
+    row.workspace_analysis && isValidWorkspaceAnalysis(row.workspace_analysis)
+      ? (row.workspace_analysis as PaperWorkspaceAnalysis)
+      : null;
+
   return {
     id: row.id,
     arxivId: row.arxiv_id,
@@ -142,6 +151,8 @@ function mapPaperRow(row: DbPaperRow): LiteraturePaper {
         ? row.status
         : "new",
     fetchedAt: row.fetched_at,
+    personalNotes: row.personal_notes ?? "",
+    workspaceAnalysis,
   };
 }
 
@@ -469,6 +480,90 @@ export async function getLiteraturePaperById(
       }
 
       return paper;
+    }
+
+    throw new LiteratureError(error.message, 500);
+  }
+
+  if (!data) {
+    throw new LiteratureError("Paper not found.", 404);
+  }
+
+  return mapPaperRow(data as DbPaperRow);
+}
+
+function isMissingWorkspaceColumnError(error: { message?: string; code?: string }): boolean {
+  const message = error.message?.toLowerCase() ?? "";
+  return (
+    isMissingTableError(error) ||
+    message.includes("personal_notes") ||
+    message.includes("workspace_analysis")
+  );
+}
+
+async function updatePaperInFileStore(
+  userId: string,
+  paperId: string,
+  patch: Partial<LiteraturePaper>,
+): Promise<LiteraturePaper> {
+  const store = await readFileStore(userId);
+  const index = store.papers.findIndex((paper) => paper.id === paperId);
+
+  if (index === -1) {
+    throw new LiteratureError("Paper not found.", 404);
+  }
+
+  store.papers[index] = { ...store.papers[index], ...patch };
+  await writeFileStore(userId, store);
+  return store.papers[index];
+}
+
+export async function updateLiteraturePaperNotes(
+  supabase: SupabaseClient,
+  userId: string,
+  paperId: string,
+  notes: string,
+): Promise<LiteraturePaper> {
+  const { data, error } = await supabase
+    .from("literature_papers")
+    .update({ personal_notes: notes })
+    .eq("user_id", userId)
+    .eq("id", paperId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingWorkspaceColumnError(error)) {
+      return updatePaperInFileStore(userId, paperId, { personalNotes: notes });
+    }
+
+    throw new LiteratureError(error.message, 500);
+  }
+
+  if (!data) {
+    throw new LiteratureError("Paper not found.", 404);
+  }
+
+  return mapPaperRow(data as DbPaperRow);
+}
+
+export async function saveLiteraturePaperWorkspaceAnalysis(
+  supabase: SupabaseClient,
+  userId: string,
+  paperId: string,
+  workspaceAnalysis: PaperWorkspaceAnalysis,
+): Promise<LiteraturePaper> {
+  const { data, error } = await supabase
+    .from("literature_papers")
+    .update({ workspace_analysis: workspaceAnalysis })
+    .eq("user_id", userId)
+    .eq("id", paperId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingWorkspaceColumnError(error)) {
+      return updatePaperInFileStore(userId, paperId, { workspaceAnalysis });
     }
 
     throw new LiteratureError(error.message, 500);

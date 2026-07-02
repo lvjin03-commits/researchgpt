@@ -202,6 +202,20 @@ export function parseFolderName(body: unknown): string {
   return name.trim();
 }
 
+export function parsePersonalNotes(body: unknown): string {
+  if (typeof body !== "object" || body === null) {
+    throw new LiteratureError("Invalid notes body.", 400);
+  }
+
+  const notes = (body as Record<string, unknown>).notes;
+
+  if (typeof notes !== "string") {
+    throw new LiteratureError("notes must be a string.", 400);
+  }
+
+  return notes;
+}
+
 export function parsePaperFolderIds(body: unknown): string[] {
   if (typeof body !== "object" || body === null) {
     throw new LiteratureError("Invalid paper folders body.", 400);

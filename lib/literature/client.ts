@@ -13,6 +13,7 @@ import type {
   LiteraturePaper,
   LiteraturePaperStatus,
   LiteratureSettings,
+  PaperWorkspaceAnalysis,
   UpdateLiteratureRequest,
   UpdateLiteratureResponse,
 } from "@/lib/literature/types";
@@ -445,4 +446,54 @@ export async function setPaperFolders(
   }
 
   return payload.folderIds ?? [];
+}
+
+export async function updateLiteraturePaperNotes(
+  paperId: string,
+  notes: string,
+): Promise<LiteraturePaper> {
+  const response = await fetch(`/api/literature/papers/${paperId}/notes`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+
+  const payload = await parseJson<{ paper: LiteraturePaper; error?: string }>(response);
+
+  if (!response.ok) {
+    throw new LiteratureError(
+      payload.error ?? "Failed to save paper notes.",
+      response.status,
+    );
+  }
+
+  return payload.paper;
+}
+
+export async function generateLiteraturePaperWorkspace(
+  paperId: string,
+  refresh = false,
+): Promise<{ paper: LiteraturePaper; workspaceAnalysis: PaperWorkspaceAnalysis }> {
+  const query = refresh ? "?refresh=true" : "";
+  const response = await fetch(`/api/literature/papers/${paperId}/workspace${query}`, {
+    method: "POST",
+  });
+
+  const payload = await parseJson<{
+    paper: LiteraturePaper;
+    workspaceAnalysis: PaperWorkspaceAnalysis;
+    error?: string;
+  }>(response);
+
+  if (!response.ok) {
+    throw new LiteratureError(
+      payload.error ?? "Failed to generate workspace analysis.",
+      response.status,
+    );
+  }
+
+  return {
+    paper: payload.paper,
+    workspaceAnalysis: payload.workspaceAnalysis,
+  };
 }

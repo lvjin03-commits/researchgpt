@@ -2,6 +2,34 @@ export type LiteraturePriority = "recommended" | "skim" | "skip";
 
 export type LiteraturePaperStatus = "new" | "saved" | "skipped" | "read";
 
+export type PaperWorkspaceDifficulty = "Beginner" | "Intermediate" | "Advanced";
+
+export type PaperReadingGuide = {
+  estimatedReadingMinutes: number;
+  suggestedReadingOrder: string[];
+  difficulty: PaperWorkspaceDifficulty;
+};
+
+export type PaperResearchValue = {
+  novelty: number;
+  technicalDepth: number;
+  industrialPotential: number;
+  readingPriority: number;
+};
+
+export type PaperWorkspaceAnalysis = {
+  oneSentenceSummary: string;
+  researchProblem: string;
+  coreMethod: string;
+  mainContributions: string;
+  experimentalResults: string;
+  limitations: string;
+  whyItMatters: string;
+  readingGuide: PaperReadingGuide;
+  researchValue: PaperResearchValue;
+  generatedAt: string;
+};
+
 export type LiteratureDisciplineId =
   import("@/lib/literature/source-taxonomy").LiteratureDisciplineId;
 
@@ -31,6 +59,8 @@ export type LiteraturePaper = {
   status: LiteraturePaperStatus;
   fetchedAt: string;
   folderIds?: string[];
+  personalNotes?: string;
+  workspaceAnalysis?: PaperWorkspaceAnalysis | null;
 };
 
 export type LiteratureFolder = {
