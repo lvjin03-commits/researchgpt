@@ -10,10 +10,12 @@ import {
 } from "@/lib/literature/source-taxonomy";
 import type {
   LiteraturePaper,
+  LiteraturePaperStatus,
   LiteratureSettings,
   UpdateLiteratureRequest,
   UpdateLiteratureResponse,
 } from "@/lib/literature/types";
+import type { LibraryFilters } from "@/lib/literature/library-filters";
 
 export { LiteratureError };
 
@@ -271,6 +273,34 @@ export async function updateLiteraturePapers(
   return parseUpdateLiteratureResponse(payload);
 }
 
+export async function fetchLiteratureLibrary(
+  filters: LibraryFilters,
+): Promise<{ papers: LiteraturePaper[] }> {
+  const params = new URLSearchParams();
+
+  params.set("status", filters.status);
+  if (filters.q) params.set("q", filters.q);
+  if (filters.source) params.set("source", filters.source);
+  if (filters.discipline) params.set("discipline", filters.discipline);
+  if (filters.priority) params.set("priority", filters.priority);
+
+  const response = await fetch(`/api/literature/library?${params.toString()}`);
+  const payload = await parseJson<{ papers: LiteraturePaper[]; error?: string }>(
+    response,
+  );
+
+  if (!response.ok) {
+    throw new LiteratureError(
+      payload.error ?? "Failed to load literature library.",
+      response.status,
+    );
+  }
+
+  return {
+    papers: payload.papers ?? [],
+  };
+}
+
 export async function fetchLiteraturePaper(paperId: string): Promise<LiteraturePaper> {
   const response = await fetch(`/api/literature/papers/${paperId}`);
 
@@ -290,7 +320,7 @@ export async function fetchLiteraturePaper(paperId: string): Promise<LiteratureP
 
 export async function updateLiteraturePaperStatus(
   paperId: string,
-  status: "saved" | "skipped" | "read",
+  status: LiteraturePaperStatus,
 ): Promise<LiteraturePaper> {
   const response = await fetch(`/api/literature/papers/${paperId}`, {
     method: "PATCH",

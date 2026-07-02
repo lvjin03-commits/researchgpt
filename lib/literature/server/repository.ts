@@ -20,6 +20,8 @@ import type {
   LiteratureSettings,
   PaperAnalysisResult,
 } from "@/lib/literature/types";
+import type { LibraryFilters } from "@/lib/literature/library-filters";
+import { filterLibraryPapers } from "@/lib/literature/library-filters";
 
 const LITERATURE_DIR = path.join(os.tmpdir(), "researchgpt-literature");
 
@@ -276,6 +278,15 @@ export async function listLiteraturePapers(
   }
 
   return ((data ?? []) as DbPaperRow[]).map(mapPaperRow);
+}
+
+export async function listLiteratureLibraryPapers(
+  supabase: SupabaseClient,
+  userId: string,
+  filters: LibraryFilters,
+): Promise<LiteraturePaper[]> {
+  const papers = await listLiteraturePapers(supabase, userId);
+  return filterLibraryPapers(papers, filters);
 }
 
 export async function upsertAnalyzedPapers(

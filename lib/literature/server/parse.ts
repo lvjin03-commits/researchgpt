@@ -14,6 +14,7 @@ import {
   normalizeSelectedSources,
 } from "@/lib/literature/source-taxonomy";
 import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
+import type { LiteraturePaperStatus } from "@/lib/literature/types";
 import type { LiteratureSettings } from "@/lib/literature/types";
 
 export type ParsedLiteratureSettings = {
@@ -163,16 +164,26 @@ export function parseLiteratureSettings(
   };
 }
 
-export function parsePaperStatus(body: unknown): "saved" | "skipped" | "read" {
+export function parsePaperStatus(
+  body: unknown,
+): LiteraturePaperStatus {
   if (typeof body !== "object" || body === null) {
     throw new LiteratureError("Invalid paper status body.", 400);
   }
 
   const status = (body as Record<string, unknown>).status;
 
-  if (status === "saved" || status === "skipped" || status === "read") {
+  if (
+    status === "saved" ||
+    status === "skipped" ||
+    status === "read" ||
+    status === "new"
+  ) {
     return status;
   }
 
-  throw new LiteratureError('status must be "saved", "skipped", or "read".', 400);
+  throw new LiteratureError(
+    'status must be "saved", "skipped", "read", or "new".',
+    400,
+  );
 }
