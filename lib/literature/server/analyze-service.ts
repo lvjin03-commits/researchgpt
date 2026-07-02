@@ -167,8 +167,20 @@ export async function analyzeArxivPapers(
   const results = new Map<string, PaperAnalysisResult>();
   const batches = chunk(papers, LITERATURE_ANALYSIS_BATCH_SIZE);
 
-  for (const batch of batches) {
+  console.log(`[literature] openai papers sent: ${papers.length}`);
+  console.log(`[literature] openai batches: ${batches.length}`);
+
+  for (let index = 0; index < batches.length; index += 1) {
+    const batch = batches[index]!;
+    const batchNumber = index + 1;
+    console.log(
+      `[literature] openai batch ${batchNumber}/${batches.length}: start papers=${batch.length}`,
+    );
+    const batchStartedAt = Date.now();
     const analyzed = await analyzePaperBatch(batch, settings, signal);
+    console.log(
+      `[literature] openai batch ${batchNumber}/${batches.length}: done elapsedMs=${Date.now() - batchStartedAt} results=${analyzed.length}`,
+    );
 
     for (const item of analyzed) {
       results.set(item.arxivId, item);
