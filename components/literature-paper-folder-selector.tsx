@@ -46,7 +46,7 @@ export function LiteraturePaperFolderSelector({
       await onConfirm(draftIds);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save folders.");
+      setError(err instanceof Error ? err.message : "保存文献夹失败。");
     } finally {
       setIsSaving(false);
     }
@@ -56,7 +56,7 @@ export function LiteraturePaperFolderSelector({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button
         type="button"
-        aria-label="Close folder selector"
+        aria-label="关闭文献夹选择器"
         className="absolute inset-0 bg-black/30"
         onClick={onClose}
       />
@@ -72,13 +72,13 @@ export function LiteraturePaperFolderSelector({
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
           >
-            Close
+            关闭
           </button>
         </div>
 
         {folders.length === 0 ? (
           <p className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
-            No folders yet. Create one in the Library sidebar first.
+            暂无文献夹，请先在文献库侧栏新建文献夹。
           </p>
         ) : (
           <ul className="max-h-64 space-y-2 overflow-y-auto">
@@ -110,7 +110,7 @@ export function LiteraturePaperFolderSelector({
             onClick={onClose}
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
-            Cancel
+            取消
           </button>
           <button
             type="button"
@@ -120,7 +120,7 @@ export function LiteraturePaperFolderSelector({
             }}
             className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isSaving ? "Saving..." : confirmLabel}
+            {isSaving ? "正在保存…" : confirmLabel}
           </button>
         </div>
       </div>

@@ -65,7 +65,7 @@ export function LiteratureShell() {
           const message =
             err instanceof LiteratureError
               ? err.message
-              : "Failed to load literature tracker.";
+              : "加载文献追踪失败。";
           setError(message);
         }
       } finally {
@@ -89,13 +89,11 @@ export function LiteratureShell() {
       const result = await updateLiteraturePapers(settings);
       setSettings(result.settings);
       setPapers(result.papers);
-      setStatusMessage(`Updated ${result.papers.length} paper(s).`);
+      setStatusMessage(`已更新 ${result.papers.length} 篇文献。`);
     } catch (err) {
       const detail =
-        err instanceof LiteratureError
-          ? err.message
-          : "Failed to update literature papers.";
-      setError(`Update failed. Showing previous results. ${detail}`);
+        err instanceof LiteratureError ? err.message : "更新文献失败。";
+      setError(`更新失败，正在显示上次结果。${detail}`);
     } finally {
       setIsUpdating(false);
     }
@@ -164,11 +162,9 @@ export function LiteratureShell() {
       <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">
-              Literature Tracker
-            </h1>
+            <h1 className="text-lg font-semibold text-gray-900">文献追踪</h1>
             <p className="text-sm text-gray-500">
-              Select a discipline and sources to track recent papers with AI relevance scoring.
+              选择学科与来源，追踪最新论文并由 AI 评估相关度。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -176,13 +172,13 @@ export function LiteratureShell() {
               href="/literature/library"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >
-              Library
+              文献库
             </Link>
             <Link
               href="/chat"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >
-              Back to Chat
+              返回对话
             </Link>
           </div>
         </div>
@@ -196,7 +192,7 @@ export function LiteratureShell() {
                 htmlFor="research-direction"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Research direction
+                研究方向
               </label>
               <textarea
                 id="research-direction"
@@ -209,7 +205,7 @@ export function LiteratureShell() {
                     researchDirection: event.target.value,
                   }))
                 }
-                placeholder="e.g. protein structure prediction with diffusion models"
+                placeholder="例如：基于扩散模型的蛋白质结构预测"
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
               />
             </div>
@@ -219,7 +215,7 @@ export function LiteratureShell() {
                 htmlFor="keywords"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Keywords
+                关键词
               </label>
               <input
                 id="keywords"
@@ -242,7 +238,7 @@ export function LiteratureShell() {
                 htmlFor="exclude-keywords"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Exclude keywords
+                排除词
               </label>
               <input
                 id="exclude-keywords"
@@ -265,7 +261,7 @@ export function LiteratureShell() {
                 htmlFor="discipline"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Discipline
+                学科
               </label>
               <select
                 id="discipline"
@@ -286,9 +282,9 @@ export function LiteratureShell() {
 
             <div className="space-y-4">
               <div>
-                <p className="text-sm font-medium text-gray-700">Sources</p>
+                <p className="text-sm font-medium text-gray-700">来源</p>
                 <p className="mt-1 text-xs text-gray-500">
-                  arXiv and PubMed are available for fetching. Other sources are coming soon.
+                  当前可抓取 arXiv 与 PubMed，其他来源即将上线。
                 </p>
               </div>
 
@@ -316,7 +312,7 @@ export function LiteratureShell() {
                           <span className="font-medium">{source.name}</span>
                           {!available && (
                             <span className="mt-0.5 block text-xs text-gray-400">
-                              Coming soon
+                              即将上线
                             </span>
                           )}
                         </span>
@@ -328,8 +324,7 @@ export function LiteratureShell() {
 
               {fetchableSelectedSources.length === 0 && (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  No fetchable sources for this discipline yet. Select a discipline with arXiv
-                  to update papers.
+                  当前学科暂无可抓取来源，请选择包含 arXiv 的学科后再更新文献。
                 </p>
               )}
             </div>
@@ -339,7 +334,7 @@ export function LiteratureShell() {
                 htmlFor="date-range"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Date range
+                时间范围
               </label>
               <select
                 id="date-range"
@@ -369,7 +364,7 @@ export function LiteratureShell() {
               }}
               className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
             >
-              {isUpdating ? "Updating Papers..." : "Update Papers"}
+              {isUpdating ? "正在更新文献…" : "更新文献"}
             </button>
           </section>
 
@@ -388,13 +383,13 @@ export function LiteratureShell() {
 
             {isLoading ? (
               <div className="rounded-2xl border border-gray-200 bg-white px-5 py-12 text-center text-sm text-gray-500">
-                Loading literature tracker...
+                正在加载文献追踪…
               </div>
             ) : visiblePapers.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
-                <p className="text-sm font-medium text-gray-900">No papers yet</p>
+                <p className="text-sm font-medium text-gray-900">暂无论文</p>
                 <p className="mt-2 text-sm text-gray-500">
-                  Choose a discipline, select arXiv, enter keywords, and click Update Papers.
+                  选择学科与 arXiv 来源，输入关键词后点击「更新文献」。
                 </p>
               </div>
             ) : (

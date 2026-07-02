@@ -5,11 +5,11 @@ export const LITERATURE_MAX_ARXIV_RESULTS = 50;
 export const LITERATURE_MAX_ANALYSIS_PAPERS = 10;
 
 export const LITERATURE_DATE_RANGE_OPTIONS = [
-  { value: 30, label: "1 month" },
-  { value: 365, label: "1 year" },
-  { value: 1825, label: "5 years" },
-  { value: 3650, label: "10 years" },
-  { value: 0, label: "All time" },
+  { value: 30, label: "1 个月" },
+  { value: 365, label: "1 年" },
+  { value: 1825, label: "5 年" },
+  { value: 3650, label: "10 年" },
+  { value: 0, label: "全部时间" },
 ] as const;
 
 export const ALLOWED_LITERATURE_DATE_RANGE_DAYS =
@@ -43,7 +43,7 @@ export function normalizeDateRangeDays(value: unknown): LiteratureDateRangeDays 
 export const LITERATURE_ANALYSIS_BATCH_SIZE = 5;
 
 export const LITERATURE_PRIORITY_LABELS = {
-  recommended: "Recommended",
-  skim: "Skim",
-  skip: "Skip",
+  recommended: "推荐",
+  skim: "略读",
+  skip: "可忽略",
 } as const;

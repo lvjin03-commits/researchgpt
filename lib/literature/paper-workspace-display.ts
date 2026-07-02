@@ -70,11 +70,11 @@ function defaultReadingGuide(paper: LiteraturePaper): PaperReadingGuide {
   return {
     estimatedReadingMinutes: estimateReadingMinutes(paper),
     suggestedReadingOrder: [
-      "Read the abstract and one-sentence summary",
-      "Review the research problem and core method",
-      "Study main contributions and experimental results",
-      "Check limitations and why it matters",
-      "Skim figures/tables if available on the source page",
+      "阅读摘要与一句话总结",
+      "了解研究问题与核心方法",
+      "查看主要贡献与实验结果",
+      "关注局限性与研究意义",
+      "如有需要，浏览原文图表",
     ],
     difficulty: inferDifficulty(paper),
   };

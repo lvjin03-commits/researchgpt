@@ -64,7 +64,7 @@ export function LiteratureLibraryShell() {
           const message =
             err instanceof LiteratureError
               ? err.message
-              : "Failed to load literature library.";
+              : "加载文献库失败。";
           setError(message);
         }
       } finally {
@@ -148,7 +148,7 @@ export function LiteratureLibraryShell() {
       setNewFolderName("");
     } catch (err) {
       setFolderActionError(
-        err instanceof LiteratureError ? err.message : "Failed to create folder.",
+        err instanceof LiteratureError ? err.message : "创建文献夹失败。",
       );
     } finally {
       setIsCreatingFolder(false);
@@ -182,13 +182,13 @@ export function LiteratureLibraryShell() {
       cancelEditingFolder();
     } catch (err) {
       setFolderActionError(
-        err instanceof LiteratureError ? err.message : "Failed to rename folder.",
+        err instanceof LiteratureError ? err.message : "重命名文献夹失败。",
       );
     }
   };
 
   const handleDeleteFolder = async (folderId: string) => {
-    if (!window.confirm("Delete this folder? Papers will remain in your library.")) {
+    if (!window.confirm("确定删除此文献夹？论文仍会保留在文献库中。")) {
       return;
     }
 
@@ -214,7 +214,7 @@ export function LiteratureLibraryShell() {
       }
     } catch (err) {
       setFolderActionError(
-        err instanceof LiteratureError ? err.message : "Failed to delete folder.",
+        err instanceof LiteratureError ? err.message : "删除文献夹失败。",
       );
     }
   };
@@ -224,16 +224,16 @@ export function LiteratureLibraryShell() {
       <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">Literature Library</h1>
+            <h1 className="text-lg font-semibold text-gray-900">文献库</h1>
             <p className="text-sm text-gray-500">
-              Organize saved, read, and skipped papers into folders.
+              将已收藏、已读与已忽略的论文整理到文献夹中。
             </p>
           </div>
           <Link
             href="/literature"
             className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
           >
-            Back to Literature Tracker
+            返回文献追踪
           </Link>
         </div>
       </header>
@@ -242,7 +242,7 @@ export function LiteratureLibraryShell() {
         <aside className="w-full shrink-0 space-y-6 lg:w-64">
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              Library
+              浏览
             </h2>
             <ul className="mt-3 space-y-1">
               {LIBRARY_STATUS_TABS.map((tab) => {
@@ -269,11 +269,11 @@ export function LiteratureLibraryShell() {
 
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              Folders
+              文献夹
             </h2>
 
             {folders.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-500">No folders yet.</p>
+              <p className="mt-3 text-sm text-gray-500">暂无文献夹。</p>
             ) : (
               <ul className="mt-3 space-y-1">
                 {folders.map((folder) => {
@@ -298,14 +298,14 @@ export function LiteratureLibraryShell() {
                               }}
                               className="rounded-md bg-gray-900 px-2 py-1 text-xs font-medium text-white hover:bg-gray-800"
                             >
-                              Save
+                              保存
                             </button>
                             <button
                               type="button"
                               onClick={cancelEditingFolder}
                               className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
                             >
-                              Cancel
+                              取消
                             </button>
                           </div>
                         </div>
@@ -324,21 +324,21 @@ export function LiteratureLibraryShell() {
                           </button>
                           <button
                             type="button"
-                            aria-label={`Rename ${folder.name}`}
+                            aria-label={`重命名 ${folder.name}`}
                             onClick={() => startEditingFolder(folder)}
                             className="rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-900"
                           >
-                            Edit
+                            重命名
                           </button>
                           <button
                             type="button"
-                            aria-label={`Delete ${folder.name}`}
+                            aria-label={`删除 ${folder.name}`}
                             onClick={() => {
                               void handleDeleteFolder(folder.id);
                             }}
                             className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50"
                           >
-                            Del
+                            删除
                           </button>
                         </div>
                       )}
@@ -353,7 +353,7 @@ export function LiteratureLibraryShell() {
                 type="text"
                 value={newFolderName}
                 onChange={(event) => setNewFolderName(event.target.value)}
-                placeholder="New folder name"
+                placeholder="新文献夹名称"
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
@@ -370,7 +370,7 @@ export function LiteratureLibraryShell() {
                 }}
                 className="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isCreatingFolder ? "Creating..." : "Create Folder"}
+                {isCreatingFolder ? "正在创建…" : "新建文献夹"}
               </button>
             </div>
 
@@ -389,7 +389,7 @@ export function LiteratureLibraryShell() {
                 htmlFor="library-search"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Search
+                搜索
               </label>
               <input
                 id="library-search"
@@ -398,7 +398,7 @@ export function LiteratureLibraryShell() {
                 onChange={(event) =>
                   setFilters((current) => ({ ...current, q: event.target.value }))
                 }
-                placeholder="Search title, author, or abstract"
+                placeholder="搜索标题、作者或摘要"
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
               />
             </div>
@@ -409,7 +409,7 @@ export function LiteratureLibraryShell() {
                   htmlFor="library-source"
                   className="mb-2 block text-sm font-medium text-gray-700"
                 >
-                  Source
+                  来源
                 </label>
                 <select
                   id="library-source"
@@ -432,7 +432,7 @@ export function LiteratureLibraryShell() {
                   htmlFor="library-discipline"
                   className="mb-2 block text-sm font-medium text-gray-700"
                 >
-                  Discipline
+                  学科
                 </label>
                 <select
                   id="library-discipline"
@@ -445,7 +445,7 @@ export function LiteratureLibraryShell() {
                   }
                   className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
                 >
-                  <option value="">All disciplines</option>
+                  <option value="">全部学科</option>
                   {LITERATURE_DISCIPLINES.map((discipline) => (
                     <option key={discipline.id} value={discipline.id}>
                       {discipline.label}
@@ -459,7 +459,7 @@ export function LiteratureLibraryShell() {
                   htmlFor="library-priority"
                   className="mb-2 block text-sm font-medium text-gray-700"
                 >
-                  Priority
+                  推荐等级
                 </label>
                 <select
                   id="library-priority"
@@ -490,13 +490,13 @@ export function LiteratureLibraryShell() {
 
           {isLoading ? (
             <div className="rounded-2xl border border-gray-200 bg-white px-5 py-12 text-center text-sm text-gray-500">
-              Loading literature library...
+              正在加载文献库…
             </div>
           ) : papers.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
-              <p className="text-sm font-medium text-gray-900">No papers found</p>
+              <p className="text-sm font-medium text-gray-900">未找到论文</p>
               <p className="mt-2 text-sm text-gray-500">
-                Try another folder or adjust your search and filters.
+                请尝试其他文献夹，或调整搜索与筛选条件。
               </p>
             </div>
           ) : (

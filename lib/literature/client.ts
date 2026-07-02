@@ -213,7 +213,7 @@ export async function fetchLiteratureState(): Promise<LiteratureState> {
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to load literature tracker.",
+      payload.error ?? "加载文献追踪失败。",
       response.status,
     );
   }
@@ -239,7 +239,7 @@ export async function saveLiteratureSettings(
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to save literature settings.",
+      payload.error ?? "保存文献设置失败。",
       response.status,
     );
   }
@@ -267,7 +267,7 @@ export async function updateLiteraturePapers(
         : {};
 
     throw new LiteratureError(
-      errorPayload.error ?? "Failed to update literature papers.",
+      errorPayload.error ?? "更新文献失败。",
       response.status,
     );
   }
@@ -298,7 +298,7 @@ export async function fetchLiteratureLibrary(
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to load literature library.",
+      payload.error ?? "加载文献库失败。",
       response.status,
     );
   }
@@ -318,7 +318,7 @@ export async function fetchLiteraturePaper(paperId: string): Promise<LiteratureP
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to load literature paper.",
+      payload.error ?? "加载论文失败。",
       response.status,
     );
   }
@@ -342,7 +342,7 @@ export async function updateLiteraturePaperStatus(
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to update paper status.",
+      payload.error ?? "更新阅读状态失败。",
       response.status,
     );
   }
@@ -358,7 +358,7 @@ export async function fetchLiteratureFolders(): Promise<LiteratureFolder[]> {
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to load folders.",
+      payload.error ?? "加载文献夹失败。",
       response.status,
     );
   }
@@ -379,7 +379,7 @@ export async function createLiteratureFolder(name: string): Promise<LiteratureFo
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to create folder.",
+      payload.error ?? "创建文献夹失败。",
       response.status,
     );
   }
@@ -403,7 +403,7 @@ export async function updateLiteratureFolder(
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to update folder.",
+      payload.error ?? "重命名文献夹失败。",
       response.status,
     );
   }
@@ -420,7 +420,7 @@ export async function deleteLiteratureFolder(folderId: string): Promise<void> {
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to delete folder.",
+      payload.error ?? "删除文献夹失败。",
       response.status,
     );
   }
@@ -440,7 +440,7 @@ export async function setPaperFolders(
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to update paper folders.",
+      payload.error ?? "更新论文文献夹失败。",
       response.status,
     );
   }
@@ -462,7 +462,7 @@ export async function updateLiteraturePaperNotes(
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to save paper notes.",
+      payload.error ?? "保存笔记失败。",
       response.status,
     );
   }
@@ -487,7 +487,7 @@ export async function generateLiteraturePaperWorkspace(
 
   if (!response.ok) {
     throw new LiteratureError(
-      payload.error ?? "Failed to generate workspace analysis.",
+      payload.error ?? "生成 AI 分析失败。",
       response.status,
     );
   }

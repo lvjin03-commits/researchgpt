@@ -94,22 +94,22 @@ export const LIBRARY_PRIORITY_OPTIONS: Array<{
   value: "" | LiteraturePriority;
   label: string;
 }> = [
-  { value: "", label: "All priorities" },
-  { value: "recommended", label: "Recommended" },
-  { value: "skim", label: "Skim" },
-  { value: "skip", label: "Skip" },
+  { value: "", label: "全部推荐等级" },
+  { value: "recommended", label: "推荐" },
+  { value: "skim", label: "略读" },
+  { value: "skip", label: "可忽略" },
 ];
 
 export const LIBRARY_SOURCE_OPTIONS = [
-  { value: "", label: "All sources" },
+  { value: "", label: "全部来源" },
   { value: "arxiv", label: "arXiv" },
   { value: "pubmed", label: "PubMed" },
 ] as const;
 
 export const LIBRARY_STATUS_TABS: Array<{ value: LibraryStatusTab; label: string }> =
   [
-    { value: "all", label: "All Papers" },
-    { value: "saved", label: "Saved" },
-    { value: "read", label: "Read" },
-    { value: "skipped", label: "Skipped" },
+    { value: "all", label: "全部论文" },
+    { value: "saved", label: "已收藏" },
+    { value: "read", label: "已读" },
+    { value: "skipped", label: "已忽略" },
   ];

@@ -150,7 +150,7 @@ export function Sidebar({
             href="/literature"
             className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
           >
-            Literature Tracker
+            文献追踪
           </Link>
           <Link
             href="/translate"

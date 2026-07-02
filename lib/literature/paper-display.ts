@@ -18,12 +18,12 @@ const PUBLICATION_TYPE_LABELS = new Set([
 ]);
 
 export function formatLiteratureDate(value: string | null): string {
-  if (!value) return "Unknown date";
+  if (!value) return "未知日期";
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
 
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "short",
     day: "numeric",

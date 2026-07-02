@@ -42,6 +42,10 @@ import type {
   PaperWorkspaceAnalysis,
 } from "@/lib/literature/types";
 import { deriveWorkspaceAnalysisFromPaper } from "@/lib/literature/paper-workspace-display";
+import {
+  getPaperStatusLabel,
+  LITERATURE_DIFFICULTY_LABELS,
+} from "@/lib/literature/ui-strings";
 
 type LiteraturePaperDetailShellProps = {
   paperId: string;
@@ -172,7 +176,7 @@ export function LiteraturePaperDetailShell({
       } catch (err) {
         if (!cancelled) {
           setError(
-            err instanceof LiteratureError ? err.message : "Failed to load paper.",
+            err instanceof LiteratureError ? err.message : "加载论文失败。",
           );
         }
       } finally {
@@ -260,7 +264,7 @@ export function LiteraturePaperDetailShell({
         setError(
           err instanceof LiteratureError
             ? err.message
-            : "Failed to update reading status.",
+            : "更新阅读状态失败。",
         );
       } finally {
         setIsUpdating(false);
@@ -310,7 +314,7 @@ export function LiteraturePaperDetailShell({
       setError(
         err instanceof LiteratureError
           ? err.message
-          : "Failed to refresh workspace analysis.",
+          : "刷新 AI 分析失败。",
       );
     } finally {
       setIsGeneratingWorkspace(false);
@@ -333,7 +337,7 @@ export function LiteraturePaperDetailShell({
     }
 
     await navigator.clipboard.writeText(generateApaCitation(paper));
-    setExportMessage("Citation copied to clipboard.");
+    setExportMessage("引用已复制到剪贴板。");
   };
 
   const externalId = paper ? getPaperExternalId(paper) : null;
@@ -349,9 +353,9 @@ export function LiteraturePaperDetailShell({
       <header className="border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">Research Workspace</h1>
+            <h1 className="text-lg font-semibold text-gray-900">论文详情</h1>
             <p className="text-sm text-gray-500">
-              Comprehensive paper analysis, reading guide, and personal notes.
+              论文分析、阅读指南与个人笔记工作区。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -359,13 +363,13 @@ export function LiteraturePaperDetailShell({
               href="/literature/library"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >
-              Library
+              文献库
             </Link>
             <Link
               href="/literature"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >
-              Tracker
+              文献追踪
             </Link>
           </div>
         </div>
@@ -386,11 +390,11 @@ export function LiteraturePaperDetailShell({
 
         {isLoading ? (
           <div className="rounded-2xl border border-gray-200 bg-white px-5 py-12 text-center text-sm text-gray-500">
-            Loading research workspace...
+            正在加载论文详情…
           </div>
         ) : !paper ? (
           <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
-            <p className="text-sm font-medium text-gray-900">Paper not found</p>
+            <p className="text-sm font-medium text-gray-900">未找到论文</p>
           </div>
         ) : (
           <>
@@ -404,37 +408,37 @@ export function LiteraturePaperDetailShell({
               )}
               {paper.relevanceScore !== null && (
                 <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                  Relevance {paper.relevanceScore}
+                  相关度 {paper.relevanceScore}
                 </span>
               )}
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-                {paper.status}
+                {getPaperStatusLabel(paper.status)}
               </span>
             </div>
 
-            <WorkspaceSection title="Basic Information">
+            <WorkspaceSection title="基本信息">
               <h3 className="text-2xl font-semibold leading-tight text-gray-900">
                 {paper.title}
               </h3>
               <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <InfoField
-                  label="Authors"
+                  label="作者"
                   value={
                     paper.authors.length > 0
                       ? paper.authors.join(", ")
-                      : "Unknown authors"
+                      : "未知作者"
                   }
                 />
                 <InfoField
-                  label="Journal / Venue"
-                  value={journalVenue ?? "Not available"}
+                  label="期刊"
+                  value={journalVenue ?? "暂无"}
                 />
                 <InfoField
-                  label="Published date"
+                  label="发表时间"
                   value={formatLiteratureDate(paper.publishedAt)}
                 />
-                <InfoField label="DOI" value={doi ?? "Not available"} />
-                <InfoField label="Source" value={getPaperSource(paper)} />
+                <InfoField label="DOI" value={doi ?? "暂无"} />
+                <InfoField label="来源" value={getPaperSource(paper)} />
                 {externalId && (
                   <InfoField label={externalId.label} value={externalId.value} />
                 )}
@@ -442,7 +446,7 @@ export function LiteraturePaperDetailShell({
               {subjectTags.length > 0 && (
                 <div className="mt-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Categories
+                    分类
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {subjectTags.map((tag) => (
@@ -458,13 +462,13 @@ export function LiteraturePaperDetailShell({
               )}
               <div className="mt-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Abstract
+                  摘要
                 </p>
                 <p className="mt-2 text-sm leading-relaxed text-gray-700">{paper.abstract}</p>
               </div>
             </WorkspaceSection>
 
-            <WorkspaceSection title="External Links">
+            <WorkspaceSection title="外部链接">
               <div className="flex flex-wrap gap-2">
                 <a
                   href={paper.absUrl}
@@ -472,7 +476,7 @@ export function LiteraturePaperDetailShell({
                   rel="noreferrer"
                   className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
                 >
-                  Abstract
+                  原文链接
                 </a>
                 {hasPaperPdfLink(paper) && (
                   <a
@@ -517,10 +521,10 @@ export function LiteraturePaperDetailShell({
               </div>
             </WorkspaceSection>
 
-            <WorkspaceSection title="AI Analysis">
+            <WorkspaceSection title="AI 分析">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <p className="text-sm text-gray-500">
-                  Structured analysis generated for this paper.
+                  为本论文生成的结构化 AI 分析。
                 </p>
                 <button
                   type="button"
@@ -530,43 +534,45 @@ export function LiteraturePaperDetailShell({
                   }}
                   className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isGeneratingWorkspace ? "Refreshing..." : "Refresh Analysis"}
+                  {isGeneratingWorkspace ? "正在刷新…" : "刷新分析"}
                 </button>
               </div>
               {workspace ? (
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <AnalysisField label="One-sentence summary" value={workspace.oneSentenceSummary} />
-                  <AnalysisField label="Research problem" value={workspace.researchProblem} />
-                  <AnalysisField label="Core method" value={workspace.coreMethod} />
-                  <AnalysisField label="Main contributions" value={workspace.mainContributions} />
+                  <AnalysisField label="一句话摘要" value={workspace.oneSentenceSummary} />
+                  <AnalysisField label="研究问题" value={workspace.researchProblem} />
+                  <AnalysisField label="核心方法" value={workspace.coreMethod} />
+                  <AnalysisField label="主要贡献" value={workspace.mainContributions} />
                   <AnalysisField
-                    label="Experimental results"
+                    label="实验结果"
                     value={workspace.experimentalResults}
                   />
-                  <AnalysisField label="Limitations" value={workspace.limitations} />
-                  <AnalysisField label="Why it matters" value={workspace.whyItMatters} />
+                  <AnalysisField label="局限性" value={workspace.limitations} />
+                  <AnalysisField label="研究意义" value={workspace.whyItMatters} />
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">Generating analysis...</p>
+                <p className="text-sm text-gray-500">正在生成分析…</p>
               )}
             </WorkspaceSection>
 
             {workspace && (
               <>
                 <div className="grid gap-6 lg:grid-cols-2">
-                  <WorkspaceSection title="Reading Guide">
+                  <WorkspaceSection title="阅读指南">
                     <dl className="space-y-4">
                       <InfoField
-                        label="Estimated reading time"
-                        value={`${workspace.readingGuide.estimatedReadingMinutes} minutes`}
+                        label="预计阅读时间"
+                        value={`${workspace.readingGuide.estimatedReadingMinutes} 分钟`}
                       />
                       <InfoField
-                        label="Difficulty"
-                        value={workspace.readingGuide.difficulty}
+                        label="难度"
+                        value={
+                          LITERATURE_DIFFICULTY_LABELS[workspace.readingGuide.difficulty]
+                        }
                       />
                       <div>
                         <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                          Suggested reading order
+                          建议阅读顺序
                         </dt>
                         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-gray-700">
                           {workspace.readingGuide.suggestedReadingOrder.map((step) => (
@@ -577,19 +583,19 @@ export function LiteraturePaperDetailShell({
                     </dl>
                   </WorkspaceSection>
 
-                  <WorkspaceSection title="Research Value">
+                  <WorkspaceSection title="研究价值">
                     <div className="space-y-4">
-                      <ScoreRow label="Novelty" score={workspace.researchValue.novelty} />
+                      <ScoreRow label="新颖性" score={workspace.researchValue.novelty} />
                       <ScoreRow
-                        label="Technical Depth"
+                        label="技术深度"
                         score={workspace.researchValue.technicalDepth}
                       />
                       <ScoreRow
-                        label="Industrial Potential"
+                        label="产业潜力"
                         score={workspace.researchValue.industrialPotential}
                       />
                       <ScoreRow
-                        label="Reading Priority"
+                        label="阅读优先级"
                         score={workspace.researchValue.readingPriority}
                       />
                     </div>
@@ -598,31 +604,31 @@ export function LiteraturePaperDetailShell({
               </>
             )}
 
-            <WorkspaceSection title="Personal Workspace">
+            <WorkspaceSection title="个人工作区">
               <div className="space-y-5">
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-medium text-gray-900">Folders</h3>
+                    <h3 className="text-sm font-medium text-gray-900">文献夹</h3>
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => setFolderSelectorMode("save")}
                         className="rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
                       >
-                        Save to Folder
+                        保存到文献夹
                       </button>
                       <button
                         type="button"
                         onClick={() => setFolderSelectorMode("move")}
                         className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100"
                       >
-                        Move to Folder
+                        移动到文献夹
                       </button>
                     </div>
                   </div>
                   {assignedFolderIds.length === 0 ? (
                     <p className="mt-2 text-sm text-gray-500">
-                      This paper is not in any folders yet.
+                      该论文尚未加入任何文献夹。
                     </p>
                   ) : (
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -648,12 +654,12 @@ export function LiteraturePaperDetailShell({
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <label htmlFor="paper-notes" className="text-sm font-medium text-gray-900">
-                      Personal Notes
+                      我的笔记
                     </label>
                     <span className="text-xs text-gray-500">
-                      {notesStatus === "saving" && "Saving..."}
-                      {notesStatus === "saved" && "Saved"}
-                      {notesStatus === "error" && "Save failed"}
+                      {notesStatus === "saving" && "正在保存…"}
+                      {notesStatus === "saved" && "已保存"}
+                      {notesStatus === "error" && "保存失败"}
                     </span>
                   </div>
                   <textarea
@@ -664,20 +670,20 @@ export function LiteraturePaperDetailShell({
                       setNotes(event.target.value);
                       setNotesStatus("idle");
                     }}
-                    placeholder="Add your reading notes, hypotheses, or follow-up ideas..."
+                    placeholder="记录阅读笔记、假设或后续想法…"
                     className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-medium text-gray-900">Reading Status</h3>
+                  <h3 className="text-sm font-medium text-gray-900">阅读状态</h3>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {(
                       [
-                        ["saved", "Saved"],
-                        ["read", "Read"],
-                        ["skipped", "Skipped"],
-                        ["new", "New"],
+                        ["saved", getPaperStatusLabel("saved")],
+                        ["read", getPaperStatusLabel("read")],
+                        ["skipped", getPaperStatusLabel("skipped")],
+                        ["new", getPaperStatusLabel("new")],
                       ] as const
                     ).map(([status, label]) => (
                       <button
@@ -701,7 +707,7 @@ export function LiteraturePaperDetailShell({
               </div>
             </WorkspaceSection>
 
-            <WorkspaceSection title="Export">
+            <WorkspaceSection title="导出">
               <div className="flex flex-wrap gap-2">
                 <ExportButton
                   label="BibTeX"
@@ -711,7 +717,7 @@ export function LiteraturePaperDetailShell({
                       generateBibTeX(paper),
                       "application/x-bibtex",
                     );
-                    setExportMessage("BibTeX downloaded.");
+                    setExportMessage("BibTeX 已下载。");
                   }}
                 />
                 <ExportButton
@@ -722,11 +728,11 @@ export function LiteraturePaperDetailShell({
                       generateRIS(paper),
                       "application/x-research-info-systems",
                     );
-                    setExportMessage("RIS downloaded.");
+                    setExportMessage("RIS 已下载。");
                   }}
                 />
                 <ExportButton
-                  label="Copy Citation"
+                  label="复制引用"
                   onClick={() => {
                     void handleCopyCitation();
                   }}
@@ -739,16 +745,16 @@ export function LiteraturePaperDetailShell({
                       generatePaperMarkdown(paper, workspace),
                       "text/markdown",
                     );
-                    setExportMessage("Markdown downloaded.");
+                    setExportMessage("Markdown 已下载。");
                   }}
                 />
               </div>
             </WorkspaceSection>
 
-            <WorkspaceSection title="Coming Soon">
+            <WorkspaceSection title="即将上线">
               <div className="flex flex-wrap gap-2">
-                <PlaceholderButton label="Citation Network (Coming Soon)" />
-                <PlaceholderButton label="Related Papers (Coming Soon)" />
+                <PlaceholderButton label="引用网络（即将上线）" />
+                <PlaceholderButton label="相关推荐（即将上线）" />
               </div>
             </WorkspaceSection>
           </>
@@ -757,13 +763,13 @@ export function LiteraturePaperDetailShell({
 
       {folderSelectorMode && paper && (
         <LiteraturePaperFolderSelector
-          title={folderSelectorMode === "save" ? "Save to Folder" : "Move to Folder"}
+          title={folderSelectorMode === "save" ? "保存到文献夹" : "移动到文献夹"}
           description={
             folderSelectorMode === "save"
-              ? "Choose one or more folders for this paper. It will be marked as saved."
-              : "Add or remove folders for this paper."
+              ? "选择一个或多个文献夹，论文将标记为已收藏。"
+              : "添加或移除该论文所属的文献夹。"
           }
-          confirmLabel={folderSelectorMode === "save" ? "Save to Folder" : "Save"}
+          confirmLabel={folderSelectorMode === "save" ? "保存到文献夹" : "保存"}
           folders={folders}
           selectedFolderIds={assignedFolderIds}
           onClose={() => setFolderSelectorMode(null)}

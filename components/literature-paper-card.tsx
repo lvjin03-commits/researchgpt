@@ -9,6 +9,7 @@ import {
   formatLiteratureDate,
   literaturePriorityClassName,
 } from "@/lib/literature/paper-display";
+import { getPaperStatusLabel } from "@/lib/literature/ui-strings";
 import type {
   LiteratureFolder,
   LiteraturePaper,
@@ -66,9 +67,7 @@ export function LiteraturePaperCard({
     }
   };
 
-  const externalLabel = paper.arxivId.startsWith("pubmed:")
-    ? "View on PubMed"
-    : "View on arXiv";
+  const externalLabel = "原文链接";
 
   return (
     <>
@@ -85,11 +84,11 @@ export function LiteraturePaperCard({
               )}
               {paper.relevanceScore !== null && (
                 <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                  Relevance {paper.relevanceScore}
+                  相关度 {paper.relevanceScore}
                 </span>
               )}
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-                {paper.status}
+                {getPaperStatusLabel(paper.status)}
               </span>
               {assignedFolderIds.map((folderId) => {
                 const name = folderNameById.get(folderId);
@@ -118,7 +117,7 @@ export function LiteraturePaperCard({
             </h3>
             <p className="mt-1 text-sm text-gray-500">
               {paper.authors.slice(0, 4).join(", ")}
-              {paper.authors.length > 4 ? " et al." : ""} ·{" "}
+              {paper.authors.length > 4 ? " 等" : ""} ·{" "}
               {formatLiteratureDate(paper.publishedAt)}
             </p>
             <p className="mt-1 text-xs text-gray-400">
@@ -133,7 +132,7 @@ export function LiteraturePaperCard({
               href={`/literature/papers/${paper.id}`}
               className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
             >
-              View Details
+              查看详情
             </Link>
             <a
               href={paper.absUrl}
@@ -152,6 +151,7 @@ export function LiteraturePaperCard({
 
         {paper.recommendationReason && (
           <p className="mt-3 rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <span className="font-medium text-gray-700">推荐理由：</span>
             {paper.recommendationReason}
           </p>
         )}
@@ -163,7 +163,7 @@ export function LiteraturePaperCard({
               onClick={() => setExpanded((current) => !current)}
               className="text-sm font-medium text-gray-700 transition-colors hover:text-gray-900"
             >
-              {expanded ? "Hide Chinese summary" : "Show Chinese summary"}
+              {expanded ? "隐藏 AI 总结" : "显示 AI 总结"}
             </button>
 
             {expanded && (
@@ -185,7 +185,7 @@ export function LiteraturePaperCard({
                 onClick={() => setFolderSelectorMode("save")}
                 className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Save to Folder
+                保存到文献夹
               </button>
               <button
                 type="button"
@@ -195,7 +195,7 @@ export function LiteraturePaperCard({
                 }}
                 className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Skip
+                忽略
               </button>
               <button
                 type="button"
@@ -205,7 +205,7 @@ export function LiteraturePaperCard({
                 }}
                 className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Mark as Read
+                标记已读
               </button>
             </>
           ) : (
@@ -218,7 +218,7 @@ export function LiteraturePaperCard({
                 }}
                 className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Mark as Read
+                标记已读
               </button>
               {paper.status === "saved" && (
                 <button
@@ -229,7 +229,7 @@ export function LiteraturePaperCard({
                   }}
                   className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Remove from Saved
+                  取消收藏
                 </button>
               )}
               {paper.status === "skipped" && (
@@ -241,7 +241,7 @@ export function LiteraturePaperCard({
                   }}
                   className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Restore
+                  恢复
                 </button>
               )}
               <button
@@ -249,7 +249,7 @@ export function LiteraturePaperCard({
                 onClick={() => setFolderSelectorMode("move")}
                 className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100"
               >
-                Move to Folder
+                移动到文献夹
               </button>
             </>
           )}
@@ -258,13 +258,13 @@ export function LiteraturePaperCard({
 
       {folderSelectorMode && (
         <LiteraturePaperFolderSelector
-          title={folderSelectorMode === "save" ? "Save to Folder" : "Move to Folder"}
+          title={folderSelectorMode === "save" ? "保存到文献夹" : "移动到文献夹"}
           description={
             folderSelectorMode === "save"
-              ? "Choose one or more folders for this paper. It will be marked as saved."
-              : "Add or remove folders for this paper."
+              ? "选择一个或多个文献夹，论文将标记为已收藏。"
+              : "添加或移除该论文所属的文献夹。"
           }
-          confirmLabel={folderSelectorMode === "save" ? "Save to Folder" : "Save"}
+          confirmLabel={folderSelectorMode === "save" ? "保存到文献夹" : "保存"}
           folders={folders}
           selectedFolderIds={assignedFolderIds}
           onClose={() => setFolderSelectorMode(null)}
