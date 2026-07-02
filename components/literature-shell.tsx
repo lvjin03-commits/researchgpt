@@ -230,15 +230,15 @@ export function LiteratureShell() {
 
     try {
       const result = await updateLiteraturePapers(settings);
+      setSettings(result.settings);
       setPapers(result.papers);
-      const summary = `Updated ${result.added + result.updated} paper(s): ${result.added} new, ${result.updated} refreshed.`;
-      setStatusMessage(result.message ? `${summary} ${result.message}` : summary);
+      setStatusMessage(`Updated ${result.papers.length} paper(s).`);
     } catch (err) {
-      const message =
+      const detail =
         err instanceof LiteratureError
           ? err.message
           : "Failed to update literature papers.";
-      setError(message);
+      setError(`Update failed. Showing previous results. ${detail}`);
     } finally {
       setIsUpdating(false);
     }

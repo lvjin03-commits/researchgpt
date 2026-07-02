@@ -4,8 +4,10 @@ import { LiteratureError } from "@/lib/literature/errors";
 import { parseDateRangeDays } from "@/lib/literature/date-range";
 import {
   DEFAULT_LITERATURE_DISCIPLINE,
+  getAvailableSourcesForDiscipline,
   getDefaultSelectedSources,
   getDisciplineSources,
+  getSourceName,
   isKnownSourceId,
   isSourceAvailable,
   isValidDisciplineId,
@@ -77,6 +79,20 @@ export function parseLiteratureSettings(
     requestedSources = getDefaultSelectedSources(discipline);
   }
 
+  const validDisciplineSources = new Set(disciplineSourceIds(discipline));
+  const inDisciplineSources = requestedSources.filter((sourceId) =>
+    validDisciplineSources.has(sourceId),
+  );
+  const outOfDiscipline = requestedSources.filter(
+    (sourceId) => !validDisciplineSources.has(sourceId),
+  );
+
+  if (inDisciplineSources.length > 0) {
+    requestedSources = inDisciplineSources;
+  } else if (outOfDiscipline.length > 0 || requestedSources.length === 0) {
+    requestedSources = getDefaultSelectedSources(discipline);
+  }
+
   const unknownSources = requestedSources.filter(
     (sourceId) => !isKnownSourceId(sourceId),
   );
@@ -88,25 +104,34 @@ export function parseLiteratureSettings(
     );
   }
 
-  const validDisciplineSources = new Set(disciplineSourceIds(discipline));
-  const outOfDiscipline = requestedSources.filter(
-    (sourceId) => !validDisciplineSources.has(sourceId),
+  if (outOfDiscipline.length > 0 && inDisciplineSources.length === 0) {
+    const defaults = getDefaultSelectedSources(discipline);
+    if (defaults.length === 0) {
+      throw new LiteratureError(
+        `Source(s) not available for ${discipline}: ${outOfDiscipline.join(", ")}.`,
+        400,
+      );
+    }
+  }
+
+  const unsupportedRequested = requestedSources.filter(
+    (sourceId) => isKnownSourceId(sourceId) && !isSourceAvailable(sourceId),
   );
 
-  if (outOfDiscipline.length > 0) {
+  if (unsupportedRequested.length > 0) {
     throw new LiteratureError(
-      `Source(s) not available for ${discipline}: ${outOfDiscipline.join(", ")}.`,
+      `Unsupported source(s): ${unsupportedRequested.map(getSourceName).join(", ")}. arXiv and PubMed are available for fetching right now.`,
       400,
     );
   }
 
-  const ignoredSources = requestedSources.filter(
-    (sourceId) => isKnownSourceId(sourceId) && !isSourceAvailable(sourceId),
-  );
   const availableSelected = normalizeSelectedSources(discipline, requestedSources);
+  const availableForDiscipline = getAvailableSourcesForDiscipline(discipline).map(
+    (source) => source.id,
+  );
 
   if (requireEnabledSources && availableSelected.length === 0) {
-    if (getDefaultSelectedSources(discipline).length === 0) {
+    if (availableForDiscipline.length === 0) {
       throw new LiteratureError(
         "No fetchable sources are available for this discipline yet.",
         400,
@@ -114,7 +139,7 @@ export function parseLiteratureSettings(
     }
 
     throw new LiteratureError(
-      "Select at least one available source. arXiv and PubMed are available for fetching right now.",
+      `Select at least one available source: ${availableForDiscipline.join(", ")}.`,
       400,
     );
   }
@@ -131,12 +156,10 @@ export function parseLiteratureSettings(
       keywords,
       excludeKeywords,
       discipline,
-      selectedSources: requireEnabledSources
-        ? availableSelected
-        : requestedSources.filter((sourceId) => isSourceAvailable(sourceId)),
+      selectedSources: availableSelected,
       dateRangeDays,
     },
-    ignoredSources,
+    ignoredSources: [],
   };
 }
 

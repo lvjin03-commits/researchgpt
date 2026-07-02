@@ -54,9 +54,6 @@ export type PaperAnalysisResult = {
 export type UpdateLiteratureRequest = LiteratureSettings;
 
 export type UpdateLiteratureResponse = {
-  added: number;
-  updated: number;
+  settings: LiteratureSettings;
   papers: LiteraturePaper[];
-  ignoredSources?: string[];
-  message?: string;
 };

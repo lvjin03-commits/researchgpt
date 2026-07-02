@@ -11,11 +11,20 @@ export function parseDateRangeDays(value: unknown): LiteratureDateRangeDays {
     return LITERATURE_DATE_RANGE_DAYS;
   }
 
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  let normalizedValue = value;
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      normalizedValue = parsed;
+    }
+  }
+
+  if (typeof normalizedValue !== "number" || !Number.isFinite(normalizedValue)) {
     throw new LiteratureError("Invalid date range.", 400);
   }
 
-  const rounded = Math.round(value);
+  const rounded = Math.round(normalizedValue);
 
   if (rounded === 7) {
     return LITERATURE_DATE_RANGE_DAYS;

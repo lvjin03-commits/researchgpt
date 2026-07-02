@@ -1,6 +1,8 @@
 import {
   DEFAULT_LITERATURE_DISCIPLINE,
   getDefaultSelectedSources,
+  getDisciplineSources,
+  isSourceAvailable,
   isValidDisciplineId,
 } from "@/lib/literature/source-taxonomy";
 import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
@@ -29,6 +31,19 @@ export function normalizeLiteratureSettings(
   if (selectedSources.length === 0 && raw.source === "arxiv") {
     selectedSources = ["arxiv"];
   }
+
+  const disciplineSourceIds = new Set(
+    getDisciplineSources(discipline).map((source) => source.id),
+  );
+  selectedSources = selectedSources.filter((sourceId) =>
+    disciplineSourceIds.has(sourceId),
+  );
+
+  if (selectedSources.length === 0) {
+    selectedSources = getDefaultSelectedSources(discipline);
+  }
+
+  selectedSources = selectedSources.filter((sourceId) => isSourceAvailable(sourceId));
 
   if (selectedSources.length === 0) {
     selectedSources = getDefaultSelectedSources(discipline);
