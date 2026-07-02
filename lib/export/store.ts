@@ -1,11 +1,12 @@
 // Server-only module. Do not import from client components or /api/chat route entry.
 
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import { randomUUID } from "crypto";
 import type { ExportRecord } from "@/lib/export/types";
 
-const EXPORT_DIR = path.join(process.cwd(), ".tmp", "exports");
+const EXPORT_DIR = path.join(os.tmpdir(), "researchgpt-exports");
 const EXPORT_TTL_MS = 60 * 60 * 1000;
 
 function getMetaPath(id: string): string {

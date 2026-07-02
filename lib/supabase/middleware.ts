@@ -33,7 +33,12 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  if (!user && pathname.startsWith("/chat")) {
+  if (
+    !user &&
+    (pathname.startsWith("/chat") ||
+      pathname.startsWith("/translate") ||
+      pathname.startsWith("/literature"))
+  ) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/auth";
     redirectUrl.searchParams.set("next", pathname);

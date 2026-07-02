@@ -1,0 +1,437 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import {
+  LITERATURE_DATE_RANGE_DAYS,
+  LITERATURE_PRIORITY_LABELS,
+  LITERATURE_SOURCE_OPTIONS,
+} from "@/lib/literature/constants";
+import {
+  fetchLiteratureState,
+  LiteratureError,
+  updateLiteraturePaperStatus,
+  updateLiteraturePapers,
+} from "@/lib/literature/client";
+import type {
+  LiteraturePaper,
+  LiteraturePriority,
+  LiteratureSettings,
+} from "@/lib/literature/types";
+
+const DEFAULT_SETTINGS: LiteratureSettings = {
+  researchDirection: "",
+  keywords: "",
+  excludeKeywords: "",
+  source: "arxiv",
+  dateRangeDays: LITERATURE_DATE_RANGE_DAYS,
+};
+
+function priorityClassName(priority: LiteraturePriority | null): string {
+  switch (priority) {
+    case "recommended":
+      return "bg-emerald-100 text-emerald-800";
+    case "skim":
+      return "bg-amber-100 text-amber-800";
+    case "skip":
+      return "bg-gray-200 text-gray-700";
+    default:
+      return "bg-gray-100 text-gray-600";
+  }
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "Unknown date";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function PaperCard({
+  paper,
+  onStatusChange,
+}: {
+  paper: LiteraturePaper;
+  onStatusChange: (
+    paperId: string,
+    status: "saved" | "skipped" | "read",
+  ) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleStatus = async (status: "saved" | "skipped" | "read") => {
+    setIsUpdating(true);
+    try {
+      await onStatusChange(paper.id, status);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  return (
+    <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {paper.priority && (
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${priorityClassName(paper.priority)}`}
+              >
+                {LITERATURE_PRIORITY_LABELS[paper.priority]}
+              </span>
+            )}
+            {paper.relevanceScore !== null && (
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                Relevance {paper.relevanceScore}
+              </span>
+            )}
+            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+              {paper.status}
+            </span>
+          </div>
+
+          <h3 className="text-base font-semibold text-gray-900">{paper.title}</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            {paper.authors.slice(0, 4).join(", ")}
+            {paper.authors.length > 4 ? " et al." : ""} · {formatDate(paper.publishedAt)}
+          </p>
+          <p className="mt-1 text-xs text-gray-400">arXiv:{paper.arxivId}</p>
+        </div>
+
+        <a
+          href={paper.absUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+        >
+          View on arXiv
+        </a>
+      </div>
+
+      <p className="mt-3 text-sm leading-relaxed text-gray-700 line-clamp-3">
+        {paper.abstract}
+      </p>
+
+      {paper.recommendationReason && (
+        <p className="mt-3 rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
+          {paper.recommendationReason}
+        </p>
+      )}
+
+      {paper.chineseSummary && (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => setExpanded((current) => !current)}
+            className="text-sm font-medium text-gray-700 transition-colors hover:text-gray-900"
+          >
+            {expanded ? "Hide Chinese summary" : "Show Chinese summary"}
+          </button>
+
+          {expanded && (
+            <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
+                {paper.chineseSummary}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={isUpdating}
+          onClick={() => {
+            void handleStatus("saved");
+          }}
+          className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          disabled={isUpdating}
+          onClick={() => {
+            void handleStatus("skipped");
+          }}
+          className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Skip
+        </button>
+        <button
+          type="button"
+          disabled={isUpdating}
+          onClick={() => {
+            void handleStatus("read");
+          }}
+          className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Mark as Read
+        </button>
+      </div>
+    </article>
+  );
+}
+
+export function LiteratureShell() {
+  const [settings, setSettings] = useState<LiteratureSettings>(DEFAULT_SETTINGS);
+  const [papers, setPapers] = useState<LiteraturePaper[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const state = await fetchLiteratureState();
+        if (!cancelled) {
+          setSettings(state.settings);
+          setPapers(state.papers);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message =
+            err instanceof LiteratureError
+              ? err.message
+              : "Failed to load literature tracker.";
+          setError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleUpdatePapers = useCallback(async () => {
+    setIsUpdating(true);
+    setError(null);
+    setStatusMessage(null);
+
+    try {
+      const result = await updateLiteraturePapers(settings);
+      setPapers(result.papers);
+      setStatusMessage(
+        `Updated ${result.added + result.updated} paper(s): ${result.added} new, ${result.updated} refreshed.`,
+      );
+    } catch (err) {
+      const message =
+        err instanceof LiteratureError
+          ? err.message
+          : "Failed to update literature papers.";
+      setError(message);
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [settings]);
+
+  const handleStatusChange = useCallback(
+    async (paperId: string, status: "saved" | "skipped" | "read") => {
+      const updated = await updateLiteraturePaperStatus(paperId, status);
+      setPapers((current) =>
+        current.map((paper) => (paper.id === updated.id ? updated : paper)),
+      );
+    },
+    [],
+  );
+
+  const visiblePapers = papers.filter((paper) => paper.status !== "skipped");
+
+  return (
+    <div className="min-h-dvh bg-white">
+      <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900">
+              Literature Tracker
+            </h1>
+            <p className="text-sm text-gray-500">
+              Track recent arXiv papers with AI relevance scoring and Chinese summaries.
+            </p>
+          </div>
+          <Link
+            href="/chat"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+          >
+            Back to Chat
+          </Link>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+        <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div>
+              <label
+                htmlFor="research-direction"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Research direction
+              </label>
+              <textarea
+                id="research-direction"
+                rows={3}
+                value={settings.researchDirection}
+                disabled={isUpdating}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    researchDirection: event.target.value,
+                  }))
+                }
+                placeholder="e.g. protein structure prediction with diffusion models"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="keywords"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Keywords
+              </label>
+              <input
+                id="keywords"
+                type="text"
+                value={settings.keywords}
+                disabled={isUpdating}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    keywords: event.target.value,
+                  }))
+                }
+                placeholder="diffusion, protein folding, structure prediction"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="exclude-keywords"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Exclude keywords
+              </label>
+              <input
+                id="exclude-keywords"
+                type="text"
+                value={settings.excludeKeywords}
+                disabled={isUpdating}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    excludeKeywords: event.target.value,
+                  }))
+                }
+                placeholder="survey, review"
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="source"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Source
+              </label>
+              <select
+                id="source"
+                value={settings.source}
+                disabled
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+              >
+                {LITERATURE_SOURCE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="date-range"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Date range
+              </label>
+              <select
+                id="date-range"
+                value={settings.dateRangeDays}
+                disabled
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+              >
+                <option value={7}>Last 7 days</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              disabled={isUpdating || !settings.keywords.trim()}
+              onClick={() => {
+                void handleUpdatePapers();
+              }}
+              className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+            >
+              {isUpdating ? "Updating Papers..." : "Update Papers"}
+            </button>
+          </section>
+
+          <section className="space-y-4">
+            {error && (
+              <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </p>
+            )}
+
+            {statusMessage && (
+              <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {statusMessage}
+              </p>
+            )}
+
+            {isLoading ? (
+              <div className="rounded-2xl border border-gray-200 bg-white px-5 py-12 text-center text-sm text-gray-500">
+                Loading literature tracker...
+              </div>
+            ) : visiblePapers.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
+                <p className="text-sm font-medium text-gray-900">No papers yet</p>
+                <p className="mt-2 text-sm text-gray-500">
+                  Enter keywords and click Update Papers to fetch recent arXiv results.
+                </p>
+              </div>
+            ) : (
+              visiblePapers.map((paper) => (
+                <PaperCard
+                  key={paper.id}
+                  paper={paper}
+                  onStatusChange={handleStatusChange}
+                />
+              ))
+            )}
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}

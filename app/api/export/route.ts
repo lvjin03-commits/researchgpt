@@ -5,6 +5,18 @@ import type { ExportErrorResponse } from "@/lib/export/types";
 
 export const runtime = "nodejs";
 
+function logExportError(error: unknown): void {
+  if (error instanceof Error) {
+    console.error("[export] error name:", error.name);
+    console.error("[export] error message:", error.message);
+    console.error("[export] error stack:", error.stack);
+    return;
+  }
+
+  console.error("[export] error name:", typeof error);
+  console.error("[export] error message:", String(error));
+}
+
 async function requireUser() {
   const supabase = await createClient();
   const {
@@ -20,10 +32,13 @@ async function requireUser() {
 }
 
 export async function POST(request: Request) {
+  console.log("[export] request received");
+
   try {
     const user = await requireUser();
 
     if (!user) {
+      console.error("[export] unauthorized export request");
       return Response.json(
         { success: false, error: "Unauthorized" } satisfies ExportErrorResponse,
         { status: 401 },
@@ -32,18 +47,26 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const exportRequest = parseExportRequest(body);
+
+    console.log("[export] format:", exportRequest.format);
+    console.log("[export] message count:", 1);
+    console.log("[export] content length:", exportRequest.content.length);
+
     const result = await createExport(exportRequest, user.id);
+
+    console.log("[export] created:", result.filename);
 
     return Response.json(result);
   } catch (error) {
     if (error instanceof ExportError) {
+      logExportError(error);
       return Response.json(
         { success: false, error: error.message } satisfies ExportErrorResponse,
         { status: error.statusCode },
       );
     }
 
-    console.error("[api/export] Failed to create export:", error);
+    logExportError(error);
 
     return Response.json(
       {
