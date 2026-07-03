@@ -7,6 +7,7 @@ import { LITERATURE_PRIORITY_LABELS } from "@/lib/literature/constants";
 import {
   fetchLiteratureFolders,
   fetchLiteraturePaper,
+  fetchLiteraturePaperCitationNetwork,
   generateLiteraturePaperWorkspace,
   LiteratureError,
   setPaperFolders,
@@ -39,6 +40,8 @@ import type {
   LiteratureFolder,
   LiteraturePaper,
   LiteraturePaperStatus,
+  PaperCitationNetwork,
+  PaperCitationNetworkItem,
   PaperWorkspaceAnalysis,
 } from "@/lib/literature/types";
 import { deriveWorkspaceAnalysisFromPaper } from "@/lib/literature/paper-workspace-display";
@@ -121,15 +124,75 @@ function ExportButton({
   );
 }
 
-function PlaceholderButton({ label }: { label: string }) {
+function CitationNetworkPaperList({
+  items,
+  emptyLabel,
+}: {
+  items: PaperCitationNetworkItem[];
+  emptyLabel: string;
+}) {
+  if (items.length === 0) {
+    return <p className="text-sm text-gray-500">{emptyLabel}</p>;
+  }
+
   return (
-    <button
-      type="button"
-      disabled
-      className="cursor-not-allowed rounded-lg border border-dashed border-gray-200 px-3 py-2 text-sm font-medium text-gray-400"
-    >
-      {label}
-    </button>
+    <ol className="space-y-3">
+      {items.map((item, index) => (
+        <li
+          key={item.paperId ?? `${item.title}-${index}`}
+          className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3"
+        >
+          {item.url ? (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm font-medium text-blue-700 hover:underline"
+            >
+              {item.title}
+            </a>
+          ) : (
+            <p className="text-sm font-medium text-gray-900">{item.title}</p>
+          )}
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+            {item.authors.length > 0 && <span>{item.authors.join(", ")}</span>}
+            {item.year !== null && <span>{item.year} 年</span>}
+            {item.citationCount !== null && (
+              <span>被引 {item.citationCount.toLocaleString("zh-CN")} 次</span>
+            )}
+            {item.doi && (
+              <a
+                href={`https://doi.org/${item.doi}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-600 hover:underline"
+              >
+                DOI
+              </a>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function CitationCountCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | null;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        {label}
+      </p>
+      <p className="mt-1 text-2xl font-semibold text-gray-900">
+        {value === null ? "—" : value.toLocaleString("zh-CN")}
+      </p>
+    </div>
   );
 }
 
@@ -146,6 +209,13 @@ export function LiteraturePaperDetailShell({
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isGeneratingWorkspace, setIsGeneratingWorkspace] = useState(false);
+  const [citationNetwork, setCitationNetwork] = useState<PaperCitationNetwork | null>(
+    null,
+  );
+  const [isCitationNetworkLoading, setIsCitationNetworkLoading] = useState(true);
+  const [citationNetworkError, setCitationNetworkError] = useState<string | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [folderSelectorMode, setFolderSelectorMode] = useState<
@@ -182,6 +252,38 @@ export function LiteraturePaperDetailShell({
       } finally {
         if (!cancelled) {
           setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paperId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      setIsCitationNetworkLoading(true);
+      setCitationNetworkError(null);
+
+      try {
+        const network = await fetchLiteraturePaperCitationNetwork(paperId);
+        if (!cancelled) {
+          setCitationNetwork(network);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setCitationNetworkError(
+            err instanceof LiteratureError
+              ? err.message
+              : "加载引用网络失败。",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCitationNetworkLoading(false);
         }
       }
     })();
@@ -347,6 +449,14 @@ export function LiteraturePaperDetailShell({
   const assignedFolderIds = paper?.folderIds ?? [];
   const googleScholarUrl = paper ? getGoogleScholarUrl(paper) : null;
   const semanticScholarUrl = paper ? getSemanticScholarUrl(paper) : null;
+  const hasCitationNetworkData =
+    citationNetwork !== null &&
+    (citationNetwork.citationCount !== null ||
+      citationNetwork.referenceCount !== null ||
+      citationNetwork.influentialCitationCount !== null ||
+      citationNetwork.references.length > 0 ||
+      citationNetwork.citations.length > 0 ||
+      citationNetwork.relatedPapers.length > 0);
 
   return (
     <div className="min-h-dvh bg-gray-50">
@@ -751,11 +861,63 @@ export function LiteraturePaperDetailShell({
               </div>
             </WorkspaceSection>
 
-            <WorkspaceSection title="即将上线">
-              <div className="flex flex-wrap gap-2">
-                <PlaceholderButton label="引用网络（即将上线）" />
-                <PlaceholderButton label="相关推荐（即将上线）" />
-              </div>
+            <WorkspaceSection title="引用网络">
+              {isCitationNetworkLoading ? (
+                <p className="text-sm text-gray-500">正在加载引用数据…</p>
+              ) : citationNetworkError ? (
+                <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {citationNetworkError}
+                </p>
+              ) : !hasCitationNetworkData ? (
+                <p className="text-sm text-gray-500">暂无引用数据</p>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <CitationCountCard
+                      label="被引次数"
+                      value={citationNetwork?.citationCount ?? null}
+                    />
+                    <CitationCountCard
+                      label="参考文献数"
+                      value={citationNetwork?.referenceCount ?? null}
+                    />
+                    <CitationCountCard
+                      label="高影响力引用"
+                      value={citationNetwork?.influentialCitationCount ?? null}
+                    />
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900">参考文献</h3>
+                    <div className="mt-3">
+                      <CitationNetworkPaperList
+                        items={citationNetwork?.references ?? []}
+                        emptyLabel="暂无引用数据"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900">被引用文献</h3>
+                    <div className="mt-3">
+                      <CitationNetworkPaperList
+                        items={citationNetwork?.citations ?? []}
+                        emptyLabel="暂无引用数据"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-900">相关推荐</h3>
+                    <div className="mt-3">
+                      <CitationNetworkPaperList
+                        items={citationNetwork?.relatedPapers ?? []}
+                        emptyLabel="暂无引用数据"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </WorkspaceSection>
           </>
         )}

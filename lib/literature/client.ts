@@ -13,6 +13,7 @@ import type {
   LiteraturePaper,
   LiteraturePaperStatus,
   LiteratureSettings,
+  PaperCitationNetwork,
   PaperWorkspaceAnalysis,
   UpdateLiteratureRequest,
   UpdateLiteratureResponse,
@@ -468,6 +469,29 @@ export async function updateLiteraturePaperNotes(
   }
 
   return payload.paper;
+}
+
+export async function fetchLiteraturePaperCitationNetwork(
+  paperId: string,
+): Promise<PaperCitationNetwork> {
+  const response = await fetch(`/api/literature/papers/${paperId}/citation-network`);
+  const payload = await parseJson<PaperCitationNetwork & { error?: string }>(response);
+
+  if (!response.ok) {
+    throw new LiteratureError(
+      payload.error ?? "加载引用网络失败。",
+      response.status,
+    );
+  }
+
+  return {
+    citationCount: payload.citationCount ?? null,
+    referenceCount: payload.referenceCount ?? null,
+    influentialCitationCount: payload.influentialCitationCount ?? null,
+    references: payload.references ?? [],
+    citations: payload.citations ?? [],
+    relatedPapers: payload.relatedPapers ?? [],
+  };
 }
 
 export async function generateLiteraturePaperWorkspace(

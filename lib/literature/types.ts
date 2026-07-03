@@ -100,3 +100,22 @@ export type UpdateLiteratureResponse = {
   settings: LiteratureSettings;
   papers: LiteraturePaper[];
 };
+
+export type PaperCitationNetworkItem = {
+  paperId: string | null;
+  title: string;
+  authors: string[];
+  year: number | null;
+  citationCount: number | null;
+  url: string | null;
+  doi: string | null;
+};
+
+export type PaperCitationNetwork = {
+  citationCount: number | null;
+  referenceCount: number | null;
+  influentialCitationCount: number | null;
+  references: PaperCitationNetworkItem[];
+  citations: PaperCitationNetworkItem[];
+  relatedPapers: PaperCitationNetworkItem[];
+};
