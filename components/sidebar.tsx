@@ -58,7 +58,7 @@ export function Sidebar({
         className={`fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r border-gray-200 bg-gray-50 transition-transform duration-200 ease-out md:static md:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
-        aria-label="Chat history sidebar"
+        aria-label="对话历史侧栏"
       >
         <div className="flex items-center justify-between gap-2 px-3 py-3">
           <span className="truncate text-sm font-semibold text-gray-900">
@@ -68,7 +68,7 @@ export function Sidebar({
             type="button"
             onClick={onClose}
             className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700 md:hidden"
-            aria-label="Close sidebar"
+            aria-label="关闭侧栏"
           >
             <CloseIcon className="h-5 w-5" />
           </button>
@@ -81,7 +81,7 @@ export function Sidebar({
             className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100"
           >
             <PlusIcon className="h-4 w-4 shrink-0" />
-            New chat
+            新建对话
           </button>
         </div>
 
@@ -93,7 +93,7 @@ export function Sidebar({
           )}
 
           <p className="px-2 py-2 text-xs font-medium uppercase tracking-wide text-gray-400">
-            Recent
+            最近对话
           </p>
 
           {conversations.length === 0 ? (
@@ -101,10 +101,8 @@ export function Sidebar({
               <div className="rounded-full bg-gray-200/80 p-3">
                 <MessageIcon className="h-5 w-5 text-gray-400" />
               </div>
-              <p className="text-sm text-gray-500">No conversations yet</p>
-              <p className="text-xs text-gray-400">
-                Your research chats will appear here
-              </p>
+              <p className="text-sm text-gray-500">暂无对话</p>
+              <p className="text-xs text-gray-400">你的研究对话将显示在这里</p>
             </div>
           ) : (
             <ul className="space-y-1">
@@ -132,7 +130,7 @@ export function Sidebar({
                           event.stopPropagation();
                           onDeleteConversation(conversation.id);
                         }}
-                        aria-label={`Delete ${conversation.title}`}
+                        aria-label={`删除「${conversation.title}」`}
                         className="mr-1 rounded-md p-1.5 text-gray-400 opacity-0 transition-all hover:bg-white hover:text-red-500 group-hover:opacity-100 focus:opacity-100"
                       >
                         <TrashIcon className="h-4 w-4" />
@@ -156,7 +154,7 @@ export function Sidebar({
             href="/translate"
             className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
           >
-            Document Translation
+            文档翻译
           </Link>
           <button
             type="button"
@@ -164,7 +162,7 @@ export function Sidebar({
             disabled={isLoggingOut}
             className="flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isLoggingOut ? "Logging out..." : "Log out"}
+            {isLoggingOut ? "正在退出…" : "退出登录"}
           </button>
         </div>
       </aside>

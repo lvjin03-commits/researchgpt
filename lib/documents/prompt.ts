@@ -38,9 +38,9 @@ export function augmentUserMessageWithDocuments(
 
   if (!message) {
     if (documents.length > 1) {
-      message = "Please analyze the attached documents.";
+      message = "请分析附件文档。";
     } else if (documents.length === 1) {
-      message = "Please analyze the attached document.";
+      message = "请分析附件文档。";
     }
   }
 

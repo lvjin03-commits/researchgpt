@@ -65,11 +65,11 @@ export function generateChatTitle(firstUserMessage: DisplayChatMessage): string 
   const firstAttachment = firstUserMessage.attachments?.[0];
 
   if (firstAttachment) {
-    const prefix = firstAttachment.kind === "image" ? "Image" : "Document";
+    const prefix = firstAttachment.kind === "image" ? "图片" : "文档";
     return truncateTitle(`${prefix}: ${firstAttachment.name}`);
   }
 
-  return "New chat";
+  return "新建对话";
 }
 
 function truncateTitle(value: string): string {
@@ -90,7 +90,7 @@ export function createConversation(
 
   return {
     id: createConversationId(),
-    title: firstUserMessage ? generateChatTitle(firstUserMessage) : "New chat",
+    title: firstUserMessage ? generateChatTitle(firstUserMessage) : "新建对话",
     messages,
     createdAt: now,
     updatedAt: now,

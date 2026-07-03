@@ -615,7 +615,7 @@ export function LiteraturePaperDetailShell({
                     rel="noreferrer"
                     className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
                   >
-                    Google Scholar
+                    Google 学术
                   </a>
                 )}
                 {semanticScholarUrl && (

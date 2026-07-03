@@ -32,21 +32,21 @@ export async function exportContent(
   try {
     payload = (await response.json()) as ExportResponse;
   } catch {
-    throw new ExportError("Export request returned an invalid response.", response.status);
+    throw new ExportError("导出请求返回无效响应。", response.status);
   }
 
   if (!response.ok || !payload.success) {
     const message =
       !payload.success && payload.error
         ? payload.error
-        : "Failed to generate export file.";
+        : "生成导出文件失败。";
     throw new ExportError(message, response.status);
   }
 
   const downloadResponse = await fetch(payload.downloadUrl);
 
   if (!downloadResponse.ok) {
-    throw new ExportError("Failed to download the generated export file.", 502);
+    throw new ExportError("下载导出文件失败。", 502);
   }
 
   const blob = await downloadResponse.blob();

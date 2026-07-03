@@ -115,7 +115,7 @@ export function ChatShell() {
       router.push("/auth");
       router.refresh();
     } catch {
-      setError("Failed to log out. Please try again.");
+      setError("退出登录失败，请重试。");
       setIsLoggingOut(false);
     }
   }, [abortActiveStream, router]);
@@ -194,7 +194,7 @@ export function ChatShell() {
         const message =
           err instanceof ChatClientError
             ? err.message
-            : "Something went wrong. Please try again.";
+            : "出现错误，请重试。";
 
         setError(message);
       } finally {
@@ -215,12 +215,12 @@ export function ChatShell() {
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId,
   );
-  const chatTitle = activeConversation?.title ?? "New chat";
+  const chatTitle = activeConversation?.title ?? "新建对话";
 
   if (!isHydrated) {
     return (
       <div className="flex h-dvh items-center justify-center bg-white">
-        <p className="text-sm text-gray-400">Loading conversations...</p>
+        <p className="text-sm text-gray-400">正在加载对话…</p>
       </div>
     );
   }
@@ -246,7 +246,7 @@ export function ChatShell() {
             type="button"
             onClick={() => setSidebarOpen(true)}
             className="rounded-lg p-2 text-gray-600 transition-colors hover:bg-gray-100"
-            aria-label="Open sidebar"
+            aria-label="打开侧栏"
           >
             <MenuIcon className="h-5 w-5" />
           </button>
@@ -272,7 +272,7 @@ export function ChatShell() {
                   ResearchGPT
                 </h1>
                 <p className="mt-3 text-lg text-gray-500 sm:text-xl">
-                  What would you like to research today?
+                  今天想研究什么？
                 </p>
                 {error && (
                   <p className="mt-4 text-sm text-red-600">{error}</p>

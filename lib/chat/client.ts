@@ -84,7 +84,7 @@ async function prepareMessagesWithAttachments(
     const message =
       error instanceof Error && error.message
         ? error.message
-        : "Failed to upload attachments to storage.";
+        : "附件上传失败。";
     throw new ChatClientError(message, 502);
   }
 
@@ -103,7 +103,7 @@ async function prepareMessagesWithAttachments(
   if (!response.ok) {
     await parseApiError(
       response,
-      "Failed to process attachments",
+      "附件处理失败",
       responseBodyText,
     );
   }
@@ -113,11 +113,11 @@ async function prepareMessagesWithAttachments(
   try {
     payload = JSON.parse(responseBodyText) as { messages?: ChatMessage[] };
   } catch {
-    throw new ChatClientError("Invalid attachment preparation response", 502);
+    throw new ChatClientError("附件预处理响应无效", 502);
   }
 
   if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
-    throw new ChatClientError("Invalid attachment preparation response", 502);
+    throw new ChatClientError("附件预处理响应无效", 502);
   }
 
   return payload.messages;
@@ -149,11 +149,11 @@ export async function streamChatResponse(
   });
 
   if (!response.ok) {
-    await parseApiError(response, "Failed to send message");
+    await parseApiError(response, "发送消息失败");
   }
 
   if (!response.body) {
-    throw new ChatClientError("No response stream received", 502);
+    throw new ChatClientError("未收到响应流", 502);
   }
 
   const reader = response.body.getReader();
@@ -183,7 +183,7 @@ export async function streamChatResponse(
     const message =
       error instanceof Error && error.message.trim()
         ? error.message
-        : "Failed to read response stream";
+        : "读取响应流失败";
 
     throw new ChatClientError(message, 502);
   } finally {

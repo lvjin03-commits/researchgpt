@@ -11,11 +11,11 @@ type MessageExportMenuProps = {
 };
 
 const EXPORT_OPTIONS: { format: ExportFormat; label: string }[] = [
-  { format: "docx", label: "Export as Word" },
-  { format: "pdf", label: "Export as PDF" },
-  { format: "md", label: "Export as Markdown" },
-  { format: "txt", label: "Export as Text" },
-  { format: "json", label: "Export as JSON" },
+  { format: "docx", label: "导出为 Word" },
+  { format: "pdf", label: "导出为 PDF" },
+  { format: "md", label: "导出为 Markdown" },
+  { format: "txt", label: "导出为纯文本" },
+  { format: "json", label: "导出为 JSON" },
 ];
 
 export function MessageExportMenu({
@@ -73,7 +73,7 @@ export function MessageExportMenu({
         const message =
           err instanceof ExportError
             ? err.message
-            : "Failed to export message. Please try again.";
+            : "导出消息失败，请重试。";
         setError(message);
       } finally {
         setExportingFormat(null);
@@ -90,13 +90,13 @@ export function MessageExportMenu({
           setOpen((current) => !current);
           setError(null);
         }}
-        aria-label="Export response"
+        aria-label="导出回复"
         aria-expanded={open}
         aria-haspopup="menu"
         className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-white hover:text-gray-700"
       >
         <ExportIcon className="h-3.5 w-3.5" />
-        Export
+        导出
       </button>
 
       {open && (
@@ -115,7 +115,7 @@ export function MessageExportMenu({
               }}
               className="flex w-full items-center px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {exportingFormat === option.format ? "Exporting..." : option.label}
+              {exportingFormat === option.format ? "正在导出…" : option.label}
             </button>
           ))}
         </div>

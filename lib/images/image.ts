@@ -20,7 +20,7 @@ function getImageMimeType(fileName: string): string {
 
   if (!isImageExtension(extension)) {
     throw new UploadError(
-      `Unsupported image type "${extension || "unknown"}". Supported types: .png, .jpg, .jpeg, .webp.`,
+      `不支持的图片类型「${extension || "未知"}」。支持：.png、.jpg、.jpeg、.webp。`,
     );
   }
 
@@ -74,7 +74,7 @@ export function injectImageIntoMessages(
   }
 
   const trimmedMessage = userMessage.trim();
-  const text = trimmedMessage || "Please analyze the attached image.";
+  const text = trimmedMessage || "请分析附件图片。";
 
   updated[lastIndex] = {
     role: "user",

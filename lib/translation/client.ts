@@ -74,7 +74,7 @@ export async function translateDocxFile(
   });
 
   if (!response.ok) {
-    let message = "Document translation failed.";
+    let message = "文档翻译失败。";
 
     try {
       const payload = (await response.json()) as { error?: string };
@@ -89,7 +89,7 @@ export async function translateDocxFile(
   }
 
   if (!response.body) {
-    throw new TranslationClientError("No translation stream was returned.");
+    throw new TranslationClientError("未返回翻译流。");
   }
 
   const reader = response.body.getReader();
@@ -146,7 +146,5 @@ export async function translateDocxFile(
     }
   }
 
-  throw new TranslationClientError(
-    "Translation ended unexpectedly before completion.",
-  );
+  throw new TranslationClientError("翻译意外中断，未完成。");
 }

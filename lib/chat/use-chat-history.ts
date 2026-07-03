@@ -92,7 +92,7 @@ export function useChatHistory(): UseChatHistoryResult {
     console.error("[chat-history] Cloud sync failed:", error);
     cloudEnabledRef.current = false;
     setIsCloudSynced(false);
-    setSyncError("Cloud sync unavailable. Using local cache.");
+    setSyncError("云同步不可用，正在使用本地缓存。");
   }, []);
 
   const markCloudSuccess = useCallback(() => {
@@ -203,7 +203,7 @@ export function useChatHistory(): UseChatHistoryResult {
 
         cloudEnabledRef.current = false;
         setIsCloudSynced(false);
-        setSyncError("Could not load cloud history. Using local cache.");
+        setSyncError("无法加载云端历史，正在使用本地缓存。");
 
         const localStorageData = loadChatHistory(userIdRef.current);
         setConversations(localStorageData.conversations);

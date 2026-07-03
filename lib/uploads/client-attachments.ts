@@ -32,7 +32,7 @@ export function createPendingAttachment(file: File): PendingAttachment | string 
   const kind = getAttachmentKind(normalizedFile.name);
 
   if (!kind) {
-    return validateUploadFile(normalizedFile) ?? "Unsupported file type.";
+    return validateUploadFile(normalizedFile) ?? "不支持的文件类型。";
   }
 
   return {

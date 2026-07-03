@@ -31,7 +31,7 @@ async function parseJson<T>(response: Response): Promise<T> {
   try {
     return (await response.json()) as T;
   } catch {
-    throw new LiteratureError("Invalid literature API response.", response.status);
+    throw new LiteratureError("文献 API 响应无效。", response.status);
   }
 }
 
@@ -153,26 +153,26 @@ function parseUpdateLiteratureResponse(payload: unknown): UpdateLiteratureRespon
     console.error(
       "[literature] update response validation failed: top-level payload invalid",
     );
-    throw new LiteratureError("Invalid literature update response.", 502);
+    throw new LiteratureError("文献更新响应无效。", 502);
   }
 
   const record = payload as Record<string, unknown>;
 
   if (!validateLiteratureSettings(record.settings)) {
     console.error("[literature] update response validation failed: settings invalid");
-    throw new LiteratureError("Invalid literature update response.", 502);
+    throw new LiteratureError("文献更新响应无效。", 502);
   }
 
   if (!Array.isArray(record.papers)) {
     console.error("[literature] update response validation failed: papers not array");
-    throw new LiteratureError("Invalid literature update response.", 502);
+    throw new LiteratureError("文献更新响应无效。", 502);
   }
 
   for (let index = 0; index < record.papers.length; index += 1) {
     const failure = getLiteraturePaperValidationFailure(record.papers[index], index);
     if (failure) {
       console.error(`[literature] update response validation failed: ${failure}`);
-      throw new LiteratureError("Invalid literature update response.", 502);
+      throw new LiteratureError("文献更新响应无效。", 502);
     }
   }
 

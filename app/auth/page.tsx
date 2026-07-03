@@ -6,7 +6,7 @@ export default function AuthPage() {
     <div className="flex min-h-dvh items-center justify-center bg-white px-4 py-12">
       <Suspense
         fallback={
-          <div className="text-sm text-gray-400">Loading authentication...</div>
+          <div className="text-sm text-gray-400">正在加载登录…</div>
         }
       >
         <AuthForm />

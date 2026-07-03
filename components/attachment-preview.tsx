@@ -46,7 +46,7 @@ export function AttachmentPreview({
             type="button"
             onClick={() => onRemove(attachment.id)}
             disabled={disabled}
-            aria-label={`Remove ${attachment.file.name}`}
+            aria-label={`移除 ${attachment.file.name}`}
             className="rounded-md p-1 text-gray-400 transition-colors hover:bg-white hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <CloseIcon className="h-3.5 w-3.5" />

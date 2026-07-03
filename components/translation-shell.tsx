@@ -23,12 +23,12 @@ import type {
 } from "@/lib/translation/types";
 
 const STAGE_LABELS: Record<NonNullable<TranslationUiState["stage"]>, string> = {
-  idle: "Ready to translate",
-  uploaded: "File uploaded",
-  extracting: "Extracting text",
-  translating: "Translating",
-  generating: "Generating output file",
-  completed: "Completed",
+  idle: "准备翻译",
+  uploaded: "文件已上传",
+  extracting: "正在提取文本",
+  translating: "正在翻译",
+  generating: "正在生成输出文件",
+  completed: "已完成",
 };
 
 export function TranslationShell() {
@@ -54,7 +54,7 @@ export function TranslationShell() {
     if (!file.name.toLowerCase().endsWith(".docx")) {
       setUiState({
         stage: "idle",
-        error: "Please upload a .docx file.",
+        error: "请上传 .docx 文件。",
       });
       return;
     }
@@ -88,7 +88,7 @@ export function TranslationShell() {
       const message =
         error instanceof TranslationClientError
           ? error.message
-          : "Document translation failed. Please try again.";
+          : "文档翻译失败，请重试。";
 
       setUiState({ stage: "idle", error: message });
     } finally {
@@ -101,7 +101,7 @@ export function TranslationShell() {
     uiState.stage === "translating" &&
     uiState.batch &&
     uiState.totalBatches
-      ? `${STAGE_LABELS.translating} batch ${uiState.batch}/${uiState.totalBatches}`
+      ? `${STAGE_LABELS.translating} 第 ${uiState.batch}/${uiState.totalBatches} 批`
       : STAGE_LABELS[uiState.stage];
 
   return (
@@ -110,17 +110,17 @@ export function TranslationShell() {
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold text-gray-900">
-              Document Translation
+              文档翻译
             </h1>
             <p className="text-sm text-gray-500">
-              Upload a Word document and download a translated .docx file.
+              上传 Word 文档并下载翻译后的 .docx 文件。
             </p>
           </div>
           <Link
             href="/chat"
             className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
           >
-            Back to Chat
+            返回对话
           </Link>
         </div>
       </header>
@@ -132,7 +132,7 @@ export function TranslationShell() {
               htmlFor="docx-upload"
               className="mb-2 block text-sm font-medium text-gray-700"
             >
-              Word document (.docx)
+              Word 文档（.docx）
             </label>
             <input
               id="docx-upload"
@@ -143,12 +143,11 @@ export function TranslationShell() {
               className="block w-full text-sm text-gray-700 file:mr-4 file:rounded-lg file:border-0 file:bg-gray-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-800"
             />
             <p className="mt-2 text-xs text-gray-400">
-              Max {MAX_DOCX_TRANSLATION_MB}MB. Paragraphs, headings, lists, and
-              table cells are preserved where possible.
+              最大 {MAX_DOCX_TRANSLATION_MB}MB。尽可能保留段落、标题、列表和表格单元格。
             </p>
             {file && (
               <p className="mt-2 text-sm text-gray-600">
-                Selected: <span className="font-medium">{file.name}</span>
+                已选择：<span className="font-medium">{file.name}</span>
               </p>
             )}
           </div>
@@ -159,7 +158,7 @@ export function TranslationShell() {
                 htmlFor="source-language"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Source language
+                源语言
               </label>
               <select
                 id="source-language"
@@ -183,7 +182,7 @@ export function TranslationShell() {
                 htmlFor="target-language"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
-                Target language
+                目标语言
               </label>
               <select
                 id="target-language"
@@ -205,7 +204,7 @@ export function TranslationShell() {
 
           <div>
             <span className="mb-2 block text-sm font-medium text-gray-700">
-              Output mode
+              输出模式
             </span>
             <div className="space-y-2">
               {OUTPUT_MODE_OPTIONS.map((option) => (
@@ -240,7 +239,7 @@ export function TranslationShell() {
               htmlFor="translation-style"
               className="mb-2 block text-sm font-medium text-gray-700"
             >
-              Style
+              风格
             </label>
             <select
               id="translation-style"
@@ -263,10 +262,8 @@ export function TranslationShell() {
             <p className="text-sm font-medium text-gray-900">{progressLabel}</p>
             {uiState.stage === "completed" && uiState.filename && (
               <p className="mt-1 text-sm text-gray-600">
-                Downloaded {uiState.filename}. Translated{" "}
-                {uiState.translatedCount} paragraph
-                {uiState.translatedCount === 1 ? "" : "s"}, skipped{" "}
-                {uiState.skippedCount}.
+                已下载 {uiState.filename}。已翻译 {uiState.translatedCount} 段，跳过{" "}
+                {uiState.skippedCount} 段。
               </p>
             )}
           </div>
@@ -285,7 +282,7 @@ export function TranslationShell() {
             disabled={!file || isTranslating}
             className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
           >
-            {isTranslating ? "Translating..." : "Translate Document"}
+            {isTranslating ? "正在翻译…" : "翻译文档"}
           </button>
         </div>
       </main>

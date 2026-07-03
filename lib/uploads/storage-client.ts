@@ -23,7 +23,7 @@ export async function uploadChatAttachments(
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    throw new Error("You must be signed in to upload attachments.");
+    throw new Error("请先登录后再上传附件。");
   }
 
   const batchId = createUploadId();
@@ -45,7 +45,7 @@ export async function uploadChatAttachments(
 
     if (error) {
       throw new Error(
-        `Failed to upload "${file.name}" to storage: ${error.message}`,
+        `上传「${file.name}」失败：${error.message}`,
       );
     }
 

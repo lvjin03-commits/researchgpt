@@ -11,32 +11,32 @@ export const BATCH_MAX_ITEMS = 10;
 export const BATCH_MAX_CHARS = 6_000;
 
 export const SOURCE_LANGUAGE_OPTIONS = [
-  { value: "auto", label: "Auto detect" },
-  { value: "chinese", label: "Chinese" },
-  { value: "english", label: "English" },
+  { value: "auto", label: "自动检测" },
+  { value: "chinese", label: "中文" },
+  { value: "english", label: "英文" },
 ] as const;
 
 export const TARGET_LANGUAGE_OPTIONS = [
-  { value: "chinese", label: "Chinese" },
-  { value: "english", label: "English" },
+  { value: "chinese", label: "中文" },
+  { value: "english", label: "英文" },
 ] as const;
 
 export const OUTPUT_MODE_OPTIONS = [
   {
     value: "replace",
-    label: "Replace original text",
-    description: "Replace each paragraph with the translation.",
+    label: "替换原文",
+    description: "用译文替换每个段落。",
   },
   {
     value: "bilingual",
-    label: "Bilingual",
-    description: "Keep the original paragraph and add the translation below it.",
+    label: "双语对照",
+    description: "保留原文，并在下方添加译文。",
   },
 ] as const;
 
 export const STYLE_OPTIONS = [
-  { value: "academic", label: "Academic" },
-  { value: "sci-paper", label: "SCI paper" },
-  { value: "technical", label: "Technical document" },
-  { value: "general", label: "General" },
+  { value: "academic", label: "学术" },
+  { value: "sci-paper", label: "SCI 论文" },
+  { value: "technical", label: "技术文档" },
+  { value: "general", label: "通用" },
 ] as const;

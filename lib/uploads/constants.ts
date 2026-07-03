@@ -57,7 +57,7 @@ const MIME_TO_EXTENSION: Record<string, SupportedImageExtension> = {
 };
 
 const UNSUPPORTED_FILE_MESSAGE =
-  "Unsupported file type. Supported: images (.png, .jpg, .jpeg, .webp) and documents (.pdf, .docx, .xlsx, .xls, .csv, .txt, .md, .pptx).";
+  "不支持的文件类型。支持：图片（.png、.jpg、.jpeg、.webp）和文档（.pdf、.docx、.xlsx、.xls、.csv、.txt、.md、.pptx）。";
 
 export function getFileExtension(fileName: string): string {
   const dotIndex = fileName.lastIndexOf(".");
@@ -129,18 +129,18 @@ export function validateUploadFile(file: {
   }
 
   if (!isSupportedExtension(extension)) {
-    return `"${file.name}" is not supported. ${UNSUPPORTED_FILE_MESSAGE}`;
+    return `「${file.name}」不受支持。${UNSUPPORTED_FILE_MESSAGE}`;
   }
 
   if (file.size === 0) {
-    return `"${file.name}" is empty.`;
+    return `「${file.name}」为空。`;
   }
 
   const maxBytes = getMaxUploadBytesForFileName(file.name);
   const maxMb = maxBytes / (1024 * 1024);
 
   if (file.size > maxBytes) {
-    return `"${file.name}" exceeds the ${maxMb}MB size limit.`;
+    return `「${file.name}」超过 ${maxMb}MB 大小限制。`;
   }
 
   return null;

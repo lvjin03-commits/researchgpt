@@ -228,7 +228,7 @@ export function LiteratureShell() {
                     keywords: event.target.value,
                   }))
                 }
-                placeholder="diffusion, protein folding, structure prediction"
+                placeholder="扩散模型, 蛋白质折叠, 结构预测"
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
               />
             </div>
@@ -251,7 +251,7 @@ export function LiteratureShell() {
                     excludeKeywords: event.target.value,
                   }))
                 }
-                placeholder="survey, review"
+                placeholder="综述, 评论"
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
               />
             </div>

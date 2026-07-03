@@ -68,23 +68,23 @@ export function buildDefaultUserMessage(
   }
 
   if (imageCount > 0 && documentCount > 0) {
-    return "Please analyze the attached files.";
+    return "请分析附件。";
   }
 
   if (imageCount > 1) {
-    return "Please analyze the attached images.";
+    return "请分析附件图片。";
   }
 
   if (imageCount === 1) {
-    return "Please analyze the attached image.";
+    return "请分析附件图片。";
   }
 
   if (documentCount > 1) {
-    return "Please analyze the attached documents.";
+    return "请分析附件文档。";
   }
 
   if (documentCount === 1) {
-    return "Please analyze the attached document.";
+    return "请分析附件文档。";
   }
 
   return trimmed;

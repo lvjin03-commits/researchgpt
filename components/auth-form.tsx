@@ -59,10 +59,10 @@ export function AuthForm() {
         return;
       }
 
-      setMessage("Account created. Check your email if confirmation is required, then sign in.");
+      setMessage("账号已创建。如需邮箱确认，请查收邮件后再登录。");
       setMode("login");
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("出现错误，请重试。");
     } finally {
       setIsSubmitting(false);
     }
@@ -77,8 +77,8 @@ export function AuthForm() {
           </h1>
           <p className="mt-2 text-sm text-gray-500">
             {mode === "login"
-              ? "Sign in to continue your research"
-              : "Create an account to get started"}
+              ? "登录以继续你的研究"
+              : "创建账号以开始使用"}
           </p>
         </div>
 
@@ -96,7 +96,7 @@ export function AuthForm() {
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            Log in
+            登录
           </button>
           <button
             type="button"
@@ -111,7 +111,7 @@ export function AuthForm() {
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            Sign up
+            注册
           </button>
         </div>
 
@@ -121,7 +121,7 @@ export function AuthForm() {
               htmlFor="email"
               className="mb-1.5 block text-sm font-medium text-gray-700"
             >
-              Email
+              邮箱
             </label>
             <input
               id="email"
@@ -140,7 +140,7 @@ export function AuthForm() {
               htmlFor="password"
               className="mb-1.5 block text-sm font-medium text-gray-700"
             >
-              Password
+              密码
             </label>
             <input
               id="password"
@@ -175,10 +175,10 @@ export function AuthForm() {
             className="flex w-full items-center justify-center rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
           >
             {isSubmitting
-              ? "Please wait..."
+              ? "请稍候…"
               : mode === "login"
-                ? "Log in"
-                : "Create account"}
+                ? "登录"
+                : "创建账号"}
           </button>
         </form>
       </div>

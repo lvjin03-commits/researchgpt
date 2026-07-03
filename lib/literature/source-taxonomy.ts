@@ -153,7 +153,7 @@ function industry(name: string): TaxonomySource {
 export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   {
     id: "ai",
-    label: "AI",
+    label: "人工智能",
     sources: [
       arxiv(),
       platform("OpenReview", "openreview"),
@@ -174,7 +174,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "biology",
-    label: "Biology",
+    label: "生物学",
     sources: [
       pubmed(),
       platform("Europe PMC", "europe_pmc"),
@@ -203,7 +203,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "medicine",
-    label: "Medicine",
+    label: "医学",
     sources: [
       pubmed(),
       platform("ClinicalTrials.gov"),
@@ -222,7 +222,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "computer-science",
-    label: "Computer Science",
+    label: "计算机科学",
     sources: [
       platform("ACM Digital Library"),
       platform("IEEE Xplore", "ieee_xplore"),
@@ -237,7 +237,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "robotics",
-    label: "Robotics",
+    label: "机器人学",
     sources: [
       platform("IEEE Xplore", "ieee_xplore"),
       arxiv(),
@@ -249,7 +249,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "materials",
-    label: "Materials",
+    label: "材料科学",
     sources: [
       database("Materials Project"),
       database("OQMD"),
@@ -262,7 +262,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "chemistry",
-    label: "Chemistry",
+    label: "化学",
     sources: [
       database("SciFinder"),
       database("Reaxys"),
@@ -275,7 +275,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "physics",
-    label: "Physics",
+    label: "物理学",
     sources: [
       platform("INSPIRE-HEP", "inspire_hep"),
       arxiv(),
@@ -285,7 +285,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "mathematics",
-    label: "Mathematics",
+    label: "数学",
     sources: [
       platform("MathSciNet"),
       platform("zbMATH"),
@@ -294,7 +294,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "energy",
-    label: "Energy",
+    label: "能源",
     sources: [
       platform("DOE OSTI"),
       journal("Joule"),
@@ -304,7 +304,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "environment",
-    label: "Environment",
+    label: "环境科学",
     sources: [
       database("EPA"),
       database("UNEP"),
@@ -314,7 +314,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "agriculture",
-    label: "Agriculture",
+    label: "农业",
     sources: [
       database("AGRICOLA"),
       database("FAOSTAT"),
@@ -324,7 +324,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "economics",
-    label: "Economics",
+    label: "经济学",
     sources: [
       platform("RePEc"),
       platform("IDEAS"),
@@ -335,7 +335,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "finance",
-    label: "Finance",
+    label: "金融",
     sources: [
       platform("SSRN", "ssrn"),
       platform("WRDS"),
@@ -345,7 +345,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "management",
-    label: "Management",
+    label: "管理学",
     sources: [
       platform("ABI/INFORM"),
       platform("Business Source"),
@@ -355,7 +355,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "law",
-    label: "Law",
+    label: "法学",
     sources: [
       platform("HeinOnline"),
       platform("Westlaw"),
@@ -364,12 +364,12 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "education",
-    label: "Education",
+    label: "教育学",
     sources: [platform("ERIC")],
   },
   {
     id: "psychology",
-    label: "Psychology",
+    label: "心理学",
     sources: [
       platform("PsycINFO"),
       journal("Psychological Science"),
@@ -378,7 +378,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "social-sciences",
-    label: "Social Sciences",
+    label: "社会科学",
     sources: [
       platform("JSTOR", "jstor"),
       platform("SSRN", "ssrn"),
@@ -387,7 +387,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "humanities",
-    label: "Humanities",
+    label: "人文学科",
     sources: [
       platform("JSTOR", "jstor"),
       platform("Project MUSE"),
@@ -395,17 +395,17 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "earth-sciences",
-    label: "Earth Sciences",
+    label: "地球科学",
     sources: [database("USGS"), database("OneGeology")],
   },
   {
     id: "astronomy",
-    label: "Astronomy",
+    label: "天文学",
     sources: [platform("NASA ADS", "nasa_ads")],
   },
   {
     id: "patents",
-    label: "Patents",
+    label: "专利",
     sources: [
       platform("Google Patents"),
       platform("WIPO"),
@@ -416,7 +416,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "funding",
-    label: "Funding",
+    label: "科研资助",
     sources: [
       funding("NIH"),
       funding("NSF"),
@@ -427,7 +427,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
   },
   {
     id: "industry",
-    label: "Industry",
+    label: "产业",
     sources: [
       industry("Crunchbase"),
       industry("PitchBook"),

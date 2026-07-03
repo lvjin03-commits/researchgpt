@@ -32,7 +32,7 @@ export function generateBibTeX(paper: LiteraturePaper): string {
   const doi = getPaperDoi(paper);
   const journal = getPaperJournalVenue(paper);
   const key = bibtexKey(paper);
-  const author = paper.authors.length > 0 ? paper.authors.join(" and ") : "Unknown";
+  const author = paper.authors.length > 0 ? paper.authors.join(" and ") : "未知作者";
   const year = publicationYear(paper);
 
   const lines = [
@@ -98,7 +98,7 @@ export function generateRIS(paper: LiteraturePaper): string {
 
 export function generateApaCitation(paper: LiteraturePaper): string {
   const authors =
-    paper.authors.length > 0 ? paper.authors.join(", ") : "Unknown authors";
+    paper.authors.length > 0 ? paper.authors.join(", ") : "未知作者";
   const year = publicationYear(paper) || "n.d.";
   const journal = getPaperJournalVenue(paper);
   const doi = getPaperDoi(paper);
@@ -128,15 +128,15 @@ export function generatePaperMarkdown(
   const lines = [
     `# ${paper.title}`,
     "",
-    `**Authors:** ${paper.authors.join(", ") || "Unknown"}`,
-    `**Source:** ${getPaperSource(paper)}`,
+    `**作者：** ${paper.authors.join(", ") || "未知"}`,
+    `**来源：** ${getPaperSource(paper)}`,
   ];
 
   if (journal) {
-    lines.push(`**Journal / Venue:** ${journal}`);
+    lines.push(`**期刊：** ${journal}`);
   }
 
-  lines.push(`**Published:** ${formatLiteratureDate(paper.publishedAt)}`);
+  lines.push(`**发表时间：** ${formatLiteratureDate(paper.publishedAt)}`);
 
   if (doi) {
     lines.push(`**DOI:** ${doi}`);
@@ -146,34 +146,34 @@ export function generatePaperMarkdown(
     lines.push(`**${externalId.label}:** ${externalId.value}`);
   }
 
-  lines.push("", "## Abstract", "", paper.abstract);
+  lines.push("", "## 摘要", "", paper.abstract);
 
   if (workspace) {
     lines.push(
       "",
-      "## AI Analysis",
+      "## AI 分析",
       "",
-      `**One-sentence summary:** ${workspace.oneSentenceSummary}`,
+      `**一句话摘要：** ${workspace.oneSentenceSummary}`,
       "",
-      `**Research problem:** ${workspace.researchProblem}`,
+      `**研究问题：** ${workspace.researchProblem}`,
       "",
-      `**Core method:** ${workspace.coreMethod}`,
+      `**核心方法：** ${workspace.coreMethod}`,
       "",
-      `**Main contributions:** ${workspace.mainContributions}`,
+      `**主要贡献：** ${workspace.mainContributions}`,
       "",
-      `**Experimental results:** ${workspace.experimentalResults}`,
+      `**实验结果：** ${workspace.experimentalResults}`,
       "",
-      `**Limitations:** ${workspace.limitations}`,
+      `**局限性：** ${workspace.limitations}`,
       "",
-      `**Why it matters:** ${workspace.whyItMatters}`,
+      `**研究意义：** ${workspace.whyItMatters}`,
     );
   }
 
   if (paper.personalNotes) {
-    lines.push("", "## Personal Notes", "", paper.personalNotes);
+    lines.push("", "## 个人笔记", "", paper.personalNotes);
   }
 
-  lines.push("", "## Links", "", `- Abstract: ${paper.absUrl}`);
+  lines.push("", "## 链接", "", `- 摘要：${paper.absUrl}`);
 
   if (paper.pdfUrl && !paper.arxivId.startsWith("pubmed:")) {
     lines.push(`- PDF: ${paper.pdfUrl}`);

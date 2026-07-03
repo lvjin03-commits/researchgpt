@@ -100,23 +100,23 @@ export function deriveWorkspaceAnalysisFromPaper(
     oneSentenceSummary,
     researchProblem:
       researchTopic ||
-      `This paper investigates topics related to: ${paper.title}.`,
+      `本文研究主题与以下内容相关：${paper.title}。`,
     coreMethod:
       coreMethod ||
-      "Method details are summarized in the abstract and source paper.",
+      "方法细节见摘要与原文。",
     mainContributions:
       contributions ||
       findings ||
-      "See abstract and full paper for contribution details.",
+      "主要贡献见摘要与原文。",
     experimentalResults:
       findings ||
-      "Experimental or empirical results are described in the source paper.",
+      "实验或实证结果见原文。",
     limitations:
       limitations ||
-      "Limitations are not explicitly summarized yet. Review the full paper.",
+      "局限性尚未明确总结，请阅读全文。",
     whyItMatters:
       paper.recommendationReason ||
-      "This paper may be relevant to your literature tracker research direction.",
+      "本文可能与你的文献追踪研究方向相关。",
     readingGuide: defaultReadingGuide(paper),
     researchValue: inferResearchValue(paper),
     generatedAt: new Date().toISOString(),

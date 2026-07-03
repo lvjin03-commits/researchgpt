@@ -215,7 +215,7 @@ export function ChatInput({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={inputLocked}
-                aria-label="Attach files"
+                aria-label="附加文件"
                 className="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <PaperclipIcon className="h-5 w-5" />
@@ -223,7 +223,7 @@ export function ChatInput({
             </div>
 
             <label htmlFor="chat-input" className="sr-only">
-              Research prompt
+              研究提示
             </label>
             <textarea
               id="chat-input"
@@ -233,7 +233,7 @@ export function ChatInput({
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder="Message ResearchGPT..."
+              placeholder="输入消息……"
               disabled={disabled}
               className="max-h-[200px] min-h-[52px] flex-1 resize-none bg-transparent py-4 pr-2 text-[15px] leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
             />
@@ -243,7 +243,7 @@ export function ChatInput({
                 <button
                   type="button"
                   onClick={onStop}
-                  aria-label="Stop generating"
+                  aria-label="停止生成"
                   className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-white transition-all hover:bg-gray-800"
                 >
                   <StopIcon className="h-4 w-4" />
@@ -252,7 +252,7 @@ export function ChatInput({
                 <button
                   type="submit"
                   disabled={!canSend}
-                  aria-label="Send message"
+                  aria-label="发送消息"
                   className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
                 >
                   <SendIcon className="h-4 w-4" />
@@ -267,8 +267,8 @@ export function ChatInput({
         )}
 
         <p className="mt-2 text-center text-xs text-gray-400">
-          ResearchGPT can make mistakes. Verify important information. Max{" "}
-          {MAX_IMAGE_UPLOAD_MB}MB images, {MAX_UPLOAD_MB}MB documents.
+          ResearchGPT 可能会出错，请核实重要信息。图片最大 {MAX_IMAGE_UPLOAD_MB}MB，文档最大{" "}
+          {MAX_UPLOAD_MB}MB。
         </p>
       </form>
     </div>
