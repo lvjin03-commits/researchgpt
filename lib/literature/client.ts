@@ -174,7 +174,28 @@ function parseUpdateLiteratureResponse(payload: unknown): UpdateLiteratureRespon
   return {
     settings: record.settings,
     papers: record.papers as LiteraturePaper[],
+    debug: parseLiteratureSearchDebug(record.debug),
   };
+}
+
+function parseLiteratureSearchDebug(
+  value: unknown,
+): UpdateLiteratureResponse["debug"] {
+  if (value === undefined || value === null || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (typeof record.summary !== "object" || record.summary === null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(record.papers)) {
+    return undefined;
+  }
+
+  return value as UpdateLiteratureResponse["debug"];
 }
 
 export function buildUpdateLiteratureRequest(

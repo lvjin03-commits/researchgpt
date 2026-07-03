@@ -1,6 +1,12 @@
 // Server-only module.
 
 import type { ArxivPaperDraft } from "@/lib/literature/types";
+import type {
+  LiteratureDedupeMatchReason,
+  UnifiedPaperDebugRecord,
+} from "@/lib/literature/search-debug";
+
+export type { UnifiedPaperDebugRecord, LiteratureDedupeMatchReason };
 
 export type LiteratureProviderId =
   | "openalex"
@@ -54,6 +60,12 @@ export type DedupeStats = {
   duplicatesRemoved: number;
   exactMatches: number;
   fuzzyMatches: number;
+};
+
+export type DedupeResult = {
+  papers: UnifiedPaper[];
+  stats: DedupeStats;
+  debugRecords: UnifiedPaperDebugRecord[];
 };
 
 export const TITLE_FUZZY_SIMILARITY_THRESHOLD = 0.88;
@@ -384,6 +396,42 @@ function mergeUnifiedPapers(
   };
 }
 
+function findExactMatchIndex(
+  paper: UnifiedPaper,
+  keyToIndex: Map<string, number>,
+): { index: number; reason: Exclude<LiteratureDedupeMatchReason, "new" | "fuzzy_title"> } | undefined {
+  if (paper.doi) {
+    const index = keyToIndex.get(`doi:${paper.doi}`);
+    if (index !== undefined) {
+      return { index, reason: "doi" };
+    }
+  }
+
+  if (paper.pubmedId) {
+    const index = keyToIndex.get(`pmid:${paper.pubmedId}`);
+    if (index !== undefined) {
+      return { index, reason: "pmid" };
+    }
+  }
+
+  if (paper.arxivId) {
+    const index = keyToIndex.get(`arxiv:${paper.arxivId}`);
+    if (index !== undefined) {
+      return { index, reason: "arxiv" };
+    }
+  }
+
+  const normalizedTitle = normalizeTitle(paper.title);
+  if (normalizedTitle) {
+    const index = keyToIndex.get(`title:${normalizedTitle}`);
+    if (index !== undefined) {
+      return { index, reason: "title" };
+    }
+  }
+
+  return undefined;
+}
+
 function findFuzzyMatchIndex(
   paper: UnifiedPaper,
   merged: UnifiedPaper[],
@@ -402,32 +450,29 @@ function findFuzzyMatchIndex(
   return undefined;
 }
 
-export function deduplicateUnifiedPapers(papers: UnifiedPaper[]): {
-  papers: UnifiedPaper[];
-  stats: DedupeStats;
-} {
+export function deduplicateUnifiedPapers(papers: UnifiedPaper[]): DedupeResult {
   const keyToIndex = new Map<string, number>();
   const merged: UnifiedPaper[] = [];
+  const debugRecords: UnifiedPaperDebugRecord[] = [];
   let exactMatches = 0;
   let fuzzyMatches = 0;
 
   for (const rawPaper of papers) {
     const paper = withProviderDefaults(rawPaper);
-    const keys = exactDedupKeys(paper);
     let existingIndex: number | undefined;
+    let matchReason: LiteratureDedupeMatchReason = "new";
 
-    for (const key of keys) {
-      const index = keyToIndex.get(key);
-      if (index !== undefined) {
-        existingIndex = index;
-        exactMatches += 1;
-        break;
-      }
+    const exactMatch = findExactMatchIndex(paper, keyToIndex);
+    if (exactMatch !== undefined) {
+      existingIndex = exactMatch.index;
+      matchReason = exactMatch.reason;
+      exactMatches += 1;
     }
 
     if (existingIndex === undefined) {
       existingIndex = findFuzzyMatchIndex(paper, merged);
       if (existingIndex !== undefined) {
+        matchReason = "fuzzy_title";
         fuzzyMatches += 1;
       }
     }
@@ -435,6 +480,10 @@ export function deduplicateUnifiedPapers(papers: UnifiedPaper[]): {
     if (existingIndex === undefined) {
       const index = merged.length;
       merged.push(paper);
+      debugRecords.push({
+        matchedBy: "new",
+        mergeSourceCount: 1,
+      });
 
       for (const key of exactDedupKeys(paper)) {
         keyToIndex.set(key, index);
@@ -444,8 +493,13 @@ export function deduplicateUnifiedPapers(papers: UnifiedPaper[]): {
     }
 
     merged[existingIndex] = mergeUnifiedPapers(merged[existingIndex]!, paper);
+    const mergedPaper = withProviderDefaults(merged[existingIndex]!);
+    debugRecords[existingIndex] = {
+      matchedBy: matchReason,
+      mergeSourceCount: debugRecords[existingIndex]!.mergeSourceCount + 1,
+    };
 
-    for (const key of exactDedupKeys(merged[existingIndex]!)) {
+    for (const key of exactDedupKeys(mergedPaper)) {
       keyToIndex.set(key, existingIndex);
     }
   }
@@ -462,6 +516,7 @@ export function deduplicateUnifiedPapers(papers: UnifiedPaper[]): {
       exactMatches,
       fuzzyMatches,
     },
+    debugRecords,
   };
 }
 

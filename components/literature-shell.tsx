@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LiteraturePaperCard } from "@/components/literature-paper-card";
 import {
+  LiteraturePaperDebugPanel,
+  LiteratureSearchDebugSummary,
+} from "@/components/literature-debug-panel";
+import {
   LITERATURE_DATE_RANGE_DAYS,
   LITERATURE_DATE_RANGE_OPTIONS,
 } from "@/lib/literature/constants";
@@ -28,6 +32,7 @@ import type {
   LiteraturePaperStatus,
   LiteratureSettings,
 } from "@/lib/literature/types";
+import type { LiteratureSearchDebug } from "@/lib/literature/search-debug";
 
 const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
   dateRangeDays: LITERATURE_DATE_RANGE_DAYS,
@@ -43,6 +48,9 @@ export function LiteratureShell() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<LiteraturePaperSortKey>(
     DEFAULT_LITERATURE_PAPER_SORT,
+  );
+  const [searchDebug, setSearchDebug] = useState<LiteratureSearchDebug | null>(
+    null,
   );
 
   useEffect(() => {
@@ -88,6 +96,7 @@ export function LiteratureShell() {
       const result = await updateLiteraturePapers(settings);
       setSettings(result.settings);
       setPapers(result.papers);
+      setSearchDebug(result.debug ?? null);
       setStatusMessage(`已更新 ${result.papers.length} 篇文献。`);
     } catch (err) {
       const detail =
@@ -129,6 +138,16 @@ export function LiteratureShell() {
     () => sortLiteraturePapers(visiblePapers, sortKey),
     [visiblePapers, sortKey],
   );
+
+  const paperDebugByArxivId = useMemo(() => {
+    if (!searchDebug) {
+      return new Map<string, LiteratureSearchDebug["papers"][number]>();
+    }
+
+    return new Map(
+      searchDebug.papers.map((paperDebug) => [paperDebug.arxivId, paperDebug]),
+    );
+  }, [searchDebug]);
 
   const canUpdate = settings.keywords.trim().length > 0;
 
@@ -296,6 +315,10 @@ export function LiteratureShell() {
               </div>
             ) : (
               <>
+                {searchDebug && (
+                  <LiteratureSearchDebugSummary summary={searchDebug.summary} />
+                )}
+
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
                   <p className="text-sm text-gray-600">
                     共 {sortedVisiblePapers.length} 篇论文
@@ -324,16 +347,24 @@ export function LiteratureShell() {
                   </div>
                 </div>
 
-                {sortedVisiblePapers.map((paper) => (
-                  <LiteraturePaperCard
-                    key={paper.id}
-                    paper={paper}
-                    variant="tracker"
-                    folders={folders}
-                    onStatusChange={handleStatusChange}
-                    onSaveToFolders={handleSaveToFolders}
-                  />
-                ))}
+                {sortedVisiblePapers.map((paper) => {
+                  const paperDebug = paperDebugByArxivId.get(paper.arxivId);
+
+                  return (
+                    <div key={paper.id} className="space-y-2">
+                      <LiteraturePaperCard
+                        paper={paper}
+                        variant="tracker"
+                        folders={folders}
+                        onStatusChange={handleStatusChange}
+                        onSaveToFolders={handleSaveToFolders}
+                      />
+                      {paperDebug && (
+                        <LiteraturePaperDebugPanel paperDebug={paperDebug} />
+                      )}
+                    </div>
+                  );
+                })}
               </>
             )}
           </section>

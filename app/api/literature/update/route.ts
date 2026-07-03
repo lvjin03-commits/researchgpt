@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       `[literature] step load settings: done elapsedMs=${elapsedMs(loadSettingsStartedAt)}`,
     );
 
-    const { drafts, quality } = await searchLiteratureProviders(settings);
+    const { drafts, quality, debug } = await searchLiteratureProviders(settings);
     const analysisDrafts = limitPapersForAnalysis(drafts);
 
     console.log(
@@ -74,7 +74,11 @@ export async function POST(request: Request) {
 
     console.log("[literature] step return response: start");
     const returnStartedAt = Date.now();
-    const response = Response.json({ settings, papers });
+    const response = Response.json({
+      settings,
+      papers,
+      ...(debug ? { debug } : {}),
+    });
     console.log(
       `[literature] step return response: done elapsedMs=${elapsedMs(returnStartedAt)}`,
     );

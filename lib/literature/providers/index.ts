@@ -3,6 +3,9 @@
 import { LITERATURE_MAX_ARXIV_RESULTS } from "@/lib/literature/constants";
 import { LiteratureError } from "@/lib/literature/errors";
 import { applyDraftProviderMetadata } from "@/lib/literature/paper-providers";
+import type { LiteratureSearchDebug } from "@/lib/literature/search-debug";
+import { buildLiteratureSearchDebug } from "@/lib/literature/server/search-debug";
+import { isLiteratureDebugEnabled } from "@/lib/literature/server/debug";
 import {
   deduplicateUnifiedPapers,
   matchesExcludeKeywords,
@@ -110,6 +113,7 @@ export async function searchLiteratureProviders(
   drafts: ArxivPaperDraft[];
   quality: LiteratureSearchQualityMetrics;
   dedupeStats: DedupeStats;
+  debug?: LiteratureSearchDebug;
 }> {
   const options = toSearchOptions(settings);
   const allUnified: UnifiedPaper[] = [];
@@ -132,11 +136,15 @@ export async function searchLiteratureProviders(
   console.log("[literature] step deduplicate: start");
   const dedupeStartedAt = Date.now();
 
-  const { papers: deduped, stats: dedupeStats } =
+  const { papers: deduped, stats: dedupeStats, debugRecords } =
     deduplicateUnifiedPapers(allUnified);
-  const afterExclude = deduped.filter(
-    (paper) => !matchesExcludeKeywords(paper, options.excludeKeywords),
-  );
+  const finalPairs = deduped
+    .map((paper, index) => ({
+      paper,
+      debug: debugRecords[index]!,
+    }))
+    .filter(({ paper }) => !matchesExcludeKeywords(paper, options.excludeKeywords));
+  const afterExclude = finalPairs.map(({ paper }) => paper);
   const drafts = afterExclude
     .map(unifiedPaperToDraft)
     .map(applyDraftProviderMetadata);
@@ -169,5 +177,19 @@ export async function searchLiteratureProviders(
     );
   }
 
-  return { drafts, quality, dedupeStats };
+  const debug = isLiteratureDebugEnabled()
+    ? buildLiteratureSearchDebug(
+        {
+          openalex: quality.fetchedByProvider.openalex ?? 0,
+          arxiv: quality.fetchedByProvider.arxiv ?? 0,
+          pubmed: quality.fetchedByProvider.pubmed ?? 0,
+          totalFetched: quality.fetchedTotal,
+          duplicatesRemoved: quality.duplicatesRemoved,
+          finalPapers: quality.finalCount,
+        },
+        finalPairs,
+      )
+    : undefined;
+
+  return { drafts, quality, dedupeStats, debug };
 }

@@ -120,6 +120,7 @@ export type UpdateLiteratureRequest = LiteratureSettings;
 export type UpdateLiteratureResponse = {
   settings: LiteratureSettings;
   papers: LiteraturePaper[];
+  debug?: import("@/lib/literature/search-debug").LiteratureSearchDebug;
 };
 
 export type PaperCitationNetworkItem = {
