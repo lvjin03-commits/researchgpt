@@ -2,9 +2,11 @@
 
 import { LITERATURE_MAX_ARXIV_RESULTS } from "@/lib/literature/constants";
 import { LiteratureError } from "@/lib/literature/errors";
+import { applyDraftProviderMetadata } from "@/lib/literature/paper-providers";
 import {
   deduplicateUnifiedPapers,
   matchesExcludeKeywords,
+  type DedupeStats,
   type LiteratureProvider,
   type LiteratureProviderId,
   type ProviderSearchOptions,
@@ -18,11 +20,7 @@ import { FUTURE_LITERATURE_PROVIDERS } from "@/lib/literature/providers/placehol
 import type { ArxivPaperDraft, LiteratureSettings } from "@/lib/literature/types";
 
 /** Default source ids stored with settings for backward compatibility. */
-export const DEFAULT_LITERATURE_PIPELINE_SOURCES = [
-  "openalex",
-  "arxiv",
-  "pubmed",
-] as const;
+export { DEFAULT_LITERATURE_PIPELINE_SOURCES } from "@/lib/literature/constants";
 
 /** Providers used by the literature search pipeline, in priority order. */
 export const ACTIVE_LITERATURE_PROVIDERS: LiteratureProvider[] = [
@@ -36,6 +34,17 @@ export const FUTURE_LITERATURE_PROVIDER_IDS = FUTURE_LITERATURE_PROVIDERS.map(
   (provider) => provider.id,
 ) as LiteratureProviderId[];
 
+export type LiteratureSearchQualityMetrics = {
+  fetchedByProvider: Partial<Record<LiteratureProviderId, number>>;
+  fetchedTotal: number;
+  mergedTotal: number;
+  duplicatesRemoved: number;
+  exactMatches: number;
+  fuzzyMatches: number;
+  afterExcludeKeywords: number;
+  finalCount: number;
+};
+
 function elapsedMs(startedAt: number): number {
   return Date.now() - startedAt;
 }
@@ -47,6 +56,15 @@ function toSearchOptions(settings: LiteratureSettings): ProviderSearchOptions {
     dateRangeDays: settings.dateRangeDays,
     maxResults: LITERATURE_MAX_ARXIV_RESULTS,
   };
+}
+
+function logSearchQualityMetrics(metrics: LiteratureSearchQualityMetrics): void {
+  console.log(
+    `[literature] search quality: fetched openalex=${metrics.fetchedByProvider.openalex ?? 0} arxiv=${metrics.fetchedByProvider.arxiv ?? 0} pubmed=${metrics.fetchedByProvider.pubmed ?? 0} totalFetched=${metrics.fetchedTotal}`,
+  );
+  console.log(
+    `[literature] search quality: merged=${metrics.mergedTotal} duplicatesRemoved=${metrics.duplicatesRemoved} exactMatches=${metrics.exactMatches} fuzzyMatches=${metrics.fuzzyMatches} afterExclude=${metrics.afterExcludeKeywords} final=${metrics.finalCount}`,
+  );
 }
 
 async function fetchFromProvider(
@@ -88,10 +106,14 @@ async function fetchFromProvider(
 
 export async function searchLiteratureProviders(
   settings: LiteratureSettings,
-): Promise<ArxivPaperDraft[]> {
+): Promise<{
+  drafts: ArxivPaperDraft[];
+  quality: LiteratureSearchQualityMetrics;
+  dedupeStats: DedupeStats;
+}> {
   const options = toSearchOptions(settings);
   const allUnified: UnifiedPaper[] = [];
-  const providerCounts: Partial<Record<LiteratureProviderId, number>> = {};
+  const fetchedByProvider: Partial<Record<LiteratureProviderId, number>> = {};
 
   for (const provider of ACTIVE_LITERATURE_PROVIDERS) {
     if (!provider.enabled) {
@@ -100,7 +122,7 @@ export async function searchLiteratureProviders(
     }
 
     const papers = await fetchFromProvider(provider, options);
-    providerCounts[provider.id] = papers.length;
+    fetchedByProvider[provider.id] = papers.length;
     allUnified.push(...papers);
   }
 
@@ -110,17 +132,34 @@ export async function searchLiteratureProviders(
   console.log("[literature] step deduplicate: start");
   const dedupeStartedAt = Date.now();
 
-  const deduped = deduplicateUnifiedPapers(allUnified).filter(
+  const { papers: deduped, stats: dedupeStats } =
+    deduplicateUnifiedPapers(allUnified);
+  const afterExclude = deduped.filter(
     (paper) => !matchesExcludeKeywords(paper, options.excludeKeywords),
   );
-  const drafts = deduped.map(unifiedPaperToDraft);
+  const drafts = afterExclude
+    .map(unifiedPaperToDraft)
+    .map(applyDraftProviderMetadata);
 
   console.log(
-    `[literature] step deduplicate: done elapsedMs=${elapsedMs(dedupeStartedAt)} merged=${allUnified.length} unique=${deduped.length}`,
+    `[literature] step deduplicate: done elapsedMs=${elapsedMs(dedupeStartedAt)} merged=${allUnified.length} unique=${deduped.length} duplicatesRemoved=${dedupeStats.duplicatesRemoved}`,
   );
 
+  const quality: LiteratureSearchQualityMetrics = {
+    fetchedByProvider,
+    fetchedTotal: allUnified.length,
+    mergedTotal: deduped.length,
+    duplicatesRemoved: dedupeStats.duplicatesRemoved,
+    exactMatches: dedupeStats.exactMatches,
+    fuzzyMatches: dedupeStats.fuzzyMatches,
+    afterExcludeKeywords: afterExclude.length,
+    finalCount: drafts.length,
+  };
+
+  logSearchQualityMetrics(quality);
+
   console.log(
-    `[literature] step merge results: done elapsedMs=${elapsedMs(mergeStartedAt)} openalex=${providerCounts.openalex ?? 0} arxiv=${providerCounts.arxiv ?? 0} pubmed=${providerCounts.pubmed ?? 0} totalPapers=${drafts.length}`,
+    `[literature] step merge results: done elapsedMs=${elapsedMs(mergeStartedAt)} totalPapers=${drafts.length}`,
   );
 
   if (drafts.length === 0) {
@@ -130,5 +169,5 @@ export async function searchLiteratureProviders(
     );
   }
 
-  return drafts;
+  return { drafts, quality, dedupeStats };
 }

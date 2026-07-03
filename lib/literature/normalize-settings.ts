@@ -1,6 +1,8 @@
 import { DEFAULT_LITERATURE_DISCIPLINE } from "@/lib/literature/source-taxonomy";
+import {
+  DEFAULT_LITERATURE_PIPELINE_SOURCES,
+} from "@/lib/literature/constants";
 import { normalizeDateRangeDays } from "@/lib/literature/date-range";
-import { DEFAULT_LITERATURE_PIPELINE_SOURCES } from "@/lib/literature/providers/index";
 import type { LiteratureSettings } from "@/lib/literature/types";
 
 type StoredLiteratureSettings = Partial<LiteratureSettings> & {

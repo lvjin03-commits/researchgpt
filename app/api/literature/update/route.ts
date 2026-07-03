@@ -1,7 +1,7 @@
 import { AIProviderError } from "@/lib/ai/errors";
 import { LiteratureError } from "@/lib/literature/errors";
 import { analyzeArxivPapers } from "@/lib/literature/server/analyze-service";
-import { fetchPapersFromSelectedSources } from "@/lib/literature/server/fetch-papers";
+import { searchLiteratureProviders } from "@/lib/literature/server/fetch-papers";
 import { limitPapersForAnalysis } from "@/lib/literature/server/limit-analysis-papers";
 import { parseLiteratureSettings } from "@/lib/literature/server/parse";
 import {
@@ -46,8 +46,12 @@ export async function POST(request: Request) {
       `[literature] step load settings: done elapsedMs=${elapsedMs(loadSettingsStartedAt)}`,
     );
 
-    const drafts = await fetchPapersFromSelectedSources(settings);
+    const { drafts, quality } = await searchLiteratureProviders(settings);
     const analysisDrafts = limitPapersForAnalysis(drafts);
+
+    console.log(
+      `[literature] search quality: finalCountSentToAi=${analysisDrafts.length} cap=${analysisDrafts.length < quality.finalCount ? "applied" : "not-needed"}`,
+    );
 
     console.log("[literature] step openai analysis: start");
     const analysisStartedAt = Date.now();

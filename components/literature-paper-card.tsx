@@ -9,6 +9,11 @@ import {
   formatLiteraturePublishedDate,
   literaturePriorityClassName,
 } from "@/lib/literature/paper-display";
+import {
+  getPaperProviders,
+  LITERATURE_PROVIDER_BADGE_LABELS,
+} from "@/lib/literature/paper-providers";
+import type { LiteratureProviderId } from "@/lib/literature/providers/base";
 import { getPaperStatusLabel } from "@/lib/literature/ui-strings";
 import type {
   LiteratureFolder,
@@ -45,6 +50,20 @@ export function LiteraturePaperCard({
   );
 
   const assignedFolderIds = paper.folderIds ?? [];
+  const providerBadges = getPaperProviders(paper);
+
+  const providerBadgeClassName = (provider: LiteratureProviderId): string => {
+    switch (provider) {
+      case "openalex":
+        return "bg-indigo-50 text-indigo-700";
+      case "arxiv":
+        return "bg-orange-50 text-orange-800";
+      case "pubmed":
+        return "bg-emerald-50 text-emerald-800";
+      default:
+        return "bg-gray-100 text-gray-600";
+    }
+  };
 
   const handleStatus = async (status: LiteraturePaperStatus) => {
     setIsUpdating(true);
@@ -91,6 +110,14 @@ export function LiteraturePaperCard({
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
                 {getPaperStatusLabel(paper.status)}
               </span>
+              {providerBadges.map((provider) => (
+                <span
+                  key={provider}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${providerBadgeClassName(provider)}`}
+                >
+                  {LITERATURE_PROVIDER_BADGE_LABELS[provider]}
+                </span>
+              ))}
               {assignedFolderIds.map((folderId) => {
                 const name = folderNameById.get(folderId);
                 if (!name) {
@@ -136,11 +163,6 @@ export function LiteraturePaperCard({
                 )}
               </div>
             )}
-            <p className="mt-1 text-xs text-gray-400">
-              {paper.arxivId.startsWith("pubmed:")
-                ? `PubMed:${paper.arxivId.slice("pubmed:".length)}`
-                : `arXiv:${paper.arxivId}`}
-            </p>
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">

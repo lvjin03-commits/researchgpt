@@ -65,6 +65,15 @@ export type LiteraturePaper = {
   citationCount?: number | null;
   /** Populated when journal metadata is available. */
   journalImpactFactor?: number | null;
+  /** Literature providers that contributed this record. */
+  providers?: import("@/lib/literature/providers/base").LiteratureProviderId[];
+  /** Provider-specific landing page URLs. */
+  sourceUrls?: Partial<
+    Record<
+      import("@/lib/literature/providers/base").LiteratureProviderId,
+      string
+    >
+  >;
 };
 
 export type LiteratureFolder = {
@@ -88,6 +97,14 @@ export type ArxivPaperDraft = {
   pdfUrl: string;
   absUrl: string;
   categories: string[];
+  providers?: import("@/lib/literature/providers/base").LiteratureProviderId[];
+  sourceUrls?: Partial<
+    Record<
+      import("@/lib/literature/providers/base").LiteratureProviderId,
+      string
+    >
+  >;
+  citationCount?: number | null;
 };
 
 export type PaperAnalysisResult = {

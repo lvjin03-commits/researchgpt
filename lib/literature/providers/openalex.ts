@@ -5,6 +5,9 @@ import { LiteratureError } from "@/lib/literature/errors";
 import {
   buildExternalKey,
   matchesExcludeKeywords,
+  normalizeArxivId,
+  normalizeDoi,
+  normalizePubmedId,
   type LiteratureProvider,
   type ProviderSearchOptions,
   type UnifiedPaper,
@@ -58,14 +61,6 @@ function extractOpenAlexId(value: string | null | undefined): string | null {
 
   const match = value.match(/\/(W\d+)\/?$/i);
   return match?.[1] ?? null;
-}
-
-function normalizeDoi(value: string | null | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-
-  return value.replace(/^https?:\/\/doi\.org\//i, "").trim() || null;
 }
 
 function abstractFromInvertedIndex(
@@ -131,14 +126,8 @@ function normalizeOpenAlexWork(raw: OpenAlexWork): UnifiedPaper | null {
   }
 
   const doi = normalizeDoi(raw.doi ?? raw.ids?.doi ?? null);
-  const arxivRaw = raw.ids?.arxiv ?? null;
-  const arxivId = arxivRaw
-    ? arxivRaw.replace(/^https?:\/\/arxiv\.org\/abs\//i, "").trim()
-    : null;
-  const pubmedRaw = raw.ids?.pmid ?? null;
-  const pubmedId = pubmedRaw
-    ? pubmedRaw.replace(/^https?:\/\/pubmed\.ncbi\.nlm\.nih\.gov\//i, "").trim()
-    : null;
+  const arxivId = normalizeArxivId(raw.ids?.arxiv ?? null);
+  const pubmedId = normalizePubmedId(raw.ids?.pmid ?? null);
 
   const absUrl =
     raw.primary_location?.landing_page_url ??
@@ -175,6 +164,8 @@ function normalizeOpenAlexWork(raw: OpenAlexWork): UnifiedPaper | null {
     openAlexId,
     citationCount:
       typeof raw.cited_by_count === "number" ? raw.cited_by_count : null,
+    providers: ["openalex"],
+    sourceUrls: { openalex: absUrl },
   };
 }
 

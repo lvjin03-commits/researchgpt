@@ -35,6 +35,8 @@ export type UnifiedPaper = {
   pubmedId: string | null;
   openAlexId: string | null;
   citationCount: number | null;
+  providers: LiteratureProviderId[];
+  sourceUrls: Partial<Record<LiteratureProviderId, string>>;
 };
 
 export interface LiteratureProvider {
@@ -45,6 +47,26 @@ export interface LiteratureProvider {
   getPaper(providerPaperId: string): Promise<unknown | null>;
   normalizePaper(raw: unknown): UnifiedPaper;
 }
+
+export type DedupeStats = {
+  inputCount: number;
+  outputCount: number;
+  duplicatesRemoved: number;
+  exactMatches: number;
+  fuzzyMatches: number;
+};
+
+export const TITLE_FUZZY_SIMILARITY_THRESHOLD = 0.88;
+
+const PROVIDER_PRIORITY: LiteratureProviderId[] = [
+  "openalex",
+  "arxiv",
+  "pubmed",
+  "crossref",
+  "dblp",
+  "openreview",
+  "semantic_scholar",
+];
 
 export function buildExternalKey(
   provider: LiteratureProviderId,
@@ -66,7 +88,38 @@ export function buildExternalKey(
   }
 }
 
-function normalizeTitle(title: string): string {
+export function normalizeDoi(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return value.replace(/^https?:\/\/doi\.org\//i, "").trim().toLowerCase() || null;
+}
+
+export function normalizeArxivId(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const cleaned = value
+    .replace(/^https?:\/\/arxiv\.org\/abs\//i, "")
+    .replace(/^arxiv:/i, "")
+    .trim()
+    .toLowerCase();
+
+  return cleaned.replace(/v\d+$/i, "") || null;
+}
+
+export function normalizePubmedId(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const digits = value.replace(/^pubmed:/i, "").replace(/\D/g, "");
+  return digits || null;
+}
+
+export function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
     .replace(/\s+/g, " ")
@@ -74,25 +127,212 @@ function normalizeTitle(title: string): string {
     .trim();
 }
 
-function paperDedupKeys(paper: UnifiedPaper): string[] {
+function titleTokens(title: string): string[] {
+  return normalizeTitle(title)
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+}
+
+export function titleSimilarity(left: string, right: string): number {
+  const leftTokens = titleTokens(left);
+  const rightTokens = titleTokens(right);
+
+  if (leftTokens.length === 0 || rightTokens.length === 0) {
+    return 0;
+  }
+
+  const leftSet = new Set(leftTokens);
+  const rightSet = new Set(rightTokens);
+  let intersection = 0;
+
+  for (const token of leftSet) {
+    if (rightSet.has(token)) {
+      intersection += 1;
+    }
+  }
+
+  const union = leftSet.size + rightSet.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function isPdfUrl(url: string): boolean {
+  return /\.pdf($|\?)/i.test(url) || /\/pdf\//i.test(url);
+}
+
+function pickBestTitle(left: string, right: string): string {
+  if (!left.trim()) {
+    return right;
+  }
+
+  if (!right.trim()) {
+    return left;
+  }
+
+  const leftNormalized = normalizeTitle(left);
+  const rightNormalized = normalizeTitle(right);
+
+  if (leftNormalized === rightNormalized) {
+    return left.length >= right.length ? left : right;
+  }
+
+  if (
+    leftNormalized.includes(rightNormalized) ||
+    rightNormalized.includes(leftNormalized)
+  ) {
+    return left.length >= right.length ? left : right;
+  }
+
+  return left.length >= right.length ? left : right;
+}
+
+function mergeAuthors(left: string[], right: string[]): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+
+  for (const name of [...left, ...right]) {
+    const trimmed = name.trim();
+    const key = trimmed.toLowerCase();
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    merged.push(trimmed);
+  }
+
+  return merged;
+}
+
+function pickEarliestPublishedAt(
+  left: string | null,
+  right: string | null,
+): string | null {
+  if (!left) {
+    return right;
+  }
+
+  if (!right) {
+    return left;
+  }
+
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+
+  if (Number.isNaN(leftTime)) {
+    return right;
+  }
+
+  if (Number.isNaN(rightTime)) {
+    return left;
+  }
+
+  return leftTime <= rightTime ? left : right;
+}
+
+function pickPdfUrl(left: string, right: string): string {
+  if (isPdfUrl(left)) {
+    return left;
+  }
+
+  if (isPdfUrl(right)) {
+    return right;
+  }
+
+  return left || right;
+}
+
+function pickPrimaryAbsUrl(left: string, right: string): string {
+  return left || right;
+}
+
+function mergeProviderList(
+  left: LiteratureProviderId[],
+  right: LiteratureProviderId[],
+): LiteratureProviderId[] {
+  const combined = new Set<LiteratureProviderId>([...left, ...right]);
+  return PROVIDER_PRIORITY.filter((provider) => combined.has(provider));
+}
+
+function mergeSourceUrls(
+  left: Partial<Record<LiteratureProviderId, string>>,
+  right: Partial<Record<LiteratureProviderId, string>>,
+): Partial<Record<LiteratureProviderId, string>> {
+  return {
+    ...left,
+    ...right,
+  };
+}
+
+function pickExternalKey(existing: UnifiedPaper, incoming: UnifiedPaper): string {
+  if (existing.arxivId) {
+    return buildExternalKey("arxiv", existing.arxivId);
+  }
+
+  if (incoming.arxivId) {
+    return buildExternalKey("arxiv", incoming.arxivId);
+  }
+
+  if (existing.pubmedId) {
+    return buildExternalKey("pubmed", existing.pubmedId);
+  }
+
+  if (incoming.pubmedId) {
+    return buildExternalKey("pubmed", incoming.pubmedId);
+  }
+
+  if (existing.openAlexId) {
+    return buildExternalKey("openalex", existing.openAlexId);
+  }
+
+  if (incoming.openAlexId) {
+    return buildExternalKey("openalex", incoming.openAlexId);
+  }
+
+  return existing.externalKey || incoming.externalKey;
+}
+
+function pickPrimaryProvider(
+  providers: LiteratureProviderId[],
+): LiteratureProviderId {
+  return (
+    PROVIDER_PRIORITY.find((provider) => providers.includes(provider)) ??
+    providers[0] ??
+    "openalex"
+  );
+}
+
+function withProviderDefaults(paper: UnifiedPaper): UnifiedPaper {
+  const providers =
+    paper.providers.length > 0 ? paper.providers : [paper.provider];
+  const sourceUrls =
+    Object.keys(paper.sourceUrls).length > 0
+      ? paper.sourceUrls
+      : { [paper.provider]: paper.absUrl };
+
+  return {
+    ...paper,
+    doi: normalizeDoi(paper.doi),
+    arxivId: normalizeArxivId(paper.arxivId),
+    pubmedId: normalizePubmedId(paper.pubmedId),
+    providers,
+    sourceUrls,
+  };
+}
+
+function exactDedupKeys(paper: UnifiedPaper): string[] {
   const keys = new Set<string>();
 
-  keys.add(paper.externalKey.toLowerCase());
-
   if (paper.doi) {
-    keys.add(`doi:${paper.doi.toLowerCase()}`);
+    keys.add(`doi:${paper.doi}`);
   }
 
   if (paper.arxivId) {
-    keys.add(`arxiv:${paper.arxivId.toLowerCase()}`);
+    keys.add(`arxiv:${paper.arxivId}`);
   }
 
   if (paper.pubmedId) {
-    keys.add(`pubmed:${paper.pubmedId}`);
-  }
-
-  if (paper.openAlexId) {
-    keys.add(`openalex:${paper.openAlexId.toLowerCase()}`);
+    keys.add(`pmid:${paper.pubmedId}`);
   }
 
   const normalizedTitle = normalizeTitle(paper.title);
@@ -107,87 +347,149 @@ function mergeUnifiedPapers(
   existing: UnifiedPaper,
   incoming: UnifiedPaper,
 ): UnifiedPaper {
+  const left = withProviderDefaults(existing);
+  const right = withProviderDefaults(incoming);
+  const providers = mergeProviderList(left.providers, right.providers);
+  const primaryProvider = pickPrimaryProvider(providers);
+  const sourceUrls = mergeSourceUrls(left.sourceUrls, right.sourceUrls);
   const preferIncomingAbstract =
-    incoming.abstract.trim().length > existing.abstract.trim().length;
+    right.abstract.trim().length > left.abstract.trim().length;
+
+  const mergedCategories =
+    left.categories.length >= right.categories.length
+      ? left.categories
+      : right.categories;
 
   return {
-    ...existing,
-    title: existing.title || incoming.title,
-    abstract: preferIncomingAbstract ? incoming.abstract : existing.abstract,
-    authors: existing.authors.length >= incoming.authors.length
-      ? existing.authors
-      : incoming.authors,
-    publishedAt: existing.publishedAt ?? incoming.publishedAt,
-    pdfUrl: existing.pdfUrl || incoming.pdfUrl,
-    absUrl: existing.absUrl || incoming.absUrl,
-    categories:
-      existing.categories.length >= incoming.categories.length
-        ? existing.categories
-        : incoming.categories,
-    doi: existing.doi ?? incoming.doi,
-    arxivId: existing.arxivId ?? incoming.arxivId,
-    pubmedId: existing.pubmedId ?? incoming.pubmedId,
-    openAlexId: existing.openAlexId ?? incoming.openAlexId,
-    citationCount: existing.citationCount ?? incoming.citationCount,
-    externalKey: existing.externalKey,
-    provider: existing.provider,
-    providerPaperId: existing.providerPaperId,
+    provider: primaryProvider,
+    providerPaperId:
+      primaryProvider === left.provider
+        ? left.providerPaperId
+        : right.providerPaperId,
+    externalKey: pickExternalKey(left, right),
+    title: pickBestTitle(left.title, right.title),
+    abstract: preferIncomingAbstract ? right.abstract : left.abstract,
+    authors: mergeAuthors(left.authors, right.authors),
+    publishedAt: pickEarliestPublishedAt(left.publishedAt, right.publishedAt),
+    pdfUrl: pickPdfUrl(left.pdfUrl, right.pdfUrl),
+    absUrl: pickPrimaryAbsUrl(left.absUrl, right.absUrl),
+    categories: mergedCategories,
+    doi: left.doi ?? right.doi,
+    arxivId: left.arxivId ?? right.arxivId,
+    pubmedId: left.pubmedId ?? right.pubmedId,
+    openAlexId: left.openAlexId ?? right.openAlexId,
+    citationCount: left.citationCount ?? right.citationCount,
+    providers,
+    sourceUrls,
   };
 }
 
-export function deduplicateUnifiedPapers(papers: UnifiedPaper[]): UnifiedPaper[] {
+function findFuzzyMatchIndex(
+  paper: UnifiedPaper,
+  merged: UnifiedPaper[],
+): number | undefined {
+  for (let index = 0; index < merged.length; index += 1) {
+    const candidate = merged[index]!;
+
+    if (
+      titleSimilarity(paper.title, candidate.title) >=
+      TITLE_FUZZY_SIMILARITY_THRESHOLD
+    ) {
+      return index;
+    }
+  }
+
+  return undefined;
+}
+
+export function deduplicateUnifiedPapers(papers: UnifiedPaper[]): {
+  papers: UnifiedPaper[];
+  stats: DedupeStats;
+} {
   const keyToIndex = new Map<string, number>();
   const merged: UnifiedPaper[] = [];
+  let exactMatches = 0;
+  let fuzzyMatches = 0;
 
-  for (const paper of papers) {
-    const keys = paperDedupKeys(paper);
+  for (const rawPaper of papers) {
+    const paper = withProviderDefaults(rawPaper);
+    const keys = exactDedupKeys(paper);
     let existingIndex: number | undefined;
 
     for (const key of keys) {
       const index = keyToIndex.get(key);
       if (index !== undefined) {
         existingIndex = index;
+        exactMatches += 1;
         break;
+      }
+    }
+
+    if (existingIndex === undefined) {
+      existingIndex = findFuzzyMatchIndex(paper, merged);
+      if (existingIndex !== undefined) {
+        fuzzyMatches += 1;
       }
     }
 
     if (existingIndex === undefined) {
       const index = merged.length;
       merged.push(paper);
-      for (const key of keys) {
+
+      for (const key of exactDedupKeys(paper)) {
         keyToIndex.set(key, index);
       }
+
       continue;
     }
 
     merged[existingIndex] = mergeUnifiedPapers(merged[existingIndex]!, paper);
-    for (const key of paperDedupKeys(merged[existingIndex]!)) {
+
+    for (const key of exactDedupKeys(merged[existingIndex]!)) {
       keyToIndex.set(key, existingIndex);
     }
   }
 
-  return merged;
+  const inputCount = papers.length;
+  const outputCount = merged.length;
+
+  return {
+    papers: merged,
+    stats: {
+      inputCount,
+      outputCount,
+      duplicatesRemoved: Math.max(0, inputCount - outputCount),
+      exactMatches,
+      fuzzyMatches,
+    },
+  };
 }
 
 export function unifiedPaperToDraft(
   paper: UnifiedPaper,
 ): ArxivPaperDraft & { citationCount?: number | null } {
-  const categories = [...paper.categories];
+  const normalized = withProviderDefaults(paper);
+  const categories = [...normalized.categories];
 
-  if (paper.doi && !categories.some((item) => item.toLowerCase().startsWith("doi:"))) {
-    categories.unshift(`doi:${paper.doi}`);
+  if (
+    normalized.doi &&
+    !categories.some((item) => item.toLowerCase().startsWith("doi:"))
+  ) {
+    categories.unshift(`doi:${normalized.doi}`);
   }
 
   return {
-    arxivId: paper.externalKey,
-    title: paper.title,
-    abstract: paper.abstract,
-    authors: paper.authors,
-    publishedAt: paper.publishedAt,
-    pdfUrl: paper.pdfUrl,
-    absUrl: paper.absUrl,
+    arxivId: normalized.externalKey,
+    title: normalized.title,
+    abstract: normalized.abstract,
+    authors: normalized.authors,
+    publishedAt: normalized.publishedAt,
+    pdfUrl: normalized.pdfUrl,
+    absUrl: normalized.absUrl,
     categories,
-    citationCount: paper.citationCount,
+    citationCount: normalized.citationCount,
+    providers: normalized.providers,
+    sourceUrls: normalized.sourceUrls,
   };
 }
 

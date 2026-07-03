@@ -229,6 +229,8 @@ function normalizePubMedArticle(raw: PubMedArticleRaw): UnifiedPaper {
     pubmedId: raw.pmid,
     openAlexId: null,
     citationCount: null,
+    providers: ["pubmed"],
+    sourceUrls: { pubmed: raw.absUrl },
   };
 }
 

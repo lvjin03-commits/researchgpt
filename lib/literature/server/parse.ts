@@ -2,7 +2,7 @@
 
 import { LiteratureError } from "@/lib/literature/errors";
 import { parseDateRangeDays } from "@/lib/literature/date-range";
-import { DEFAULT_LITERATURE_PIPELINE_SOURCES } from "@/lib/literature/providers/index";
+import { DEFAULT_LITERATURE_PIPELINE_SOURCES } from "@/lib/literature/constants";
 import { DEFAULT_LITERATURE_DISCIPLINE } from "@/lib/literature/source-taxonomy";
 import type { LiteraturePaperStatus } from "@/lib/literature/types";
 import type { LiteratureSettings } from "@/lib/literature/types";

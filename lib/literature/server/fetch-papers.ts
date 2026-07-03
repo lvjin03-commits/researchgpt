@@ -6,5 +6,8 @@ import type { ArxivPaperDraft, LiteratureSettings } from "@/lib/literature/types
 export async function fetchPapersFromSelectedSources(
   settings: LiteratureSettings,
 ): Promise<ArxivPaperDraft[]> {
-  return searchLiteratureProviders(settings);
+  const { drafts } = await searchLiteratureProviders(settings);
+  return drafts;
 }
+
+export { searchLiteratureProviders } from "@/lib/literature/providers/index";

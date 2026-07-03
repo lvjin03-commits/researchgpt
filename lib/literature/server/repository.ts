@@ -8,6 +8,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { LiteratureError } from "@/lib/literature/errors";
 import { normalizeLiteratureSettings } from "@/lib/literature/normalize-settings";
 import {
+  applyDraftProviderMetadata,
+  embedPaperProviderMetadata,
+  extractPaperProviderMetadata,
+  resolvePaperProviderMetadata,
+} from "@/lib/literature/paper-providers";
+import {
   DEFAULT_LITERATURE_DISCIPLINE,
   isValidDisciplineId,
 } from "@/lib/literature/source-taxonomy";
@@ -124,7 +130,9 @@ function mapPaperRow(row: DbPaperRow): LiteraturePaper {
       ? (row.workspace_analysis as PaperWorkspaceAnalysis)
       : null;
 
-  return {
+  const metadata = extractPaperProviderMetadata(row.categories ?? []);
+
+  return resolvePaperProviderMetadata({
     id: row.id,
     arxivId: row.arxiv_id,
     title: row.title,
@@ -133,7 +141,7 @@ function mapPaperRow(row: DbPaperRow): LiteraturePaper {
     publishedAt: row.published_at,
     pdfUrl: row.pdf_url,
     absUrl: row.abs_url,
-    categories: row.categories ?? [],
+    categories: metadata.displayCategories,
     relevanceScore: row.relevance_score,
     priority:
       row.priority === "recommended" ||
@@ -153,7 +161,9 @@ function mapPaperRow(row: DbPaperRow): LiteraturePaper {
     fetchedAt: row.fetched_at,
     personalNotes: row.personal_notes ?? "",
     workspaceAnalysis,
-  };
+    providers: metadata.providers,
+    sourceUrls: metadata.sourceUrls,
+  });
 }
 
 async function readFileStore(userId: string): Promise<LiteratureStore> {
@@ -184,23 +194,28 @@ function buildPaperRecord(
   existingStatus: LiteraturePaperStatus | null,
 ): LiteraturePaper {
   const now = new Date().toISOString();
+  const preparedDraft = applyDraftProviderMetadata(draft);
+  const metadata = extractPaperProviderMetadata(preparedDraft.categories);
 
   return {
     id: randomUUID(),
-    arxivId: draft.arxivId,
-    title: draft.title,
-    abstract: draft.abstract,
-    authors: draft.authors,
-    publishedAt: draft.publishedAt,
-    pdfUrl: draft.pdfUrl,
-    absUrl: draft.absUrl,
-    categories: draft.categories,
+    arxivId: preparedDraft.arxivId,
+    title: preparedDraft.title,
+    abstract: preparedDraft.abstract,
+    authors: preparedDraft.authors,
+    publishedAt: preparedDraft.publishedAt,
+    pdfUrl: preparedDraft.pdfUrl,
+    absUrl: preparedDraft.absUrl,
+    categories: metadata.displayCategories,
     relevanceScore: analysis?.relevanceScore ?? null,
     priority: analysis?.priority ?? null,
     chineseSummary: analysis?.chineseSummary ?? null,
     recommendationReason: analysis?.recommendationReason ?? null,
     status: existingStatus ?? "new",
     fetchedAt: now,
+    citationCount: preparedDraft.citationCount ?? null,
+    providers: preparedDraft.providers ?? metadata.providers,
+    sourceUrls: preparedDraft.sourceUrls ?? metadata.sourceUrls,
   };
 }
 
@@ -278,7 +293,9 @@ export async function listLiteraturePapers(
   if (error) {
     if (isMissingTableError(error)) {
       const store = await readFileStore(userId);
-      return store.papers.sort((left, right) => {
+      return store.papers
+        .map(resolvePaperProviderMetadata)
+        .sort((left, right) => {
         const leftScore = left.relevanceScore ?? -1;
         const rightScore = right.relevanceScore ?? -1;
         return rightScore - leftScore;
@@ -330,15 +347,20 @@ export async function upsertAnalyzedPapers(
     const current = existingByArxivId.get(draft.arxivId);
 
     if (current) {
+      const preparedDraft = applyDraftProviderMetadata(draft);
+      const metadata = extractPaperProviderMetadata(preparedDraft.categories);
       const merged: LiteraturePaper = {
         ...current,
-        title: draft.title,
-        abstract: draft.abstract,
-        authors: draft.authors,
-        publishedAt: draft.publishedAt,
-        pdfUrl: draft.pdfUrl,
-        absUrl: draft.absUrl,
-        categories: draft.categories,
+        title: preparedDraft.title,
+        abstract: preparedDraft.abstract,
+        authors: preparedDraft.authors,
+        publishedAt: preparedDraft.publishedAt,
+        pdfUrl: preparedDraft.pdfUrl,
+        absUrl: preparedDraft.absUrl,
+        categories: metadata.displayCategories,
+        providers: preparedDraft.providers ?? metadata.providers,
+        sourceUrls: preparedDraft.sourceUrls ?? metadata.sourceUrls,
+        citationCount: preparedDraft.citationCount ?? current.citationCount ?? null,
         relevanceScore: analysis?.relevanceScore ?? current.relevanceScore,
         priority: analysis?.priority ?? current.priority,
         chineseSummary: analysis?.chineseSummary ?? current.chineseSummary,
@@ -368,7 +390,15 @@ export async function upsertAnalyzedPapers(
   }
 
   const upsertRows = drafts.map((draft) => {
-    const record = nextPapers.find((paper) => paper.arxivId === draft.arxivId)!;
+    const preparedDraft = applyDraftProviderMetadata(draft);
+    const record = nextPapers.find((paper) => paper.arxivId === preparedDraft.arxivId)!;
+    const storedCategories = embedPaperProviderMetadata(
+      record.categories,
+      {
+        providers: record.providers,
+        sourceUrls: record.sourceUrls,
+      },
+    );
 
     return {
       id: record.id,
@@ -380,7 +410,7 @@ export async function upsertAnalyzedPapers(
       published_at: record.publishedAt,
       pdf_url: record.pdfUrl,
       abs_url: record.absUrl,
-      categories: record.categories,
+      categories: storedCategories,
       relevance_score: record.relevanceScore,
       priority: record.priority,
       chinese_summary: record.chineseSummary,

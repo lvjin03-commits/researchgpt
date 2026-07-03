@@ -8,6 +8,7 @@ import { LiteratureError } from "@/lib/literature/errors";
 import {
   buildExternalKey,
   matchesExcludeKeywords,
+  normalizeArxivId,
   type LiteratureProvider,
   type ProviderSearchOptions,
   type UnifiedPaper,
@@ -126,10 +127,12 @@ function parseArxivEntries(xml: string): ArxivEntryRaw[] {
 }
 
 function normalizeArxivEntry(raw: ArxivEntryRaw): UnifiedPaper {
+  const arxivId = normalizeArxivId(raw.arxivId) ?? raw.arxivId;
+
   return {
     provider: "arxiv",
-    providerPaperId: raw.arxivId,
-    externalKey: buildExternalKey("arxiv", raw.arxivId),
+    providerPaperId: arxivId,
+    externalKey: buildExternalKey("arxiv", arxivId),
     title: raw.title,
     abstract: raw.abstract,
     authors: raw.authors,
@@ -138,10 +141,12 @@ function normalizeArxivEntry(raw: ArxivEntryRaw): UnifiedPaper {
     absUrl: raw.absUrl,
     categories: raw.categories,
     doi: null,
-    arxivId: raw.arxivId,
+    arxivId,
     pubmedId: null,
     openAlexId: null,
     citationCount: null,
+    providers: ["arxiv"],
+    sourceUrls: { arxiv: raw.absUrl },
   };
 }
 
@@ -198,13 +203,18 @@ export const arxivProvider: LiteratureProvider = {
   },
 
   async getPaper(providerPaperId) {
+    const normalizedId = normalizeArxivId(providerPaperId) ?? providerPaperId;
     const entries = await fetchArxivEntries({
-      keywords: providerPaperId.replace(/^arxiv:/i, ""),
+      keywords: normalizedId.replace(/^arxiv:/i, ""),
       excludeKeywords: "",
       maxResults: 1,
     });
 
-    return entries.find((entry) => entry.arxivId === providerPaperId) ?? null;
+    return (
+      entries.find(
+        (entry) => (normalizeArxivId(entry.arxivId) ?? entry.arxivId) === normalizedId,
+      ) ?? null
+    );
   },
 
   normalizePaper(raw) {
