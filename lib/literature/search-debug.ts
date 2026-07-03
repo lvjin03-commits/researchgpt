@@ -17,6 +17,7 @@ export type LiteratureSearchDebugSummary = {
   openalex: number;
   arxiv: number;
   pubmed: number;
+  crossref: number;
   totalFetched: number;
   duplicatesRemoved: number;
   finalPapers: number;

@@ -9,6 +9,7 @@ export const DEFAULT_LITERATURE_PIPELINE_SOURCES = [
   "openalex",
   "arxiv",
   "pubmed",
+  "crossref",
 ] as const;
 
 export const LITERATURE_DATE_RANGE_OPTIONS = [

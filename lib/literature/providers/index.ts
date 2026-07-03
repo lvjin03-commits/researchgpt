@@ -18,6 +18,7 @@ import {
   unifiedPaperToDraft,
 } from "@/lib/literature/providers/base";
 import { arxivProvider } from "@/lib/literature/providers/arxiv";
+import { crossrefProvider } from "@/lib/literature/providers/crossref";
 import { openAlexProvider } from "@/lib/literature/providers/openalex";
 import { pubmedProvider } from "@/lib/literature/providers/pubmed";
 import { FUTURE_LITERATURE_PROVIDERS } from "@/lib/literature/providers/placeholders";
@@ -31,6 +32,7 @@ export const ACTIVE_LITERATURE_PROVIDERS: LiteratureProvider[] = [
   openAlexProvider,
   arxivProvider,
   pubmedProvider,
+  crossrefProvider,
 ];
 
 /** Placeholder provider ids reserved for future integration. */
@@ -64,7 +66,7 @@ function toSearchOptions(settings: LiteratureSettings): ProviderSearchOptions {
 
 function logSearchQualityMetrics(metrics: LiteratureSearchQualityMetrics): void {
   console.log(
-    `[literature] search quality: fetched openalex=${metrics.fetchedByProvider.openalex ?? 0} arxiv=${metrics.fetchedByProvider.arxiv ?? 0} pubmed=${metrics.fetchedByProvider.pubmed ?? 0} totalFetched=${metrics.fetchedTotal}`,
+    `[literature] search quality: fetched openalex=${metrics.fetchedByProvider.openalex ?? 0} arxiv=${metrics.fetchedByProvider.arxiv ?? 0} pubmed=${metrics.fetchedByProvider.pubmed ?? 0} crossref=${metrics.fetchedByProvider.crossref ?? 0} totalFetched=${metrics.fetchedTotal}`,
   );
   console.log(
     `[literature] search quality: merged=${metrics.mergedTotal} duplicatesRemoved=${metrics.duplicatesRemoved} exactMatches=${metrics.exactMatches} fuzzyMatches=${metrics.fuzzyMatches} afterExclude=${metrics.afterExcludeKeywords} final=${metrics.finalCount}`,
@@ -195,6 +197,7 @@ export async function searchLiteratureProviders(
           openalex: quality.fetchedByProvider.openalex ?? 0,
           arxiv: quality.fetchedByProvider.arxiv ?? 0,
           pubmed: quality.fetchedByProvider.pubmed ?? 0,
+          crossref: quality.fetchedByProvider.crossref ?? 0,
           totalFetched: quality.fetchedTotal,
           duplicatesRemoved: quality.duplicatesRemoved,
           finalPapers: quality.finalCount,

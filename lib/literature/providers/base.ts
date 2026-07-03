@@ -95,6 +95,12 @@ export function buildExternalKey(
       return providerPaperId.startsWith("openalex:")
         ? providerPaperId
         : `openalex:${providerPaperId}`;
+    case "crossref": {
+      const doi =
+        normalizeDoi(providerPaperId) ??
+        providerPaperId.replace(/^crossref:/i, "");
+      return `crossref:${doi}`;
+    }
     default:
       return `${provider}:${providerPaperId}`;
   }
@@ -299,6 +305,14 @@ function pickExternalKey(existing: UnifiedPaper, incoming: UnifiedPaper): string
 
   if (incoming.openAlexId) {
     return buildExternalKey("openalex", incoming.openAlexId);
+  }
+
+  if (existing.doi) {
+    return buildExternalKey("crossref", existing.doi);
+  }
+
+  if (incoming.doi) {
+    return buildExternalKey("crossref", incoming.doi);
   }
 
   return existing.externalKey || incoming.externalKey;
