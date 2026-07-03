@@ -1,5 +1,5 @@
 import { LiteratureError } from "@/lib/literature/errors";
-import { fetchPaperCitationNetwork } from "@/lib/literature/providers/semantic-scholar";
+import { getPaperCitationNetwork } from "@/lib/literature/server/citation-network-service";
 import { getLiteraturePaperById } from "@/lib/literature/server/repository";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 
@@ -14,7 +14,7 @@ export async function GET(_request: Request, context: RouteContext) {
     const { supabase, user } = await requireLiteratureUser();
     const { id } = await context.params;
     const paper = await getLiteraturePaperById(supabase, user.id, id);
-    const citationNetwork = await fetchPaperCitationNetwork(paper);
+    const citationNetwork = await getPaperCitationNetwork(paper);
 
     return Response.json(citationNetwork);
   } catch (error) {

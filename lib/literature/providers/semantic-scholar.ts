@@ -33,6 +33,18 @@ const LIST_ITEM_FIELDS = [
   "url",
 ].join(",");
 
+export const SEMANTIC_SCHOLAR_RATE_LIMIT_MESSAGE =
+  "Semantic Scholar 请求过于频繁，请稍后再试。";
+
+export class SemanticScholarRateLimitError extends Error {
+  readonly statusCode = 429;
+
+  constructor(message = SEMANTIC_SCHOLAR_RATE_LIMIT_MESSAGE) {
+    super(message);
+    this.name = "SemanticScholarRateLimitError";
+  }
+}
+
 type SemanticScholarAuthor = {
   name?: string | null;
 };
@@ -142,10 +154,7 @@ async function fetchSemanticScholar<T>(url: string): Promise<T | null> {
   }
 
   if (response.status === 429) {
-    throw new LiteratureError(
-      "Semantic Scholar API rate limit exceeded. Please try again later.",
-      503,
-    );
+    throw new SemanticScholarRateLimitError();
   }
 
   if (!response.ok) {

@@ -864,6 +864,11 @@ export function LiteraturePaperDetailShell({
             <WorkspaceSection title="引用网络">
               {isCitationNetworkLoading ? (
                 <p className="text-sm text-gray-500">正在加载引用数据…</p>
+              ) : citationNetwork?.rateLimited ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {citationNetwork.message ??
+                    "Semantic Scholar 请求过于频繁，请稍后再试。"}
+                </p>
               ) : citationNetworkError ? (
                 <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {citationNetworkError}

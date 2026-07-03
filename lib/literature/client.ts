@@ -491,6 +491,8 @@ export async function fetchLiteraturePaperCitationNetwork(
     references: payload.references ?? [],
     citations: payload.citations ?? [],
     relatedPapers: payload.relatedPapers ?? [],
+    rateLimited: payload.rateLimited === true,
+    message: typeof payload.message === "string" ? payload.message : undefined,
   };
 }
 

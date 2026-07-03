@@ -118,4 +118,6 @@ export type PaperCitationNetwork = {
   references: PaperCitationNetworkItem[];
   citations: PaperCitationNetworkItem[];
   relatedPapers: PaperCitationNetworkItem[];
+  rateLimited?: boolean;
+  message?: string;
 };
