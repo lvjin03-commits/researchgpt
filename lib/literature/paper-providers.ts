@@ -3,6 +3,7 @@ import type { ArxivPaperDraft, LiteraturePaper } from "@/lib/literature/types";
 
 export const PROVIDERS_CATEGORY_PREFIX = "providers:";
 export const SOURCE_URLS_CATEGORY_PREFIX = "sourceUrls:";
+export const RANKING_SCORE_CATEGORY_PREFIX = "rankingScore:";
 
 export const LITERATURE_PROVIDER_BADGE_LABELS: Record<
   LiteratureProviderId,
@@ -21,22 +22,34 @@ export type PaperProviderMetadata = {
   providers: LiteratureProviderId[];
   sourceUrls: Partial<Record<LiteratureProviderId, string>>;
   displayCategories: string[];
+  rankingScore?: number;
 };
+
+function isEmbeddedCategory(category: string): boolean {
+  return (
+    category.startsWith(PROVIDERS_CATEGORY_PREFIX) ||
+    category.startsWith(SOURCE_URLS_CATEGORY_PREFIX) ||
+    category.startsWith(RANKING_SCORE_CATEGORY_PREFIX)
+  );
+}
 
 export function embedPaperProviderMetadata(
   categories: string[],
   metadata: {
     providers?: LiteratureProviderId[];
     sourceUrls?: Partial<Record<LiteratureProviderId, string>>;
+    rankingScore?: number;
   },
 ): string[] {
   const displayCategories = categories.filter(
-    (category) =>
-      !category.startsWith(PROVIDERS_CATEGORY_PREFIX) &&
-      !category.startsWith(SOURCE_URLS_CATEGORY_PREFIX),
+    (category) => !isEmbeddedCategory(category),
   );
 
   const embedded = [...displayCategories];
+
+  if (typeof metadata.rankingScore === "number") {
+    embedded.unshift(`${RANKING_SCORE_CATEGORY_PREFIX}${metadata.rankingScore}`);
+  }
 
   if (metadata.providers && metadata.providers.length > 0) {
     embedded.unshift(`${PROVIDERS_CATEGORY_PREFIX}${metadata.providers.join(",")}`);
@@ -56,8 +69,19 @@ export function extractPaperProviderMetadata(
 ): PaperProviderMetadata {
   const providers: LiteratureProviderId[] = [];
   let sourceUrls: Partial<Record<LiteratureProviderId, string>> = {};
+  let rankingScore: number | undefined;
 
   for (const category of categories) {
+    if (category.startsWith(RANKING_SCORE_CATEGORY_PREFIX)) {
+      const parsed = Number(
+        category.slice(RANKING_SCORE_CATEGORY_PREFIX.length),
+      );
+      if (Number.isFinite(parsed)) {
+        rankingScore = parsed;
+      }
+      continue;
+    }
+
     if (category.startsWith(PROVIDERS_CATEGORY_PREFIX)) {
       const raw = category.slice(PROVIDERS_CATEGORY_PREFIX.length);
       for (const item of raw.split(",")) {
@@ -83,12 +107,10 @@ export function extractPaperProviderMetadata(
   }
 
   const displayCategories = categories.filter(
-    (category) =>
-      !category.startsWith(PROVIDERS_CATEGORY_PREFIX) &&
-      !category.startsWith(SOURCE_URLS_CATEGORY_PREFIX),
+    (category) => !isEmbeddedCategory(category),
   );
 
-  return { providers, sourceUrls, displayCategories };
+  return { providers, sourceUrls, displayCategories, rankingScore };
 }
 
 export function inferProvidersFromExternalKey(
@@ -156,6 +178,7 @@ export function applyDraftProviderMetadata(
   const categories = embedPaperProviderMetadata(draft.categories, {
     providers: draft.providers,
     sourceUrls: draft.sourceUrls,
+    rankingScore: draft.rankingScore,
   });
 
   return {
@@ -182,5 +205,6 @@ export function resolvePaperProviderMetadata(
         ? paper.sourceUrls
         : extracted.sourceUrls,
     categories: extracted.displayCategories,
+    rankingScore: paper.rankingScore ?? extracted.rankingScore,
   };
 }

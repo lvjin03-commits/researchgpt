@@ -1,8 +1,10 @@
 import { AIProviderError } from "@/lib/ai/errors";
 import { LiteratureError } from "@/lib/literature/errors";
+import { sortLiteraturePapersAfterAiRerank } from "@/lib/literature/ranking/final-sort";
 import { analyzeArxivPapers } from "@/lib/literature/server/analyze-service";
 import { searchLiteratureProviders } from "@/lib/literature/server/fetch-papers";
 import { limitPapersForAnalysis } from "@/lib/literature/server/limit-analysis-papers";
+import { logLiteraturePipelineCounts } from "@/lib/literature/server/pipeline-log";
 import { parseLiteratureSettings } from "@/lib/literature/server/parse";
 import {
   listLiteraturePapers,
@@ -49,11 +51,7 @@ export async function POST(request: Request) {
     const { drafts, quality, debug } = await searchLiteratureProviders(settings);
     const analysisDrafts = limitPapersForAnalysis(drafts);
 
-    console.log(
-      `[literature] search quality: finalCountSentToAi=${analysisDrafts.length} cap=${analysisDrafts.length < quality.finalCount ? "applied" : "not-needed"}`,
-    );
-
-    console.log("[literature] step openai analysis: start");
+    console.log("[literature] step openai rerank analysis: start");
     const analysisStartedAt = Date.now();
     const analysisById = await analyzeArxivPapers(
       analysisDrafts,
@@ -61,13 +59,25 @@ export async function POST(request: Request) {
       request.signal,
     );
     console.log(
-      `[literature] step openai analysis: done elapsedMs=${elapsedMs(analysisStartedAt)} analyzed=${analysisById.size}`,
+      `[literature] step openai rerank analysis: done elapsedMs=${elapsedMs(analysisStartedAt)} analyzed=${analysisById.size}`,
     );
 
     console.log("[literature] step save to supabase: start");
     const saveStartedAt = Date.now();
     await upsertAnalyzedPapers(supabase, user.id, analysisDrafts, analysisById);
-    const papers = await listLiteraturePapers(supabase, user.id);
+    const papers = sortLiteraturePapersAfterAiRerank(
+      await listLiteraturePapers(supabase, user.id),
+    );
+    const finalReturned = papers.filter((paper) => paper.status !== "skipped").length;
+
+    logLiteraturePipelineCounts({
+      totalFetched: quality.fetchedTotal,
+      afterDedup: quality.afterExcludeKeywords,
+      afterRanking: quality.finalCount,
+      sentToAi: analysisDrafts.length,
+      finalReturned,
+    });
+
     console.log(
       `[literature] step save to supabase: done elapsedMs=${elapsedMs(saveStartedAt)} papers=${papers.length}`,
     );

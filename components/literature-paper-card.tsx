@@ -28,6 +28,7 @@ type LiteraturePaperCardProps = {
   folders?: LiteratureFolder[];
   onSaveToFolders?: (paperId: string, folderIds: string[]) => Promise<void>;
   onFoldersChange?: (paperId: string, folderIds: string[]) => void;
+  showProviderInternals?: boolean;
 };
 
 export function LiteraturePaperCard({
@@ -37,6 +38,7 @@ export function LiteraturePaperCard({
   folders = [],
   onSaveToFolders,
   onFoldersChange,
+  showProviderInternals = false,
 }: LiteraturePaperCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -110,14 +112,15 @@ export function LiteraturePaperCard({
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
                 {getPaperStatusLabel(paper.status)}
               </span>
-              {providerBadges.map((provider) => (
-                <span
-                  key={provider}
-                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${providerBadgeClassName(provider)}`}
-                >
-                  {LITERATURE_PROVIDER_BADGE_LABELS[provider]}
-                </span>
-              ))}
+              {showProviderInternals &&
+                providerBadges.map((provider) => (
+                  <span
+                    key={provider}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${providerBadgeClassName(provider)}`}
+                  >
+                    {LITERATURE_PROVIDER_BADGE_LABELS[provider]}
+                  </span>
+                ))}
               {assignedFolderIds.map((folderId) => {
                 const name = folderNameById.get(folderId);
                 if (!name) {

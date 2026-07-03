@@ -163,6 +163,7 @@ function mapPaperRow(row: DbPaperRow): LiteraturePaper {
     workspaceAnalysis,
     providers: metadata.providers,
     sourceUrls: metadata.sourceUrls,
+    rankingScore: metadata.rankingScore,
   });
 }
 
@@ -214,6 +215,7 @@ function buildPaperRecord(
     status: existingStatus ?? "new",
     fetchedAt: now,
     citationCount: preparedDraft.citationCount ?? null,
+    rankingScore: preparedDraft.rankingScore ?? metadata.rankingScore,
     providers: preparedDraft.providers ?? metadata.providers,
     sourceUrls: preparedDraft.sourceUrls ?? metadata.sourceUrls,
   };
@@ -361,6 +363,7 @@ export async function upsertAnalyzedPapers(
         providers: preparedDraft.providers ?? metadata.providers,
         sourceUrls: preparedDraft.sourceUrls ?? metadata.sourceUrls,
         citationCount: preparedDraft.citationCount ?? current.citationCount ?? null,
+        rankingScore: preparedDraft.rankingScore ?? metadata.rankingScore ?? current.rankingScore,
         relevanceScore: analysis?.relevanceScore ?? current.relevanceScore,
         priority: analysis?.priority ?? current.priority,
         chineseSummary: analysis?.chineseSummary ?? current.chineseSummary,
@@ -397,6 +400,7 @@ export async function upsertAnalyzedPapers(
       {
         providers: record.providers,
         sourceUrls: record.sourceUrls,
+        rankingScore: record.rankingScore,
       },
     );
 

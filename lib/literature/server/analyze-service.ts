@@ -49,6 +49,7 @@ async function analyzePaperBatch(
     title: paper.title,
     abstract: paper.abstract.slice(0, 2500),
     categories: paper.categories,
+    ruleBasedRankingScore: paper.rankingScore ?? null,
   }));
 
   const completion = await client.chat.completions.create(
@@ -60,6 +61,8 @@ async function analyzePaperBatch(
           role: "system",
           content: [
             "You are a research literature triage assistant for ResearchGPT Literature Tracker.",
+            "These papers were pre-selected by rule-based ranking from OpenAlex, arXiv, and PubMed.",
+            "Rerank each paper for the user's research direction and keywords, then assign reading priority.",
             "Evaluate each paper for the user's research direction and keywords.",
             "Return JSON only with shape:",
             '{"papers":[{"arxivId":"...","relevanceScore":0-100,"priority":"recommended|skim|skip","chineseSummary":"...","recommendationReason":"..."}]}',
@@ -69,8 +72,9 @@ async function analyzePaperBatch(
             "## 主要发现",
             "## 创新点",
             "## 局限性",
-            "recommendationReason should be concise English explaining the priority.",
-            "priority rules: recommended = highly relevant, skim = somewhat relevant, skip = low relevance or excluded topic.",
+            "recommendationReason should be concise English explaining why to read, skim, or skip.",
+            "priority rules: recommended = highly relevant must-read, skim = somewhat relevant, skip = low relevance or excluded topic.",
+            "Use ruleBasedRankingScore as a weak prior only; final relevanceScore and priority must reflect AI judgment.",
           ].join("\n"),
         },
         {

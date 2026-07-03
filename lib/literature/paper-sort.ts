@@ -1,6 +1,8 @@
+import { compareLiteraturePapersAfterAiRerank } from "@/lib/literature/ranking/final-sort";
 import type { LiteraturePaper, LiteraturePriority } from "@/lib/literature/types";
 
 export type LiteraturePaperSortKey =
+  | "aiRerank"
   | "relevanceScore"
   | "publishedAt"
   | "journalImpactFactor"
@@ -11,15 +13,15 @@ export const LITERATURE_PAPER_SORT_OPTIONS: Array<{
   value: LiteraturePaperSortKey;
   label: string;
 }> = [
+  { value: "aiRerank", label: "推荐优先级最高" },
   { value: "relevanceScore", label: "相关度最高" },
   { value: "publishedAt", label: "最新发表" },
   { value: "journalImpactFactor", label: "影响因子最高" },
   { value: "citationCount", label: "被引用次数最高" },
-  { value: "priority", label: "推荐优先级最高" },
+  { value: "priority", label: "阅读优先级" },
 ];
 
-export const DEFAULT_LITERATURE_PAPER_SORT: LiteraturePaperSortKey =
-  "relevanceScore";
+export const DEFAULT_LITERATURE_PAPER_SORT: LiteraturePaperSortKey = "aiRerank";
 
 function priorityRank(priority: LiteraturePriority | null): number {
   switch (priority) {
@@ -55,6 +57,8 @@ export function sortLiteraturePapers(
 
   sorted.sort((left, right) => {
     switch (sortKey) {
+      case "aiRerank":
+        return compareLiteraturePapersAfterAiRerank(left, right);
       case "relevanceScore":
         return compareDescending(
           left.relevanceScore ?? 0,

@@ -358,6 +358,7 @@ export function LiteratureShell() {
                         folders={folders}
                         onStatusChange={handleStatusChange}
                         onSaveToFolders={handleSaveToFolders}
+                        showProviderInternals={searchDebug !== null}
                       />
                       {paperDebug && (
                         <LiteraturePaperDebugPanel paperDebug={paperDebug} />

@@ -74,6 +74,8 @@ export type LiteraturePaper = {
       string
     >
   >;
+  /** Pre-AI rule-based ranking score (debug / sort tiebreaker only). */
+  rankingScore?: number;
 };
 
 export type LiteratureFolder = {
