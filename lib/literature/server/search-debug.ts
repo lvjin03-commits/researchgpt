@@ -13,6 +13,7 @@ export function buildLiteratureSearchDebug(
     paper: UnifiedPaper;
     debug: UnifiedPaperDebugRecord;
   }>,
+  rankingByArxivId?: Map<string, number>,
 ): LiteratureSearchDebug {
   return {
     summary,
@@ -22,6 +23,7 @@ export function buildLiteratureSearchDebug(
       providers: paper.providers,
       matchedBy: debug.matchedBy,
       mergeSourceCount: debug.mergeSourceCount,
+      rankingScore: rankingByArxivId?.get(paper.externalKey),
     })),
   };
 }

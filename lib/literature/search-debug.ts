@@ -28,6 +28,7 @@ export type LiteraturePaperSearchDebug = {
   providers: LiteratureProviderId[];
   matchedBy: LiteratureDedupeMatchReason;
   mergeSourceCount: number;
+  rankingScore?: number;
 };
 
 export type LiteratureSearchDebug = {

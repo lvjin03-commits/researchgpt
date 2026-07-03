@@ -105,6 +105,8 @@ export type ArxivPaperDraft = {
     >
   >;
   citationCount?: number | null;
+  /** Pre-AI literature ranking score (debug / pipeline only). */
+  rankingScore?: number;
 };
 
 export type PaperAnalysisResult = {

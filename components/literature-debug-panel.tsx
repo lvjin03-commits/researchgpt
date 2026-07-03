@@ -79,6 +79,9 @@ export function LiteraturePaperDebugPanel({
           label="Merge Source Count:"
           value={paperDebug.mergeSourceCount}
         />
+        {typeof paperDebug.rankingScore === "number" && (
+          <DebugRow label="Ranking Score:" value={paperDebug.rankingScore} />
+        )}
       </div>
     </section>
   );

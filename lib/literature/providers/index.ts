@@ -3,6 +3,7 @@
 import { LITERATURE_MAX_ARXIV_RESULTS } from "@/lib/literature/constants";
 import { LiteratureError } from "@/lib/literature/errors";
 import { applyDraftProviderMetadata } from "@/lib/literature/paper-providers";
+import { rankLiteraturePapers } from "@/lib/literature/ranking/ranking";
 import type { LiteratureSearchDebug } from "@/lib/literature/search-debug";
 import { buildLiteratureSearchDebug } from "@/lib/literature/server/search-debug";
 import { isLiteratureDebugEnabled } from "@/lib/literature/server/debug";
@@ -149,6 +150,17 @@ export async function searchLiteratureProviders(
     .map(unifiedPaperToDraft)
     .map(applyDraftProviderMetadata);
 
+  console.log("[literature] step rank papers: start");
+  const rankStartedAt = Date.now();
+  const { papers: rankedDrafts } = rankLiteraturePapers(drafts, settings);
+  const rankingByArxivId = new Map(
+    rankedDrafts.map((paper) => [paper.arxivId, paper.rankingScore ?? 0]),
+  );
+
+  console.log(
+    `[literature] step rank papers: done elapsedMs=${elapsedMs(rankStartedAt)} papers=${rankedDrafts.length} topScore=${rankedDrafts[0]?.rankingScore ?? 0}`,
+  );
+
   console.log(
     `[literature] step deduplicate: done elapsedMs=${elapsedMs(dedupeStartedAt)} merged=${allUnified.length} unique=${deduped.length} duplicatesRemoved=${dedupeStats.duplicatesRemoved}`,
   );
@@ -161,16 +173,16 @@ export async function searchLiteratureProviders(
     exactMatches: dedupeStats.exactMatches,
     fuzzyMatches: dedupeStats.fuzzyMatches,
     afterExcludeKeywords: afterExclude.length,
-    finalCount: drafts.length,
+    finalCount: rankedDrafts.length,
   };
 
   logSearchQualityMetrics(quality);
 
   console.log(
-    `[literature] step merge results: done elapsedMs=${elapsedMs(mergeStartedAt)} totalPapers=${drafts.length}`,
+    `[literature] step merge results: done elapsedMs=${elapsedMs(mergeStartedAt)} totalPapers=${rankedDrafts.length}`,
   );
 
-  if (drafts.length === 0) {
+  if (rankedDrafts.length === 0) {
     throw new LiteratureError(
       "未找到符合关键词与时间范围的论文。",
       404,
@@ -188,8 +200,9 @@ export async function searchLiteratureProviders(
           finalPapers: quality.finalCount,
         },
         finalPairs,
+        rankingByArxivId,
       )
     : undefined;
 
-  return { drafts, quality, dedupeStats, debug };
+  return { drafts: rankedDrafts, quality, dedupeStats, debug };
 }
