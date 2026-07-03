@@ -61,6 +61,10 @@ export type LiteraturePaper = {
   folderIds?: string[];
   personalNotes?: string;
   workspaceAnalysis?: PaperWorkspaceAnalysis | null;
+  /** Populated when citation metadata is available (e.g. Semantic Scholar). */
+  citationCount?: number | null;
+  /** Populated when journal metadata is available. */
+  journalImpactFactor?: number | null;
 };
 
 export type LiteratureFolder = {

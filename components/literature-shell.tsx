@@ -24,6 +24,12 @@ import {
   LITERATURE_DISCIPLINES,
 } from "@/lib/literature/source-taxonomy";
 import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
+import {
+  DEFAULT_LITERATURE_PAPER_SORT,
+  LITERATURE_PAPER_SORT_OPTIONS,
+  sortLiteraturePapers,
+  type LiteraturePaperSortKey,
+} from "@/lib/literature/paper-sort";
 import type {
   LiteratureFolder,
   LiteraturePaper,
@@ -45,6 +51,9 @@ export function LiteratureShell() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<LiteraturePaperSortKey>(
+    DEFAULT_LITERATURE_PAPER_SORT,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -125,6 +134,11 @@ export function LiteratureShell() {
   );
 
   const visiblePapers = papers.filter((paper) => paper.status !== "skipped");
+
+  const sortedVisiblePapers = useMemo(
+    () => sortLiteraturePapers(visiblePapers, sortKey),
+    [visiblePapers, sortKey],
+  );
 
   const fetchableSelectedSources = useMemo(
     () => settings.selectedSources.filter((sourceId) => isSourceAvailable(sourceId)),
@@ -393,16 +407,46 @@ export function LiteratureShell() {
                 </p>
               </div>
             ) : (
-              visiblePapers.map((paper) => (
-                <LiteraturePaperCard
-                  key={paper.id}
-                  paper={paper}
-                  variant="tracker"
-                  folders={folders}
-                  onStatusChange={handleStatusChange}
-                  onSaveToFolders={handleSaveToFolders}
-                />
-              ))
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+                  <p className="text-sm text-gray-600">
+                    共 {sortedVisiblePapers.length} 篇论文
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="literature-sort"
+                      className="text-sm font-medium text-gray-700"
+                    >
+                      排序
+                    </label>
+                    <select
+                      id="literature-sort"
+                      value={sortKey}
+                      onChange={(event) =>
+                        setSortKey(event.target.value as LiteraturePaperSortKey)
+                      }
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                    >
+                      {LITERATURE_PAPER_SORT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {sortedVisiblePapers.map((paper) => (
+                  <LiteraturePaperCard
+                    key={paper.id}
+                    paper={paper}
+                    variant="tracker"
+                    folders={folders}
+                    onStatusChange={handleStatusChange}
+                    onSaveToFolders={handleSaveToFolders}
+                  />
+                ))}
+              </>
             )}
           </section>
         </div>

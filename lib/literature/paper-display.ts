@@ -30,6 +30,21 @@ export function formatLiteratureDate(value: string | null): string {
   });
 }
 
+export function formatLiteraturePublishedDate(
+  value: string | null | undefined,
+): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
 export function literaturePriorityClassName(
   priority: LiteraturePriority | null,
 ): string {

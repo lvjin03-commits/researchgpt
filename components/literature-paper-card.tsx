@@ -6,7 +6,7 @@ import { LiteraturePaperFolderSelector } from "@/components/literature-paper-fol
 import { LITERATURE_PRIORITY_LABELS } from "@/lib/literature/constants";
 import { setPaperFolders } from "@/lib/literature/client";
 import {
-  formatLiteratureDate,
+  formatLiteraturePublishedDate,
   literaturePriorityClassName,
 } from "@/lib/literature/paper-display";
 import { getPaperStatusLabel } from "@/lib/literature/ui-strings";
@@ -68,6 +68,12 @@ export function LiteraturePaperCard({
   };
 
   const externalLabel = "原文链接";
+  const publishedDateLabel = formatLiteraturePublishedDate(paper.publishedAt);
+  const hasMetrics =
+    paper.relevanceScore !== null ||
+    publishedDateLabel !== null ||
+    typeof paper.citationCount === "number" ||
+    typeof paper.journalImpactFactor === "number";
 
   return (
     <>
@@ -80,11 +86,6 @@ export function LiteraturePaperCard({
                   className={`rounded-full px-2.5 py-1 text-xs font-medium ${literaturePriorityClassName(paper.priority)}`}
                 >
                   {LITERATURE_PRIORITY_LABELS[paper.priority]}
-                </span>
-              )}
-              {paper.relevanceScore !== null && (
-                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                  相关度 {paper.relevanceScore}
                 </span>
               )}
               <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
@@ -117,9 +118,24 @@ export function LiteraturePaperCard({
             </h3>
             <p className="mt-1 text-sm text-gray-500">
               {paper.authors.slice(0, 4).join(", ")}
-              {paper.authors.length > 4 ? " 等" : ""} ·{" "}
-              {formatLiteratureDate(paper.publishedAt)}
+              {paper.authors.length > 4 ? " 等" : ""}
             </p>
+            {hasMetrics && (
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                {paper.relevanceScore !== null && (
+                  <span>相关度：{paper.relevanceScore}</span>
+                )}
+                {publishedDateLabel && (
+                  <span>发表时间：{publishedDateLabel}</span>
+                )}
+                {typeof paper.citationCount === "number" && (
+                  <span>被引用：{paper.citationCount.toLocaleString("zh-CN")}</span>
+                )}
+                {typeof paper.journalImpactFactor === "number" && (
+                  <span>影响因子：{paper.journalImpactFactor}</span>
+                )}
+              </div>
+            )}
             <p className="mt-1 text-xs text-gray-400">
               {paper.arxivId.startsWith("pubmed:")
                 ? `PubMed:${paper.arxivId.slice("pubmed:".length)}`
