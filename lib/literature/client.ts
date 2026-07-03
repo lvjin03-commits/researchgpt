@@ -2,12 +2,7 @@
 
 import { normalizeDateRangeDays } from "@/lib/literature/date-range";
 import { LiteratureError } from "@/lib/literature/errors";
-import {
-  getDefaultSelectedSources,
-  getDisciplineSources,
-  isSourceAvailable,
-  isValidDisciplineId,
-} from "@/lib/literature/source-taxonomy";
+import { isValidDisciplineId } from "@/lib/literature/source-taxonomy";
 import type {
   LiteratureFolder,
   LiteraturePaper,
@@ -185,24 +180,12 @@ function parseUpdateLiteratureResponse(payload: unknown): UpdateLiteratureRespon
 export function buildUpdateLiteratureRequest(
   settings: LiteratureSettings,
 ): UpdateLiteratureRequest {
-  const disciplineSourceIds = new Set(
-    getDisciplineSources(settings.discipline).map((source) => source.id),
-  );
-
-  let selectedSources = settings.selectedSources.filter(
-    (sourceId) => disciplineSourceIds.has(sourceId) && isSourceAvailable(sourceId),
-  );
-
-  if (selectedSources.length === 0) {
-    selectedSources = getDefaultSelectedSources(settings.discipline);
-  }
-
   return {
     researchDirection: settings.researchDirection,
     keywords: settings.keywords.trim(),
     excludeKeywords: settings.excludeKeywords,
     discipline: settings.discipline,
-    selectedSources,
+    selectedSources: settings.selectedSources,
     dateRangeDays: normalizeDateRangeDays(settings.dateRangeDays),
   };
 }

@@ -17,14 +17,6 @@ import {
 } from "@/lib/literature/client";
 import { normalizeLiteratureSettings } from "@/lib/literature/normalize-settings";
 import {
-  DEFAULT_LITERATURE_DISCIPLINE,
-  getDefaultSelectedSources,
-  getDisciplineSources,
-  isSourceAvailable,
-  LITERATURE_DISCIPLINES,
-} from "@/lib/literature/source-taxonomy";
-import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
-import {
   DEFAULT_LITERATURE_PAPER_SORT,
   LITERATURE_PAPER_SORT_OPTIONS,
   sortLiteraturePapers,
@@ -38,8 +30,6 @@ import type {
 } from "@/lib/literature/types";
 
 const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
-  discipline: DEFAULT_LITERATURE_DISCIPLINE,
-  selectedSources: ["arxiv"],
   dateRangeDays: LITERATURE_DATE_RANGE_DAYS,
 });
 
@@ -140,36 +130,7 @@ export function LiteratureShell() {
     [visiblePapers, sortKey],
   );
 
-  const fetchableSelectedSources = useMemo(
-    () => settings.selectedSources.filter((sourceId) => isSourceAvailable(sourceId)),
-    [settings.selectedSources],
-  );
-
-  const canUpdate =
-    settings.keywords.trim().length > 0 && fetchableSelectedSources.length > 0;
-
-  const handleDisciplineChange = (discipline: LiteratureDisciplineId) => {
-    setSettings((current) => ({
-      ...current,
-      discipline,
-      selectedSources: getDefaultSelectedSources(discipline),
-    }));
-  };
-
-  const handleSourceToggle = (sourceId: string, available: boolean) => {
-    if (!available) {
-      return;
-    }
-
-    setSettings((current) => ({
-      ...current,
-      selectedSources: current.selectedSources.includes(sourceId)
-        ? current.selectedSources.filter((item) => item !== sourceId)
-        : [...current.selectedSources, sourceId],
-    }));
-  };
-
-  const disciplineSources = getDisciplineSources(settings.discipline);
+  const canUpdate = settings.keywords.trim().length > 0;
 
   return (
     <div className="min-h-dvh bg-white">
@@ -178,7 +139,7 @@ export function LiteratureShell() {
           <div>
             <h1 className="text-lg font-semibold text-gray-900">文献追踪</h1>
             <p className="text-sm text-gray-500">
-              选择学科与来源，追踪最新论文并由 AI 评估相关度。
+              输入关键词，从 OpenAlex、arXiv 与 PubMed 检索最新论文并由 AI 评估相关度。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -272,79 +233,6 @@ export function LiteratureShell() {
 
             <div>
               <label
-                htmlFor="discipline"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                学科
-              </label>
-              <select
-                id="discipline"
-                value={settings.discipline}
-                disabled={isUpdating}
-                onChange={(event) =>
-                  handleDisciplineChange(event.target.value as LiteratureDisciplineId)
-                }
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50"
-              >
-                {LITERATURE_DISCIPLINES.map((discipline) => (
-                  <option key={discipline.id} value={discipline.id}>
-                    {discipline.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm font-medium text-gray-700">来源</p>
-                <p className="mt-1 text-xs text-gray-500">
-                  当前可抓取 arXiv 与 PubMed，其他来源即将上线。
-                </p>
-              </div>
-
-              <ul className="space-y-2">
-                {disciplineSources.map((source) => {
-                  const available = source.status === "available";
-
-                  return (
-                    <li key={source.id}>
-                      <label
-                        className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
-                          available
-                            ? "border-gray-200 bg-white text-gray-900"
-                            : "border-gray-100 bg-gray-50 text-gray-500"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-0.5"
-                          checked={settings.selectedSources.includes(source.id)}
-                          disabled={!available || isUpdating}
-                          onChange={() => handleSourceToggle(source.id, available)}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="font-medium">{source.name}</span>
-                          {!available && (
-                            <span className="mt-0.5 block text-xs text-gray-400">
-                              即将上线
-                            </span>
-                          )}
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {fetchableSelectedSources.length === 0 && (
-                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  当前学科暂无可抓取来源，请选择包含 arXiv 的学科后再更新文献。
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label
                 htmlFor="date-range"
                 className="mb-2 block text-sm font-medium text-gray-700"
               >
@@ -403,7 +291,7 @@ export function LiteratureShell() {
               <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
                 <p className="text-sm font-medium text-gray-900">暂无论文</p>
                 <p className="mt-2 text-sm text-gray-500">
-                  选择学科与 arXiv 来源，输入关键词后点击「更新文献」。
+                  输入关键词后点击「更新文献」，系统将自动检索并分析相关论文。
                 </p>
               </div>
             ) : (

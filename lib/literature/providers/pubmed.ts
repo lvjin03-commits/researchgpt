@@ -5,6 +5,13 @@ import {
   LITERATURE_MAX_ARXIV_RESULTS,
 } from "@/lib/literature/constants";
 import { LiteratureError } from "@/lib/literature/errors";
+import {
+  buildExternalKey,
+  matchesExcludeKeywords,
+  type LiteratureProvider,
+  type ProviderSearchOptions,
+  type UnifiedPaper,
+} from "@/lib/literature/providers/base";
 import type { ArxivPaperDraft } from "@/lib/literature/types";
 
 const ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi";
@@ -157,9 +164,9 @@ function normalizePubMedMonth(value: string | null): string | null {
   return monthMap[value.slice(0, 3).toLowerCase()] ?? "01";
 }
 
-function parsePubMedArticles(xml: string): ArxivPaperDraft[] {
+function parsePubMedArticles(xml: string): PubMedArticleRaw[] {
   const articles = xml.match(/<PubmedArticle>[\s\S]*?<\/PubmedArticle>/g) ?? [];
-  const papers: ArxivPaperDraft[] = [];
+  const papers: PubMedArticleRaw[] = [];
 
   for (const articleXml of articles) {
     const pmid = extractTagValue(articleXml, "PMID");
@@ -180,9 +187,9 @@ function parsePubMedArticles(xml: string): ArxivPaperDraft[] {
     const absUrl = `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`;
 
     papers.push({
-      arxivId: `pubmed:${pmid}`,
+      pmid,
       title,
-      abstract: abstract || "No abstract available.",
+      abstract: abstract || "暂无摘要。",
       authors: extractAuthors(articleXml),
       publishedAt: extractPublishedAt(articleXml),
       pdfUrl: absUrl,
@@ -192,6 +199,37 @@ function parsePubMedArticles(xml: string): ArxivPaperDraft[] {
   }
 
   return papers;
+}
+
+type PubMedArticleRaw = {
+  pmid: string;
+  title: string;
+  abstract: string;
+  authors: string[];
+  publishedAt: string | null;
+  pdfUrl: string;
+  absUrl: string;
+  categories: string[];
+};
+
+function normalizePubMedArticle(raw: PubMedArticleRaw): UnifiedPaper {
+  return {
+    provider: "pubmed",
+    providerPaperId: raw.pmid,
+    externalKey: buildExternalKey("pubmed", raw.pmid),
+    title: raw.title,
+    abstract: raw.abstract,
+    authors: raw.authors,
+    publishedAt: raw.publishedAt,
+    pdfUrl: raw.pdfUrl,
+    absUrl: raw.absUrl,
+    categories: raw.categories,
+    doi: null,
+    arxivId: null,
+    pubmedId: raw.pmid,
+    openAlexId: null,
+    citationCount: null,
+  };
 }
 
 async function searchPubMedIds(options: {
@@ -254,7 +292,7 @@ async function searchPubMedIds(options: {
   return payload.esearchresult?.idlist ?? [];
 }
 
-async function fetchPubMedRecords(ids: string[]): Promise<ArxivPaperDraft[]> {
+async function fetchPubMedRecords(ids: string[]): Promise<PubMedArticleRaw[]> {
   const url = new URL(EFETCH_URL);
 
   url.searchParams.set("db", "pubmed");
@@ -291,37 +329,66 @@ async function fetchPubMedRecords(ids: string[]): Promise<ArxivPaperDraft[]> {
   return parsePubMedArticles(xml);
 }
 
+export const pubmedProvider: LiteratureProvider = {
+  id: "pubmed",
+  name: "PubMed",
+  enabled: true,
+
+  async searchPapers(options) {
+    const maxResults = Math.min(
+      options.maxResults ?? LITERATURE_MAX_ARXIV_RESULTS,
+      LITERATURE_MAX_ARXIV_RESULTS,
+    );
+
+    const ids = await searchPubMedIds({
+      ...options,
+      maxResults,
+    });
+
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return fetchPubMedRecords(ids.slice(0, maxResults));
+  },
+
+  async getPaper(providerPaperId) {
+    const pmid = providerPaperId.replace(/^pubmed:/i, "");
+    const records = await fetchPubMedRecords([pmid]);
+    return records[0] ?? null;
+  },
+
+  normalizePaper(raw) {
+    return normalizePubMedArticle(raw as PubMedArticleRaw);
+  },
+};
+
+export async function searchPubMedUnifiedPapers(
+  options: ProviderSearchOptions,
+): Promise<UnifiedPaper[]> {
+  const articles = await pubmedProvider.searchPapers(options);
+
+  return articles
+    .map((article) => pubmedProvider.normalizePaper(article))
+    .filter((paper) => !matchesExcludeKeywords(paper, options.excludeKeywords));
+}
+
 export async function fetchPubMedPapers(options: {
   keywords: string;
   excludeKeywords: string;
   dateRangeDays?: number;
   maxResults?: number;
 }): Promise<ArxivPaperDraft[]> {
-  const maxResults = Math.min(
-    options.maxResults ?? LITERATURE_MAX_ARXIV_RESULTS,
-    LITERATURE_MAX_ARXIV_RESULTS,
-  );
+  const papers = await searchPubMedUnifiedPapers(options);
 
-  const ids = await searchPubMedIds({
-    ...options,
-    maxResults,
-  });
-
-  if (ids.length === 0) {
-    throw new LiteratureError(
-      "No PubMed papers matched your keywords in the selected date range.",
-      404,
-    );
-  }
-
-  const papers = await fetchPubMedRecords(ids.slice(0, maxResults));
-
-  if (papers.length === 0) {
-    throw new LiteratureError(
-      "No PubMed papers matched your keywords in the selected date range.",
-      404,
-    );
-  }
-
-  return papers;
+  return papers.map((paper) => ({
+    arxivId: paper.externalKey,
+    title: paper.title,
+    abstract: paper.abstract,
+    authors: paper.authors,
+    publishedAt: paper.publishedAt,
+    pdfUrl: paper.pdfUrl,
+    absUrl: paper.absUrl,
+    categories: paper.categories,
+  }));
 }
