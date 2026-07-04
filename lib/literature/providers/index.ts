@@ -20,6 +20,7 @@ import {
 import { arxivProvider } from "@/lib/literature/providers/arxiv";
 import { crossrefProvider } from "@/lib/literature/providers/crossref";
 import { dblpProvider } from "@/lib/literature/providers/dblp";
+import { openReviewProvider } from "@/lib/literature/providers/openreview";
 import { openAlexProvider } from "@/lib/literature/providers/openalex";
 import { pubmedProvider } from "@/lib/literature/providers/pubmed";
 import { FUTURE_LITERATURE_PROVIDERS } from "@/lib/literature/providers/placeholders";
@@ -35,6 +36,7 @@ export const ACTIVE_LITERATURE_PROVIDERS: LiteratureProvider[] = [
   pubmedProvider,
   crossrefProvider,
   dblpProvider,
+  openReviewProvider,
 ];
 
 /** Placeholder provider ids reserved for future integration. */
@@ -68,7 +70,7 @@ function toSearchOptions(settings: LiteratureSettings): ProviderSearchOptions {
 
 function logSearchQualityMetrics(metrics: LiteratureSearchQualityMetrics): void {
   console.log(
-    `[literature] search quality: fetched openalex=${metrics.fetchedByProvider.openalex ?? 0} arxiv=${metrics.fetchedByProvider.arxiv ?? 0} pubmed=${metrics.fetchedByProvider.pubmed ?? 0} crossref=${metrics.fetchedByProvider.crossref ?? 0} dblp=${metrics.fetchedByProvider.dblp ?? 0} totalFetched=${metrics.fetchedTotal}`,
+    `[literature] search quality: fetched openalex=${metrics.fetchedByProvider.openalex ?? 0} arxiv=${metrics.fetchedByProvider.arxiv ?? 0} pubmed=${metrics.fetchedByProvider.pubmed ?? 0} crossref=${metrics.fetchedByProvider.crossref ?? 0} dblp=${metrics.fetchedByProvider.dblp ?? 0} openreview=${metrics.fetchedByProvider.openreview ?? 0} totalFetched=${metrics.fetchedTotal}`,
   );
   console.log(
     `[literature] search quality: merged=${metrics.mergedTotal} duplicatesRemoved=${metrics.duplicatesRemoved} exactMatches=${metrics.exactMatches} fuzzyMatches=${metrics.fuzzyMatches} afterExclude=${metrics.afterExcludeKeywords} final=${metrics.finalCount}`,
@@ -104,6 +106,14 @@ async function fetchFromProvider(
     if (error instanceof LiteratureError && error.statusCode === 404) {
       console.log(
         `[literature] step fetch ${provider.id}: done elapsedMs=${elapsedMs(startedAt)} papers=0 (no matches)`,
+      );
+      return [];
+    }
+
+    if (provider.id === "openreview") {
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      console.warn(
+        `[literature] step fetch openreview: failed gracefully elapsedMs=${elapsedMs(startedAt)} reason=${reason}`,
       );
       return [];
     }
@@ -201,6 +211,7 @@ export async function searchLiteratureProviders(
           pubmed: quality.fetchedByProvider.pubmed ?? 0,
           crossref: quality.fetchedByProvider.crossref ?? 0,
           dblp: quality.fetchedByProvider.dblp ?? 0,
+          openreview: quality.fetchedByProvider.openreview ?? 0,
           totalFetched: quality.fetchedTotal,
           duplicatesRemoved: quality.duplicatesRemoved,
           finalPapers: quality.finalCount,

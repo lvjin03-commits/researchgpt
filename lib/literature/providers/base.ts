@@ -40,6 +40,7 @@ export type UnifiedPaper = {
   arxivId: string | null;
   pubmedId: string | null;
   openAlexId: string | null;
+  openReviewId: string | null;
   citationCount: number | null;
   providers: LiteratureProviderId[];
   sourceUrls: Partial<Record<LiteratureProviderId, string>>;
@@ -105,6 +106,10 @@ export function buildExternalKey(
       const dblpKey = providerPaperId.replace(/^dblp:/i, "");
       return `dblp:${dblpKey}`;
     }
+    case "openreview": {
+      const openReviewId = providerPaperId.replace(/^openreview:/i, "");
+      return `openreview:${openReviewId}`;
+    }
     default:
       return `${provider}:${providerPaperId}`;
   }
@@ -139,6 +144,17 @@ export function normalizePubmedId(value: string | null | undefined): string | nu
 
   const digits = value.replace(/^pubmed:/i, "").replace(/\D/g, "");
   return digits || null;
+}
+
+export function normalizeOpenReviewId(
+  value: string | null | undefined,
+): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const cleaned = value.replace(/^openreview:/i, "").trim();
+  return cleaned || null;
 }
 
 export function normalizeTitle(title: string): string {
@@ -345,6 +361,7 @@ function withProviderDefaults(paper: UnifiedPaper): UnifiedPaper {
     doi: normalizeDoi(paper.doi),
     arxivId: normalizeArxivId(paper.arxivId),
     pubmedId: normalizePubmedId(paper.pubmedId),
+    openReviewId: normalizeOpenReviewId(paper.openReviewId),
     providers,
     sourceUrls,
   };
@@ -363,6 +380,10 @@ function exactDedupKeys(paper: UnifiedPaper): string[] {
 
   if (paper.pubmedId) {
     keys.add(`pmid:${paper.pubmedId}`);
+  }
+
+  if (paper.openReviewId) {
+    keys.add(`openreview:${paper.openReviewId}`);
   }
 
   const normalizedTitle = normalizeTitle(paper.title);
@@ -408,6 +429,7 @@ function mergeUnifiedPapers(
     arxivId: left.arxivId ?? right.arxivId,
     pubmedId: left.pubmedId ?? right.pubmedId,
     openAlexId: left.openAlexId ?? right.openAlexId,
+    openReviewId: left.openReviewId ?? right.openReviewId,
     citationCount: left.citationCount ?? right.citationCount,
     providers,
     sourceUrls,
@@ -436,6 +458,13 @@ function findExactMatchIndex(
     const index = keyToIndex.get(`arxiv:${paper.arxivId}`);
     if (index !== undefined) {
       return { index, reason: "arxiv" };
+    }
+  }
+
+  if (paper.openReviewId) {
+    const index = keyToIndex.get(`openreview:${paper.openReviewId}`);
+    if (index !== undefined) {
+      return { index, reason: "openreview" };
     }
   }
 

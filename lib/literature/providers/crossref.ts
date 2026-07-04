@@ -213,6 +213,7 @@ function normalizeCrossrefWork(raw: CrossrefWork): UnifiedPaper | null {
     arxivId: null,
     pubmedId: null,
     openAlexId: null,
+    openReviewId: null,
     citationCount:
       typeof raw["is-referenced-by-count"] === "number"
         ? raw["is-referenced-by-count"]

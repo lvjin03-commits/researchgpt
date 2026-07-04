@@ -162,6 +162,7 @@ function normalizeOpenAlexWork(raw: OpenAlexWork): UnifiedPaper | null {
     arxivId,
     pubmedId,
     openAlexId,
+    openReviewId: null,
     citationCount:
       typeof raw.cited_by_count === "number" ? raw.cited_by_count : null,
     providers: ["openalex"],

@@ -144,6 +144,7 @@ function normalizeArxivEntry(raw: ArxivEntryRaw): UnifiedPaper {
     arxivId,
     pubmedId: null,
     openAlexId: null,
+    openReviewId: null,
     citationCount: null,
     providers: ["arxiv"],
     sourceUrls: { arxiv: raw.absUrl },

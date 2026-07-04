@@ -25,10 +25,6 @@ function createPlaceholderProvider(
   };
 }
 
-export const openReviewProvider = createPlaceholderProvider(
-  "openreview",
-  "OpenReview",
-);
 export const semanticScholarSearchProvider = createPlaceholderProvider(
   "semantic_scholar",
   "Semantic Scholar",
@@ -36,6 +32,5 @@ export const semanticScholarSearchProvider = createPlaceholderProvider(
 
 /** Reserved providers — not yet wired into the search pipeline. */
 export const FUTURE_LITERATURE_PROVIDERS: LiteratureProvider[] = [
-  openReviewProvider,
   semanticScholarSearchProvider,
 ];

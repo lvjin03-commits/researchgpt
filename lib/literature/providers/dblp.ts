@@ -236,6 +236,7 @@ function normalizeDblpPublication(info: DblpPublicationInfo): UnifiedPaper | nul
     arxivId: null,
     pubmedId: null,
     openAlexId: null,
+    openReviewId: null,
     citationCount: null,
     providers: ["dblp"],
     sourceUrls: { dblp: absUrl },

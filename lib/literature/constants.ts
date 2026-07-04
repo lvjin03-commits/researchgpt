@@ -11,6 +11,7 @@ export const DEFAULT_LITERATURE_PIPELINE_SOURCES = [
   "pubmed",
   "crossref",
   "dblp",
+  "openreview",
 ] as const;
 
 export const LITERATURE_DATE_RANGE_OPTIONS = [

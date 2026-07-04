@@ -228,6 +228,7 @@ function normalizePubMedArticle(raw: PubMedArticleRaw): UnifiedPaper {
     arxivId: null,
     pubmedId: raw.pmid,
     openAlexId: null,
+    openReviewId: null,
     citationCount: null,
     providers: ["pubmed"],
     sourceUrls: { pubmed: raw.absUrl },

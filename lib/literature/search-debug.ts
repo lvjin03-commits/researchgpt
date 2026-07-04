@@ -5,6 +5,7 @@ export type LiteratureDedupeMatchReason =
   | "doi"
   | "pmid"
   | "arxiv"
+  | "openreview"
   | "title"
   | "fuzzy_title";
 
@@ -19,6 +20,7 @@ export type LiteratureSearchDebugSummary = {
   pubmed: number;
   crossref: number;
   dblp: number;
+  openreview: number;
   totalFetched: number;
   duplicatesRemoved: number;
   finalPapers: number;
@@ -46,6 +48,7 @@ export const LITERATURE_DEDUPE_MATCH_LABELS: Record<
   doi: "DOI",
   pmid: "PMID",
   arxiv: "arXiv ID",
+  openreview: "OpenReview ID",
   title: "Title",
   fuzzy_title: "Fuzzy Title",
 };
