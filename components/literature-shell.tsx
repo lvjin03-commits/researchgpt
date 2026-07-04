@@ -45,6 +45,7 @@ export function LiteratureShell() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<LiteraturePaperSortKey>(
     DEFAULT_LITERATURE_PAPER_SORT,
@@ -90,6 +91,7 @@ export function LiteratureShell() {
   const handleUpdatePapers = useCallback(async () => {
     setIsUpdating(true);
     setError(null);
+    setWarning(null);
     setStatusMessage(null);
 
     try {
@@ -98,6 +100,13 @@ export function LiteratureShell() {
       setPapers(result.papers);
       setSearchDebug(result.debug ?? null);
       setStatusMessage(`已更新 ${result.papers.length} 篇文献。`);
+
+      if (result.warnings?.length || result.failedProviders?.length) {
+        setWarning(
+          result.warnings?.[0] ??
+            "部分数据源暂时不可用，已使用其他来源完成搜索。",
+        );
+      }
     } catch (err) {
       const detail =
         err instanceof LiteratureError ? err.message : "更新文献失败。";
@@ -296,6 +305,12 @@ export function LiteratureShell() {
               </p>
             )}
 
+            {warning && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {warning}
+              </p>
+            )}
+
             {statusMessage && (
               <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                 {statusMessage}
@@ -316,7 +331,10 @@ export function LiteratureShell() {
             ) : (
               <>
                 {searchDebug && (
-                  <LiteratureSearchDebugSummary summary={searchDebug.summary} />
+                  <LiteratureSearchDebugSummary
+                    summary={searchDebug.summary}
+                    failedProviders={searchDebug.failedProviders}
+                  />
                 )}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">

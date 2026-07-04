@@ -38,6 +38,7 @@ export type LiteraturePaperSearchDebug = {
 export type LiteratureSearchDebug = {
   summary: LiteratureSearchDebugSummary;
   papers: LiteraturePaperSearchDebug[];
+  failedProviders?: LiteratureProviderId[];
 };
 
 export const LITERATURE_DEDUPE_MATCH_LABELS: Record<

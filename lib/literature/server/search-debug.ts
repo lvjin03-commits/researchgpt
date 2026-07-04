@@ -1,6 +1,9 @@
 // Server-only module.
 
-import type { UnifiedPaper } from "@/lib/literature/providers/base";
+import type {
+  LiteratureProviderId,
+  UnifiedPaper,
+} from "@/lib/literature/providers/base";
 import type {
   LiteratureSearchDebug,
   LiteratureSearchDebugSummary,
@@ -14,9 +17,11 @@ export function buildLiteratureSearchDebug(
     debug: UnifiedPaperDebugRecord;
   }>,
   rankingByArxivId?: Map<string, number>,
+  failedProviders: LiteratureProviderId[] = [],
 ): LiteratureSearchDebug {
   return {
     summary,
+    ...(failedProviders.length > 0 ? { failedProviders } : {}),
     papers: finalPairs.map(({ paper, debug }) => ({
       arxivId: paper.externalKey,
       title: paper.title,

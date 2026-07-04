@@ -48,7 +48,8 @@ export async function POST(request: Request) {
       `[literature] step load settings: done elapsedMs=${elapsedMs(loadSettingsStartedAt)}`,
     );
 
-    const { drafts, quality, debug } = await searchLiteratureProviders(settings);
+    const { drafts, quality, debug, failedProviders, warnings } =
+      await searchLiteratureProviders(settings);
     const analysisDrafts = limitPapersForAnalysis(drafts);
 
     console.log("[literature] step openai rerank analysis: start");
@@ -87,6 +88,10 @@ export async function POST(request: Request) {
     const response = Response.json({
       settings,
       papers,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      ...(failedProviders.length > 0
+        ? { failedProviders: failedProviders.map((provider) => provider) }
+        : {}),
       ...(debug ? { debug } : {}),
     });
     console.log(

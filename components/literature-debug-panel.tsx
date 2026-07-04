@@ -22,8 +22,10 @@ function DebugRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 export function LiteratureSearchDebugSummary({
   summary,
+  failedProviders,
 }: {
   summary: LiteratureSearchDebug["summary"];
+  failedProviders?: LiteratureSearchDebug["failedProviders"];
 }) {
   return (
     <section className="rounded-2xl border border-violet-200 bg-violet-50/80 p-4 font-mono text-sm text-violet-950 shadow-sm">
@@ -50,9 +52,22 @@ export function LiteratureSearchDebugSummary({
         <DebugRow label="Final papers:" value={summary.finalPapers} />
       </div>
 
-      <div className="my-3">
-        <DebugDivider />
-      </div>
+      {failedProviders && failedProviders.length > 0 && (
+        <>
+          <div className="my-3">
+            <DebugDivider />
+          </div>
+
+          <div className="space-y-1">
+            <DebugRow
+              label="Failed providers:"
+              value={failedProviders
+                .map((provider) => LITERATURE_PROVIDER_BADGE_LABELS[provider])
+                .join(", ")}
+            />
+          </div>
+        </>
+      )}
     </section>
   );
 }

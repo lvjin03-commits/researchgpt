@@ -77,10 +77,15 @@ function logSearchQualityMetrics(metrics: LiteratureSearchQualityMetrics): void 
   );
 }
 
+type FetchFromProviderResult = {
+  papers: UnifiedPaper[];
+  failed: boolean;
+};
+
 async function fetchFromProvider(
   provider: LiteratureProvider,
   options: ProviderSearchOptions,
-): Promise<UnifiedPaper[]> {
+): Promise<FetchFromProviderResult> {
   console.log(`[literature] step fetch ${provider.id}: start`);
   const startedAt = Date.now();
 
@@ -101,26 +106,26 @@ async function fetchFromProvider(
       `[literature] step fetch ${provider.id}: done elapsedMs=${elapsedMs(startedAt)} papers=${normalized.length}`,
     );
 
-    return normalized;
+    return { papers: normalized, failed: false };
   } catch (error) {
     if (error instanceof LiteratureError && error.statusCode === 404) {
       console.log(
         `[literature] step fetch ${provider.id}: done elapsedMs=${elapsedMs(startedAt)} papers=0 (no matches)`,
       );
-      return [];
+      return { papers: [], failed: false };
     }
 
-    if (provider.id === "openreview") {
-      const reason = error instanceof Error ? error.message : "Unknown error";
-      console.warn(
-        `[literature] step fetch openreview: failed gracefully elapsedMs=${elapsedMs(startedAt)} reason=${reason}`,
-      );
-      return [];
-    }
-
-    throw error;
+    const reason = error instanceof Error ? error.message : "Unknown error";
+    console.error(
+      `[literature] step fetch ${provider.id}: failed elapsedMs=${elapsedMs(startedAt)} reason=${reason}`,
+      error,
+    );
+    return { papers: [], failed: true };
   }
 }
+
+const PARTIAL_PROVIDER_FAILURE_WARNING =
+  "部分数据源暂时不可用，已使用其他来源完成搜索。";
 
 export async function searchLiteratureProviders(
   settings: LiteratureSettings,
@@ -128,21 +133,35 @@ export async function searchLiteratureProviders(
   drafts: ArxivPaperDraft[];
   quality: LiteratureSearchQualityMetrics;
   dedupeStats: DedupeStats;
+  failedProviders: LiteratureProviderId[];
+  warnings: string[];
   debug?: LiteratureSearchDebug;
 }> {
   const options = toSearchOptions(settings);
   const allUnified: UnifiedPaper[] = [];
   const fetchedByProvider: Partial<Record<LiteratureProviderId, number>> = {};
+  const failedProviders: LiteratureProviderId[] = [];
+  const enabledProviders = ACTIVE_LITERATURE_PROVIDERS.filter(
+    (provider) => provider.enabled,
+  );
 
-  for (const provider of ACTIVE_LITERATURE_PROVIDERS) {
-    if (!provider.enabled) {
-      console.log(`[literature] step fetch ${provider.id}: skipped (disabled)`);
+  for (const provider of enabledProviders) {
+    const { papers, failed } = await fetchFromProvider(provider, options);
+
+    if (failed) {
+      failedProviders.push(provider.id);
       continue;
     }
 
-    const papers = await fetchFromProvider(provider, options);
     fetchedByProvider[provider.id] = papers.length;
     allUnified.push(...papers);
+  }
+
+  if (
+    enabledProviders.length > 0 &&
+    failedProviders.length === enabledProviders.length
+  ) {
+    throw new LiteratureError("所有数据源暂时不可用，请稍后重试。", 502);
   }
 
   console.log("[literature] step merge results: start");
@@ -203,6 +222,9 @@ export async function searchLiteratureProviders(
     );
   }
 
+  const warnings =
+    failedProviders.length > 0 ? [PARTIAL_PROVIDER_FAILURE_WARNING] : [];
+
   const debug = isLiteratureDebugEnabled()
     ? buildLiteratureSearchDebug(
         {
@@ -218,8 +240,16 @@ export async function searchLiteratureProviders(
         },
         finalPairs,
         rankingByArxivId,
+        failedProviders,
       )
     : undefined;
 
-  return { drafts: rankedDrafts, quality, dedupeStats, debug };
+  return {
+    drafts: rankedDrafts,
+    quality,
+    dedupeStats,
+    failedProviders,
+    warnings,
+    debug,
+  };
 }

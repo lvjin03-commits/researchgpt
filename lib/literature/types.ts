@@ -124,6 +124,8 @@ export type UpdateLiteratureRequest = LiteratureSettings;
 export type UpdateLiteratureResponse = {
   settings: LiteratureSettings;
   papers: LiteraturePaper[];
+  warnings?: string[];
+  failedProviders?: string[];
   debug?: import("@/lib/literature/search-debug").LiteratureSearchDebug;
 };
 

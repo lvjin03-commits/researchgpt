@@ -171,9 +171,23 @@ function parseUpdateLiteratureResponse(payload: unknown): UpdateLiteratureRespon
     }
   }
 
+  const warnings = Array.isArray(record.warnings)
+    ? record.warnings.filter((item): item is string => typeof item === "string")
+    : undefined;
+
+  const failedProviders = Array.isArray(record.failedProviders)
+    ? record.failedProviders.filter(
+        (item): item is string => typeof item === "string",
+      )
+    : undefined;
+
   return {
     settings: record.settings,
     papers: record.papers as LiteraturePaper[],
+    ...(warnings && warnings.length > 0 ? { warnings } : {}),
+    ...(failedProviders && failedProviders.length > 0
+      ? { failedProviders }
+      : {}),
     debug: parseLiteratureSearchDebug(record.debug),
   };
 }
