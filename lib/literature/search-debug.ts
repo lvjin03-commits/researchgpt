@@ -18,6 +18,7 @@ export type LiteratureSearchDebugSummary = {
   arxiv: number;
   pubmed: number;
   crossref: number;
+  dblp: number;
   totalFetched: number;
   duplicatesRemoved: number;
   finalPapers: number;

@@ -101,6 +101,10 @@ export function buildExternalKey(
         providerPaperId.replace(/^crossref:/i, "");
       return `crossref:${doi}`;
     }
+    case "dblp": {
+      const dblpKey = providerPaperId.replace(/^dblp:/i, "");
+      return `dblp:${dblpKey}`;
+    }
     default:
       return `${provider}:${providerPaperId}`;
   }

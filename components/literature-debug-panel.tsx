@@ -36,6 +36,7 @@ export function LiteratureSearchDebugSummary({
         <DebugRow label="PubMed:" value={summary.pubmed} />
         <DebugRow label="arXiv:" value={summary.arxiv} />
         <DebugRow label="Crossref:" value={summary.crossref} />
+        <DebugRow label="DBLP:" value={summary.dblp} />
       </div>
 
       <div className="my-3">

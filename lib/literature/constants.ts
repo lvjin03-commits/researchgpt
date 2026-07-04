@@ -10,6 +10,7 @@ export const DEFAULT_LITERATURE_PIPELINE_SOURCES = [
   "arxiv",
   "pubmed",
   "crossref",
+  "dblp",
 ] as const;
 
 export const LITERATURE_DATE_RANGE_OPTIONS = [

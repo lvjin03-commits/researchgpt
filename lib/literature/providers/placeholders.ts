@@ -25,7 +25,6 @@ function createPlaceholderProvider(
   };
 }
 
-export const dblpProvider = createPlaceholderProvider("dblp", "DBLP");
 export const openReviewProvider = createPlaceholderProvider(
   "openreview",
   "OpenReview",
@@ -37,7 +36,6 @@ export const semanticScholarSearchProvider = createPlaceholderProvider(
 
 /** Reserved providers — not yet wired into the search pipeline. */
 export const FUTURE_LITERATURE_PROVIDERS: LiteratureProvider[] = [
-  dblpProvider,
   openReviewProvider,
   semanticScholarSearchProvider,
 ];
