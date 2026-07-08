@@ -4,6 +4,7 @@ import type {
   LiteratureProviderId,
   UnifiedPaper,
 } from "@/lib/literature/providers/base";
+import type { LiteratureRankingBreakdown } from "@/lib/literature/ranking/score";
 import type {
   LiteratureSearchDebug,
   LiteratureSearchDebugSummary,
@@ -17,6 +18,7 @@ export function buildLiteratureSearchDebug(
     debug: UnifiedPaperDebugRecord;
   }>,
   rankingByArxivId?: Map<string, number>,
+  rankingBreakdownByArxivId?: Map<string, LiteratureRankingBreakdown>,
   failedProviders: LiteratureProviderId[] = [],
 ): LiteratureSearchDebug {
   return {
@@ -29,6 +31,7 @@ export function buildLiteratureSearchDebug(
       matchedBy: debug.matchedBy,
       mergeSourceCount: debug.mergeSourceCount,
       rankingScore: rankingByArxivId?.get(paper.externalKey),
+      rankingBreakdown: rankingBreakdownByArxivId?.get(paper.externalKey),
     })),
   };
 }

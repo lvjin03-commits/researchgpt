@@ -20,6 +20,10 @@ function DebugRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function formatScore(value: number): string {
+  return String(Math.round(value * 100));
+}
+
 export function LiteratureSearchDebugSummary({
   summary,
   failedProviders,
@@ -99,6 +103,47 @@ export function LiteraturePaperDebugPanel({
         />
         {typeof paperDebug.rankingScore === "number" && (
           <DebugRow label="Ranking Score:" value={paperDebug.rankingScore} />
+        )}
+        {paperDebug.rankingBreakdown && (
+          <>
+            <div className="pt-1">
+              <DebugDivider />
+            </div>
+            <DebugRow
+              label="Title:"
+              value={formatScore(paperDebug.rankingBreakdown.titleMatch)}
+            />
+            <DebugRow
+              label="Abstract:"
+              value={formatScore(paperDebug.rankingBreakdown.abstractMatch)}
+            />
+            <DebugRow
+              label="Direction:"
+              value={formatScore(
+                paperDebug.rankingBreakdown.researchDirectionMatch,
+              )}
+            />
+            <DebugRow
+              label="Phrase:"
+              value={formatScore(paperDebug.rankingBreakdown.phraseMatch)}
+            />
+            <DebugRow
+              label="Provider:"
+              value={formatScore(
+                paperDebug.rankingBreakdown.providerReliability,
+              )}
+            />
+            <DebugRow
+              label="Metadata:"
+              value={formatScore(
+                paperDebug.rankingBreakdown.metadataCompleteness,
+              )}
+            />
+            <DebugRow
+              label="Type Quality:"
+              value={formatScore(paperDebug.rankingBreakdown.publicationQuality)}
+            />
+          </>
         )}
       </div>
     </section>

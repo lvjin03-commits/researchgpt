@@ -16,13 +16,16 @@ export type RankLiteraturePapersResult = {
 
 export function rankLiteraturePapers(
   papers: ArxivPaperDraft[],
-  settings: Pick<LiteratureSettings, "keywords" | "dateRangeDays">,
+  settings: Pick<
+    LiteratureSettings,
+    "keywords" | "researchDirection" | "dateRangeDays"
+  >,
 ): RankLiteraturePapersResult {
   const breakdownByArxivId = new Map<string, LiteratureRankingBreakdown>();
 
   const ranked = papers.map((paper) => {
     const breakdown = computeLiteratureRankingBreakdown(
-      draftToRankingInput(paper, settings.keywords, settings.dateRangeDays),
+      draftToRankingInput(paper, settings),
     );
     breakdownByArxivId.set(paper.arxivId, breakdown);
 

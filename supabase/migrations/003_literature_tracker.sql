@@ -1,3 +1,4 @@
+
 -- ResearchGPT literature tracker
 -- Run in the Supabase SQL Editor after 001_chat_history.sql
 

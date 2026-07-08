@@ -1,4 +1,5 @@
 import type { LiteratureProviderId } from "@/lib/literature/providers/base";
+import type { LiteratureRankingBreakdown } from "@/lib/literature/ranking/score";
 
 export type LiteratureDedupeMatchReason =
   | "new"
@@ -33,6 +34,7 @@ export type LiteraturePaperSearchDebug = {
   matchedBy: LiteratureDedupeMatchReason;
   mergeSourceCount: number;
   rankingScore?: number;
+  rankingBreakdown?: LiteratureRankingBreakdown;
 };
 
 export type LiteratureSearchDebug = {

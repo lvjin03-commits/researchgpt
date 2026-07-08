@@ -55,6 +55,9 @@ export type LiteratureSearchQualityMetrics = {
   finalCount: number;
 };
 
+const LITERATURE_QUALITY_SCORE_FLOOR = 20;
+const MIN_PAPERS_BEFORE_APPLYING_QUALITY_FLOOR = 10;
+
 function elapsedMs(startedAt: number): number {
   return Date.now() - startedAt;
 }
@@ -185,13 +188,30 @@ export async function searchLiteratureProviders(
 
   console.log("[literature] step rank papers: start");
   const rankStartedAt = Date.now();
-  const { papers: rankedDrafts } = rankLiteraturePapers(drafts, settings);
+  const { papers: rankedDrafts, breakdownByArxivId } = rankLiteraturePapers(
+    drafts,
+    settings,
+  );
   const rankingByArxivId = new Map(
     rankedDrafts.map((paper) => [paper.arxivId, paper.rankingScore ?? 0]),
   );
+  const rankingBreakdownByArxivId = breakdownByArxivId;
+  const qualityFilteredDrafts =
+    rankedDrafts.length >= MIN_PAPERS_BEFORE_APPLYING_QUALITY_FLOOR
+      ? rankedDrafts.filter(
+          (paper) =>
+            (paper.rankingScore ?? 0) >= LITERATURE_QUALITY_SCORE_FLOOR,
+        )
+      : rankedDrafts;
+  const finalDrafts =
+    qualityFilteredDrafts.length > 0 ? qualityFilteredDrafts : rankedDrafts;
+  const finalPaperIds = new Set(finalDrafts.map((paper) => paper.arxivId));
+  const debugPairs = finalPairs.filter(({ paper }) =>
+    finalPaperIds.has(paper.externalKey),
+  );
 
   console.log(
-    `[literature] step rank papers: done elapsedMs=${elapsedMs(rankStartedAt)} papers=${rankedDrafts.length} topScore=${rankedDrafts[0]?.rankingScore ?? 0}`,
+    `[literature] step rank papers: done elapsedMs=${elapsedMs(rankStartedAt)} papers=${rankedDrafts.length} qualityFiltered=${finalDrafts.length} topScore=${rankedDrafts[0]?.rankingScore ?? 0}`,
   );
 
   console.log(
@@ -206,16 +226,16 @@ export async function searchLiteratureProviders(
     exactMatches: dedupeStats.exactMatches,
     fuzzyMatches: dedupeStats.fuzzyMatches,
     afterExcludeKeywords: afterExclude.length,
-    finalCount: rankedDrafts.length,
+    finalCount: finalDrafts.length,
   };
 
   logSearchQualityMetrics(quality);
 
   console.log(
-    `[literature] step merge results: done elapsedMs=${elapsedMs(mergeStartedAt)} totalPapers=${rankedDrafts.length}`,
+    `[literature] step merge results: done elapsedMs=${elapsedMs(mergeStartedAt)} totalPapers=${finalDrafts.length}`,
   );
 
-  if (rankedDrafts.length === 0) {
+  if (finalDrafts.length === 0) {
     throw new LiteratureError(
       "未找到符合关键词与时间范围的论文。",
       404,
@@ -238,14 +258,15 @@ export async function searchLiteratureProviders(
           duplicatesRemoved: quality.duplicatesRemoved,
           finalPapers: quality.finalCount,
         },
-        finalPairs,
+        debugPairs,
         rankingByArxivId,
+        rankingBreakdownByArxivId,
         failedProviders,
       )
     : undefined;
 
   return {
-    drafts: rankedDrafts,
+    drafts: finalDrafts,
     quality,
     dedupeStats,
     failedProviders,
