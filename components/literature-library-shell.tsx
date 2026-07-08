@@ -143,7 +143,7 @@ export function LiteratureLibraryShell() {
     setFolderActionError(null);
 
     try {
-      const created = await createLiteratureFolder(trimmed);
+      const created = await createLiteratureFolder({ name: trimmed });
       setFolders((current) => [...current, created]);
       setNewFolderName("");
     } catch (err) {
@@ -517,6 +517,7 @@ export function LiteratureLibraryShell() {
                   folders={folders}
                   onStatusChange={handleStatusChange}
                   onFoldersChange={handlePaperFoldersChange}
+                  onFoldersListUpdated={setFolders}
                 />
               ))}
             </section>

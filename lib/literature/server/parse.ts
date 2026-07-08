@@ -106,17 +106,46 @@ export function parsePaperStatus(
 }
 
 export function parseFolderName(body: unknown): string {
+  return parseCreateFolderRequest(body).name;
+}
+
+export type CreateFolderInput = {
+  name: string;
+  parentId: string | null;
+  description: string | null;
+};
+
+export function parseCreateFolderRequest(body: unknown): CreateFolderInput {
   if (typeof body !== "object" || body === null) {
     throw new LiteratureError("Invalid folder body.", 400);
   }
 
-  const name = (body as Record<string, unknown>).name;
+  const record = body as Record<string, unknown>;
+  const name = record.name;
 
   if (typeof name !== "string" || !name.trim()) {
-    throw new LiteratureError("Folder name is required.", 400);
+    throw new LiteratureError("文件夹名称不能为空。", 400);
   }
 
-  return name.trim();
+  let parentId: string | null = null;
+  if (record.parentId !== undefined && record.parentId !== null && record.parentId !== "") {
+    if (typeof record.parentId !== "string" || !record.parentId.trim()) {
+      throw new LiteratureError("parentId 无效。", 400);
+    }
+    parentId = record.parentId.trim();
+  }
+
+  let description: string | null = null;
+  if (typeof record.description === "string") {
+    const trimmed = record.description.trim();
+    description = trimmed || null;
+  }
+
+  return {
+    name: name.trim(),
+    parentId,
+    description,
+  };
 }
 
 export function parsePersonalNotes(body: unknown): string {

@@ -391,11 +391,15 @@ export async function fetchLiteratureFolders(): Promise<LiteratureFolder[]> {
   return payload.folders ?? [];
 }
 
-export async function createLiteratureFolder(name: string): Promise<LiteratureFolder> {
+export async function createLiteratureFolder(input: {
+  name: string;
+  parentId?: string | null;
+  description?: string | null;
+}): Promise<LiteratureFolder> {
   const response = await fetch("/api/literature/folders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(input),
   });
 
   const payload = await parseJson<{ folder: LiteratureFolder; error?: string }>(

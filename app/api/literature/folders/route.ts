@@ -7,7 +7,7 @@ import {
   extensionCorsHeaders,
   extensionCorsPreflight,
 } from "@/lib/http/extension-cors";
-import { parseFolderName } from "@/lib/literature/server/parse";
+import { parseCreateFolderRequest } from "@/lib/literature/server/parse";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 
 export const runtime = "nodejs";
@@ -47,8 +47,8 @@ export async function POST(request: Request) {
   try {
     const { supabase, user } = await requireLiteratureUser();
     const body = await request.json();
-    const name = parseFolderName(body);
-    const folder = await createLiteratureFolder(supabase, user.id, name);
+    const input = parseCreateFolderRequest(body);
+    const folder = await createLiteratureFolder(supabase, user.id, input);
     return Response.json({ folder });
   } catch (error) {
     if (error instanceof LiteratureError) {

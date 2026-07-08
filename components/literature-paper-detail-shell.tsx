@@ -943,6 +943,7 @@ export function LiteraturePaperDetailShell({
           onConfirm={
             folderSelectorMode === "save" ? handleSaveToFolders : handleMoveToFolders
           }
+          onFoldersUpdated={setFolders}
         />
       )}
     </div>

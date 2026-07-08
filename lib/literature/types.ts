@@ -81,6 +81,8 @@ export type LiteraturePaper = {
 export type LiteratureFolder = {
   id: string;
   name: string;
+  parentId: string | null;
+  description: string | null;
   createdAt: string;
   updatedAt: string;
 };

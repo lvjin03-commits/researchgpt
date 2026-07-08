@@ -29,6 +29,7 @@ type LiteraturePaperCardProps = {
   folders?: LiteratureFolder[];
   onSaveToFolders?: (paperId: string, folderIds: string[]) => Promise<void>;
   onFoldersChange?: (paperId: string, folderIds: string[]) => void;
+  onFoldersListUpdated?: (folders: LiteratureFolder[]) => void;
   showProviderInternals?: boolean;
 };
 
@@ -39,6 +40,7 @@ export function LiteraturePaperCard({
   folders = [],
   onSaveToFolders,
   onFoldersChange,
+  onFoldersListUpdated,
   showProviderInternals = false,
 }: LiteraturePaperCardProps) {
   const [expanded, setExpanded] = useState(false);
@@ -324,6 +326,7 @@ export function LiteraturePaperCard({
           selectedFolderIds={assignedFolderIds}
           onClose={() => setFolderSelectorMode(null)}
           onConfirm={handleFolderConfirm}
+          onFoldersUpdated={onFoldersListUpdated}
         />
       )}
     </>

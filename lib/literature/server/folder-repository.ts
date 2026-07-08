@@ -25,6 +25,8 @@ type FolderStore = {
 type DbFolderRow = {
   id: string;
   name: string;
+  parent_id: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -51,9 +53,45 @@ function mapFolderRow(row: DbFolderRow): LiteratureFolder {
   return {
     id: row.id,
     name: row.name,
+    parentId: row.parent_id ?? null,
+    description: row.description ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function normalizeParentId(parentId: string | null | undefined): string | null {
+  return parentId?.trim() || null;
+}
+
+function hasDuplicateSiblingName(
+  folders: LiteratureFolder[],
+  name: string,
+  parentId: string | null,
+  excludeFolderId?: string,
+): boolean {
+  const normalized = name.trim().toLowerCase();
+  return folders.some(
+    (folder) =>
+      folder.id !== excludeFolderId &&
+      (folder.parentId ?? null) === parentId &&
+      folder.name.trim().toLowerCase() === normalized,
+  );
+}
+
+async function assertValidParentFolder(
+  supabase: SupabaseClient,
+  userId: string,
+  parentId: string | null,
+): Promise<void> {
+  if (!parentId) {
+    return;
+  }
+
+  const folders = await listLiteratureFolders(supabase, userId);
+  if (!folders.some((folder) => folder.id === parentId)) {
+    throw new LiteratureError("父文件夹不存在。", 404);
+  }
 }
 
 async function readFolderStore(userId: string): Promise<FolderStore> {
@@ -99,35 +137,48 @@ export async function listLiteratureFolders(
 export async function createLiteratureFolder(
   supabase: SupabaseClient,
   userId: string,
-  name: string,
+  input: {
+    name: string;
+    parentId?: string | null;
+    description?: string | null;
+  },
 ): Promise<LiteratureFolder> {
-  const trimmed = name.trim();
+  const trimmed = input.name.trim();
+  const parentId = normalizeParentId(input.parentId);
+  const description = input.description?.trim() || null;
+
   if (!trimmed) {
-    throw new LiteratureError("Folder name is required.", 400);
+    throw new LiteratureError("文件夹名称不能为空。", 400);
   }
+
+  await assertValidParentFolder(supabase, userId, parentId);
 
   const now = new Date().toISOString();
 
   const { data, error } = await supabase
     .from("literature_folders")
-    .insert({ user_id: userId, name: trimmed, updated_at: now })
+    .insert({
+      user_id: userId,
+      name: trimmed,
+      parent_id: parentId,
+      description,
+      updated_at: now,
+    })
     .select("*")
     .single();
 
   if (error) {
     if (isMissingFolderTableError(error)) {
       const store = await readFolderStore(userId);
-      if (
-        store.folders.some(
-          (folder) => folder.name.toLowerCase() === trimmed.toLowerCase(),
-        )
-      ) {
-        throw new LiteratureError("Folder name already exists.", 409);
+      if (hasDuplicateSiblingName(store.folders, trimmed, parentId)) {
+        throw new LiteratureError("同级文件夹中已存在相同名称。", 409);
       }
 
       const created: LiteratureFolder = {
         id: randomUUID(),
         name: trimmed,
+        parentId,
+        description,
         createdAt: now,
         updatedAt: now,
       };
@@ -137,7 +188,7 @@ export async function createLiteratureFolder(
     }
 
     if (error.code === "23505") {
-      throw new LiteratureError("Folder name already exists.", 409);
+      throw new LiteratureError("同级文件夹中已存在相同名称。", 409);
     }
 
     throw new LiteratureError(error.message, 500);
@@ -186,7 +237,7 @@ export async function updateLiteratureFolder(
     }
 
     if (error.code === "23505") {
-      throw new LiteratureError("Folder name already exists.", 409);
+      throw new LiteratureError("同级文件夹中已存在相同名称。", 409);
     }
 
     throw new LiteratureError(error.message, 500);
