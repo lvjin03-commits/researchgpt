@@ -182,6 +182,14 @@ export function LiteratureShell() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <a
+              href={googleScholarUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50 hover:text-blue-900"
+            >
+              Google Scholar
+            </a>
             <Link
               href="/literature/library"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
