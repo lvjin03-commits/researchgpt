@@ -23,6 +23,10 @@ import type {
   LiteratureReviewRequest,
   ReviewSection,
 } from "@/lib/literature/review/types";
+import {
+  flattenFolderTree,
+  formatFolderTreeLabel,
+} from "@/lib/literature/folder-tree";
 import type { LiteratureFolder } from "@/lib/literature/types";
 
 const DEFAULT_SECTIONS: ReviewSection[] = [
@@ -73,13 +77,22 @@ export function LiteratureReviewShell() {
   const [isGeneratingPpt, setIsGeneratingPpt] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  const folderTree = useMemo(() => flattenFolderTree(folders), [folders]);
+
+  const selectedFolder = useMemo(
+    (): LiteratureFolder | null =>
+      folders.find((folder) => folder.id === folderId) ?? null,
+    [folders, folderId],
+  );
+
   useEffect(() => {
     void (async () => {
       try {
         const loadedFolders = await fetchLiteratureFolders();
         setFolders(loadedFolders);
-        if (loadedFolders[0]) {
-          setFolderId(loadedFolders[0].id);
+        const firstFolder = flattenFolderTree(loadedFolders)[0]?.folder;
+        if (firstFolder) {
+          setFolderId(firstFolder.id);
         }
       } catch (err) {
         const message =
@@ -125,8 +138,10 @@ export function LiteratureReviewShell() {
   }, [folderId]);
 
   const buildRequestBase = useCallback((): Omit<LiteratureReviewRequest, "phase"> => {
+    const resolvedFolderId = selectedFolder?.id ?? folderId;
     return {
-      folderId,
+      folderId: resolvedFolderId,
+      folderName: selectedFolder?.name,
       topic: topic.trim(),
       perspective,
       customPerspective:
@@ -149,6 +164,7 @@ export function LiteratureReviewShell() {
     outputType,
     perspective,
     requiredSections,
+    selectedFolder,
     targetAudience,
     topic,
   ]);
@@ -349,12 +365,12 @@ export function LiteratureReviewShell() {
               onChange={(event) => setFolderId(event.target.value)}
               className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
             >
-              {folders.length === 0 ? (
+              {folderTree.length === 0 ? (
                 <option value="">暂无文献夹</option>
               ) : (
-                folders.map((folder) => (
+                folderTree.map(({ folder, depth }) => (
                   <option key={folder.id} value={folder.id}>
-                    {folder.name}
+                    {formatFolderTreeLabel(folder.name, depth)}
                   </option>
                 ))
               )}

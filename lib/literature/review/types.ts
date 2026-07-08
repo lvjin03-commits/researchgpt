@@ -31,6 +31,8 @@ export type LiteratureReviewRequest = {
   additionalInstructions?: string;
   confirmedOutline?: string;
   reviewContent?: string;
+  /** Display name of the selected folder (logging / name-to-id resolution). */
+  folderName?: string;
   /** Client-side folder paper count from GET /api/literature/library (for mismatch logging). */
   uiPaperCount?: number;
 };

@@ -21,21 +21,33 @@ export async function POST(request: Request) {
   try {
     const { supabase, user } = await requireLiteratureUser();
     const body = await request.json();
+    const record =
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>)
+        : {};
+
+    console.log("[literature] review generate request body:", {
+      folderId: record.folderId,
+      folderName: record.folderName,
+      topic: record.topic,
+    });
+
     const reviewRequest = parseLiteratureReviewRequest(body);
+    const folderNameHint =
+      typeof record.folderName === "string" ? record.folderName.trim() : "";
     const uiPaperCount =
-      typeof body === "object" &&
-      body !== null &&
-      typeof (body as Record<string, unknown>).uiPaperCount === "number"
-        ? (body as Record<string, unknown>).uiPaperCount
-        : undefined;
+      typeof record.uiPaperCount === "number" ? record.uiPaperCount : undefined;
 
     const { papers, log } = await loadReviewFolderPapersWithLog(
       supabase,
       user.id,
       reviewRequest.folderId,
+      { folderNameHint: folderNameHint || undefined },
     );
 
     console.log("[literature] review generate selected folderId:", log.folderId);
+    console.log("[literature] review generate resolved folderId:", log.resolvedFolderId);
+    console.log("[literature] review generate resolved folderName:", log.folderName);
     console.log(
       "[literature] review generate uiPaperCount:",
       uiPaperCount ?? "(not provided)",

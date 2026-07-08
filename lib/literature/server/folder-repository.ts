@@ -320,6 +320,103 @@ export async function getPaperFolderIdsMap(
   return map;
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+export async function lookupLiteratureFolder(
+  supabase: SupabaseClient,
+  userId: string,
+  folderIdOrName: string,
+  options?: { folderNameHint?: string },
+): Promise<LiteratureFolder> {
+  const trimmed = folderIdOrName.trim();
+  const nameHint = options?.folderNameHint?.trim();
+
+  console.log("[literature] Searching folder:", trimmed);
+  if (nameHint && nameHint !== trimmed) {
+    console.log("[literature] folderName hint:", nameHint);
+  }
+
+  if (!trimmed && !nameHint) {
+    throw new LiteratureError("文献夹不存在。", 404);
+  }
+
+  if (trimmed && isUuid(trimmed)) {
+    const { data, error } = await supabase
+      .from("literature_folders")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("id", trimmed)
+      .maybeSingle();
+
+    console.log("[literature] folder lookup Supabase by id result:", {
+      folderId: trimmed,
+      row: data ? { id: data.id, name: data.name } : null,
+      error: error?.message ?? null,
+      code: error?.code ?? null,
+    });
+
+    if (error && !isMissingFolderTableError(error)) {
+      throw new LiteratureError(error.message, 500);
+    }
+
+    if (data) {
+      return mapFolderRow(data as DbFolderRow);
+    }
+  }
+
+  const folders = await listLiteratureFolders(supabase, userId);
+  console.log("[literature] folder lookup listLiteratureFolders count:", folders.length);
+
+  if (trimmed) {
+    const byId = folders.find((folder) => folder.id === trimmed);
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const namesToTry = [trimmed, nameHint].filter(Boolean) as string[];
+  for (const name of namesToTry) {
+    const byName = folders.find((folder) => folder.name.trim() === name);
+    if (byName) {
+      console.warn(
+        `[literature] folder lookup resolved folder name "${name}" to id:`,
+        byName.id,
+      );
+      return byName;
+    }
+  }
+
+  for (const name of namesToTry) {
+    const { data, error } = await supabase
+      .from("literature_folders")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("name", name)
+      .maybeSingle();
+
+    console.log("[literature] folder lookup Supabase by name result:", {
+      name,
+      row: data ? { id: data.id, name: data.name } : null,
+      error: error?.message ?? null,
+      code: error?.code ?? null,
+    });
+
+    if (error && !isMissingFolderTableError(error)) {
+      throw new LiteratureError(error.message, 500);
+    }
+
+    if (data) {
+      return mapFolderRow(data as DbFolderRow);
+    }
+  }
+
+  throw new LiteratureError("文献夹不存在。", 404);
+}
+
 export async function listPaperIdsInFolder(
   supabase: SupabaseClient,
   userId: string,
