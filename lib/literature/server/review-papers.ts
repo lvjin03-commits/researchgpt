@@ -1,30 +1,20 @@
 // Server-only module.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getPaperFolderIdsMap } from "@/lib/literature/server/folder-repository";
-import { listLiteratureLibraryPapers } from "@/lib/literature/server/repository";
+import { listLiteratureFolderPapers } from "@/lib/literature/server/folder-papers";
 import type { LiteraturePaper } from "@/lib/literature/types";
+
+export {
+  listLiteratureFolderPapers,
+  loadReviewFolderPapersWithLog,
+} from "@/lib/literature/server/folder-papers";
 
 export async function loadReviewFolderPapers(
   supabase: SupabaseClient,
   userId: string,
   folderId: string,
 ): Promise<LiteraturePaper[]> {
-  const paperFolderIds = await getPaperFolderIdsMap(supabase, userId);
-
-  return listLiteratureLibraryPapers(
-    supabase,
-    userId,
-    {
-      status: "all",
-      q: "",
-      source: "",
-      discipline: "",
-      priority: "",
-      folderId,
-    },
-    paperFolderIds,
-  );
+  return listLiteratureFolderPapers(supabase, userId, folderId);
 }
 
 export function formatPaperYear(paper: LiteraturePaper): string {

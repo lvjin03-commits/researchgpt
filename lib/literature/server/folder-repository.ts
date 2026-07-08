@@ -320,6 +320,37 @@ export async function getPaperFolderIdsMap(
   return map;
 }
 
+export async function listPaperIdsInFolder(
+  supabase: SupabaseClient,
+  userId: string,
+  folderId: string,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("literature_folder_papers")
+    .select("paper_id")
+    .eq("user_id", userId)
+    .eq("folder_id", folderId);
+
+  if (error) {
+    if (isMissingFolderTableError(error)) {
+      const store = await readFolderStore(userId);
+      return store.links
+        .filter((link) => link.folderId === folderId)
+        .map((link) => link.paperId);
+    }
+
+    throw new LiteratureError(error.message, 500);
+  }
+
+  return [
+    ...new Set(
+      ((data ?? []) as Array<{ paper_id: string }>)
+        .map((row) => row.paper_id)
+        .filter(Boolean),
+    ),
+  ];
+}
+
 export async function getPaperFolderIds(
   supabase: SupabaseClient,
   userId: string,

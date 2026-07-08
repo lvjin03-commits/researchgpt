@@ -31,6 +31,8 @@ export type LiteratureReviewRequest = {
   additionalInstructions?: string;
   confirmedOutline?: string;
   reviewContent?: string;
+  /** Client-side folder paper count from GET /api/literature/library (for mismatch logging). */
+  uiPaperCount?: number;
 };
 
 export type LiteratureReviewResponse = {

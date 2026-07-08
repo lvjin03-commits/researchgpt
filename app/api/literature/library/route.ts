@@ -1,5 +1,6 @@
 import { LiteratureError } from "@/lib/literature/errors";
 import { parseLibraryFilters } from "@/lib/literature/server/library";
+import { listLiteratureFolderPapers } from "@/lib/literature/server/folder-papers";
 import {
   getPaperFolderIdsMap,
   listLiteratureFolders,
@@ -18,12 +19,14 @@ export async function GET(request: Request) {
       getPaperFolderIdsMap(supabase, user.id),
       listLiteratureFolders(supabase, user.id),
     ]);
-    const papers = await listLiteratureLibraryPapers(
-      supabase,
-      user.id,
-      filters,
-      paperFolderIds,
-    );
+    const papers = filters.folderId
+      ? await listLiteratureFolderPapers(supabase, user.id, filters.folderId)
+      : await listLiteratureLibraryPapers(
+          supabase,
+          user.id,
+          filters,
+          paperFolderIds,
+        );
 
     return Response.json({ papers, folders });
   } catch (error) {

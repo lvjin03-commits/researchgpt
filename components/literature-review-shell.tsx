@@ -192,6 +192,7 @@ export function LiteratureReviewShell() {
       const result = await generateLiteratureReview({
         ...buildRequestBase(),
         phase: "outline",
+        uiPaperCount: paperCount,
       });
       setOutline(result.outline ?? "");
       setReview("");
@@ -225,6 +226,7 @@ export function LiteratureReviewShell() {
         ...buildRequestBase(),
         phase: "full",
         confirmedOutline: outline.trim(),
+        uiPaperCount: paperCount,
       });
       setReview(result.review ?? "");
       setPptOutline("");
@@ -258,6 +260,7 @@ export function LiteratureReviewShell() {
         phase: "ppt",
         confirmedOutline: outline.trim(),
         reviewContent: review.trim(),
+        uiPaperCount: paperCount,
       });
       setPptOutline(result.pptOutline ?? "");
       setStatusMessage("PPT 大纲已生成。");

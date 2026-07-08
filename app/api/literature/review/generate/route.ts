@@ -7,7 +7,7 @@ import {
 import type { LiteratureReviewResponse } from "@/lib/literature/review/types";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { parseLiteratureReviewRequest } from "@/lib/literature/server/review-parse";
-import { loadReviewFolderPapers } from "@/lib/literature/server/review-papers";
+import { loadReviewFolderPapersWithLog } from "@/lib/literature/server/folder-papers";
 import {
   generateReviewFullText,
   generateReviewOutline,
@@ -22,12 +22,49 @@ export async function POST(request: Request) {
     const { supabase, user } = await requireLiteratureUser();
     const body = await request.json();
     const reviewRequest = parseLiteratureReviewRequest(body);
+    const uiPaperCount =
+      typeof body === "object" &&
+      body !== null &&
+      typeof (body as Record<string, unknown>).uiPaperCount === "number"
+        ? (body as Record<string, unknown>).uiPaperCount
+        : undefined;
 
-    const papers = await loadReviewFolderPapers(
+    const { papers, log } = await loadReviewFolderPapersWithLog(
       supabase,
       user.id,
       reviewRequest.folderId,
     );
+
+    console.log("[literature] review generate selected folderId:", log.folderId);
+    console.log(
+      "[literature] review generate uiPaperCount:",
+      uiPaperCount ?? "(not provided)",
+    );
+    console.log(
+      "[literature] review generate uiPaperCount source:",
+      "GET /api/literature/library?folderId=… (literature-review-shell paperCount state)",
+    );
+    console.log(
+      "[literature] review generate folder link count:",
+      log.folderLinkCount,
+    );
+    console.log(
+      "[literature] review generate loaded paper count:",
+      log.loadedPaperCount,
+    );
+    console.log(
+      "[literature] review generate sample titles:",
+      log.sampleTitles.join(" | ") || "(none)",
+    );
+
+    if (
+      typeof uiPaperCount === "number" &&
+      uiPaperCount !== log.loadedPaperCount
+    ) {
+      console.warn(
+        `[literature] review generate count mismatch: ui=${uiPaperCount} backend=${log.loadedPaperCount} folderLinks=${log.folderLinkCount}`,
+      );
+    }
 
     if (papers.length < REVIEW_MIN_PAPER_COUNT) {
       throw new LiteratureError(REVIEW_MIN_PAPER_COUNT_ERROR, 400);
