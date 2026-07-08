@@ -34,11 +34,21 @@ h2 {
   font-weight: 700;
 }
 
-input {
+input,
+textarea {
   border: 1px solid #d1d5db;
   border-radius: 10px;
   font-size: 13px;
   padding: 9px 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.hint {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.45;
+  margin: -4px 0 12px;
 }
 
 .row {
@@ -84,4 +94,12 @@ button:hover {
   color: #374151;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.status.success {
+  color: #047857;
+}
+
+.status.error {
+  color: #b45309;
 }

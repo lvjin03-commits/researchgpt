@@ -9,12 +9,28 @@
   <body>
     <main class="popup">
       <h1>ResearchAI</h1>
-      <p class="muted">Save Google Scholar results into your literature library.</p>
+      <p class="muted">
+        Save visible Google Scholar results into your literature library.
+      </p>
 
       <label class="field">
         <span>ResearchAI URL</span>
         <input id="baseUrl" type="url" placeholder="https://your-site.vercel.app">
       </label>
+
+      <label class="field">
+        <span>Auth token</span>
+        <textarea
+          id="authToken"
+          rows="3"
+          placeholder="Paste your Supabase access token"
+        ></textarea>
+      </label>
+
+      <p class="hint">
+        Sign in to ResearchAI, open DevTools → Application → Local Storage, and copy
+        the Supabase access token value.
+      </p>
 
       <div class="row">
         <button id="saveSettings" type="button">Save settings</button>
@@ -22,8 +38,13 @@
       </div>
 
       <section>
-        <h2>Save to folders</h2>
+        <h2>Default folders</h2>
         <div id="folders" class="folders"></div>
+      </section>
+
+      <section>
+        <h2>Save status</h2>
+        <p id="saveStatus" class="status muted">No saves yet.</p>
       </section>
 
       <p id="status" class="status"></p>

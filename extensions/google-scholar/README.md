@@ -1,44 +1,36 @@
 # ResearchAI Scholar Saver
 
-Chrome extension for saving visible Google Scholar results into ResearchAI.
+Chrome MV3 extension for saving visible Google Scholar results into ResearchAI.
 
-## What It Does
+See also: [`docs/EXTENSION.md`](../../docs/EXTENSION.md)
 
-- Runs only on `https://scholar.google.com/*`.
-- Reads the visible results on the current Google Scholar page.
-- Shows a floating selection panel.
-- Saves selected papers into ResearchAI.
-- Supports default folder selection from the extension popup.
+## What it does
 
-## Install Locally
+- Runs on `https://scholar.google.com/*`
+- Injects **Save to My Library** on each visible search result
+- Parses title, authors/meta, snippet, Scholar URL, and PDF URL when the user clicks save
+- Sends the paper to `POST /api/extension/save-paper` via the service worker
+- Supports default folder selection from the popup
 
-1. Open Chrome.
-2. Go to `chrome://extensions`.
-3. Enable Developer mode.
-4. Click "Load unpacked".
-5. Select this folder:
+## Install
 
-   `extensions/google-scholar`
+1. Open `chrome://extensions`
+2. Enable Developer mode
+3. Load unpacked → select this folder
 
 ## Configure
 
-1. Click the extension icon.
-2. Set your ResearchAI URL, for example:
-
-   `https://your-site.vercel.app`
-
-3. Open ResearchAI in the browser and sign in.
-4. Click "Load folders".
-5. Select the folders that imported papers should be saved into.
+1. Open the extension popup
+2. Set your ResearchAI URL
+3. Paste your Supabase access token (see `docs/EXTENSION.md`)
+4. Save settings and load folders
 
 ## Use
 
-1. Open Google Scholar.
-2. Search normally.
-3. Use the ResearchAI panel in the lower-right corner.
-4. Select papers.
-5. Click "Save selected".
+1. Search on Google Scholar
+2. Click **Save to My Library** on any result you want to keep
+3. Check save status in the popup
 
 ## Notes
 
-This extension does not crawl Google Scholar from the server. It only reads the result page that the signed-in user is already viewing in their own browser.
+This extension never crawls Scholar in the background. It only reads the result the user is viewing and only after an explicit save click.

@@ -229,12 +229,20 @@ export function LiteratureLibraryShell() {
               将已收藏、已读与已忽略的论文整理到文献夹中。
             </p>
           </div>
-          <Link
-            href="/literature"
-            className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-          >
-            返回文献追踪
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/literature/review"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            >
+              AI 综述
+            </Link>
+            <Link
+              href="/literature"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            >
+              返回文献追踪
+            </Link>
+          </div>
         </div>
       </header>
 

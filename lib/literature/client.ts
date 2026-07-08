@@ -14,6 +14,12 @@ import type {
   UpdateLiteratureResponse,
 } from "@/lib/literature/types";
 import type { LibraryFilters } from "@/lib/literature/library-filters";
+import type {
+  LiteratureReviewExportRequest,
+  LiteratureReviewRequest,
+  LiteratureReviewResponse,
+} from "@/lib/literature/review/types";
+import { downloadBlob } from "@/lib/export/download";
 
 export { LiteratureError };
 
@@ -540,4 +546,54 @@ export async function generateLiteraturePaperWorkspace(
     paper: payload.paper,
     workspaceAnalysis: payload.workspaceAnalysis,
   };
+}
+
+export async function generateLiteratureReview(
+  request: LiteratureReviewRequest,
+): Promise<LiteratureReviewResponse> {
+  const response = await fetch("/api/literature/review/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+
+  const payload = await parseJson<LiteratureReviewResponse & { error?: string }>(
+    response,
+  );
+
+  if (!response.ok) {
+    throw new LiteratureError(payload.error ?? "生成文献综述失败。", response.status);
+  }
+
+  return payload;
+}
+
+export async function exportLiteratureReview(
+  request: LiteratureReviewExportRequest,
+): Promise<{ filename: string }> {
+  const response = await fetch("/api/literature/review/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+
+  const payload = await parseJson<{
+    success: boolean;
+    filename?: string;
+    downloadUrl?: string;
+    error?: string;
+  }>(response);
+
+  if (!response.ok || !payload.success || !payload.downloadUrl || !payload.filename) {
+    throw new LiteratureError(payload.error ?? "导出失败。", response.status);
+  }
+
+  const downloadResponse = await fetch(payload.downloadUrl);
+  if (!downloadResponse.ok) {
+    throw new LiteratureError("下载导出文件失败。", 502);
+  }
+
+  const blob = await downloadResponse.blob();
+  downloadBlob(blob, payload.filename);
+  return { filename: payload.filename };
 }

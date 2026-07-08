@@ -1,8 +1,6 @@
 (function () {
-  const DEFAULT_BASE_URL = "http://localhost:3000";
-  const panelId = "researchai-scholar-panel";
-  let papers = [];
-  let selected = new Set();
+  const BUTTON_SELECTOR = "[data-researchai-save]";
+  const RESULT_SELECTOR = ".gs_r.gs_or.gs_scl";
 
   function text(element) {
     return element ? element.textContent.replace(/\s+/g, " ").trim() : "";
@@ -26,14 +24,11 @@
     const anchors = Array.from(container.querySelectorAll("a"));
     const cited = anchors.find((anchor) => /^Cited by\s+\d+/i.test(text(anchor)));
     if (!cited) {
-      return { citedByCount: null, citedByUrl: "" };
+      return null;
     }
 
     const count = Number(text(cited).replace(/\D/g, ""));
-    return {
-      citedByCount: Number.isFinite(count) ? count : null,
-      citedByUrl: cited.href || "",
-    };
+    return Number.isFinite(count) ? count : null;
   }
 
   function parsePdfUrl(container) {
@@ -41,192 +36,128 @@
     return sideLink instanceof HTMLAnchorElement ? sideLink.href : "";
   }
 
-  function readScholarResults() {
-    return Array.from(document.querySelectorAll(".gs_r.gs_or.gs_scl"))
-      .map((container, index) => {
-        const titleAnchor = container.querySelector(".gs_rt a");
-        const titleNode = titleAnchor || container.querySelector(".gs_rt");
-        const title = text(titleNode).replace(/^\[[^\]]+\]\s*/, "");
-        const url = titleAnchor instanceof HTMLAnchorElement ? titleAnchor.href : "";
-        const meta = text(container.querySelector(".gs_a"));
-        const snippet = text(container.querySelector(".gs_rs"));
-        const cited = parseCitedBy(container);
+  function parsePaperFromContainer(container) {
+    const titleAnchor = container.querySelector(".gs_rt a");
+    const titleNode = titleAnchor || container.querySelector(".gs_rt");
+    const title = text(titleNode).replace(/^\[[^\]]+\]\s*/, "");
+    const url = titleAnchor instanceof HTMLAnchorElement ? titleAnchor.href : "";
+    const meta = text(container.querySelector(".gs_a"));
+    const snippet = text(container.querySelector(".gs_rs"));
 
-        if (!title || !url) {
-          return null;
-        }
-
-        return {
-          id: `${index}-${url}`,
-          title,
-          url,
-          authors: parseAuthors(meta),
-          venue: meta,
-          year: parseYear(meta),
-          snippet,
-          pdfUrl: parsePdfUrl(container),
-          citedByCount: cited.citedByCount,
-          citedByUrl: cited.citedByUrl,
-        };
-      })
-      .filter(Boolean);
-  }
-
-  function getCheckedPapers() {
-    return papers.filter((paper) => selected.has(paper.id));
-  }
-
-  function setStatus(message) {
-    const status = document.querySelector(`#${panelId} .researchai-status`);
-    if (status) {
-      status.textContent = message;
+    if (!title || !url) {
+      return null;
     }
+
+    return {
+      title,
+      url,
+      authors: parseAuthors(meta),
+      venue: meta,
+      year: parseYear(meta),
+      snippet,
+      pdfUrl: parsePdfUrl(container),
+      citedByCount: parseCitedBy(container),
+    };
   }
 
-  function renderItems() {
-    const body = document.querySelector(`#${panelId} .researchai-body`);
-    const count = document.querySelector(`#${panelId} .researchai-count`);
-    if (!body || !count) {
+  function setButtonState(button, state, message) {
+    button.dataset.researchaiState = state;
+    button.disabled = state === "saving" || state === "saved";
+
+    if (state === "idle") {
+      button.textContent = "Save to My Library";
+      button.title = "";
       return;
     }
 
-    count.textContent = `${selected.size}/${papers.length} selected`;
-
-    if (papers.length === 0) {
-      body.innerHTML = '<div class="researchai-empty">No Google Scholar results found on this page.</div>';
+    if (state === "saving") {
+      button.textContent = "Saving…";
+      button.title = "Saving to ResearchAI";
       return;
     }
 
-    body.innerHTML = papers
-      .map(
-        (paper) => `
-          <label class="researchai-item">
-            <input type="checkbox" data-researchai-id="${paper.id}" ${
-              selected.has(paper.id) ? "checked" : ""
-            }>
-            <span>
-              <a class="researchai-item-title" href="${paper.url}" target="_blank" rel="noreferrer">${paper.title}</a>
-              <div class="researchai-item-meta">${paper.venue || "Unknown venue"}</div>
-              <div class="researchai-item-cites">${
-                paper.citedByCount === null ? "No citation count" : `Cited by ${paper.citedByCount}`
-              }</div>
-            </span>
-          </label>
-        `,
-      )
-      .join("");
-
-    body.querySelectorAll("input[type='checkbox']").forEach((input) => {
-      input.addEventListener("change", () => {
-        const id = input.getAttribute("data-researchai-id");
-        if (!id) return;
-        if (input.checked) {
-          selected.add(id);
-        } else {
-          selected.delete(id);
-        }
-        renderItems();
-      });
-    });
-  }
-
-  async function getSettings() {
-    return new Promise((resolve) => {
-      chrome.storage.sync.get(
-        {
-          researchAiBaseUrl: DEFAULT_BASE_URL,
-          researchAiFolderIds: [],
-        },
-        resolve,
-      );
-    });
-  }
-
-  async function saveSelected() {
-    const chosen = getCheckedPapers();
-    if (chosen.length === 0) {
-      setStatus("Select at least one paper.");
+    if (state === "saved") {
+      button.textContent = "Saved";
+      button.title = message || "Saved to ResearchAI";
       return;
     }
 
-    const settings = await getSettings();
-    const baseUrl = String(settings.researchAiBaseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
-    const folderIds = Array.isArray(settings.researchAiFolderIds)
-      ? settings.researchAiFolderIds
-      : [];
+    button.textContent = "Retry save";
+    button.title = message || "Save failed";
+  }
 
-    setStatus(`Saving ${chosen.length} paper(s)...`);
+  async function savePaper(container, button) {
+    const paper = parsePaperFromContainer(container);
+    if (!paper) {
+      setButtonState(button, "error", "Could not read this result.");
+      return;
+    }
+
+    setButtonState(button, "saving");
 
     try {
-      const response = await fetch(`${baseUrl}/api/literature/imports/google-scholar`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ papers: chosen, folderIds }),
+      const response = await chrome.runtime.sendMessage({
+        type: "SAVE_PAPER",
+        paper,
       });
-      const payload = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(payload.error || `ResearchAI returned ${response.status}`);
+      if (!response?.ok) {
+        throw new Error(response?.error || "Save failed.");
       }
 
-      setStatus(`Saved ${payload.count || chosen.length} paper(s) to ResearchAI.`);
+      setButtonState(
+        button,
+        "saved",
+        response.saved?.title ? `Saved "${response.saved.title}"` : "Saved to ResearchAI",
+      );
     } catch (error) {
-      setStatus(
-        `Save failed. Open ResearchAI and sign in, then try again. ${error.message || ""}`,
+      setButtonState(
+        button,
+        "error",
+        error instanceof Error ? error.message : "Save failed.",
       );
     }
   }
 
-  function renderPanel() {
-    const existing = document.getElementById(panelId);
-    if (existing) {
-      existing.remove();
+  function injectSaveButton(container) {
+    if (container.querySelector(BUTTON_SELECTOR)) {
+      return;
     }
 
-    papers = readScholarResults();
-    selected = new Set(papers.map((paper) => paper.id));
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "researchai-save-btn";
+    button.dataset.researchaiSave = "1";
+    setButtonState(button, "idle");
 
-    const panel = document.createElement("aside");
-    panel.id = panelId;
-    panel.className = "researchai-panel";
-    panel.innerHTML = `
-      <div class="researchai-header">
-        <div>
-          <div class="researchai-title">ResearchAI Scholar Saver</div>
-          <div class="researchai-count"></div>
-        </div>
-        <button class="researchai-button" data-action="refresh">Refresh</button>
-      </div>
-      <div class="researchai-body"></div>
-      <div class="researchai-actions">
-        <button class="researchai-button" data-action="select-all">Select all</button>
-        <button class="researchai-button" data-action="clear">Clear</button>
-        <button class="researchai-button researchai-button-primary" data-action="save">Save selected</button>
-        <button class="researchai-button" data-action="hide">Hide</button>
-        <div class="researchai-status"></div>
-      </div>
-    `;
-    document.body.appendChild(panel);
-
-    panel.querySelector("[data-action='refresh']").addEventListener("click", renderPanel);
-    panel.querySelector("[data-action='select-all']").addEventListener("click", () => {
-      selected = new Set(papers.map((paper) => paper.id));
-      renderItems();
-    });
-    panel.querySelector("[data-action='clear']").addEventListener("click", () => {
-      selected = new Set();
-      renderItems();
-    });
-    panel.querySelector("[data-action='save']").addEventListener("click", () => {
-      void saveSelected();
-    });
-    panel.querySelector("[data-action='hide']").addEventListener("click", () => {
-      panel.remove();
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void savePaper(container, button);
     });
 
-    renderItems();
+    const linksRow = container.querySelector(".gs_fl");
+    if (linksRow) {
+      linksRow.appendChild(document.createTextNode(" · "));
+      linksRow.appendChild(button);
+      return;
+    }
+
+    container.appendChild(button);
   }
 
-  renderPanel();
+  function scanResults() {
+    document.querySelectorAll(RESULT_SELECTOR).forEach(injectSaveButton);
+  }
+
+  scanResults();
+
+  const observer = new MutationObserver(() => {
+    scanResults();
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
 })();
