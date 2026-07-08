@@ -8,4 +8,5 @@
 - Reduced literature update timeout risk by defaulting the active online pipeline to OpenAlex, arXiv, and PubMed.
 - Made backend literature settings preserve and respect `selectedSources`.
 - Parallelized provider fetches and reduced AI reranking load to the top 10 candidates.
+- Fixed literature update responses so tracker results show only the current search instead of mixing in previous searches.
 - Added project status tracking document.

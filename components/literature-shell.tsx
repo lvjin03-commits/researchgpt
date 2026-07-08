@@ -93,6 +93,8 @@ export function LiteratureShell() {
     setError(null);
     setWarning(null);
     setStatusMessage(null);
+    setSearchDebug(null);
+    setPapers([]);
 
     try {
       const result = await updateLiteraturePapers(settings);

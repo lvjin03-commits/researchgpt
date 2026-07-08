@@ -20,6 +20,7 @@ Improve literature search quality so ResearchAI results feel closer to Google Sc
 - Made literature update requests respect `selectedSources`.
 - Parallelized provider fetches during literature updates.
 - Reduced AI analysis to the top 10 ranked candidates per update.
+- Fixed tracker responses so a new search returns only the current search result set.
 
 ## Verification
 
