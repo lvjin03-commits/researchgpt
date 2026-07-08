@@ -319,7 +319,7 @@ export function LiteratureShell() {
               href={googleScholarUrl}
               target="_blank"
               rel="noreferrer"
-              className="block rounded-xl border border-gray-200 px-4 py-3 text-center text-sm font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+              className="block rounded-xl bg-blue-900 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
             >
               在 Google Scholar 搜索
             </a>
