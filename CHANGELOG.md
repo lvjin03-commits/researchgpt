@@ -9,4 +9,6 @@
 - Made backend literature settings preserve and respect `selectedSources`.
 - Parallelized provider fetches and reduced AI reranking load to the top 10 candidates.
 - Fixed literature update responses so tracker results show only the current search instead of mixing in previous searches.
+- Kept AI analysis limited to top candidates while returning the full current search result set.
+- Added a Google Scholar search handoff link from the literature tracker.
 - Added project status tracking document.

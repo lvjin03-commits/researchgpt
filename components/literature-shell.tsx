@@ -161,6 +161,15 @@ export function LiteratureShell() {
   }, [searchDebug]);
 
   const canUpdate = settings.keywords.trim().length > 0;
+  const googleScholarUrl = useMemo(() => {
+    const query = [settings.researchDirection, settings.keywords]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join(" ");
+    const params = new URLSearchParams({ q: query || settings.keywords });
+
+    return `https://scholar.google.com/scholar?${params.toString()}`;
+  }, [settings.keywords, settings.researchDirection]);
 
   return (
     <div className="min-h-dvh bg-white">
@@ -298,6 +307,14 @@ export function LiteratureShell() {
             >
               {isUpdating ? "正在更新文献…" : "更新文献"}
             </button>
+            <a
+              href={googleScholarUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-xl border border-gray-200 px-4 py-3 text-center text-sm font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+            >
+              在 Google Scholar 搜索
+            </a>
           </section>
 
           <section className="space-y-4">

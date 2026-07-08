@@ -65,9 +65,9 @@ export async function POST(request: Request) {
 
     console.log("[literature] step save to supabase: start");
     const saveStartedAt = Date.now();
-    await upsertAnalyzedPapers(supabase, user.id, analysisDrafts, analysisById);
+    await upsertAnalyzedPapers(supabase, user.id, drafts, analysisById);
     const currentResultIds = new Set(
-      analysisDrafts.map((paper) => paper.arxivId),
+      drafts.map((paper) => paper.arxivId),
     );
     const papers = sortLiteraturePapersAfterAiRerank(
       (await listLiteraturePapers(supabase, user.id)).filter((paper) =>
