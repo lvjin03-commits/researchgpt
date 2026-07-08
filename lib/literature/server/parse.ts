@@ -3,7 +3,10 @@
 import { LiteratureError } from "@/lib/literature/errors";
 import { parseDateRangeDays } from "@/lib/literature/date-range";
 import { DEFAULT_LITERATURE_PIPELINE_SOURCES } from "@/lib/literature/constants";
-import { DEFAULT_LITERATURE_DISCIPLINE } from "@/lib/literature/source-taxonomy";
+import {
+  DEFAULT_LITERATURE_DISCIPLINE,
+  isValidDisciplineId,
+} from "@/lib/literature/source-taxonomy";
 import type { LiteraturePaperStatus } from "@/lib/literature/types";
 import type { LiteratureSettings } from "@/lib/literature/types";
 
@@ -18,7 +21,7 @@ export type ParseLiteratureSettingsOptions = {
 
 export function parseLiteratureSettings(
   body: unknown,
-  _options: ParseLiteratureSettingsOptions = {},
+  options: ParseLiteratureSettingsOptions = {},
 ): ParsedLiteratureSettings {
   if (typeof body !== "object" || body === null) {
     throw new LiteratureError("Invalid literature settings body.", 400);
@@ -38,9 +41,31 @@ export function parseLiteratureSettings(
       : "";
 
   const dateRangeDays = parseDateRangeDays(record.dateRangeDays);
+  const discipline =
+    typeof record.discipline === "string" && isValidDisciplineId(record.discipline)
+      ? record.discipline
+      : DEFAULT_LITERATURE_DISCIPLINE;
+  const knownSources = new Set<string>(DEFAULT_LITERATURE_PIPELINE_SOURCES);
+  const requestedSources = Array.isArray(record.selectedSources)
+    ? record.selectedSources.filter((item): item is string => typeof item === "string")
+    : [];
+  const selectedSources = requestedSources.filter((source) =>
+    knownSources.has(source),
+  );
+  const ignoredSources = requestedSources.filter(
+    (source) => !knownSources.has(source),
+  );
+  const normalizedSources =
+    selectedSources.length > 0
+      ? [...new Set(selectedSources)]
+      : [...DEFAULT_LITERATURE_PIPELINE_SOURCES];
 
   if (!keywords) {
     throw new LiteratureError("Keywords are required.", 400);
+  }
+
+  if (options.requireEnabledSources && normalizedSources.length === 0) {
+    throw new LiteratureError("At least one literature source is required.", 400);
   }
 
   return {
@@ -48,11 +73,11 @@ export function parseLiteratureSettings(
       researchDirection,
       keywords,
       excludeKeywords,
-      discipline: DEFAULT_LITERATURE_DISCIPLINE,
-      selectedSources: [...DEFAULT_LITERATURE_PIPELINE_SOURCES],
+      discipline,
+      selectedSources: normalizedSources,
       dateRangeDays,
     },
-    ignoredSources: [],
+    ignoredSources,
   };
 }
 

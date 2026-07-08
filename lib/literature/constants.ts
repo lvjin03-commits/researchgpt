@@ -2,16 +2,13 @@ export const LITERATURE_DATE_RANGE_DAYS = 30;
 
 export const LITERATURE_MAX_ARXIV_RESULTS = 50;
 
-export const LITERATURE_MAX_ANALYSIS_PAPERS = 25;
+export const LITERATURE_MAX_ANALYSIS_PAPERS = 10;
 
 /** Default provider pipeline stored with literature settings for backward compatibility. */
 export const DEFAULT_LITERATURE_PIPELINE_SOURCES = [
   "openalex",
   "arxiv",
   "pubmed",
-  "crossref",
-  "dblp",
-  "openreview",
 ] as const;
 
 export const LITERATURE_DATE_RANGE_OPTIONS = [

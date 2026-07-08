@@ -64,7 +64,7 @@ export type DisciplineDefinition = {
   sources: TaxonomySource[];
 };
 
-export const AVAILABLE_LITERATURE_SOURCE_IDS = ["arxiv", "pubmed"] as const;
+export const AVAILABLE_LITERATURE_SOURCE_IDS = ["openalex", "arxiv", "pubmed"] as const;
 
 export type AvailableLiteratureSourceId =
   (typeof AVAILABLE_LITERATURE_SOURCE_IDS)[number];
@@ -119,6 +119,16 @@ function pubmed(): TaxonomySource {
   };
 }
 
+function openalex(): TaxonomySource {
+  return {
+    id: "openalex",
+    name: "OpenAlex",
+    kind: "platform",
+    status: "available",
+    provider: "openalex",
+  };
+}
+
 function conference(name: string): TaxonomySource {
   return item(name, "conference");
 }
@@ -155,6 +165,7 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
     id: "ai",
     label: "人工智能",
     sources: [
+      openalex(),
       arxiv(),
       platform("OpenReview", "openreview"),
       platform("Semantic Scholar", "semantic_scholar"),

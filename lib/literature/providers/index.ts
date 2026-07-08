@@ -80,6 +80,19 @@ function logSearchQualityMetrics(metrics: LiteratureSearchQualityMetrics): void 
   );
 }
 
+function getEnabledProvidersForSettings(
+  settings: LiteratureSettings,
+): LiteratureProvider[] {
+  const selected = new Set(settings.selectedSources);
+  const selectedProviders = ACTIVE_LITERATURE_PROVIDERS.filter(
+    (provider) => provider.enabled && selected.has(provider.id),
+  );
+
+  return selectedProviders.length > 0
+    ? selectedProviders
+    : ACTIVE_LITERATURE_PROVIDERS.filter((provider) => provider.enabled);
+}
+
 type FetchFromProviderResult = {
   papers: UnifiedPaper[];
   failed: boolean;
@@ -144,12 +157,17 @@ export async function searchLiteratureProviders(
   const allUnified: UnifiedPaper[] = [];
   const fetchedByProvider: Partial<Record<LiteratureProviderId, number>> = {};
   const failedProviders: LiteratureProviderId[] = [];
-  const enabledProviders = ACTIVE_LITERATURE_PROVIDERS.filter(
-    (provider) => provider.enabled,
+  const enabledProviders = getEnabledProvidersForSettings(settings);
+
+  const providerResults = await Promise.all(
+    enabledProviders.map(async (provider) => ({
+      provider,
+      result: await fetchFromProvider(provider, options),
+    })),
   );
 
-  for (const provider of enabledProviders) {
-    const { papers, failed } = await fetchFromProvider(provider, options);
+  for (const { provider, result } of providerResults) {
+    const { papers, failed } = result;
 
     if (failed) {
       failedProviders.push(provider.id);
