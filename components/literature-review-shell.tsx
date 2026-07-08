@@ -14,10 +14,10 @@ import {
   REVIEW_LANGUAGE_OPTIONS,
   REVIEW_LENGTH_OPTIONS,
   REVIEW_MIN_PAPER_COUNT,
+  REVIEW_MIN_PAPER_COUNT_ERROR,
   REVIEW_OUTPUT_TYPE_OPTIONS,
   REVIEW_PERSPECTIVE_OPTIONS,
   REVIEW_SECTION_OPTIONS,
-  REVIEW_TIME_RANGE_OPTIONS,
 } from "@/lib/literature/review/constants";
 import type {
   LiteratureReviewRequest,
@@ -52,9 +52,6 @@ export function LiteratureReviewShell() {
   const [customPerspective, setCustomPerspective] = useState("");
   const [targetAudience, setTargetAudience] =
     useState<LiteratureReviewRequest["targetAudience"]>("导师");
-  const [timeRange, setTimeRange] =
-    useState<LiteratureReviewRequest["timeRange"]>("全部文献");
-  const [customTimeRangeYears, setCustomTimeRangeYears] = useState("3");
   const [requiredSections, setRequiredSections] =
     useState<ReviewSection[]>(DEFAULT_SECTIONS);
   const [outputType, setOutputType] =
@@ -68,7 +65,6 @@ export function LiteratureReviewShell() {
   const [outline, setOutline] = useState("");
   const [review, setReview] = useState("");
   const [pptOutline, setPptOutline] = useState("");
-  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isLoadingFolders, setIsLoadingFolders] = useState(true);
@@ -136,9 +132,6 @@ export function LiteratureReviewShell() {
       customPerspective:
         perspective === "自定义" ? customPerspective.trim() : undefined,
       targetAudience,
-      timeRange,
-      customTimeRangeYears:
-        timeRange === "自定义" ? Number(customTimeRangeYears) : undefined,
       requiredSections,
       outputType,
       language,
@@ -149,7 +142,6 @@ export function LiteratureReviewShell() {
   }, [
     additionalInstructions,
     customPerspective,
-    customTimeRangeYears,
     customWordCount,
     folderId,
     language,
@@ -158,13 +150,17 @@ export function LiteratureReviewShell() {
     perspective,
     requiredSections,
     targetAudience,
-    timeRange,
     topic,
   ]);
 
+  const hasEnoughPapers = paperCount >= REVIEW_MIN_PAPER_COUNT;
+
   const canGenerateOutline = useMemo(
-    () => Boolean(folderId && topic.trim() && requiredSections.length > 0),
-    [folderId, requiredSections.length, topic],
+    () =>
+      Boolean(
+        folderId && topic.trim() && requiredSections.length > 0 && hasEnoughPapers,
+      ),
+    [folderId, hasEnoughPapers, requiredSections.length, topic],
   );
 
   const toggleSection = (section: ReviewSection) => {
@@ -175,7 +171,19 @@ export function LiteratureReviewShell() {
     );
   };
 
+  const assertEnoughPapers = () => {
+    if (paperCount < REVIEW_MIN_PAPER_COUNT) {
+      setError(REVIEW_MIN_PAPER_COUNT_ERROR);
+      return false;
+    }
+    return true;
+  };
+
   const handleGenerateOutline = async () => {
+    if (!assertEnoughPapers()) {
+      return;
+    }
+
     setError(null);
     setStatusMessage(null);
     setIsGeneratingOutline(true);
@@ -188,7 +196,6 @@ export function LiteratureReviewShell() {
       setOutline(result.outline ?? "");
       setReview("");
       setPptOutline("");
-      setWarnings(result.warnings ?? []);
       setStatusMessage("大纲已生成，请确认或编辑后继续。");
     } catch (err) {
       const message =
@@ -205,6 +212,10 @@ export function LiteratureReviewShell() {
       return;
     }
 
+    if (!assertEnoughPapers()) {
+      return;
+    }
+
     setError(null);
     setStatusMessage(null);
     setIsGeneratingReview(true);
@@ -217,7 +228,6 @@ export function LiteratureReviewShell() {
       });
       setReview(result.review ?? "");
       setPptOutline("");
-      setWarnings(result.warnings ?? []);
       setStatusMessage("综述正文已生成。");
     } catch (err) {
       const message =
@@ -234,6 +244,10 @@ export function LiteratureReviewShell() {
       return;
     }
 
+    if (!assertEnoughPapers()) {
+      return;
+    }
+
     setError(null);
     setStatusMessage(null);
     setIsGeneratingPpt(true);
@@ -246,7 +260,6 @@ export function LiteratureReviewShell() {
         reviewContent: review.trim(),
       });
       setPptOutline(result.pptOutline ?? "");
-      setWarnings(result.warnings ?? []);
       setStatusMessage("PPT 大纲已生成。");
     } catch (err) {
       const message =
@@ -322,15 +335,6 @@ export function LiteratureReviewShell() {
           </p>
         )}
 
-        {warnings.map((warning) => (
-          <p
-            key={warning}
-            className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
-          >
-            {warning}
-          </p>
-        ))}
-
         <section className="space-y-5 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-gray-900">1. 选择文献夹</h2>
 
@@ -357,9 +361,8 @@ export function LiteratureReviewShell() {
           <p className="text-sm text-gray-600">当前文献夹共 {paperCount} 篇论文。</p>
 
           {paperCount > 0 && paperCount < REVIEW_MIN_PAPER_COUNT && (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              文献数量少于 {REVIEW_MIN_PAPER_COUNT}{" "}
-              篇，综述可能不够全面，建议补充更多相关论文。
+            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {REVIEW_MIN_PAPER_COUNT_ERROR}
             </p>
           )}
         </section>
@@ -426,38 +429,6 @@ export function LiteratureReviewShell() {
                 ))}
               </select>
             </label>
-
-            <label className="grid gap-2">
-              <FieldLabel>时间范围</FieldLabel>
-              <select
-                value={timeRange}
-                onChange={(event) =>
-                  setTimeRange(
-                    event.target.value as LiteratureReviewRequest["timeRange"],
-                  )
-                }
-                className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
-              >
-                {REVIEW_TIME_RANGE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {timeRange === "自定义" && (
-              <label className="grid gap-2">
-                <FieldLabel>自定义年数</FieldLabel>
-                <input
-                  type="number"
-                  min={1}
-                  value={customTimeRangeYears}
-                  onChange={(event) => setCustomTimeRangeYears(event.target.value)}
-                  className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
-                />
-              </label>
-            )}
 
             <label className="grid gap-2">
               <FieldLabel>输出类型</FieldLabel>

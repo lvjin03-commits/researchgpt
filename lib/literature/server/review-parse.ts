@@ -8,7 +8,6 @@ import {
   REVIEW_OUTPUT_TYPE_OPTIONS,
   REVIEW_PERSPECTIVE_OPTIONS,
   REVIEW_SECTION_OPTIONS,
-  REVIEW_TIME_RANGE_OPTIONS,
 } from "@/lib/literature/review/constants";
 import type {
   LiteratureReviewRequest,
@@ -110,8 +109,6 @@ export function parseLiteratureReviewRequest(
       REVIEW_AUDIENCE_OPTIONS,
       "targetAudience",
     ),
-    timeRange: pickOption(record.timeRange, REVIEW_TIME_RANGE_OPTIONS, "timeRange"),
-    customTimeRangeYears: parseOptionalNumber(record.customTimeRangeYears),
     requiredSections: parseSections(record.requiredSections),
     outputType: pickOption(
       record.outputType,
@@ -129,10 +126,6 @@ export function parseLiteratureReviewRequest(
 
   if (request.perspective === "自定义" && !request.customPerspective) {
     throw new LiteratureError("请填写自定义写作视角。", 400);
-  }
-
-  if (request.timeRange === "自定义" && !request.customTimeRangeYears) {
-    throw new LiteratureError("请填写自定义时间范围（年）。", 400);
   }
 
   if (request.length === "自定义字数" && !request.customWordCount) {

@@ -5,7 +5,6 @@ import { AIProviderError } from "@/lib/ai/errors";
 import { LiteratureError } from "@/lib/literature/errors";
 import {
   REVIEW_LENGTH_WORD_TARGETS,
-  REVIEW_MIN_PAPER_COUNT,
 } from "@/lib/literature/review/constants";
 import type { LiteratureReviewRequest } from "@/lib/literature/review/types";
 import { buildReviewPaperContext } from "@/lib/literature/server/review-papers";
@@ -49,7 +48,6 @@ function buildInstructionSummary(request: LiteratureReviewRequest): string {
     `综述主题：${request.topic}`,
     `写作视角：${resolvePerspective(request)}`,
     `目标读者：${request.targetAudience}`,
-    `时间范围：${request.timeRange}`,
     `输出类型：${request.outputType}`,
     `语言：${request.language}`,
     `篇幅：${resolveLengthTarget(request)}`,
@@ -78,16 +76,6 @@ function buildPaperListPrompt(papers: ReviewPaperContext[]): string {
 
 function extractMarkdownContent(content: string): string {
   return content.trim();
-}
-
-export function buildReviewWarnings(paperCount: number): string[] {
-  if (paperCount >= REVIEW_MIN_PAPER_COUNT) {
-    return [];
-  }
-
-  return [
-    `所选文件夹仅有 ${paperCount} 篇文献，少于建议的 ${REVIEW_MIN_PAPER_COUNT} 篇，生成结果可能不够全面。`,
-  ];
 }
 
 export async function generateReviewOutline(

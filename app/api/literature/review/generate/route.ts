@@ -1,11 +1,14 @@
 import { AIProviderError } from "@/lib/ai/errors";
 import { LiteratureError } from "@/lib/literature/errors";
+import {
+  REVIEW_MIN_PAPER_COUNT,
+  REVIEW_MIN_PAPER_COUNT_ERROR,
+} from "@/lib/literature/review/constants";
 import type { LiteratureReviewResponse } from "@/lib/literature/review/types";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { parseLiteratureReviewRequest } from "@/lib/literature/server/review-parse";
 import { loadReviewFolderPapers } from "@/lib/literature/server/review-papers";
 import {
-  buildReviewWarnings,
   generateReviewFullText,
   generateReviewOutline,
   generateReviewPptOutline,
@@ -24,22 +27,18 @@ export async function POST(request: Request) {
       supabase,
       user.id,
       reviewRequest.folderId,
-      reviewRequest.timeRange,
-      reviewRequest.customTimeRangeYears,
     );
 
-    if (papers.length === 0) {
-      throw new LiteratureError("所选文件夹中没有符合时间范围的文献。", 400);
+    if (papers.length < REVIEW_MIN_PAPER_COUNT) {
+      throw new LiteratureError(REVIEW_MIN_PAPER_COUNT_ERROR, 400);
     }
 
-    const warnings = buildReviewWarnings(papers.length);
     const usedPaperTitles = papers.map((paper) => paper.title);
 
     const response: LiteratureReviewResponse = {
       phase: reviewRequest.phase,
       paperCount: papers.length,
       usedPaperTitles,
-      ...(warnings.length > 0 ? { warnings } : {}),
     };
 
     if (reviewRequest.phase === "outline") {

@@ -17,14 +17,6 @@ export const REVIEW_AUDIENCE_OPTIONS = [
   "跨学科读者",
 ] as const;
 
-export const REVIEW_TIME_RANGE_OPTIONS = [
-  "全部文献",
-  "近1年",
-  "近3年",
-  "近5年",
-  "自定义",
-] as const;
-
 export const REVIEW_SECTION_OPTIONS = [
   "研究背景",
   "研究主题分类",
@@ -58,6 +50,9 @@ export const REVIEW_LENGTH_OPTIONS = [
 
 export const REVIEW_MIN_PAPER_COUNT = 3;
 
+export const REVIEW_MIN_PAPER_COUNT_ERROR =
+  "所选文献夹中的文献数量不足，至少需要 3 篇文献。";
+
 export const REVIEW_LENGTH_WORD_TARGETS: Record<
   Exclude<(typeof REVIEW_LENGTH_OPTIONS)[number], "自定义字数">,
   string
@@ -65,13 +60,4 @@ export const REVIEW_LENGTH_WORD_TARGETS: Record<
   简短版: "1500-2500 字",
   标准版: "3000-5000 字",
   详细版: "6000-9000 字",
-};
-
-export const REVIEW_TIME_RANGE_YEARS: Record<
-  Exclude<(typeof REVIEW_TIME_RANGE_OPTIONS)[number], "全部文献" | "自定义">,
-  number
-> = {
-  近1年: 1,
-  近3年: 3,
-  近5年: 5,
 };
