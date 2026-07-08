@@ -4,13 +4,13 @@ Last Update: 2026-07-08
 
 ## Current Focus
 
-Use Google Scholar as the primary visible literature search result source through SerpApi.
+Use the open literature provider pipeline for search, skip AI analysis during updates, and keep Google Scholar as a handoff/import path.
 
 ## Completed
 
-- Switched Literature Tracker default search source to Google Scholar via SerpApi.
-- Literature result title clicks now open Google Scholar pages.
-- Added `SERPAPI_API_KEY` environment configuration.
+- Restored Literature Tracker default search source to OpenAlex, arXiv, and PubMed.
+- Disabled AI analysis during literature updates.
+- Kept Google Scholar handoff links and extension import.
 - Added ResearchAI Scholar Saver Chrome extension v1:
   - parses visible Google Scholar results
   - supports select all / clear / save selected
@@ -29,13 +29,12 @@ Use Google Scholar as the primary visible literature search result source throug
 - Reduced production update timeout risk by limiting the default pipeline to OpenAlex, arXiv, and PubMed.
 - Made literature update requests respect `selectedSources`.
 - Parallelized provider fetches during literature updates.
-- Reduced AI analysis to the top 10 ranked candidates per update.
+- Reduced update latency by skipping AI analysis during literature updates.
 - Fixed tracker responses so a new search returns only the current search result set.
 
 ## Verification
 
 - `npx tsc --noEmit` passed.
-- `npx eslint lib/literature/providers/google-scholar.ts lib/literature/providers/index.ts lib/literature/providers/base.ts lib/literature/source-taxonomy.ts lib/literature/search-debug.ts components/literature-debug-panel.tsx components/literature-paper-card.tsx` passed.
 - `node --check extensions\google-scholar\content.js` passed.
 - `node --check extensions\google-scholar\popup.js` passed.
 - `npx eslint app/api/literature/imports/google-scholar/route.ts app/api/literature/folders/route.ts lib/http/extension-cors.ts lib/literature/providers/base.ts lib/literature/paper-providers.ts lib/literature/ranking/score.ts` passed.

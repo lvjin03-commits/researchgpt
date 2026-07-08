@@ -23,7 +23,6 @@ import { dblpProvider } from "@/lib/literature/providers/dblp";
 import { openReviewProvider } from "@/lib/literature/providers/openreview";
 import { openAlexProvider } from "@/lib/literature/providers/openalex";
 import { pubmedProvider } from "@/lib/literature/providers/pubmed";
-import { googleScholarProvider } from "@/lib/literature/providers/google-scholar";
 import { FUTURE_LITERATURE_PROVIDERS } from "@/lib/literature/providers/placeholders";
 import type { ArxivPaperDraft, LiteratureSettings } from "@/lib/literature/types";
 
@@ -32,7 +31,6 @@ export { DEFAULT_LITERATURE_PIPELINE_SOURCES } from "@/lib/literature/constants"
 
 /** Providers used by the literature search pipeline, in priority order. */
 export const ACTIVE_LITERATURE_PROVIDERS: LiteratureProvider[] = [
-  googleScholarProvider,
   openAlexProvider,
   arxivProvider,
   pubmedProvider,

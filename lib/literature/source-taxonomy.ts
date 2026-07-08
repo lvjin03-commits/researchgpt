@@ -65,7 +65,7 @@ export type DisciplineDefinition = {
   sources: TaxonomySource[];
 };
 
-export const AVAILABLE_LITERATURE_SOURCE_IDS = ["google_scholar"] as const;
+export const AVAILABLE_LITERATURE_SOURCE_IDS = ["openalex", "arxiv", "pubmed"] as const;
 
 export type AvailableLiteratureSourceId =
   (typeof AVAILABLE_LITERATURE_SOURCE_IDS)[number];
@@ -130,16 +130,6 @@ function openalex(): TaxonomySource {
   };
 }
 
-function googleScholar(): TaxonomySource {
-  return {
-    id: "google_scholar",
-    name: "Google Scholar",
-    kind: "platform",
-    status: "available",
-    provider: "google_scholar",
-  };
-}
-
 function conference(name: string): TaxonomySource {
   return item(name, "conference");
 }
@@ -176,7 +166,6 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
     id: "ai",
     label: "人工智能",
     sources: [
-      googleScholar(),
       openalex(),
       arxiv(),
       platform("OpenReview", "openreview"),

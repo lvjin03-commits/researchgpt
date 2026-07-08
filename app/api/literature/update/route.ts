@@ -1,9 +1,6 @@
-import { AIProviderError } from "@/lib/ai/errors";
 import { LiteratureError } from "@/lib/literature/errors";
 import { sortLiteraturePapersAfterAiRerank } from "@/lib/literature/ranking/final-sort";
-import { analyzeArxivPapers } from "@/lib/literature/server/analyze-service";
 import { searchLiteratureProviders } from "@/lib/literature/server/fetch-papers";
-import { limitPapersForAnalysis } from "@/lib/literature/server/limit-analysis-papers";
 import { logLiteraturePipelineCounts } from "@/lib/literature/server/pipeline-log";
 import { parseLiteratureSettings } from "@/lib/literature/server/parse";
 import {
@@ -50,18 +47,7 @@ export async function POST(request: Request) {
 
     const { drafts, quality, debug, failedProviders, warnings } =
       await searchLiteratureProviders(settings);
-    const analysisDrafts = limitPapersForAnalysis(drafts);
-
-    console.log("[literature] step openai rerank analysis: start");
-    const analysisStartedAt = Date.now();
-    const analysisById = await analyzeArxivPapers(
-      analysisDrafts,
-      settings,
-      request.signal,
-    );
-    console.log(
-      `[literature] step openai rerank analysis: done elapsedMs=${elapsedMs(analysisStartedAt)} analyzed=${analysisById.size}`,
-    );
+    const analysisById = new Map();
 
     console.log("[literature] step save to supabase: start");
     const saveStartedAt = Date.now();
@@ -80,7 +66,7 @@ export async function POST(request: Request) {
       totalFetched: quality.fetchedTotal,
       afterDedup: quality.afterExcludeKeywords,
       afterRanking: quality.finalCount,
-      sentToAi: analysisDrafts.length,
+      sentToAi: 0,
       finalReturned,
     });
 
@@ -114,11 +100,6 @@ export async function POST(request: Request) {
 
     if (error instanceof LiteratureError) {
       console.error("[literature] update error:", error.message);
-      return Response.json({ error: error.message }, { status: error.statusCode });
-    }
-
-    if (error instanceof AIProviderError) {
-      console.error("[literature] update AI error:", error.message);
       return Response.json({ error: error.message }, { status: error.statusCode });
     }
 

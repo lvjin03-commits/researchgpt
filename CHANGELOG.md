@@ -2,9 +2,8 @@
 
 ## 2026-07-08
 
-- Switched Literature Tracker search to Google Scholar results via SerpApi.
-- Changed literature result title clicks to open Google Scholar instead of the internal detail page.
-- Added `SERPAPI_API_KEY` to environment examples.
+- Restored Literature Tracker search to the open provider pipeline.
+- Disabled AI analysis during literature updates.
 - Added ResearchAI Scholar Saver Chrome extension v1 for saving visible Google Scholar results into the ResearchAI literature library.
 - Added a Google Scholar import API endpoint with extension CORS support.
 - Added Google Scholar as an internal literature source label.
