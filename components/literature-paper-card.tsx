@@ -13,6 +13,7 @@ import {
   getPaperProviders,
   LITERATURE_PROVIDER_BADGE_LABELS,
 } from "@/lib/literature/paper-providers";
+import { getGoogleScholarUrl } from "@/lib/literature/paper-workspace-display";
 import type { LiteratureProviderId } from "@/lib/literature/providers/base";
 import { getPaperStatusLabel } from "@/lib/literature/ui-strings";
 import type {
@@ -89,6 +90,7 @@ export function LiteraturePaperCard({
   };
 
   const externalLabel = "原文链接";
+  const googleScholarUrl = getGoogleScholarUrl(paper);
   const publishedDateLabel = formatLiteraturePublishedDate(paper.publishedAt);
   const hasMetrics =
     paper.relevanceScore !== null ||
@@ -139,12 +141,14 @@ export function LiteraturePaperCard({
             </div>
 
             <h3 className="text-base font-semibold">
-              <Link
-                href={`/literature/papers/${paper.id}`}
+              <a
+                href={googleScholarUrl ?? paper.absUrl}
+                target="_blank"
+                rel="noreferrer"
                 className="text-blue-700 underline decoration-blue-300 underline-offset-2 transition-colors hover:text-blue-900 hover:decoration-blue-500"
               >
                 {paper.title}
-              </Link>
+              </a>
             </h3>
             <p className="mt-1 text-sm text-gray-500">
               {paper.authors.slice(0, 4).join(", ")}
@@ -183,6 +187,16 @@ export function LiteraturePaperCard({
             >
               {externalLabel}
             </a>
+            {googleScholarUrl && (
+              <a
+                href={googleScholarUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+              >
+                Google Scholar
+              </a>
+            )}
           </div>
         </div>
 

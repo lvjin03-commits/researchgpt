@@ -77,6 +77,7 @@ const PROVIDER_RELIABILITY: Record<LiteratureProviderId, number> = {
   crossref: 0.62,
   dblp: 0.78,
   openreview: 0.76,
+  google_scholar: 0.92,
 };
 
 const DOI_PATTERN = /^doi:/i;

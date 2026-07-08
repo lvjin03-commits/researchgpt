@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "ResearchAI Scholar Saver",
+  "description": "Save visible Google Scholar results into ResearchAI.",
+  "version": "0.1.0",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://scholar.google.com/*",
+    "https://*.vercel.app/*",
+    "https://*/*",
+    "http://localhost/*"
+  ],
+  "action": {
+    "default_title": "ResearchAI Scholar Saver",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://scholar.google.com/*"],
+      "css": ["content.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

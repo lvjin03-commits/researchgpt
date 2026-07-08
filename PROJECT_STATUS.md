@@ -4,10 +4,20 @@ Last Update: 2026-07-08
 
 ## Current Focus
 
-Improve literature search quality so ResearchAI results feel closer to Google Scholar-style relevance while preserving the existing provider architecture.
+Use Google Scholar as the primary visible literature search result source through SerpApi.
 
 ## Completed
 
+- Switched Literature Tracker default search source to Google Scholar via SerpApi.
+- Literature result title clicks now open Google Scholar pages.
+- Added `SERPAPI_API_KEY` environment configuration.
+- Added ResearchAI Scholar Saver Chrome extension v1:
+  - parses visible Google Scholar results
+  - supports select all / clear / save selected
+  - stores ResearchAI URL and default folder selection
+  - imports selected results into the ResearchAI literature library
+- Added Google Scholar import API with Chrome extension CORS support.
+- Added Google Scholar as an internal literature source label.
 - Added Search Quality v1 rule-based ranking signals:
   - research direction matching
   - exact phrase matching
@@ -25,6 +35,10 @@ Improve literature search quality so ResearchAI results feel closer to Google Sc
 ## Verification
 
 - `npx tsc --noEmit` passed.
+- `npx eslint lib/literature/providers/google-scholar.ts lib/literature/providers/index.ts lib/literature/providers/base.ts lib/literature/source-taxonomy.ts lib/literature/search-debug.ts components/literature-debug-panel.tsx components/literature-paper-card.tsx` passed.
+- `node --check extensions\google-scholar\content.js` passed.
+- `node --check extensions\google-scholar\popup.js` passed.
+- `npx eslint app/api/literature/imports/google-scholar/route.ts app/api/literature/folders/route.ts lib/http/extension-cors.ts lib/literature/providers/base.ts lib/literature/paper-providers.ts lib/literature/ranking/score.ts` passed.
 - `npx eslint components/literature-debug-panel.tsx lib/literature/providers/index.ts lib/literature/ranking/ranking.ts lib/literature/ranking/score.ts lib/literature/search-debug.ts lib/literature/server/search-debug.ts` passed.
 - `npx eslint lib/literature/constants.ts lib/literature/normalize-settings.ts lib/literature/server/parse.ts lib/literature/providers/index.ts lib/literature/source-taxonomy.ts` passed.
 - `npm run lint` was attempted, but existing unrelated lint errors remain in chat and literature detail/folder selector files.

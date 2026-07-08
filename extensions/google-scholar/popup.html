@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ResearchAI Scholar Saver</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup">
+      <h1>ResearchAI</h1>
+      <p class="muted">Save Google Scholar results into your literature library.</p>
+
+      <label class="field">
+        <span>ResearchAI URL</span>
+        <input id="baseUrl" type="url" placeholder="https://your-site.vercel.app">
+      </label>
+
+      <div class="row">
+        <button id="saveSettings" type="button">Save settings</button>
+        <button id="loadFolders" type="button">Load folders</button>
+      </div>
+
+      <section>
+        <h2>Save to folders</h2>
+        <div id="folders" class="folders"></div>
+      </section>
+
+      <p id="status" class="status"></p>
+
+      <div class="row">
+        <button id="openScholar" type="button">Open Scholar</button>
+        <button id="openLibrary" type="button">Open Library</button>
+      </div>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

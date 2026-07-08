@@ -16,6 +16,7 @@ export const LITERATURE_PROVIDER_BADGE_LABELS: Record<
   dblp: "DBLP",
   openreview: "OpenReview",
   semantic_scholar: "Semantic Scholar",
+  google_scholar: "Google Scholar",
 };
 
 export type PaperProviderMetadata = {

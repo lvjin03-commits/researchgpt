@@ -38,6 +38,7 @@ export function LiteratureSearchDebugSummary({
       </h2>
 
       <div className="space-y-1">
+        <DebugRow label="Google Scholar:" value={summary.googleScholar} />
         <DebugRow label="OpenAlex:" value={summary.openalex} />
         <DebugRow label="PubMed:" value={summary.pubmed} />
         <DebugRow label="arXiv:" value={summary.arxiv} />

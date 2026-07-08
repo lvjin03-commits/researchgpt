@@ -23,6 +23,7 @@ import { dblpProvider } from "@/lib/literature/providers/dblp";
 import { openReviewProvider } from "@/lib/literature/providers/openreview";
 import { openAlexProvider } from "@/lib/literature/providers/openalex";
 import { pubmedProvider } from "@/lib/literature/providers/pubmed";
+import { googleScholarProvider } from "@/lib/literature/providers/google-scholar";
 import { FUTURE_LITERATURE_PROVIDERS } from "@/lib/literature/providers/placeholders";
 import type { ArxivPaperDraft, LiteratureSettings } from "@/lib/literature/types";
 
@@ -31,6 +32,7 @@ export { DEFAULT_LITERATURE_PIPELINE_SOURCES } from "@/lib/literature/constants"
 
 /** Providers used by the literature search pipeline, in priority order. */
 export const ACTIVE_LITERATURE_PROVIDERS: LiteratureProvider[] = [
+  googleScholarProvider,
   openAlexProvider,
   arxivProvider,
   pubmedProvider,
@@ -65,6 +67,7 @@ function elapsedMs(startedAt: number): number {
 function toSearchOptions(settings: LiteratureSettings): ProviderSearchOptions {
   return {
     keywords: settings.keywords,
+    researchDirection: settings.researchDirection,
     excludeKeywords: settings.excludeKeywords,
     dateRangeDays: settings.dateRangeDays,
     maxResults: LITERATURE_MAX_ARXIV_RESULTS,
@@ -73,7 +76,7 @@ function toSearchOptions(settings: LiteratureSettings): ProviderSearchOptions {
 
 function logSearchQualityMetrics(metrics: LiteratureSearchQualityMetrics): void {
   console.log(
-    `[literature] search quality: fetched openalex=${metrics.fetchedByProvider.openalex ?? 0} arxiv=${metrics.fetchedByProvider.arxiv ?? 0} pubmed=${metrics.fetchedByProvider.pubmed ?? 0} crossref=${metrics.fetchedByProvider.crossref ?? 0} dblp=${metrics.fetchedByProvider.dblp ?? 0} openreview=${metrics.fetchedByProvider.openreview ?? 0} totalFetched=${metrics.fetchedTotal}`,
+    `[literature] search quality: fetched googleScholar=${metrics.fetchedByProvider.google_scholar ?? 0} openalex=${metrics.fetchedByProvider.openalex ?? 0} arxiv=${metrics.fetchedByProvider.arxiv ?? 0} pubmed=${metrics.fetchedByProvider.pubmed ?? 0} crossref=${metrics.fetchedByProvider.crossref ?? 0} dblp=${metrics.fetchedByProvider.dblp ?? 0} openreview=${metrics.fetchedByProvider.openreview ?? 0} totalFetched=${metrics.fetchedTotal}`,
   );
   console.log(
     `[literature] search quality: merged=${metrics.mergedTotal} duplicatesRemoved=${metrics.duplicatesRemoved} exactMatches=${metrics.exactMatches} fuzzyMatches=${metrics.fuzzyMatches} afterExclude=${metrics.afterExcludeKeywords} final=${metrics.finalCount}`,
@@ -266,6 +269,7 @@ export async function searchLiteratureProviders(
   const debug = isLiteratureDebugEnabled()
     ? buildLiteratureSearchDebug(
         {
+          googleScholar: quality.fetchedByProvider.google_scholar ?? 0,
           openalex: quality.fetchedByProvider.openalex ?? 0,
           arxiv: quality.fetchedByProvider.arxiv ?? 0,
           pubmed: quality.fetchedByProvider.pubmed ?? 0,

@@ -492,6 +492,23 @@ export async function updateLiteraturePaperStatus(
   return mapPaperRow(data as DbPaperRow);
 }
 
+export async function updateLiteraturePaperStatusByExternalKey(
+  supabase: SupabaseClient,
+  userId: string,
+  externalKey: string,
+  status: LiteraturePaperStatus,
+): Promise<LiteraturePaper> {
+  const paper = (await listLiteraturePapers(supabase, userId)).find(
+    (item) => item.arxivId === externalKey,
+  );
+
+  if (!paper) {
+    throw new LiteratureError("Paper not found.", 404);
+  }
+
+  return updateLiteraturePaperStatus(supabase, userId, paper.id, status);
+}
+
 export async function getLiteraturePaperById(
   supabase: SupabaseClient,
   userId: string,

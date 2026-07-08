@@ -3,23 +3,43 @@ import {
   createLiteratureFolder,
   listLiteratureFolders,
 } from "@/lib/literature/server/folder-repository";
+import {
+  extensionCorsHeaders,
+  extensionCorsPreflight,
+} from "@/lib/http/extension-cors";
 import { parseFolderName } from "@/lib/literature/server/parse";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export function OPTIONS(request: Request) {
+  return extensionCorsPreflight(request);
+}
+
+export async function GET(request: Request) {
   try {
     const { supabase, user } = await requireLiteratureUser();
     const folders = await listLiteratureFolders(supabase, user.id);
-    return Response.json({ folders });
+    return Response.json(
+      { folders },
+      { headers: extensionCorsHeaders(request) },
+    );
   } catch (error) {
     if (error instanceof LiteratureError) {
-      return Response.json({ error: error.message }, { status: error.statusCode });
+      return Response.json(
+        { error: error.message },
+        {
+          status: error.statusCode,
+          headers: extensionCorsHeaders(request),
+        },
+      );
     }
 
     console.error("[literature] GET folders failed:", error);
-    return Response.json({ error: "Failed to load folders." }, { status: 500 });
+    return Response.json(
+      { error: "Failed to load folders." },
+      { status: 500, headers: extensionCorsHeaders(request) },
+    );
   }
 }
 

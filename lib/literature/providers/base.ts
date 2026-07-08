@@ -15,10 +15,12 @@ export type LiteratureProviderId =
   | "crossref"
   | "dblp"
   | "openreview"
-  | "semantic_scholar";
+  | "semantic_scholar"
+  | "google_scholar";
 
 export type ProviderSearchOptions = {
   keywords: string;
+  researchDirection?: string;
   excludeKeywords: string;
   dateRangeDays?: number;
   maxResults?: number;
@@ -79,6 +81,7 @@ const PROVIDER_PRIORITY: LiteratureProviderId[] = [
   "dblp",
   "openreview",
   "semantic_scholar",
+  "google_scholar",
 ];
 
 export function buildExternalKey(
@@ -109,6 +112,10 @@ export function buildExternalKey(
     case "openreview": {
       const openReviewId = providerPaperId.replace(/^openreview:/i, "");
       return `openreview:${openReviewId}`;
+    }
+    case "google_scholar": {
+      const scholarId = providerPaperId.replace(/^google-scholar:/i, "");
+      return `google-scholar:${scholarId}`;
     }
     default:
       return `${provider}:${providerPaperId}`;

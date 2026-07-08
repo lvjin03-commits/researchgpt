@@ -6,9 +6,7 @@ export const LITERATURE_MAX_ANALYSIS_PAPERS = 10;
 
 /** Default provider pipeline stored with literature settings for backward compatibility. */
 export const DEFAULT_LITERATURE_PIPELINE_SOURCES = [
-  "openalex",
-  "arxiv",
-  "pubmed",
+  "google_scholar",
 ] as const;
 
 export const LITERATURE_DATE_RANGE_OPTIONS = [

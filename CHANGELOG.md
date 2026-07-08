@@ -2,6 +2,13 @@
 
 ## 2026-07-08
 
+- Switched Literature Tracker search to Google Scholar results via SerpApi.
+- Changed literature result title clicks to open Google Scholar instead of the internal detail page.
+- Added `SERPAPI_API_KEY` to environment examples.
+- Added ResearchAI Scholar Saver Chrome extension v1 for saving visible Google Scholar results into the ResearchAI literature library.
+- Added a Google Scholar import API endpoint with extension CORS support.
+- Added Google Scholar as an internal literature source label.
+- Added Google Scholar jump links to literature result cards.
 - Improved literature search ranking with research direction matching, phrase matching, provider reliability, metadata completeness, and publication type quality signals.
 - Added a conservative quality score floor so low-quality results are suppressed when enough stronger candidates exist.
 - Extended literature search debug output with ranking score breakdowns.
