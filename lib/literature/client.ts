@@ -524,6 +524,30 @@ export async function uploadPaperPdfToFolders(
   return payload.paper;
 }
 
+export async function uploadLocalPdfToLibrary(
+  folderIds: string[],
+  file: File,
+): Promise<LiteraturePaper> {
+  const formData = new FormData();
+  formData.set("folderIds", JSON.stringify(folderIds));
+  formData.set("file", file);
+
+  const response = await fetch("/api/literature/library/upload", {
+    method: "POST",
+    body: formData,
+  });
+
+  const payload = await parseJson<{ paper: LiteraturePaper; error?: string }>(
+    response,
+  );
+
+  if (!response.ok) {
+    throw new LiteratureError(payload.error ?? "上传 PDF 失败。", response.status);
+  }
+
+  return payload.paper;
+}
+
 export async function deleteLiteraturePaper(paperId: string): Promise<void> {
   const response = await fetch(`/api/literature/papers/${paperId}`, {
     method: "DELETE",

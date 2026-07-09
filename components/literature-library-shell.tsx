@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { LiteratureLibraryUploadModal } from "@/components/literature-library-upload-modal";
 import { LiteraturePaperCard } from "@/components/literature-paper-card";
 import {
   createLiteratureFolder,
@@ -11,6 +12,7 @@ import {
   LiteratureError,
   updateLiteratureFolder,
   updateLiteraturePaperStatus,
+  uploadLocalPdfToLibrary,
 } from "@/lib/literature/client";
 import {
   LIBRARY_PRIORITY_OPTIONS,
@@ -46,6 +48,7 @@ export function LiteratureLibraryShell() {
   const [folderActionError, setFolderActionError] = useState<string | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState("");
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -231,6 +234,14 @@ export function LiteratureLibraryShell() {
     }
   };
 
+  const handleUploadLocalPdf = useCallback(
+    async (folderIds: string[], file: File) => {
+      const uploaded = await uploadLocalPdfToLibrary(folderIds, file);
+      setPapers((current) => [uploaded, ...current]);
+    },
+    [],
+  );
+
   return (
     <div className="min-h-dvh bg-white">
       <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
@@ -242,6 +253,13 @@ export function LiteratureLibraryShell() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowUploadModal(true)}
+              className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+            >
+              上传 PDF
+            </button>
             <Link
               href="/literature/review"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
@@ -537,6 +555,15 @@ export function LiteratureLibraryShell() {
           )}
         </div>
       </main>
+
+      {showUploadModal && (
+        <LiteratureLibraryUploadModal
+          folders={folders}
+          initialFolderId={filters.folderId || undefined}
+          onClose={() => setShowUploadModal(false)}
+          onUpload={handleUploadLocalPdf}
+        />
+      )}
     </div>
   );
 }
