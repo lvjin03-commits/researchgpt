@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { LiteratureError } from "@/lib/literature/errors";
 import {
   deleteLiteraturePaper,
-  updateLiteraturePaperStatusByExternalKey,
+  updateLiteraturePaperStatus,
   upsertAnalyzedPapers,
 } from "@/lib/literature/server/repository";
 import { setPaperFolderIds } from "@/lib/literature/server/folder-repository";
@@ -127,12 +127,19 @@ export async function saveExtensionPaper(
   draft: ArxivPaperDraft,
   folderIds: string[],
 ): Promise<{ id: string; title: string; arxivId: string }> {
-  await upsertAnalyzedPapers(supabase, userId, [draft], new Map());
+  const upserted = await upsertAnalyzedPapers(supabase, userId, [draft], new Map());
+  const savedDraftPaper = upserted.papers.find(
+    (item) => item.arxivId === draft.arxivId,
+  );
 
-  const paper = await updateLiteraturePaperStatusByExternalKey(
+  if (!savedDraftPaper) {
+    throw new LiteratureError("Paper could not be saved before PDF download.", 500);
+  }
+
+  const paper = await updateLiteraturePaperStatus(
     supabase,
     userId,
-    draft.arxivId,
+    savedDraftPaper.id,
     "saved",
   );
   const archivedPaper = await archiveLiteraturePaperPdf(supabase, userId, paper);
