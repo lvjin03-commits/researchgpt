@@ -1,13 +1,18 @@
 // Server-only module. Do not import from client components or /api/chat route entry.
 
 import {
+  AlignmentType,
   BorderStyle,
   Document,
   HeadingLevel,
   Packer,
   Paragraph,
   ShadingType,
+  Table,
+  TableCell,
+  TableRow,
   TextRun,
+  WidthType,
 } from "docx";
 import {
   parseInlineMarkdown,
@@ -22,7 +27,7 @@ function inlineSpansToTextRuns(inlines: InlineSpan[]): TextRun[] {
         text: span.text,
         bold: span.bold,
         italics: span.italic,
-        font: span.code ? "Courier New" : undefined,
+        font: span.code ? "Courier New" : "Microsoft YaHei",
         shading: span.code
           ? {
               type: ShadingType.CLEAR,
@@ -33,9 +38,112 @@ function inlineSpansToTextRuns(inlines: InlineSpan[]): TextRun[] {
   );
 }
 
-function blocksToDocxParagraphs(content: string): Paragraph[] {
+function plainText(inlines: InlineSpan[]): string {
+  return inlines.map((span) => span.text).join("");
+}
+
+function buildCoverParagraphs(): Paragraph[] {
+  return [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 720, after: 240 },
+      children: [
+        new TextRun({
+          text: "ResearchAI 文献综述成果稿",
+          bold: true,
+          size: 40,
+          font: "Microsoft YaHei",
+        }),
+      ],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 720 },
+      children: [
+        new TextRun({
+          text: "含专业综述、图表说明、研究空白与未来方向",
+          color: "4B5563",
+          size: 22,
+          font: "Microsoft YaHei",
+        }),
+      ],
+    }),
+  ];
+}
+
+function buildFigureCallout(text: string): Table {
+  const parts = text
+    .replace(/^图表建议[:：]\s*/, "")
+    .split("｜")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const [figureId = "Figure", title = "图表说明", type = "Academic visual"] =
+    parts;
+  const detail = parts.slice(3).join("｜") || text;
+
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.SINGLE, color: "BFDBFE", size: 8 },
+      bottom: { style: BorderStyle.SINGLE, color: "BFDBFE", size: 8 },
+      left: { style: BorderStyle.SINGLE, color: "BFDBFE", size: 8 },
+      right: { style: BorderStyle.SINGLE, color: "BFDBFE", size: 8 },
+      insideHorizontal: { style: BorderStyle.SINGLE, color: "DBEAFE", size: 4 },
+      insideVertical: { style: BorderStyle.SINGLE, color: "DBEAFE", size: 4 },
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            shading: { type: ShadingType.CLEAR, fill: "EFF6FF" },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: `${figureId}｜${title}`,
+                    bold: true,
+                    font: "Microsoft YaHei",
+                    color: "1D4ED8",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: `图表类型：${type}`,
+                    bold: true,
+                    font: "Microsoft YaHei",
+                  }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 120 },
+                children: [
+                  new TextRun({
+                    text: detail,
+                    font: "Microsoft YaHei",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+function blocksToDocxChildren(content: string): Array<Paragraph | Table> {
   const blocks = parseMarkdownBlocks(content);
-  const paragraphs: Paragraph[] = [];
+  const children: Array<Paragraph | Table> = [...buildCoverParagraphs()];
 
   for (const block of blocks) {
     switch (block.type) {
@@ -47,25 +155,29 @@ function blocksToDocxParagraphs(content: string): Paragraph[] {
               ? HeadingLevel.HEADING_2
               : HeadingLevel.HEADING_3;
 
-        paragraphs.push(
+        children.push(
           new Paragraph({
             heading: headingLevel,
+            spacing: { before: 360, after: 160 },
             children: inlineSpansToTextRuns(block.inlines),
           }),
         );
         break;
       }
       case "paragraph":
-        paragraphs.push(
+        children.push(
           new Paragraph({
+            spacing: { after: 160 },
+            indent: { firstLine: 420 },
             children: inlineSpansToTextRuns(block.inlines),
           }),
         );
         break;
       case "bullet":
         for (const item of block.items) {
-          paragraphs.push(
+          children.push(
             new Paragraph({
+              spacing: { after: 80 },
               children: inlineSpansToTextRuns(item),
               bullet: { level: 0 },
             }),
@@ -74,10 +186,15 @@ function blocksToDocxParagraphs(content: string): Paragraph[] {
         break;
       case "numbered":
         block.items.forEach((item, itemIndex) => {
-          paragraphs.push(
+          children.push(
             new Paragraph({
+              spacing: { after: 80 },
               children: [
-                new TextRun({ text: `${itemIndex + 1}. ` }),
+                new TextRun({
+                  text: `${itemIndex + 1}. `,
+                  bold: true,
+                  font: "Microsoft YaHei",
+                }),
                 ...inlineSpansToTextRuns(item),
               ],
             }),
@@ -86,7 +203,7 @@ function blocksToDocxParagraphs(content: string): Paragraph[] {
         break;
       case "code":
         for (const codeLine of block.content.split("\n")) {
-          paragraphs.push(
+          children.push(
             new Paragraph({
               children: [
                 new TextRun({
@@ -102,41 +219,75 @@ function blocksToDocxParagraphs(content: string): Paragraph[] {
           );
         }
         break;
-      case "blockquote":
-        paragraphs.push(
-          new Paragraph({
-            children: inlineSpansToTextRuns(block.inlines),
-            indent: { left: 720 },
-            border: {
-              left: {
-                color: "D1D5DB",
-                size: 12,
-                space: 8,
-                style: BorderStyle.SINGLE,
+      case "blockquote": {
+        const text = plainText(block.inlines);
+        if (/^图表建议[:：]/.test(text)) {
+          children.push(buildFigureCallout(text));
+        } else {
+          children.push(
+            new Paragraph({
+              children: inlineSpansToTextRuns(block.inlines),
+              indent: { left: 720 },
+              spacing: { before: 120, after: 160 },
+              shading: {
+                type: ShadingType.CLEAR,
+                fill: "F9FAFB",
               },
-            },
-          }),
-        );
+              border: {
+                left: {
+                  color: "2563EB",
+                  size: 16,
+                  space: 8,
+                  style: BorderStyle.SINGLE,
+                },
+              },
+            }),
+          );
+        }
         break;
+      }
     }
   }
 
-  if (paragraphs.length === 0) {
-    paragraphs.push(
+  if (children.length === 0) {
+    children.push(
       new Paragraph({
         children: inlineSpansToTextRuns(parseInlineMarkdown(content)),
       }),
     );
   }
 
-  return paragraphs;
+  return children;
 }
 
 export async function generateDocxBuffer(content: string): Promise<Buffer> {
   const document = new Document({
+    styles: {
+      default: {
+        document: {
+          run: {
+            font: "Microsoft YaHei",
+            size: 22,
+          },
+          paragraph: {
+            spacing: { line: 360 },
+          },
+        },
+      },
+    },
     sections: [
       {
-        children: blocksToDocxParagraphs(content),
+        properties: {
+          page: {
+            margin: {
+              top: 1440,
+              right: 1260,
+              bottom: 1440,
+              left: 1260,
+            },
+          },
+        },
+        children: blocksToDocxChildren(content),
       },
     ],
   });
