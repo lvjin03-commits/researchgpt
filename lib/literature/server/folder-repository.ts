@@ -49,6 +49,17 @@ function isMissingFolderTableError(error: {
   );
 }
 
+function canUseLocalFolderFallback(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
+function throwMissingFolderStorageError(): never {
+  throw new LiteratureError(
+    "Literature folder storage is not configured. Please run Supabase migrations 005_literature_folders.sql and 007_literature_folder_nesting.sql.",
+    500,
+  );
+}
+
 function mapFolderRow(row: DbFolderRow): LiteratureFolder {
   return {
     id: row.id,
@@ -124,6 +135,10 @@ export async function listLiteratureFolders(
 
   if (error) {
     if (isMissingFolderTableError(error)) {
+      if (!canUseLocalFolderFallback()) {
+        throwMissingFolderStorageError();
+      }
+
       const store = await readFolderStore(userId);
       return store.folders;
     }
@@ -169,6 +184,10 @@ export async function createLiteratureFolder(
 
   if (error) {
     if (isMissingFolderTableError(error)) {
+      if (!canUseLocalFolderFallback()) {
+        throwMissingFolderStorageError();
+      }
+
       const store = await readFolderStore(userId);
       if (hasDuplicateSiblingName(store.folders, trimmed, parentId)) {
         throw new LiteratureError("同级文件夹中已存在相同名称。", 409);
@@ -220,6 +239,10 @@ export async function updateLiteratureFolder(
 
   if (error) {
     if (isMissingFolderTableError(error)) {
+      if (!canUseLocalFolderFallback()) {
+        throwMissingFolderStorageError();
+      }
+
       const store = await readFolderStore(userId);
       const index = store.folders.findIndex((folder) => folder.id === folderId);
 
@@ -263,6 +286,10 @@ export async function deleteLiteratureFolder(
 
   if (error) {
     if (isMissingFolderTableError(error)) {
+      if (!canUseLocalFolderFallback()) {
+        throwMissingFolderStorageError();
+      }
+
       const store = await readFolderStore(userId);
       const index = store.folders.findIndex((folder) => folder.id === folderId);
 
@@ -291,6 +318,10 @@ export async function getPaperFolderIdsMap(
 
   if (error) {
     if (isMissingFolderTableError(error)) {
+      if (!canUseLocalFolderFallback()) {
+        throwMissingFolderStorageError();
+      }
+
       const store = await readFolderStore(userId);
       const map = new Map<string, string[]>();
 
@@ -379,6 +410,10 @@ export async function lookupLiteratureFolder(
       throw new LiteratureError(error.message, 500);
     }
 
+    if (error && !canUseLocalFolderFallback()) {
+      throwMissingFolderStorageError();
+    }
+
     if (data) {
       return mapFolderRow(data as DbFolderRow);
     }
@@ -435,6 +470,10 @@ export async function lookupLiteratureFolder(
       throw new LiteratureError(error.message, 500);
     }
 
+    if (error && !canUseLocalFolderFallback()) {
+      throwMissingFolderStorageError();
+    }
+
     if (data) {
       return mapFolderRow(data as DbFolderRow);
     }
@@ -456,6 +495,10 @@ export async function listPaperIdsInFolder(
 
   if (error) {
     if (isMissingFolderTableError(error)) {
+      if (!canUseLocalFolderFallback()) {
+        throwMissingFolderStorageError();
+      }
+
       const store = await readFolderStore(userId);
       return store.links
         .filter((link) => link.folderId === folderId)
@@ -507,6 +550,10 @@ export async function setPaperFolderIds(
 
   if (deleteError) {
     if (isMissingFolderTableError(deleteError)) {
+      if (!canUseLocalFolderFallback()) {
+        throwMissingFolderStorageError();
+      }
+
       const store = await readFolderStore(userId);
       store.links = store.links.filter((link) => link.paperId !== paperId);
 
