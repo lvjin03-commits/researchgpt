@@ -22,7 +22,7 @@ Google Scholar page
 
 The extension does **not** scrape in the background. It only reads the DOM for a result the user explicitly clicks **Save PDF to ResearchGPT** on.
 
-If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead. A save only succeeds after Chrome downloads the PDF, the extension uploads that PDF, and the backend stores it with the selected folder assignment. If the source site blocks automatic PDF download, the extension opens the PDF page and shows an upload dialog on the Google Scholar page so the user can choose the downloaded PDF and save it to the selected ResearchGPT folder.
+If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead. A save only succeeds after Chrome downloads the PDF, the extension uploads that PDF, and the backend stores it with the selected folder assignment. If the source site blocks automatic PDF download, the extension opens the PDF page and shows a staged upload dialog on the Google Scholar page. The user should finish downloading first, then click **Choose downloaded PDF** and upload that exact file to the selected ResearchGPT folder.
 
 ## Backend API
 
@@ -109,7 +109,7 @@ Cookie-based session auth still works for extension routes when the request incl
 2. Each result shows a **Save PDF to ResearchGPT** link.
 3. Click it to open the folder picker.
 4. Select one or more folders, then click **Save PDF**. Chrome downloads the PDF, then the extension uploads and saves the PDF file plus paper metadata to those folders.
-5. If the source site blocks automatic PDF download, the extension opens the PDF page and shows a dialog on Google Scholar. Download the PDF from the opened page, then choose that PDF in the dialog to upload it directly to the selected folder.
+5. If the source site blocks automatic PDF download, the extension opens the PDF page and shows a dialog on Google Scholar. Finish downloading the PDF first, then click **Choose downloaded PDF**, confirm the selected filename, and upload it directly to the selected folder.
 6. If the result has no direct PDF link, the extension shows **No PDF link** and does not save anything.
 7. Open the popup to see the latest save status.
 

@@ -152,6 +152,18 @@
   padding: 10px 12px;
 }
 
+.researchai-upload-paper {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 10px 0;
+  padding: 10px 12px;
+}
+
 .researchai-upload-input {
   border: 1px dashed #94a3b8;
   border-radius: 10px;
@@ -162,4 +174,15 @@
   font-size: 13px;
   padding: 12px;
   width: 100%;
+}
+
+.researchai-upload-file-status {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 12px;
+  padding: 10px 12px;
 }

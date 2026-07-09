@@ -294,6 +294,7 @@
 
   function showManualUploadDialog(paper, folderIds, button, reason) {
     closeManualUploadModal();
+    let selectedFile = null;
 
     const overlay = document.createElement("div");
     overlay.className = "researchai-folder-overlay";
@@ -307,7 +308,11 @@
 
     const description = document.createElement("p");
     description.textContent =
-      "Automatic download was blocked. Download the PDF in the opened tab, then choose the downloaded PDF here to save it to the selected ResearchGPT folder.";
+      "Automatic download was blocked. Finish downloading the PDF in the opened tab first, then come back here and choose that exact file.";
+
+    const paperTitle = document.createElement("div");
+    paperTitle.className = "researchai-upload-paper";
+    paperTitle.textContent = paper.title || "Untitled paper";
 
     const detail = document.createElement("p");
     detail.className = "researchai-upload-detail";
@@ -317,6 +322,11 @@
     input.type = "file";
     input.accept = "application/pdf,.pdf";
     input.className = "researchai-upload-input";
+    input.hidden = true;
+
+    const fileStatus = document.createElement("div");
+    fileStatus.className = "researchai-upload-file-status";
+    fileStatus.textContent = "No PDF selected yet.";
 
     const error = document.createElement("div");
     error.className = "researchai-folder-error";
@@ -329,28 +339,57 @@
     cancel.className = "researchai-folder-cancel";
     cancel.textContent = "Cancel";
 
+    const choose = document.createElement("button");
+    choose.type = "button";
+    choose.className = "researchai-folder-cancel";
+    choose.textContent = "Choose downloaded PDF";
+
     const upload = document.createElement("button");
     upload.type = "button";
     upload.className = "researchai-folder-confirm";
     upload.textContent = "Upload PDF";
+    upload.disabled = true;
 
     cancel.addEventListener("click", () => {
       closeManualUploadModal();
       setButtonState(button, "error", "Manual PDF upload was cancelled.");
     });
 
+    choose.addEventListener("click", () => {
+      error.textContent = "";
+      input.click();
+    });
+
+    input.addEventListener("change", () => {
+      selectedFile = input.files?.[0] || null;
+
+      if (!selectedFile) {
+        upload.disabled = true;
+        fileStatus.textContent = "No PDF selected yet.";
+        return;
+      }
+
+      const fileName = String(selectedFile.name || "");
+      const fileType = String(selectedFile.type || "").toLowerCase();
+      const isPdf = fileName.toLowerCase().endsWith(".pdf") || fileType.includes("pdf");
+
+      upload.disabled = !isPdf;
+      fileStatus.textContent = isPdf
+        ? `Selected: ${fileName}`
+        : "Selected file is not a PDF. Please choose the downloaded PDF.";
+    });
+
     upload.addEventListener("click", () => {
       void (async () => {
-        const file = input.files?.[0] || null;
-
         try {
           upload.disabled = true;
+          choose.disabled = true;
           cancel.disabled = true;
           upload.textContent = "Uploading...";
           error.textContent = "";
           setButtonState(button, "saving", "Uploading selected PDF...");
 
-          const payload = await uploadManualPdf(paper, folderIds, file);
+          const payload = await uploadManualPdf(paper, folderIds, selectedFile);
           closeManualUploadModal();
           setButtonState(
             button,
@@ -362,7 +401,8 @@
         } catch (uploadError) {
           const message =
             uploadError instanceof Error ? uploadError.message : "Upload failed.";
-          upload.disabled = false;
+          upload.disabled = !selectedFile;
+          choose.disabled = false;
           cancel.disabled = false;
           upload.textContent = "Upload PDF";
           error.textContent = message;
@@ -372,13 +412,16 @@
     });
 
     actions.appendChild(cancel);
+    actions.appendChild(choose);
     actions.appendChild(upload);
     panel.appendChild(title);
     panel.appendChild(description);
+    panel.appendChild(paperTitle);
     if (detail.textContent) {
       panel.appendChild(detail);
     }
     panel.appendChild(input);
+    panel.appendChild(fileStatus);
     panel.appendChild(error);
     panel.appendChild(actions);
     overlay.appendChild(panel);
