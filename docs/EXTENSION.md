@@ -12,7 +12,9 @@ Manifest V3 extension for saving Google Scholar search results with direct PDF l
 Google Scholar page
   └─ content.js
        ├─ parses visible result DOM on user click
-       └─ chrome.runtime.sendMessage({ type: "SAVE_PAPER", paper })
+       ├─ chrome.runtime.sendMessage({ type: "GET_FOLDERS" })
+       ├─ shows an in-page folder picker
+       └─ chrome.runtime.sendMessage({ type: "SAVE_PAPER", paper, folderIds })
             └─ background.js (service worker)
                  └─ POST /api/extension/save-paper
                       Authorization: Bearer <token>
@@ -20,7 +22,7 @@ Google Scholar page
 
 The extension does **not** scrape in the background. It only reads the DOM for a result the user explicitly clicks **Save PDF to ResearchGPT** on.
 
-If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead.
+If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead. The extension save step stores metadata, the PDF link, and folder assignment only; full PDF upload happens later when the user starts review/PPT analysis.
 
 ## Backend API
 
@@ -61,7 +63,7 @@ If a result has no direct PDF link, the extension does not save a paper record. 
 }
 ```
 
-Papers are upserted with `providers: ["google_scholar"]`, marked `saved`, and optionally assigned to default folders.
+Papers are upserted with `providers: ["google_scholar"]`, marked `saved`, and assigned to the folders selected in the in-page picker. The PDF file itself is not uploaded during this lightweight library-management step.
 
 ## Auth
 
@@ -98,15 +100,16 @@ Cookie-based session auth still works for extension routes when the request incl
 1. Open the extension popup.
 2. Set **ResearchAI URL** (e.g. `http://localhost:3000` or your deployed URL).
 3. Click **Connect account** (sign in first if prompted).
-4. Click **Load folders** and select default folders for saves.
+4. Click **Load folders** to confirm the extension can read your folders.
 
 ## Use on Google Scholar
 
 1. Search on [Google Scholar](https://scholar.google.com/).
 2. Each result shows a **Save PDF to ResearchGPT** link.
-3. Click it to save that paper only.
-4. If the result has no direct PDF link, the extension shows **No PDF link** and does not save anything.
-5. Open the popup to see the latest save status.
+3. Click it to open the folder picker.
+4. Select one or more folders, then click **Save PDF**. This saves the paper metadata and PDF link to those folders.
+5. If the result has no direct PDF link, the extension shows **No PDF link** and does not save anything.
+6. Open the popup to see the latest save status.
 
 ## CORS
 

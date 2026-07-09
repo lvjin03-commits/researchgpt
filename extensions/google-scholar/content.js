@@ -1,6 +1,7 @@
 (function () {
   const BUTTON_SELECTOR = "[data-researchai-save]";
   const RESULT_SELECTOR = ".gs_r.gs_or.gs_scl";
+  const MODAL_SELECTOR = "[data-researchai-folder-modal]";
   const NO_PDF_MESSAGE =
     "No direct PDF link was detected. Upload the PDF from your literature library when needed.";
 
@@ -112,6 +113,129 @@
     button.title = message || "Save failed";
   }
 
+  function closeFolderModal() {
+    document.querySelector(MODAL_SELECTOR)?.remove();
+  }
+
+  function createFolderOption(folder, checked) {
+    const label = document.createElement("label");
+    label.className = "researchai-folder-option";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = folder.id;
+    input.checked = checked;
+
+    const name = document.createElement("span");
+    name.textContent = folder.name || "Untitled folder";
+
+    label.appendChild(input);
+    label.appendChild(name);
+    return label;
+  }
+
+  function chooseFolders() {
+    return new Promise((resolve, reject) => {
+      closeFolderModal();
+
+      chrome.runtime.sendMessage({ type: "GET_FOLDERS" }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+
+        if (!response?.ok) {
+          reject(new Error(response?.error || "Could not load folders."));
+          return;
+        }
+
+        const folders = Array.isArray(response.folders) ? response.folders : [];
+        const selectedFolderIds = Array.isArray(response.selectedFolderIds)
+          ? response.selectedFolderIds
+          : [];
+
+        if (!folders.length) {
+          reject(new Error("No folders found. Create a folder in ResearchGPT first."));
+          return;
+        }
+
+        const overlay = document.createElement("div");
+        overlay.className = "researchai-folder-overlay";
+        overlay.dataset.researchaiFolderModal = "1";
+
+        const panel = document.createElement("div");
+        panel.className = "researchai-folder-panel";
+
+        const title = document.createElement("h2");
+        title.textContent = "Save PDF to folder";
+
+        const description = document.createElement("p");
+        description.textContent = "Choose one or more ResearchGPT folders for this paper.";
+
+        const list = document.createElement("div");
+        list.className = "researchai-folder-list";
+
+        folders.forEach((folder) => {
+          list.appendChild(
+            createFolderOption(folder, selectedFolderIds.includes(folder.id)),
+          );
+        });
+
+        const error = document.createElement("div");
+        error.className = "researchai-folder-error";
+
+        const actions = document.createElement("div");
+        actions.className = "researchai-folder-actions";
+
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "researchai-folder-cancel";
+        cancel.textContent = "Cancel";
+
+        const confirm = document.createElement("button");
+        confirm.type = "button";
+        confirm.className = "researchai-folder-confirm";
+        confirm.textContent = "Save PDF";
+
+        cancel.addEventListener("click", () => {
+          closeFolderModal();
+          resolve(null);
+        });
+
+        overlay.addEventListener("click", (event) => {
+          if (event.target === overlay) {
+            closeFolderModal();
+            resolve(null);
+          }
+        });
+
+        confirm.addEventListener("click", () => {
+          const folderIds = Array.from(
+            list.querySelectorAll("input[type='checkbox']:checked"),
+          ).map((input) => input.value);
+
+          if (!folderIds.length) {
+            error.textContent = "Please choose at least one folder.";
+            return;
+          }
+
+          closeFolderModal();
+          resolve(folderIds);
+        });
+
+        actions.appendChild(cancel);
+        actions.appendChild(confirm);
+        panel.appendChild(title);
+        panel.appendChild(description);
+        panel.appendChild(list);
+        panel.appendChild(error);
+        panel.appendChild(actions);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+      });
+    });
+  }
+
   async function savePaper(container, button) {
     const paper = parsePaperFromContainer(container);
     if (!paper) {
@@ -125,12 +249,19 @@
       return;
     }
 
-    setButtonState(button, "saving");
-
     try {
+      const folderIds = await chooseFolders();
+      if (!folderIds) {
+        setButtonState(button, "idle");
+        return;
+      }
+
+      setButtonState(button, "saving");
+
       const response = await chrome.runtime.sendMessage({
         type: "SAVE_PAPER",
         paper,
+        folderIds,
       });
 
       if (!response?.ok) {

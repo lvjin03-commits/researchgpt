@@ -23,17 +23,21 @@
         <textarea
           id="authToken"
           rows="3"
-          placeholder="Paste your Supabase access token"
+          placeholder="Connect account to fill automatically"
         ></textarea>
       </label>
 
       <p class="hint">
-        Sign in to ResearchAI, open DevTools → Application → Local Storage, and copy
-        the Supabase access token value.
+        ResearchGPT stores your Supabase session in browser cookies, not Local Storage.
+        Click Connect account while signed in, or open /extension/connect after login.
       </p>
 
       <div class="row">
+        <button id="connectAccount" type="button">Connect account</button>
         <button id="saveSettings" type="button">Save settings</button>
+      </div>
+
+      <div class="row">
         <button id="loadFolders" type="button">Load folders</button>
       </div>
 

@@ -31,3 +31,108 @@
 .researchai-save-btn[data-researchai-state="no-pdf"] {
   color: #6b7280;
 }
+
+.researchai-folder-overlay {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.32);
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  left: 0;
+  padding: 24px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 2147483647;
+}
+
+.researchai-folder-panel {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+  color: #111827;
+  font-family: Arial, sans-serif;
+  max-width: 420px;
+  padding: 18px;
+  width: min(420px, 100%);
+}
+
+.researchai-folder-panel h2 {
+  font-size: 17px;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.researchai-folder-panel p {
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 6px 0 14px;
+}
+
+.researchai-folder-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.researchai-folder-option {
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.researchai-folder-option:hover {
+  background: #f9fafb;
+}
+
+.researchai-folder-option input {
+  height: 16px;
+  width: 16px;
+}
+
+.researchai-folder-option span {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.researchai-folder-error {
+  color: #b91c1c;
+  font-size: 13px;
+  min-height: 18px;
+  padding-top: 10px;
+}
+
+.researchai-folder-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.researchai-folder-actions button {
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 9px 13px;
+}
+
+.researchai-folder-cancel {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.researchai-folder-confirm {
+  background: #1d4ed8;
+  border: 1px solid #1d4ed8;
+  color: #ffffff;
+}

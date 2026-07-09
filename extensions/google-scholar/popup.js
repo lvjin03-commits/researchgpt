@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
 
 const baseUrlInput = document.getElementById("baseUrl");
 const authTokenInput = document.getElementById("authToken");
+const connectAccountButton = document.getElementById("connectAccount");
 const saveSettingsButton = document.getElementById("saveSettings");
 const loadFoldersButton = document.getElementById("loadFolders");
 const foldersContainer = document.getElementById("folders");
@@ -110,13 +111,49 @@ async function saveSettings() {
   setStatus("Settings saved.");
 }
 
+async function connectAccount() {
+  await saveSettings();
+  const baseUrl = getBaseUrl();
+
+  setStatus("Connecting...");
+
+  try {
+    const response = await fetch(`${baseUrl}/api/extension/session`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (response.ok && payload.accessToken) {
+      authTokenInput.value = payload.accessToken;
+      await storageSet({ [STORAGE_KEYS.authToken]: payload.accessToken });
+      setStatus("Connected. You can load folders now.");
+      return;
+    }
+
+    if (response.status === 401) {
+      chrome.tabs.create({
+        url: `${baseUrl}/auth?next=${encodeURIComponent("/extension/connect")}`,
+      });
+      setStatus("Sign in opened in a new tab. After login, click Connect account again.");
+      return;
+    }
+
+    throw new Error(payload.error || `ResearchAI returned ${response.status}`);
+  } catch (error) {
+    setStatus(
+      `Could not connect. Sign in at ${baseUrl} first. ${error.message || ""}`,
+    );
+  }
+}
+
 async function loadFolders() {
   await saveSettings();
   const settings = await storageGet({ [STORAGE_KEYS.folderIds]: [] });
   const authToken = getAuthToken();
 
   if (!authToken) {
-    setStatus("Paste your auth token first.");
+    setStatus("Click Connect account first.");
     return;
   }
 
@@ -143,6 +180,10 @@ async function loadFolders() {
   }
 }
 
+connectAccountButton.addEventListener("click", () => {
+  void connectAccount();
+});
+
 saveSettingsButton.addEventListener("click", () => {
   void saveSettings();
 });
@@ -160,11 +201,18 @@ openLibraryButton.addEventListener("click", () => {
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || !changes[STORAGE_KEYS.lastSaveStatus]) {
+  if (areaName !== "local") {
     return;
   }
 
-  renderSaveStatus(changes[STORAGE_KEYS.lastSaveStatus].newValue);
+  if (changes[STORAGE_KEYS.authToken]?.newValue) {
+    authTokenInput.value = String(changes[STORAGE_KEYS.authToken].newValue);
+    setStatus("Auth token updated from connect page.");
+  }
+
+  if (changes[STORAGE_KEYS.lastSaveStatus]) {
+    renderSaveStatus(changes[STORAGE_KEYS.lastSaveStatus].newValue);
+  }
 });
 
 void loadSettings();
