@@ -2,6 +2,7 @@ import { LiteratureError } from "@/lib/literature/errors";
 import { getPaperFolderIds } from "@/lib/literature/server/folder-repository";
 import { parsePaperStatus } from "@/lib/literature/server/parse";
 import {
+  deleteLiteraturePaper,
   getLiteraturePaperById,
   stripLiteraturePaperFullTextForResponse,
   updateLiteraturePaperStatus,
@@ -63,5 +64,23 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     console.error("[literature] PATCH paper failed:", error);
     return Response.json({ error: "Failed to update paper status." }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  try {
+    const { supabase, user } = await requireLiteratureUser();
+    const { id } = await context.params;
+
+    await deleteLiteraturePaper(supabase, user.id, id);
+
+    return Response.json({ success: true });
+  } catch (error) {
+    if (error instanceof LiteratureError) {
+      return Response.json({ error: error.message }, { status: error.statusCode });
+    }
+
+    console.error("[literature] DELETE paper failed:", error);
+    return Response.json({ error: "Failed to delete paper." }, { status: 500 });
   }
 }

@@ -586,6 +586,49 @@ export async function updateLiteraturePaperStatusByExternalKey(
   return updateLiteraturePaperStatus(supabase, userId, paper.id, status);
 }
 
+export async function deleteLiteraturePaper(
+  supabase: SupabaseClient,
+  userId: string,
+  paperId: string,
+): Promise<void> {
+  const { error: linkError } = await supabase
+    .from("literature_folder_papers")
+    .delete()
+    .eq("user_id", userId)
+    .eq("paper_id", paperId);
+
+  if (linkError && !isMissingTableError(linkError)) {
+    throw new LiteratureError(linkError.message, 500);
+  }
+
+  const { error, count } = await supabase
+    .from("literature_papers")
+    .delete({ count: "exact" })
+    .eq("user_id", userId)
+    .eq("id", paperId);
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      const store = await readFileStore(userId);
+      const before = store.papers.length;
+      store.papers = store.papers.filter((paper) => paper.id !== paperId);
+
+      if (store.papers.length === before) {
+        throw new LiteratureError("Paper not found.", 404);
+      }
+
+      await writeFileStore(userId, store);
+      return;
+    }
+
+    throw new LiteratureError(error.message, 500);
+  }
+
+  if (count === 0) {
+    throw new LiteratureError("Paper not found.", 404);
+  }
+}
+
 function isMissingPdfArchiveColumnError(error: {
   message?: string;
   code?: string;

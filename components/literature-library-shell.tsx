@@ -6,6 +6,7 @@ import { LiteraturePaperCard } from "@/components/literature-paper-card";
 import {
   createLiteratureFolder,
   deleteLiteratureFolder,
+  deleteLiteraturePaper,
   fetchLiteratureLibrary,
   LiteratureError,
   updateLiteratureFolder,
@@ -216,6 +217,17 @@ export function LiteratureLibraryShell() {
       setFolderActionError(
         err instanceof LiteratureError ? err.message : "删除文献夹失败。",
       );
+    }
+  };
+
+  const handleDeletePaper = async (paperId: string) => {
+    setError(null);
+
+    try {
+      await deleteLiteraturePaper(paperId);
+      setPapers((current) => current.filter((paper) => paper.id !== paperId));
+    } catch (err) {
+      setError(err instanceof LiteratureError ? err.message : "删除文献失败。");
     }
   };
 
@@ -517,6 +529,7 @@ export function LiteratureLibraryShell() {
                   folders={folders}
                   onStatusChange={handleStatusChange}
                   onFoldersChange={handlePaperFoldersChange}
+                  onDelete={handleDeletePaper}
                   onFoldersListUpdated={setFolders}
                 />
               ))}

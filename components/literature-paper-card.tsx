@@ -29,6 +29,7 @@ type LiteraturePaperCardProps = {
   folders?: LiteratureFolder[];
   onSaveToFolders?: (paperId: string, folderIds: string[]) => Promise<void>;
   onFoldersChange?: (paperId: string, folderIds: string[]) => void;
+  onDelete?: (paperId: string) => Promise<void>;
   onFoldersListUpdated?: (folders: LiteratureFolder[]) => void;
   showProviderInternals?: boolean;
 };
@@ -40,6 +41,7 @@ export function LiteraturePaperCard({
   folders = [],
   onSaveToFolders,
   onFoldersChange,
+  onDelete,
   onFoldersListUpdated,
   showProviderInternals = false,
 }: LiteraturePaperCardProps) {
@@ -74,6 +76,19 @@ export function LiteraturePaperCard({
     setIsUpdating(true);
     try {
       await onStatusChange(paper.id, status);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete || !window.confirm("确定从文献库中删除这篇文献吗？")) {
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      await onDelete(paper.id);
     } finally {
       setIsUpdating(false);
     }
@@ -322,6 +337,18 @@ export function LiteraturePaperCard({
                   className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   恢复
+                </button>
+              )}
+              {variant === "library" && onDelete && (
+                <button
+                  type="button"
+                  disabled={isUpdating}
+                  onClick={() => {
+                    void handleDelete();
+                  }}
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  删除文献
                 </button>
               )}
               <button

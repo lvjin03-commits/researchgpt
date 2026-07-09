@@ -477,6 +477,39 @@ export async function setPaperFolders(
   return payload.folderIds ?? [];
 }
 
+export async function savePaperSnapshotToFolders(
+  paper: LiteraturePaper,
+  folderIds: string[],
+): Promise<LiteraturePaper> {
+  const response = await fetch("/api/literature/papers/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paper, folderIds }),
+  });
+
+  const payload = await parseJson<{ paper: LiteraturePaper; error?: string }>(
+    response,
+  );
+
+  if (!response.ok) {
+    throw new LiteratureError(payload.error ?? "保存文献失败。", response.status);
+  }
+
+  return payload.paper;
+}
+
+export async function deleteLiteraturePaper(paperId: string): Promise<void> {
+  const response = await fetch(`/api/literature/papers/${paperId}`, {
+    method: "DELETE",
+  });
+
+  const payload = await parseJson<{ error?: string }>(response);
+
+  if (!response.ok) {
+    throw new LiteratureError(payload.error ?? "删除文献失败。", response.status);
+  }
+}
+
 export async function updateLiteraturePaperNotes(
   paperId: string,
   notes: string,
@@ -554,11 +587,13 @@ export async function generateLiteraturePaperWorkspace(
 
 export async function generateLiteratureReview(
   request: LiteratureReviewRequest,
+  signal?: AbortSignal,
 ): Promise<LiteratureReviewResponse> {
   const response = await fetch("/api/literature/review/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
+    signal,
   });
 
   const payload = await parseJson<LiteratureReviewResponse & { error?: string }>(

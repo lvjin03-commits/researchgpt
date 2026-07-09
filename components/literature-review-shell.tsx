@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   exportLiteratureReview,
   fetchLiteratureFolders,
@@ -41,12 +41,15 @@ const DEFAULT_SECTIONS: ReviewSection[] = [
 ];
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-sm font-medium text-gray-900">{children}</span>
-  );
+  return <span className="text-sm font-medium text-gray-900">{children}</span>;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 export function LiteratureReviewShell() {
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [folders, setFolders] = useState<LiteratureFolder[]>([]);
   const [folderId, setFolderId] = useState("");
   const [paperCount, setPaperCount] = useState(0);
@@ -77,11 +80,11 @@ export function LiteratureReviewShell() {
   const [isGeneratingPpt, setIsGeneratingPpt] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  const isGenerating =
+    isGeneratingOutline || isGeneratingReview || isGeneratingPpt;
   const folderTree = useMemo(() => flattenFolderTree(folders), [folders]);
-
   const selectedFolder = useMemo(
-    (): LiteratureFolder | null =>
-      folders.find((folder) => folder.id === folderId) ?? null,
+    () => folders.find((folder) => folder.id === folderId) ?? null,
     [folders, folderId],
   );
 
@@ -95,9 +98,9 @@ export function LiteratureReviewShell() {
           setFolderId(firstFolder.id);
         }
       } catch (err) {
-        const message =
-          err instanceof LiteratureError ? err.message : "加载文献夹失败。";
-        setError(message);
+        setError(
+          err instanceof LiteratureError ? err.message : "加载文献夹失败。",
+        );
       } finally {
         setIsLoadingFolders(false);
       }
@@ -136,10 +139,15 @@ export function LiteratureReviewShell() {
     };
   }, [folderId]);
 
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const buildRequestBase = useCallback((): Omit<LiteratureReviewRequest, "phase"> => {
-    const resolvedFolderId = selectedFolder?.id ?? folderId;
     return {
-      folderId: resolvedFolderId,
+      folderId: selectedFolder?.id ?? folderId,
       folderName: selectedFolder?.name,
       topic: topic.trim(),
       perspective,
@@ -150,7 +158,8 @@ export function LiteratureReviewShell() {
       outputType,
       language,
       length,
-      customWordCount: length === "自定义字数" ? Number(customWordCount) : undefined,
+      customWordCount:
+        length === "自定义字数" ? Number(customWordCount) : undefined,
       additionalInstructions: additionalInstructions.trim() || undefined,
     };
   }, [
@@ -169,22 +178,10 @@ export function LiteratureReviewShell() {
   ]);
 
   const hasEnoughPapers = paperCount >= REVIEW_MIN_PAPER_COUNT;
-
-  const canGenerateOutline = useMemo(
-    () =>
-      Boolean(
-        folderId && topic.trim() && requiredSections.length > 0 && hasEnoughPapers,
-      ),
-    [folderId, hasEnoughPapers, requiredSections.length, topic],
-  );
-
-  const toggleSection = (section: ReviewSection) => {
-    setRequiredSections((current) =>
-      current.includes(section)
-        ? current.filter((item) => item !== section)
-        : [...current, section],
-    );
-  };
+  const canGenerateOutline =
+    Boolean(folderId && topic.trim() && requiredSections.length > 0) &&
+    hasEnoughPapers &&
+    !isGenerating;
 
   const assertEnoughPapers = () => {
     if (paperCount < REVIEW_MIN_PAPER_COUNT) {
@@ -194,30 +191,61 @@ export function LiteratureReviewShell() {
     return true;
   };
 
+  const startGeneration = () => {
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    setError(null);
+    setStatusMessage(null);
+    return abortController;
+  };
+
+  const stopGeneration = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsGeneratingOutline(false);
+    setIsGeneratingReview(false);
+    setIsGeneratingPpt(false);
+    setStatusMessage("已停止生成。");
+  };
+
+  const toggleSection = (section: ReviewSection) => {
+    setRequiredSections((current) =>
+      current.includes(section)
+        ? current.filter((item) => item !== section)
+        : [...current, section],
+    );
+  };
+
   const handleGenerateOutline = async () => {
     if (!assertEnoughPapers()) {
       return;
     }
 
-    setError(null);
-    setStatusMessage(null);
+    const abortController = startGeneration();
     setIsGeneratingOutline(true);
 
     try {
-      const result = await generateLiteratureReview({
-        ...buildRequestBase(),
-        phase: "outline",
-        uiPaperCount: paperCount,
-      });
+      const result = await generateLiteratureReview(
+        {
+          ...buildRequestBase(),
+          phase: "outline",
+          uiPaperCount: paperCount,
+        },
+        abortController.signal,
+      );
       setOutline(result.outline ?? "");
       setReview("");
       setPptOutline("");
       setStatusMessage("大纲已生成，请确认或编辑后继续。");
     } catch (err) {
-      const message =
-        err instanceof LiteratureError ? err.message : "生成大纲失败。";
-      setError(message);
+      if (!isAbortError(err)) {
+        setError(err instanceof LiteratureError ? err.message : "生成大纲失败。");
+      }
     } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
       setIsGeneratingOutline(false);
     }
   };
@@ -227,30 +255,36 @@ export function LiteratureReviewShell() {
       setError("请先生成并确认大纲。");
       return;
     }
-
     if (!assertEnoughPapers()) {
       return;
     }
 
-    setError(null);
-    setStatusMessage(null);
+    const abortController = startGeneration();
     setIsGeneratingReview(true);
 
     try {
-      const result = await generateLiteratureReview({
-        ...buildRequestBase(),
-        phase: "full",
-        confirmedOutline: outline.trim(),
-        uiPaperCount: paperCount,
-      });
+      const result = await generateLiteratureReview(
+        {
+          ...buildRequestBase(),
+          phase: "full",
+          confirmedOutline: outline.trim(),
+          uiPaperCount: paperCount,
+        },
+        abortController.signal,
+      );
       setReview(result.review ?? "");
       setPptOutline("");
       setStatusMessage("综述正文已生成。");
     } catch (err) {
-      const message =
-        err instanceof LiteratureError ? err.message : "生成综述正文失败。";
-      setError(message);
+      if (!isAbortError(err)) {
+        setError(
+          err instanceof LiteratureError ? err.message : "生成综述正文失败。",
+        );
+      }
     } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
       setIsGeneratingReview(false);
     }
   };
@@ -260,30 +294,34 @@ export function LiteratureReviewShell() {
       setError("请先生成综述正文。");
       return;
     }
-
     if (!assertEnoughPapers()) {
       return;
     }
 
-    setError(null);
-    setStatusMessage(null);
+    const abortController = startGeneration();
     setIsGeneratingPpt(true);
 
     try {
-      const result = await generateLiteratureReview({
-        ...buildRequestBase(),
-        phase: "ppt",
-        confirmedOutline: outline.trim(),
-        reviewContent: review.trim(),
-        uiPaperCount: paperCount,
-      });
+      const result = await generateLiteratureReview(
+        {
+          ...buildRequestBase(),
+          phase: "ppt",
+          confirmedOutline: outline.trim(),
+          reviewContent: review.trim(),
+          uiPaperCount: paperCount,
+        },
+        abortController.signal,
+      );
       setPptOutline(result.pptOutline ?? "");
       setStatusMessage("PPT 大纲已生成。");
     } catch (err) {
-      const message =
-        err instanceof LiteratureError ? err.message : "生成 PPT 大纲失败。";
-      setError(message);
+      if (!isAbortError(err)) {
+        setError(err instanceof LiteratureError ? err.message : "生成 PPT 大纲失败。");
+      }
     } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
       setIsGeneratingPpt(false);
     }
   };
@@ -291,7 +329,11 @@ export function LiteratureReviewShell() {
   const handleExport = async (format: "docx" | "pptx") => {
     const content = format === "docx" ? review.trim() : pptOutline.trim();
     if (!content) {
-      setError(format === "docx" ? "暂无可导出的综述正文。" : "暂无可导出的 PPT 大纲。");
+      setError(
+        format === "docx"
+          ? "暂无可导出的综述正文。"
+          : "暂无可导出的 PPT 大纲。",
+      );
       return;
     }
 
@@ -306,8 +348,7 @@ export function LiteratureReviewShell() {
       });
       setStatusMessage(`已导出 ${filename}`);
     } catch (err) {
-      const message = err instanceof LiteratureError ? err.message : "导出失败。";
-      setError(message);
+      setError(err instanceof LiteratureError ? err.message : "导出失败。");
     } finally {
       setIsExporting(false);
     }
@@ -353,6 +394,19 @@ export function LiteratureReviewShell() {
           </p>
         )}
 
+        {isGenerating && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm font-medium text-amber-900">正在生成内容...</p>
+            <button
+              type="button"
+              onClick={stopGeneration}
+              className="rounded-lg bg-amber-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-800"
+            >
+              停止生成
+            </button>
+          </div>
+        )}
+
         <section className="space-y-5 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-gray-900">1. 选择文献夹</h2>
 
@@ -360,7 +414,7 @@ export function LiteratureReviewShell() {
             <FieldLabel>文献夹</FieldLabel>
             <select
               value={folderId}
-              disabled={isLoadingFolders}
+              disabled={isLoadingFolders || isGenerating}
               onChange={(event) => setFolderId(event.target.value)}
               className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
             >
@@ -376,7 +430,9 @@ export function LiteratureReviewShell() {
             </select>
           </label>
 
-          <p className="text-sm text-gray-600">当前文献夹共 {paperCount} 篇论文。</p>
+          <p className="text-sm text-gray-600">
+            当前文献夹共 {paperCount} 篇论文。
+          </p>
 
           {paperCount > 0 && paperCount < REVIEW_MIN_PAPER_COUNT && (
             <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -392,8 +448,9 @@ export function LiteratureReviewShell() {
             <FieldLabel>综述主题</FieldLabel>
             <input
               value={topic}
+              disabled={isGenerating}
               onChange={(event) => setTopic(event.target.value)}
-              placeholder="例如：工程菌株代谢工程研究进展"
+              placeholder="例如：大语言模型发展与前景"
               className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
             />
           </label>
@@ -403,6 +460,7 @@ export function LiteratureReviewShell() {
               <FieldLabel>写作视角</FieldLabel>
               <select
                 value={perspective}
+                disabled={isGenerating}
                 onChange={(event) =>
                   setPerspective(
                     event.target.value as LiteratureReviewRequest["perspective"],
@@ -423,6 +481,7 @@ export function LiteratureReviewShell() {
                 <FieldLabel>自定义视角</FieldLabel>
                 <input
                   value={customPerspective}
+                  disabled={isGenerating}
                   onChange={(event) => setCustomPerspective(event.target.value)}
                   className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
                 />
@@ -433,6 +492,7 @@ export function LiteratureReviewShell() {
               <FieldLabel>目标读者</FieldLabel>
               <select
                 value={targetAudience}
+                disabled={isGenerating}
                 onChange={(event) =>
                   setTargetAudience(
                     event.target.value as LiteratureReviewRequest["targetAudience"],
@@ -452,6 +512,7 @@ export function LiteratureReviewShell() {
               <FieldLabel>输出类型</FieldLabel>
               <select
                 value={outputType}
+                disabled={isGenerating}
                 onChange={(event) =>
                   setOutputType(
                     event.target.value as LiteratureReviewRequest["outputType"],
@@ -471,6 +532,7 @@ export function LiteratureReviewShell() {
               <FieldLabel>语言</FieldLabel>
               <select
                 value={language}
+                disabled={isGenerating}
                 onChange={(event) =>
                   setLanguage(
                     event.target.value as LiteratureReviewRequest["language"],
@@ -490,6 +552,7 @@ export function LiteratureReviewShell() {
               <FieldLabel>篇幅</FieldLabel>
               <select
                 value={length}
+                disabled={isGenerating}
                 onChange={(event) =>
                   setLength(event.target.value as LiteratureReviewRequest["length"])
                 }
@@ -510,6 +573,7 @@ export function LiteratureReviewShell() {
                   type="number"
                   min={500}
                   value={customWordCount}
+                  disabled={isGenerating}
                   onChange={(event) => setCustomWordCount(event.target.value)}
                   className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
                 />
@@ -517,7 +581,7 @@ export function LiteratureReviewShell() {
             )}
           </div>
 
-          <fieldset className="space-y-3">
+          <fieldset className="space-y-3" disabled={isGenerating}>
             <FieldLabel>必需结构（可多选）</FieldLabel>
             <div className="grid gap-2 sm:grid-cols-2">
               {REVIEW_SECTION_OPTIONS.map((section) => (
@@ -540,22 +604,23 @@ export function LiteratureReviewShell() {
             <FieldLabel>补充说明</FieldLabel>
             <textarea
               value={additionalInstructions}
+              disabled={isGenerating}
               onChange={(event) => setAdditionalInstructions(event.target.value)}
               rows={4}
-              placeholder="例如：重点比较不同工程菌株的构建策略，不要泛泛介绍背景，重点分析瓶颈和未来方向。"
+              placeholder="例如：重点比较不同方法的技术路线，减少泛泛背景介绍。"
               className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
             />
           </label>
 
           <button
             type="button"
-            disabled={!canGenerateOutline || isGeneratingOutline}
+            disabled={!canGenerateOutline}
             onClick={() => {
               void handleGenerateOutline();
             }}
             className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
           >
-            {isGeneratingOutline ? "正在生成大纲…" : "生成综述大纲"}
+            {isGeneratingOutline ? "正在生成大纲..." : "生成综述大纲"}
           </button>
         </section>
 
@@ -564,19 +629,20 @@ export function LiteratureReviewShell() {
             <h2 className="text-base font-semibold text-gray-900">3. 确认大纲</h2>
             <textarea
               value={outline}
+              disabled={isGenerating}
               onChange={(event) => setOutline(event.target.value)}
               rows={16}
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
             />
             <button
               type="button"
-              disabled={isGeneratingReview}
+              disabled={isGenerating}
               onClick={() => {
                 void handleGenerateReview();
               }}
               className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
             >
-              {isGeneratingReview ? "正在生成正文…" : "确认并生成综述正文"}
+              {isGeneratingReview ? "正在生成正文..." : "确认并生成综述正文"}
             </button>
           </section>
         )}
@@ -586,6 +652,7 @@ export function LiteratureReviewShell() {
             <h2 className="text-base font-semibold text-gray-900">4. 综述正文</h2>
             <textarea
               value={review}
+              disabled={isGenerating}
               onChange={(event) => setReview(event.target.value)}
               rows={20}
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
@@ -593,23 +660,23 @@ export function LiteratureReviewShell() {
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                disabled={isExporting}
+                disabled={isExporting || isGenerating}
                 onClick={() => {
                   void handleExport("docx");
                 }}
-                className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 导出 DOCX
               </button>
               <button
                 type="button"
-                disabled={isGeneratingPpt}
+                disabled={isGenerating}
                 onClick={() => {
                   void handleGeneratePpt();
                 }}
                 className="rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400"
               >
-                {isGeneratingPpt ? "正在生成 PPT 大纲…" : "生成 PPT 大纲"}
+                {isGeneratingPpt ? "正在生成 PPT 大纲..." : "生成 PPT 大纲"}
               </button>
             </div>
           </section>
@@ -620,17 +687,18 @@ export function LiteratureReviewShell() {
             <h2 className="text-base font-semibold text-gray-900">5. PPT 大纲</h2>
             <textarea
               value={pptOutline}
+              disabled={isGenerating}
               onChange={(event) => setPptOutline(event.target.value)}
               rows={16}
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
             />
             <button
               type="button"
-              disabled={isExporting}
+              disabled={isExporting || isGenerating}
               onClick={() => {
                 void handleExport("pptx");
               }}
-              className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               导出 PPTX
             </button>

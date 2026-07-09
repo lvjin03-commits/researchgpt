@@ -15,6 +15,7 @@ import {
   fetchLiteratureFolders,
   fetchLiteratureState,
   LiteratureError,
+  savePaperSnapshotToFolders,
   setPaperFolders,
   updateLiteraturePaperStatus,
   updateLiteraturePapers,
@@ -120,8 +121,26 @@ export function LiteratureShell() {
 
   const handleSaveToFolders = useCallback(
     async (paperId: string, folderIds: string[]) => {
-      const updated = await updateLiteraturePaperStatus(paperId, "saved");
-      const savedFolderIds = await setPaperFolders(paperId, folderIds);
+      const sourcePaper = papers.find((paper) => paper.id === paperId);
+      let updated;
+      let savedFolderIds = folderIds;
+
+      try {
+        updated = await updateLiteraturePaperStatus(paperId, "saved");
+        savedFolderIds = await setPaperFolders(updated.id, folderIds);
+      } catch (error) {
+        if (
+          !(error instanceof LiteratureError) ||
+          error.statusCode !== 404 ||
+          !sourcePaper
+        ) {
+          throw error;
+        }
+
+        updated = await savePaperSnapshotToFolders(sourcePaper, folderIds);
+        savedFolderIds = updated.folderIds ?? folderIds;
+      }
+
       setPapers((current) =>
         current.map((paper) =>
           paper.id === paperId
@@ -130,7 +149,7 @@ export function LiteratureShell() {
         ),
       );
     },
-    [],
+    [papers],
   );
 
   const handleStatusChange = useCallback(
