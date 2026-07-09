@@ -12,6 +12,21 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
+function assertPdfStored(
+  paper: Awaited<ReturnType<typeof getLiteraturePaperById>>,
+): void {
+  if (paper.pdfDownloadStatus === "stored") {
+    return;
+  }
+
+  const reason =
+    paper.pdfDownloadStatus === "unavailable"
+      ? "未找到可直接下载的 PDF 链接。"
+      : paper.pdfDownloadError || "PDF 下载失败。";
+
+  throw new LiteratureError(`保存到文献夹前需要先下载 PDF：${reason}`, 422);
+}
+
 export async function PUT(request: Request, context: RouteContext) {
   try {
     const { supabase, user } = await requireLiteratureUser();
@@ -19,17 +34,19 @@ export async function PUT(request: Request, context: RouteContext) {
     const body = await request.json();
     const folderIds = parsePaperFolderIds(body);
 
-    const paper = await getLiteraturePaperById(supabase, user.id, id);
+    let paper = await getLiteraturePaperById(supabase, user.id, id);
+
+    if (folderIds.length > 0 && paper.pdfDownloadStatus !== "stored") {
+      paper = await archiveLiteraturePaperPdf(supabase, user.id, paper);
+      assertPdfStored(paper);
+    }
+
     const assignedFolderIds = await setPaperFolderIds(
       supabase,
       user.id,
       id,
       folderIds,
     );
-
-    if (paper.status === "saved") {
-      await archiveLiteraturePaperPdf(supabase, user.id, paper);
-    }
 
     return Response.json({ paperId: id, folderIds: assignedFolderIds });
   } catch (error) {

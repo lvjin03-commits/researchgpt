@@ -4,7 +4,7 @@ import { parseExtensionFolderIds } from "@/lib/literature/server/extension-paper
 import { archiveLiteraturePaperPdf } from "@/lib/literature/server/pdf-archive";
 import {
   stripLiteraturePaperFullTextForResponse,
-  updateLiteraturePaperStatusByExternalKey,
+  updateLiteraturePaperStatus,
   upsertAnalyzedPapers,
 } from "@/lib/literature/server/repository";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
@@ -17,6 +17,19 @@ type SaveSnapshotRequest = {
   paper?: unknown;
   folderIds?: unknown;
 };
+
+function assertPdfStored(paper: LiteraturePaper): void {
+  if (paper.pdfDownloadStatus === "stored") {
+    return;
+  }
+
+  const reason =
+    paper.pdfDownloadStatus === "unavailable"
+      ? "未找到可直接下载的 PDF 链接。"
+      : paper.pdfDownloadError || "PDF 下载失败。";
+
+  throw new LiteratureError(`保存前需要先下载 PDF：${reason}`, 422);
+}
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -75,14 +88,28 @@ export async function POST(request: Request) {
 
     const folderIds = parseExtensionFolderIds(body.folderIds);
 
-    await upsertAnalyzedPapers(supabase, user.id, [draft], new Map());
-    let paper = await updateLiteraturePaperStatusByExternalKey(
+    const upserted = await upsertAnalyzedPapers(
       supabase,
       user.id,
-      draft.arxivId,
+      [draft],
+      new Map(),
+    );
+    const savedDraftPaper = upserted.papers.find(
+      (item) => item.arxivId === draft.arxivId,
+    );
+
+    if (!savedDraftPaper) {
+      throw new LiteratureError("Paper could not be saved before PDF download.", 500);
+    }
+
+    let paper = await updateLiteraturePaperStatus(
+      supabase,
+      user.id,
+      savedDraftPaper.id,
       "saved",
     );
     paper = await archiveLiteraturePaperPdf(supabase, user.id, paper);
+    assertPdfStored(paper);
 
     const assignedFolderIds = await setPaperFolderIds(
       supabase,
