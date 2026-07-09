@@ -1,14 +1,15 @@
 # ResearchAI Scholar Saver
 
-Chrome MV3 extension for saving visible Google Scholar results into ResearchAI.
+Chrome MV3 extension for saving visible Google Scholar results with direct PDF links into ResearchAI.
 
 See also: [`docs/EXTENSION.md`](../../docs/EXTENSION.md)
 
 ## What it does
 
 - Runs on `https://scholar.google.com/*`
-- Injects **Save to My Library** on each visible search result
+- Injects **Save PDF to ResearchGPT** on each visible search result
 - Parses title, authors/meta, snippet, Scholar URL, and PDF URL when the user clicks save
+- Shows **No PDF link** and skips saving when no direct PDF link is detected
 - Sends the paper to `POST /api/extension/save-paper` via the service worker
 - Supports default folder selection from the popup
 
@@ -28,7 +29,7 @@ See also: [`docs/EXTENSION.md`](../../docs/EXTENSION.md)
 ## Use
 
 1. Search on Google Scholar
-2. Click **Save to My Library** on any result you want to keep
+2. Click **Save PDF to ResearchGPT** on any result you want to keep
 3. Check save status in the popup
 
 ## Notes

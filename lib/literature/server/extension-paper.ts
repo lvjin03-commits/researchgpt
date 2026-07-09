@@ -2,7 +2,9 @@
 
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { LiteratureError } from "@/lib/literature/errors";
 import {
+  deleteLiteraturePaper,
   updateLiteraturePaperStatusByExternalKey,
   upsertAnalyzedPapers,
 } from "@/lib/literature/server/repository";
@@ -134,6 +136,18 @@ export async function saveExtensionPaper(
     "saved",
   );
   const archivedPaper = await archiveLiteraturePaperPdf(supabase, userId, paper);
+
+  if (archivedPaper.pdfDownloadStatus !== "stored") {
+    await deleteLiteraturePaper(supabase, userId, archivedPaper.id).catch((error) => {
+      console.warn("[extension] failed to clean up paper without stored PDF:", error);
+    });
+
+    throw new LiteratureError(
+      archivedPaper.pdfDownloadError ||
+        "PDF could not be downloaded. Please use a result with a direct PDF link.",
+      422,
+    );
+  }
 
   if (folderIds.length > 0) {
     await setPaperFolderIds(supabase, userId, archivedPaper.id, folderIds);

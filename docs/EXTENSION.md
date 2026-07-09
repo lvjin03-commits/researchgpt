@@ -1,6 +1,6 @@
 # ResearchAI Chrome Extension
 
-Manifest V3 extension for saving Google Scholar search results into the ResearchAI literature library.
+Manifest V3 extension for saving Google Scholar search results with direct PDF links into the ResearchAI literature library.
 
 ## Location
 
@@ -18,7 +18,9 @@ Google Scholar page
                       Authorization: Bearer <token>
 ```
 
-The extension does **not** scrape in the background. It only reads the DOM for a result the user explicitly clicks **Save to My Library** on.
+The extension does **not** scrape in the background. It only reads the DOM for a result the user explicitly clicks **Save PDF to ResearchGPT** on.
+
+If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead.
 
 ## Backend API
 
@@ -91,9 +93,10 @@ Cookie-based session auth still works for the legacy import route (`/api/literat
 ## Use on Google Scholar
 
 1. Search on [Google Scholar](https://scholar.google.com/).
-2. Each result shows a **Save to My Library** link.
+2. Each result shows a **Save PDF to ResearchGPT** link.
 3. Click it to save that paper only.
-4. Open the popup to see the latest save status.
+4. If the result has no direct PDF link, the extension shows **No PDF link** and does not save anything.
+5. Open the popup to see the latest save status.
 
 ## CORS
 

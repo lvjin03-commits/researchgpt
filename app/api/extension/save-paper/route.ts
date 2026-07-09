@@ -18,6 +18,25 @@ type SavePaperRequest = {
   folderIds?: unknown;
 };
 
+function getExtensionPdfUrl(value: unknown): string {
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+
+  const pdfUrl = (value as { pdfUrl?: unknown }).pdfUrl;
+  return typeof pdfUrl === "string" ? pdfUrl.trim() : "";
+}
+
+function isLikelyPdfUrl(url: string): boolean {
+  const normalized = url.toLowerCase();
+  return (
+    normalized.endsWith(".pdf") ||
+    normalized.includes(".pdf?") ||
+    normalized.includes("/pdf/") ||
+    normalized.includes("pdf")
+  );
+}
+
 export function OPTIONS(request: Request) {
   return extensionCorsPreflight(request);
 }
@@ -30,6 +49,14 @@ export async function POST(request: Request) {
 
     if (!draft) {
       throw new LiteratureError("Invalid paper payload.", 400);
+    }
+
+    const pdfUrl = getExtensionPdfUrl(body.paper);
+    if (!pdfUrl || !isLikelyPdfUrl(pdfUrl)) {
+      throw new LiteratureError(
+        "No direct PDF link was detected. Upload the PDF from your literature library when needed.",
+        422,
+      );
     }
 
     const folderIds = parseExtensionFolderIds(body.folderIds);

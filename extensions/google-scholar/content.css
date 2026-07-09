@@ -27,3 +27,7 @@
 .researchai-save-btn[data-researchai-state="error"] {
   color: #b45309;
 }
+
+.researchai-save-btn[data-researchai-state="no-pdf"] {
+  color: #6b7280;
+}

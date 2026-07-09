@@ -1,6 +1,8 @@
 (function () {
   const BUTTON_SELECTOR = "[data-researchai-save]";
   const RESULT_SELECTOR = ".gs_r.gs_or.gs_scl";
+  const NO_PDF_MESSAGE =
+    "No direct PDF link was detected. Upload the PDF from your literature library when needed.";
 
   function text(element) {
     return element ? element.textContent.replace(/\s+/g, " ").trim() : "";
@@ -31,9 +33,27 @@
     return Number.isFinite(count) ? count : null;
   }
 
+  function isLikelyPdfLink(anchor) {
+    const href = anchor.href.toLowerCase();
+    const label = text(anchor).toLowerCase();
+
+    return (
+      label.includes("pdf") ||
+      href.endsWith(".pdf") ||
+      href.includes(".pdf?") ||
+      href.includes("/pdf/") ||
+      href.includes("pdf")
+    );
+  }
+
   function parsePdfUrl(container) {
     const sideLink = container.querySelector(".gs_or_ggsm a");
-    return sideLink instanceof HTMLAnchorElement ? sideLink.href : "";
+
+    if (sideLink instanceof HTMLAnchorElement && isLikelyPdfLink(sideLink)) {
+      return sideLink.href;
+    }
+
+    return "";
   }
 
   function parsePaperFromContainer(container) {
@@ -62,23 +82,29 @@
 
   function setButtonState(button, state, message) {
     button.dataset.researchaiState = state;
-    button.disabled = state === "saving" || state === "saved";
+    button.disabled = state === "saving" || state === "saved" || state === "no-pdf";
 
     if (state === "idle") {
-      button.textContent = "Save to My Library";
+      button.textContent = "Save PDF to ResearchGPT";
       button.title = "";
       return;
     }
 
     if (state === "saving") {
-      button.textContent = "Saving…";
-      button.title = "Saving to ResearchAI";
+      button.textContent = "Saving PDF...";
+      button.title = "Saving PDF to ResearchGPT";
       return;
     }
 
     if (state === "saved") {
-      button.textContent = "Saved";
-      button.title = message || "Saved to ResearchAI";
+      button.textContent = "PDF saved";
+      button.title = message || "Saved to ResearchGPT";
+      return;
+    }
+
+    if (state === "no-pdf") {
+      button.textContent = "No PDF link";
+      button.title = message || NO_PDF_MESSAGE;
       return;
     }
 
@@ -90,6 +116,12 @@
     const paper = parsePaperFromContainer(container);
     if (!paper) {
       setButtonState(button, "error", "Could not read this result.");
+      return;
+    }
+
+    if (!paper.pdfUrl) {
+      setButtonState(button, "no-pdf", NO_PDF_MESSAGE);
+      window.alert(NO_PDF_MESSAGE);
       return;
     }
 
@@ -108,7 +140,9 @@
       setButtonState(
         button,
         "saved",
-        response.saved?.title ? `Saved "${response.saved.title}"` : "Saved to ResearchAI",
+        response.saved?.title
+          ? `Saved "${response.saved.title}"`
+          : "Saved to ResearchGPT",
       );
     } catch (error) {
       setButtonState(
@@ -138,7 +172,7 @@
 
     const linksRow = container.querySelector(".gs_fl");
     if (linksRow) {
-      linksRow.appendChild(document.createTextNode(" · "));
+      linksRow.appendChild(document.createTextNode(" | "));
       linksRow.appendChild(button);
       return;
     }
