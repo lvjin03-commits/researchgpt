@@ -8,6 +8,16 @@ export type LiteraturePdfDownloadStatus =
   | "failed"
   | "unavailable";
 
+export type LiteratureFigureEvidence = {
+  id: string;
+  kind: "figure" | "table";
+  label: string;
+  caption: string;
+  sourceTitle: string;
+  page: number | null;
+  topics: string[];
+};
+
 export type PaperWorkspaceDifficulty = "Beginner" | "Intermediate" | "Advanced";
 
 export type PaperReadingGuide = {
@@ -71,6 +81,8 @@ export type LiteraturePaper = {
   pdfDownloadError?: string | null;
   fullText?: string | null;
   fullTextExtractedAt?: string | null;
+  figureEvidence?: LiteratureFigureEvidence[];
+  figureEvidenceExtractedAt?: string | null;
   folderIds?: string[];
   personalNotes?: string;
   workspaceAnalysis?: PaperWorkspaceAnalysis | null;

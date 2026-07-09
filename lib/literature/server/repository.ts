@@ -21,6 +21,7 @@ import type { LiteratureDisciplineId } from "@/lib/literature/source-taxonomy";
 import { LITERATURE_DATE_RANGE_DAYS } from "@/lib/literature/constants";
 import type {
   ArxivPaperDraft,
+  LiteratureFigureEvidence,
   LiteraturePaper,
   LiteraturePaperStatus,
   LiteratureSettings,
@@ -73,6 +74,8 @@ type DbPaperRow = {
   pdf_download_error?: string | null;
   full_text?: string | null;
   full_text_extracted_at?: string | null;
+  figure_evidence?: unknown | null;
+  figure_evidence_extracted_at?: string | null;
 };
 
 const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
@@ -114,6 +117,49 @@ function mapSettingsRow(row: DbSettingsRow): LiteratureSettings {
     source: row.source,
     dateRangeDays: row.date_range_days ?? LITERATURE_DATE_RANGE_DAYS,
   });
+}
+
+function parseFigureEvidence(value: unknown): LiteratureFigureEvidence[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item): LiteratureFigureEvidence | null => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const kind = record.kind === "table" ? "table" : "figure";
+      const label = typeof record.label === "string" ? record.label : "";
+      const caption = typeof record.caption === "string" ? record.caption : "";
+      const sourceTitle =
+        typeof record.sourceTitle === "string" ? record.sourceTitle : "";
+
+      if (!label || !caption) {
+        return null;
+      }
+
+      return {
+        id:
+          typeof record.id === "string"
+            ? record.id
+            : `${kind}-${label}`.replace(/\s+/g, "-").toLowerCase(),
+        kind,
+        label,
+        caption,
+        sourceTitle,
+        page:
+          typeof record.page === "number" && Number.isFinite(record.page)
+            ? record.page
+            : null,
+        topics: Array.isArray(record.topics)
+          ? record.topics.filter((topic): topic is string => typeof topic === "string")
+          : [],
+      };
+    })
+    .filter((item): item is LiteratureFigureEvidence => Boolean(item));
 }
 
 function storePath(userId: string): string {
@@ -179,6 +225,8 @@ function mapPaperRow(row: DbPaperRow): LiteraturePaper {
     pdfDownloadError: row.pdf_download_error ?? null,
     fullText: row.full_text ?? null,
     fullTextExtractedAt: row.full_text_extracted_at ?? null,
+    figureEvidence: parseFigureEvidence(row.figure_evidence),
+    figureEvidenceExtractedAt: row.figure_evidence_extracted_at ?? null,
     personalNotes: row.personal_notes ?? "",
     workspaceAnalysis,
     providers: metadata.providers,
@@ -551,7 +599,9 @@ function isMissingPdfArchiveColumnError(error: {
     message.includes("pdf_download_status") ||
     message.includes("pdf_download_error") ||
     message.includes("full_text") ||
-    message.includes("full_text_extracted_at")
+    message.includes("full_text_extracted_at") ||
+    message.includes("figure_evidence") ||
+    message.includes("figure_evidence_extracted_at")
   );
 }
 
@@ -567,6 +617,8 @@ export async function updateLiteraturePaperPdfArchive(
     pdfDownloadError?: string | null;
     fullText?: string | null;
     fullTextExtractedAt?: string | null;
+    figureEvidence?: LiteraturePaper["figureEvidence"];
+    figureEvidenceExtractedAt?: string | null;
   },
 ): Promise<LiteraturePaper> {
   const { data, error } = await supabase
@@ -579,6 +631,8 @@ export async function updateLiteraturePaperPdfArchive(
       pdf_download_error: patch.pdfDownloadError ?? null,
       full_text: patch.fullText ?? null,
       full_text_extracted_at: patch.fullTextExtractedAt ?? null,
+      figure_evidence: patch.figureEvidence ?? [],
+      figure_evidence_extracted_at: patch.figureEvidenceExtractedAt ?? null,
     })
     .eq("user_id", userId)
     .eq("id", paperId)
@@ -595,6 +649,8 @@ export async function updateLiteraturePaperPdfArchive(
         pdfDownloadError: patch.pdfDownloadError ?? null,
         fullText: patch.fullText ?? null,
         fullTextExtractedAt: patch.fullTextExtractedAt ?? null,
+        figureEvidence: patch.figureEvidence ?? [],
+        figureEvidenceExtractedAt: patch.figureEvidenceExtractedAt ?? null,
       });
     }
 

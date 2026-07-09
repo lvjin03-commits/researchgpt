@@ -61,7 +61,7 @@ function buildCoverParagraphs(): Paragraph[] {
       spacing: { after: 720 },
       children: [
         new TextRun({
-          text: "含专业综述、图表说明、研究空白与未来方向",
+          text: "含专业综述、证据图表、研究空白与未来方向",
           color: "4B5563",
           size: 22,
           font: "Microsoft YaHei",
@@ -71,14 +71,23 @@ function buildCoverParagraphs(): Paragraph[] {
   ];
 }
 
+function isFigureCallout(text: string): boolean {
+  return /^(图表建议|证据图表|Evidence Figure|Evidence Table)[:：]/i.test(text);
+}
+
+function cleanFigureCalloutPrefix(text: string): string {
+  return text.replace(
+    /^(图表建议|证据图表|Evidence Figure|Evidence Table)[:：]\s*/i,
+    "",
+  );
+}
+
 function buildFigureCallout(text: string): Table {
-  const parts = text
-    .replace(/^图表建议[:：]\s*/, "")
+  const parts = cleanFigureCalloutPrefix(text)
     .split("｜")
     .map((part) => part.trim())
     .filter(Boolean);
-  const [figureId = "Figure", title = "图表说明", type = "Academic visual"] =
-    parts;
+  const [figureId = "Figure", title = "图表说明", source = "文献证据"] = parts;
   const detail = parts.slice(3).join("｜") || text;
 
   return new Table({
@@ -118,7 +127,7 @@ function buildFigureCallout(text: string): Table {
               new Paragraph({
                 children: [
                   new TextRun({
-                    text: `图表类型：${type}`,
+                    text: `来源：${source}`,
                     bold: true,
                     font: "Microsoft YaHei",
                   }),
@@ -138,6 +147,26 @@ function buildFigureCallout(text: string): Table {
         ],
       }),
     ],
+  });
+}
+
+function buildQuoteParagraph(inlines: InlineSpan[]): Paragraph {
+  return new Paragraph({
+    children: inlineSpansToTextRuns(inlines),
+    indent: { left: 720 },
+    spacing: { before: 120, after: 160 },
+    shading: {
+      type: ShadingType.CLEAR,
+      fill: "F9FAFB",
+    },
+    border: {
+      left: {
+        color: "2563EB",
+        size: 16,
+        space: 8,
+        style: BorderStyle.SINGLE,
+      },
+    },
   });
 }
 
@@ -221,29 +250,11 @@ function blocksToDocxChildren(content: string): Array<Paragraph | Table> {
         break;
       case "blockquote": {
         const text = plainText(block.inlines);
-        if (/^图表建议[:：]/.test(text)) {
-          children.push(buildFigureCallout(text));
-        } else {
-          children.push(
-            new Paragraph({
-              children: inlineSpansToTextRuns(block.inlines),
-              indent: { left: 720 },
-              spacing: { before: 120, after: 160 },
-              shading: {
-                type: ShadingType.CLEAR,
-                fill: "F9FAFB",
-              },
-              border: {
-                left: {
-                  color: "2563EB",
-                  size: 16,
-                  space: 8,
-                  style: BorderStyle.SINGLE,
-                },
-              },
-            }),
-          );
-        }
+        children.push(
+          isFigureCallout(text)
+            ? buildFigureCallout(text)
+            : buildQuoteParagraph(block.inlines),
+        );
         break;
       }
     }

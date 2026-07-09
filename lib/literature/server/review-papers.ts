@@ -2,6 +2,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listLiteratureFolderPapers } from "@/lib/literature/server/folder-papers";
+import { extractFigureEvidenceFromText } from "@/lib/literature/server/figure-evidence";
 import type { LiteraturePaper } from "@/lib/literature/types";
 
 export {
@@ -27,16 +28,31 @@ export function formatPaperYear(paper: LiteraturePaper): string {
 }
 
 export function buildReviewPaperContext(papers: LiteraturePaper[]) {
-  return papers.map((paper) => ({
-    id: paper.id,
-    title: paper.title,
-    authors: paper.authors,
-    year: formatPaperYear(paper),
-    abstract: paper.abstract.slice(0, 1200),
-    fullTextExcerpt: paper.fullText?.slice(0, 8000) ?? null,
-    evidenceLevel: paper.fullText ? "full_text" : "abstract_only",
-    url: paper.absUrl,
-    pdfStored: paper.pdfDownloadStatus === "stored",
-    citationCount: paper.citationCount ?? null,
-  }));
+  return papers.map((paper) => {
+    const figureEvidence =
+      paper.figureEvidence && paper.figureEvidence.length > 0
+        ? paper.figureEvidence
+        : extractFigureEvidenceFromText(paper.fullText, paper);
+
+    return {
+      id: paper.id,
+      title: paper.title,
+      authors: paper.authors,
+      year: formatPaperYear(paper),
+      abstract: paper.abstract.slice(0, 1200),
+      fullTextExcerpt: paper.fullText?.slice(0, 8000) ?? null,
+      evidenceLevel: paper.fullText ? "full_text" : "abstract_only",
+      url: paper.absUrl,
+      pdfStored: paper.pdfDownloadStatus === "stored",
+      citationCount: paper.citationCount ?? null,
+      figureEvidence: figureEvidence.slice(0, 8).map((item) => ({
+        kind: item.kind,
+        label: item.label,
+        caption: item.caption.slice(0, 900),
+        sourceTitle: item.sourceTitle || paper.title,
+        page: item.page,
+        topics: item.topics.slice(0, 8),
+      })),
+    };
+  });
 }

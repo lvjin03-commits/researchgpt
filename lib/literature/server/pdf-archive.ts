@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractText, getDocumentProxy } from "unpdf";
 import { LiteratureError } from "@/lib/literature/errors";
+import { extractFigureEvidenceFromText } from "@/lib/literature/server/figure-evidence";
 import { updateLiteraturePaperPdfArchive } from "@/lib/literature/server/repository";
 import type { LiteraturePaper } from "@/lib/literature/types";
 
@@ -112,6 +113,8 @@ export async function archiveLiteraturePaperPdf(
     const storagePath = buildPdfStoragePath(userId, paper);
     const fileName = storagePath.split("/").at(-1) ?? "paper.pdf";
     const fullText = await extractPdfFullText(buffer);
+    const figureEvidence = extractFigureEvidenceFromText(fullText, paper);
+    const extractedAt = fullText ? new Date().toISOString() : null;
 
     const { error } = await supabase.storage
       .from(LITERATURE_PDFS_BUCKET)
@@ -131,7 +134,9 @@ export async function archiveLiteraturePaperPdf(
       pdfDownloadStatus: "stored",
       pdfDownloadError: null,
       fullText,
-      fullTextExtractedAt: fullText ? new Date().toISOString() : null,
+      fullTextExtractedAt: extractedAt,
+      figureEvidence,
+      figureEvidenceExtractedAt: figureEvidence.length > 0 ? extractedAt : null,
     });
   } catch (error) {
     const message =
