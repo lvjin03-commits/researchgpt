@@ -136,13 +136,11 @@ export async function saveExtensionPaper(
     throw new LiteratureError("Paper could not be saved before PDF download.", 500);
   }
 
-  const paper = await updateLiteraturePaperStatus(
+  const archivedPaper = await archiveLiteraturePaperPdf(
     supabase,
     userId,
-    savedDraftPaper.id,
-    "saved",
+    savedDraftPaper,
   );
-  const archivedPaper = await archiveLiteraturePaperPdf(supabase, userId, paper);
 
   if (archivedPaper.pdfDownloadStatus !== "stored") {
     await deleteLiteraturePaper(supabase, userId, archivedPaper.id).catch((error) => {
@@ -156,13 +154,20 @@ export async function saveExtensionPaper(
     );
   }
 
+  const savedPaper = await updateLiteraturePaperStatus(
+    supabase,
+    userId,
+    archivedPaper.id,
+    "saved",
+  );
+
   if (folderIds.length > 0) {
-    await setPaperFolderIds(supabase, userId, archivedPaper.id, folderIds);
+    await setPaperFolderIds(supabase, userId, savedPaper.id, folderIds);
   }
 
   return {
-    id: archivedPaper.id,
-    title: archivedPaper.title,
-    arxivId: archivedPaper.arxivId,
+    id: savedPaper.id,
+    title: savedPaper.title,
+    arxivId: savedPaper.arxivId,
   };
 }
