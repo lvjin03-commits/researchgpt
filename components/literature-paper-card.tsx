@@ -28,6 +28,11 @@ type LiteraturePaperCardProps = {
   onStatusChange: (paperId: string, status: LiteraturePaperStatus) => Promise<void>;
   folders?: LiteratureFolder[];
   onSaveToFolders?: (paperId: string, folderIds: string[]) => Promise<void>;
+  onUploadPdfToFolders?: (
+    paperId: string,
+    folderIds: string[],
+    file: File,
+  ) => Promise<void>;
   onFoldersChange?: (paperId: string, folderIds: string[]) => void;
   onDelete?: (paperId: string) => Promise<void>;
   onFoldersListUpdated?: (folders: LiteratureFolder[]) => void;
@@ -40,6 +45,7 @@ export function LiteraturePaperCard({
   onStatusChange,
   folders = [],
   onSaveToFolders,
+  onUploadPdfToFolders,
   onFoldersChange,
   onDelete,
   onFoldersListUpdated,
@@ -103,6 +109,12 @@ export function LiteraturePaperCard({
     if (folderSelectorMode === "move" && onFoldersChange) {
       const savedIds = await setPaperFolders(paper.id, folderIds);
       onFoldersChange(paper.id, savedIds);
+    }
+  };
+
+  const handleFolderPdfUpload = async (folderIds: string[], file: File) => {
+    if (folderSelectorMode === "save" && onUploadPdfToFolders) {
+      await onUploadPdfToFolders(paper.id, folderIds, file);
     }
   };
 
@@ -376,6 +388,11 @@ export function LiteraturePaperCard({
           selectedFolderIds={assignedFolderIds}
           onClose={() => setFolderSelectorMode(null)}
           onConfirm={handleFolderConfirm}
+          onUploadPdf={
+            folderSelectorMode === "save" && onUploadPdfToFolders
+              ? handleFolderPdfUpload
+              : undefined
+          }
           onFoldersUpdated={onFoldersListUpdated}
           downloadBeforeSave={folderSelectorMode === "save"}
         />

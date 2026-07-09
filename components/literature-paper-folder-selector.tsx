@@ -20,6 +20,7 @@ type LiteraturePaperFolderSelectorProps = {
   selectedFolderIds: string[];
   onClose: () => void;
   onConfirm: (folderIds: string[]) => Promise<void>;
+  onUploadPdf?: (folderIds: string[], file: File) => Promise<void>;
   onFoldersUpdated?: (folders: LiteratureFolder[]) => void;
   downloadBeforeSave?: boolean;
 };
@@ -32,12 +33,15 @@ export function LiteraturePaperFolderSelector({
   selectedFolderIds,
   onClose,
   onConfirm,
+  onUploadPdf,
   onFoldersUpdated,
   downloadBeforeSave = false,
 }: LiteraturePaperFolderSelectorProps) {
   const [folderItems, setFolderItems] = useState<LiteratureFolder[]>(folders);
   const [draftIds, setDraftIds] = useState<string[]>(selectedFolderIds);
+  const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -50,6 +54,7 @@ export function LiteraturePaperFolderSelector({
   }, [selectedFolderIds]);
 
   const folderTree = useMemo(() => flattenFolderTree(folderItems), [folderItems]);
+  const isBusy = isSaving || isUploading;
 
   const toggleFolder = (folderId: string) => {
     setDraftIds((current) =>
@@ -78,9 +83,17 @@ export function LiteraturePaperFolderSelector({
     );
   };
 
-  const handleConfirm = async () => {
+  const validateFolderSelection = (): boolean => {
     if (draftIds.length === 0) {
       setError("请先选择至少一个文献夹。");
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleConfirm = async () => {
+    if (!validateFolderSelection()) {
       return;
     }
 
@@ -94,6 +107,29 @@ export function LiteraturePaperFolderSelector({
       setError(err instanceof Error ? err.message : "保存文献失败。");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleUploadPdf = async () => {
+    if (!onUploadPdf || !validateFolderSelection()) {
+      return;
+    }
+
+    if (!selectedPdfFile) {
+      setError("请先选择一个 PDF 文件。");
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      await onUploadPdf(draftIds, selectedPdfFile);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "上传 PDF 失败。");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -119,7 +155,8 @@ export function LiteraturePaperFolderSelector({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-2 py-1 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+              disabled={isBusy}
+              className="rounded-lg px-2 py-1 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
             >
               关闭
             </button>
@@ -128,7 +165,8 @@ export function LiteraturePaperFolderSelector({
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
-            className="mb-3 flex w-full items-center gap-2 rounded-xl border border-dashed border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50"
+            disabled={isBusy}
+            className="mb-3 flex w-full items-center gap-2 rounded-xl border border-dashed border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span aria-hidden="true">📁</span>
             <span>新建文件夹</span>
@@ -146,6 +184,7 @@ export function LiteraturePaperFolderSelector({
                     <input
                       type="checkbox"
                       checked={draftIds.includes(folder.id)}
+                      disabled={isBusy}
                       onChange={() => toggleFolder(folder.id)}
                       className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-400"
                     />
@@ -166,8 +205,41 @@ export function LiteraturePaperFolderSelector({
           )}
 
           {downloadBeforeSave && (
-            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-              点击“下载文件”后，系统会先下载并保存 PDF；下载完成后才会把文献加入所选文献夹。
+            <div className="mt-3 space-y-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-900">
+              <p>
+                先点“下载文件”，系统会尝试自动下载并保存 PDF。若网页链接无法直接下载，请改用下方手动上传。
+              </p>
+
+              {onUploadPdf && (
+                <div className="rounded-lg border border-blue-200 bg-white p-3">
+                  <label
+                    htmlFor="paper-pdf-upload"
+                    className="block text-xs font-semibold uppercase tracking-wide text-blue-700"
+                  >
+                    手动上传 PDF
+                  </label>
+                  <input
+                    id="paper-pdf-upload"
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    disabled={isBusy}
+                    onChange={(event) =>
+                      setSelectedPdfFile(event.target.files?.[0] ?? null)
+                    }
+                    className="mt-2 block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-800 hover:file:bg-blue-200"
+                  />
+                  <button
+                    type="button"
+                    disabled={isBusy || !selectedPdfFile}
+                    onClick={() => {
+                      void handleUploadPdf();
+                    }}
+                    className="mt-3 w-full rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isUploading ? "正在上传 PDF..." : "上传 PDF 并保存"}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -181,13 +253,14 @@ export function LiteraturePaperFolderSelector({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              disabled={isBusy}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               取消
             </button>
             <button
               type="button"
-              disabled={isSaving}
+              disabled={isBusy}
               onClick={() => {
                 void handleConfirm();
               }}

@@ -19,6 +19,7 @@ import {
   setPaperFolders,
   updateLiteraturePaperStatus,
   updateLiteraturePapers,
+  uploadPaperPdfToFolders,
 } from "@/lib/literature/client";
 import { normalizeLiteratureSettings } from "@/lib/literature/normalize-settings";
 import {
@@ -144,6 +145,28 @@ export function LiteratureShell() {
       setPapers((current) =>
         current.map((paper) =>
           paper.id === paperId
+            ? { ...updated, folderIds: savedFolderIds }
+            : paper,
+        ),
+      );
+    },
+    [papers],
+  );
+
+  const handleUploadPdfToFolders = useCallback(
+    async (paperId: string, folderIds: string[], file: File) => {
+      const sourcePaper = papers.find((paper) => paper.id === paperId);
+
+      if (!sourcePaper) {
+        throw new LiteratureError("Paper not found.", 404);
+      }
+
+      const updated = await uploadPaperPdfToFolders(sourcePaper, folderIds, file);
+      const savedFolderIds = updated.folderIds ?? folderIds;
+
+      setPapers((current) =>
+        current.map((paper) =>
+          paper.id === paperId || paper.arxivId === updated.arxivId
             ? { ...updated, folderIds: savedFolderIds }
             : paper,
         ),
@@ -428,6 +451,7 @@ export function LiteratureShell() {
                         folders={folders}
                         onStatusChange={handleStatusChange}
                         onSaveToFolders={handleSaveToFolders}
+                        onUploadPdfToFolders={handleUploadPdfToFolders}
                         onFoldersListUpdated={setFolders}
                         showProviderInternals={searchDebug !== null}
                       />

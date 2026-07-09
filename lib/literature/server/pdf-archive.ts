@@ -30,12 +30,19 @@ function sanitizeFilePart(value: string): string {
     .slice(0, 80);
 }
 
-function buildPdfStoragePath(userId: string, paper: LiteraturePaper): string {
+function buildPdfStoragePath(
+  userId: string,
+  paper: LiteraturePaper,
+  originalFileName?: string,
+): string {
   const digest = createHash("sha1")
     .update(`${paper.id}:${paper.pdfUrl}:${paper.title}`)
     .digest("hex")
     .slice(0, 16);
-  const title = sanitizeFilePart(paper.title) || "paper";
+  const fileBase = originalFileName
+    ? originalFileName.replace(/\.pdf$/i, "")
+    : paper.title;
+  const title = sanitizeFilePart(fileBase) || "paper";
   return `${userId}/${paper.id}/${digest}-${title}.pdf`;
 }
 
@@ -82,6 +89,21 @@ async function downloadPdf(url: string): Promise<Buffer> {
   return buffer;
 }
 
+function assertPdfBuffer(buffer: Buffer): void {
+  if (buffer.byteLength === 0) {
+    throw new LiteratureError("Uploaded PDF is empty.", 422);
+  }
+
+  if (buffer.byteLength > MAX_PDF_BYTES) {
+    throw new LiteratureError("PDF is larger than the storage limit.", 413);
+  }
+
+  const hasPdfHeader = buffer.subarray(0, 5).toString("utf8") === "%PDF-";
+  if (!hasPdfHeader) {
+    throw new LiteratureError("Uploaded file is not a valid PDF.", 415);
+  }
+}
+
 async function extractPdfFullText(buffer: Buffer): Promise<string | null> {
   try {
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
@@ -92,6 +114,61 @@ async function extractPdfFullText(buffer: Buffer): Promise<string | null> {
     console.warn("[literature] PDF text extraction failed:", error);
     return null;
   }
+}
+
+async function storeLiteraturePaperPdfBuffer(
+  supabase: SupabaseClient,
+  userId: string,
+  paper: LiteraturePaper,
+  buffer: Buffer,
+  originalFileName?: string,
+): Promise<LiteraturePaper> {
+  assertPdfBuffer(buffer);
+
+  const storagePath = buildPdfStoragePath(userId, paper, originalFileName);
+  const fileName = originalFileName?.trim() || storagePath.split("/").at(-1) || "paper.pdf";
+  const fullText = await extractPdfFullText(buffer);
+  const figureEvidence = extractFigureEvidenceFromText(fullText, paper);
+  const extractedAt = fullText ? new Date().toISOString() : null;
+
+  const { error } = await supabase.storage
+    .from(LITERATURE_PDFS_BUCKET)
+    .upload(storagePath, buffer, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
+
+  if (error) {
+    throw new LiteratureError(error.message, 500);
+  }
+
+  return updateLiteraturePaperPdfArchive(supabase, userId, paper.id, {
+    pdfStoragePath: storagePath,
+    pdfFileName: fileName,
+    pdfFileSize: buffer.byteLength,
+    pdfDownloadStatus: "stored",
+    pdfDownloadError: null,
+    fullText,
+    fullTextExtractedAt: extractedAt,
+    figureEvidence,
+    figureEvidenceExtractedAt: figureEvidence.length > 0 ? extractedAt : null,
+  });
+}
+
+export async function archiveUploadedLiteraturePaperPdf(
+  supabase: SupabaseClient,
+  userId: string,
+  paper: LiteraturePaper,
+  file: File,
+): Promise<LiteraturePaper> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return storeLiteraturePaperPdfBuffer(
+    supabase,
+    userId,
+    paper,
+    buffer,
+    file.name || undefined,
+  );
 }
 
 export async function archiveLiteraturePaperPdf(
@@ -110,34 +187,7 @@ export async function archiveLiteraturePaperPdf(
 
   try {
     const buffer = await downloadPdf(pdfUrl);
-    const storagePath = buildPdfStoragePath(userId, paper);
-    const fileName = storagePath.split("/").at(-1) ?? "paper.pdf";
-    const fullText = await extractPdfFullText(buffer);
-    const figureEvidence = extractFigureEvidenceFromText(fullText, paper);
-    const extractedAt = fullText ? new Date().toISOString() : null;
-
-    const { error } = await supabase.storage
-      .from(LITERATURE_PDFS_BUCKET)
-      .upload(storagePath, buffer, {
-        contentType: "application/pdf",
-        upsert: true,
-      });
-
-    if (error) {
-      throw new LiteratureError(error.message, 500);
-    }
-
-    return updateLiteraturePaperPdfArchive(supabase, userId, paper.id, {
-      pdfStoragePath: storagePath,
-      pdfFileName: fileName,
-      pdfFileSize: buffer.byteLength,
-      pdfDownloadStatus: "stored",
-      pdfDownloadError: null,
-      fullText,
-      fullTextExtractedAt: extractedAt,
-      figureEvidence,
-      figureEvidenceExtractedAt: figureEvidence.length > 0 ? extractedAt : null,
-    });
+    return storeLiteraturePaperPdfBuffer(supabase, userId, paper, buffer);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to archive PDF.";
