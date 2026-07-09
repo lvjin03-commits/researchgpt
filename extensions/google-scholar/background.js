@@ -7,6 +7,15 @@ const STORAGE_KEYS = {
   lastSaveStatus: "researchAiLastSaveStatus",
 };
 
+class ManualUploadRequiredError extends Error {
+  constructor(message, pdfUrl) {
+    super(message);
+    this.name = "ManualUploadRequiredError";
+    this.manualUploadRequired = true;
+    this.pdfUrl = pdfUrl || "";
+  }
+}
+
 function normalizeBaseUrl(value) {
   const raw = String(value || DEFAULT_BASE_URL).replace(/\/$/, "");
 
@@ -57,10 +66,12 @@ async function savePaperToBackend(paper) {
 }
 
 function sanitizeFilePart(value) {
-  return String(value || "paper")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "paper";
+  return (
+    String(value || "paper")
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "paper"
+  );
 }
 
 function fileNameFromPaper(paper) {
@@ -116,8 +127,9 @@ async function downloadPdfFromBrowser(paper) {
     throw new Error("Downloaded PDF is empty.");
   }
 
-  const header = new TextDecoder()
-    .decode(new Uint8Array(arrayBuffer.slice(0, 5)));
+  const header = new TextDecoder().decode(
+    new Uint8Array(arrayBuffer.slice(0, 5)),
+  );
 
   if (header !== "%PDF-" && !contentType.includes("pdf")) {
     throw new Error("Downloaded file is not a PDF.");
@@ -149,8 +161,9 @@ async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
     const message =
       error instanceof Error ? error.message : "PDF automatic download failed.";
     await openPdfForManualDownload(paper?.pdfUrl);
-    throw new Error(
-      `自动保存失败：${message}。已打开 PDF 页面，请手动下载后在 ResearchGPT 文献库上传。`,
+    throw new ManualUploadRequiredError(
+      `Automatic PDF download was blocked: ${message}. Download the PDF in the opened tab, then upload it here.`,
+      paper?.pdfUrl,
     );
   }
 
@@ -207,6 +220,22 @@ async function loadFoldersFromBackend() {
   };
 }
 
+async function getUploadConfig() {
+  const config = await getConfig();
+  const authToken = String(config[STORAGE_KEYS.authToken] || "").trim();
+
+  if (!authToken) {
+    throw new Error(
+      "Missing auth token. Open the extension popup and click Connect account.",
+    );
+  }
+
+  return {
+    baseUrl: normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]),
+    authToken,
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "AUTH_TOKEN") {
     void (async () => {
@@ -224,7 +253,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       } catch (error) {
         sendResponse({
           ok: false,
-          error: error instanceof Error ? error.message : "Could not load folders.",
+          error:
+            error instanceof Error ? error.message : "Could not load folders.",
+        });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === "GET_UPLOAD_CONFIG") {
+    void (async () => {
+      try {
+        const payload = await getUploadConfig();
+        sendResponse({ ok: true, ...payload });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not prepare PDF upload.",
         });
       }
     })();
@@ -252,6 +300,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await storageSet({ [STORAGE_KEYS.lastSaveStatus]: status });
       sendResponse({ ok: true, ...payload });
     } catch (error) {
+      const manualUploadRequired = error?.manualUploadRequired === true;
       const status = {
         ok: false,
         title: message.paper?.title || "Paper",
@@ -263,6 +312,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({
         ok: false,
         error: status.message,
+        manualUploadRequired,
+        pdfUrl: manualUploadRequired
+          ? error.pdfUrl || message.paper?.pdfUrl || ""
+          : "",
       });
     }
   })();

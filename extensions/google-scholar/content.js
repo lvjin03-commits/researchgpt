@@ -2,6 +2,7 @@
   const BUTTON_SELECTOR = "[data-researchai-save]";
   const RESULT_SELECTOR = ".gs_r.gs_or.gs_scl";
   const MODAL_SELECTOR = "[data-researchai-folder-modal]";
+  const MANUAL_UPLOAD_MODAL_SELECTOR = "[data-researchai-manual-upload-modal]";
   const NO_PDF_MESSAGE =
     "No direct PDF link was detected. Upload the PDF from your literature library when needed.";
 
@@ -115,6 +116,10 @@
 
   function closeFolderModal() {
     document.querySelector(MODAL_SELECTOR)?.remove();
+  }
+
+  function closeManualUploadModal() {
+    document.querySelector(MANUAL_UPLOAD_MODAL_SELECTOR)?.remove();
   }
 
   function createFolderOption(folder, checked) {
@@ -236,6 +241,150 @@
     });
   }
 
+  function getUploadConfig() {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "GET_UPLOAD_CONFIG" }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+
+        if (!response?.ok) {
+          reject(new Error(response?.error || "Could not prepare upload."));
+          return;
+        }
+
+        resolve(response);
+      });
+    });
+  }
+
+  async function uploadManualPdf(paper, folderIds, file) {
+    if (!file) {
+      throw new Error("Please choose a PDF file.");
+    }
+
+    const fileName = String(file.name || "").toLowerCase();
+    const fileType = String(file.type || "").toLowerCase();
+    if (!fileName.endsWith(".pdf") && !fileType.includes("pdf")) {
+      throw new Error("Please choose a PDF file.");
+    }
+
+    const config = await getUploadConfig();
+    const formData = new FormData();
+    formData.append("paper", JSON.stringify(paper));
+    formData.append("folderIds", JSON.stringify(folderIds));
+    formData.append("file", file, file.name || "paper.pdf");
+
+    const response = await fetch(`${config.baseUrl}/api/extension/upload-paper`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.authToken}`,
+      },
+      body: formData,
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(payload.error || `ResearchGPT returned ${response.status}`);
+    }
+
+    return payload;
+  }
+
+  function showManualUploadDialog(paper, folderIds, button, reason) {
+    closeManualUploadModal();
+
+    const overlay = document.createElement("div");
+    overlay.className = "researchai-folder-overlay";
+    overlay.dataset.researchaiManualUploadModal = "1";
+
+    const panel = document.createElement("div");
+    panel.className = "researchai-folder-panel researchai-upload-panel";
+
+    const title = document.createElement("h2");
+    title.textContent = "Upload downloaded PDF";
+
+    const description = document.createElement("p");
+    description.textContent =
+      "Automatic download was blocked. Download the PDF in the opened tab, then choose the downloaded PDF here to save it to the selected ResearchGPT folder.";
+
+    const detail = document.createElement("p");
+    detail.className = "researchai-upload-detail";
+    detail.textContent = reason || "";
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/pdf,.pdf";
+    input.className = "researchai-upload-input";
+
+    const error = document.createElement("div");
+    error.className = "researchai-folder-error";
+
+    const actions = document.createElement("div");
+    actions.className = "researchai-folder-actions";
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "researchai-folder-cancel";
+    cancel.textContent = "Cancel";
+
+    const upload = document.createElement("button");
+    upload.type = "button";
+    upload.className = "researchai-folder-confirm";
+    upload.textContent = "Upload PDF";
+
+    cancel.addEventListener("click", () => {
+      closeManualUploadModal();
+      setButtonState(button, "error", "Manual PDF upload was cancelled.");
+    });
+
+    upload.addEventListener("click", () => {
+      void (async () => {
+        const file = input.files?.[0] || null;
+
+        try {
+          upload.disabled = true;
+          cancel.disabled = true;
+          upload.textContent = "Uploading...";
+          error.textContent = "";
+          setButtonState(button, "saving", "Uploading selected PDF...");
+
+          const payload = await uploadManualPdf(paper, folderIds, file);
+          closeManualUploadModal();
+          setButtonState(
+            button,
+            "saved",
+            payload.saved?.title
+              ? `Saved "${payload.saved.title}"`
+              : "Saved to ResearchGPT",
+          );
+        } catch (uploadError) {
+          const message =
+            uploadError instanceof Error ? uploadError.message : "Upload failed.";
+          upload.disabled = false;
+          cancel.disabled = false;
+          upload.textContent = "Upload PDF";
+          error.textContent = message;
+          setButtonState(button, "error", message);
+        }
+      })();
+    });
+
+    actions.appendChild(cancel);
+    actions.appendChild(upload);
+    panel.appendChild(title);
+    panel.appendChild(description);
+    if (detail.textContent) {
+      panel.appendChild(detail);
+    }
+    panel.appendChild(input);
+    panel.appendChild(error);
+    panel.appendChild(actions);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+  }
+
   async function savePaper(container, button) {
     const paper = parsePaperFromContainer(container);
     if (!paper) {
@@ -265,6 +414,12 @@
       });
 
       if (!response?.ok) {
+        if (response?.manualUploadRequired) {
+          setButtonState(button, "error", "Manual PDF upload required.");
+          showManualUploadDialog(paper, folderIds, button, response.error);
+          return;
+        }
+
         throw new Error(response?.error || "Save failed.");
       }
 

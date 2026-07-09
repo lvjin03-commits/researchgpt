@@ -136,3 +136,30 @@
   border: 1px solid #1d4ed8;
   color: #ffffff;
 }
+
+.researchai-upload-panel {
+  max-width: 460px;
+  width: min(460px, 100%);
+}
+
+.researchai-upload-detail {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  color: #9a3412 !important;
+  font-size: 12px !important;
+  margin: 10px 0 12px !important;
+  padding: 10px 12px;
+}
+
+.researchai-upload-input {
+  border: 1px dashed #94a3b8;
+  border-radius: 10px;
+  box-sizing: border-box;
+  color: #111827;
+  cursor: pointer;
+  display: block;
+  font-size: 13px;
+  padding: 12px;
+  width: 100%;
+}
