@@ -106,7 +106,6 @@ export function LiteratureReviewShell() {
 
   useEffect(() => {
     if (!folderId) {
-      setPaperCount(0);
       return;
     }
 

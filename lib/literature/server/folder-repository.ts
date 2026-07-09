@@ -326,6 +326,22 @@ function isUuid(value: string): boolean {
   );
 }
 
+function normalizeFolderLookupValue(value: string): string {
+  let decoded = value.trim();
+
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Keep the original value if it was not URL encoded.
+  }
+
+  return decoded
+    .replace(/^[\s\u3000]+/, "")
+    .replace(/^[\u2500-\u257f\-\u2013\u2014>]+\s*/, "")
+    .trim()
+    .toLocaleLowerCase("zh-CN");
+}
+
 export async function lookupLiteratureFolder(
   supabase: SupabaseClient,
   userId: string,
@@ -379,8 +395,18 @@ export async function lookupLiteratureFolder(
   }
 
   const namesToTry = [trimmed, nameHint].filter(Boolean) as string[];
+  const normalizedNamesToTry = new Set(
+    namesToTry.map(normalizeFolderLookupValue).filter(Boolean),
+  );
+
   for (const name of namesToTry) {
-    const byName = folders.find((folder) => folder.name.trim() === name);
+    const normalizedName = normalizeFolderLookupValue(name);
+    const byName = folders.find(
+      (folder) =>
+        folder.name.trim() === name ||
+        normalizeFolderLookupValue(folder.name) === normalizedName ||
+        normalizedNamesToTry.has(normalizeFolderLookupValue(folder.name)),
+    );
     if (byName) {
       console.warn(
         `[literature] folder lookup resolved folder name "${name}" to id:`,
