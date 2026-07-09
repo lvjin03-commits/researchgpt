@@ -197,9 +197,27 @@ export async function archiveLiteraturePaperPdf(
       message,
     });
 
-    return updateLiteraturePaperPdfArchive(supabase, userId, paper.id, {
-      pdfDownloadStatus: "failed",
-      pdfDownloadError: message.slice(0, 500),
-    });
+    const pdfDownloadError = message.slice(0, 500);
+
+    try {
+      return await updateLiteraturePaperPdfArchive(supabase, userId, paper.id, {
+        pdfDownloadStatus: "failed",
+        pdfDownloadError,
+      });
+    } catch (updateError) {
+      console.warn("[literature] failed to record PDF archive failure:", {
+        paperId: paper.id,
+        message:
+          updateError instanceof Error
+            ? updateError.message
+            : "Failed to record archive failure.",
+      });
+
+      return {
+        ...paper,
+        pdfDownloadStatus: "failed",
+        pdfDownloadError,
+      };
+    }
   }
 }
