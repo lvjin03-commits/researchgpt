@@ -377,6 +377,7 @@ export function LiteraturePaperCard({
           onClose={() => setFolderSelectorMode(null)}
           onConfirm={handleFolderConfirm}
           onFoldersUpdated={onFoldersListUpdated}
+          downloadBeforeSave={folderSelectorMode === "save"}
         />
       )}
     </>

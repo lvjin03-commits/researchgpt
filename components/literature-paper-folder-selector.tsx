@@ -21,6 +21,7 @@ type LiteraturePaperFolderSelectorProps = {
   onClose: () => void;
   onConfirm: (folderIds: string[]) => Promise<void>;
   onFoldersUpdated?: (folders: LiteratureFolder[]) => void;
+  downloadBeforeSave?: boolean;
 };
 
 export function LiteraturePaperFolderSelector({
@@ -32,6 +33,7 @@ export function LiteraturePaperFolderSelector({
   onClose,
   onConfirm,
   onFoldersUpdated,
+  downloadBeforeSave = false,
 }: LiteraturePaperFolderSelectorProps) {
   const [folderItems, setFolderItems] = useState<LiteratureFolder[]>(folders);
   const [draftIds, setDraftIds] = useState<string[]>(selectedFolderIds);
@@ -77,6 +79,11 @@ export function LiteraturePaperFolderSelector({
   };
 
   const handleConfirm = async () => {
+    if (draftIds.length === 0) {
+      setError("请先选择至少一个文献夹。");
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
 
@@ -84,11 +91,14 @@ export function LiteraturePaperFolderSelector({
       await onConfirm(draftIds);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存文献夹失败。");
+      setError(err instanceof Error ? err.message : "保存文献失败。");
     } finally {
       setIsSaving(false);
     }
   };
+
+  const actionLabel = downloadBeforeSave ? "下载文件" : confirmLabel;
+  const busyLabel = downloadBeforeSave ? "正在下载 PDF..." : "正在保存...";
 
   return (
     <>
@@ -126,7 +136,7 @@ export function LiteraturePaperFolderSelector({
 
           {folderTree.length === 0 ? (
             <p className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
-              暂无文献夹，请点击上方「新建文件夹」创建。
+              暂无文献夹，请先创建一个文献夹。
             </p>
           ) : (
             <ul className="max-h-64 space-y-2 overflow-y-auto">
@@ -155,6 +165,12 @@ export function LiteraturePaperFolderSelector({
             </ul>
           )}
 
+          {downloadBeforeSave && (
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+              点击“下载文件”后，系统会先下载并保存 PDF；下载完成后才会把文献加入所选文献夹。
+            </div>
+          )}
+
           {error && (
             <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
@@ -177,7 +193,7 @@ export function LiteraturePaperFolderSelector({
               }}
               className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSaving ? "正在保存…" : confirmLabel}
+              {isSaving ? busyLabel : actionLabel}
             </button>
           </div>
         </div>
