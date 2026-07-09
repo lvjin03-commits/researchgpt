@@ -1,6 +1,6 @@
 # ResearchAI Chrome Extension
 
-Manifest V3 extension for saving Google Scholar search results with direct PDF links into the ResearchAI literature library.
+Manifest V3 extension for downloading Google Scholar PDFs in Chrome and saving them into the ResearchAI literature library.
 
 ## Location
 
@@ -22,13 +22,14 @@ Google Scholar page
 
 The extension does **not** scrape in the background. It only reads the DOM for a result the user explicitly clicks **Save PDF to ResearchGPT** on.
 
-If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead. A save only succeeds after the backend downloads the PDF, stores it, and records the selected folder assignment.
+If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead. A save only succeeds after Chrome downloads the PDF, the extension uploads that PDF, and the backend stores it with the selected folder assignment.
 
 ## Backend API
 
 | Endpoint | Method | Auth | Purpose |
 |---|---|---|---|
 | `/api/extension/save-paper` | POST | Bearer token or cookie | Save one paper |
+| `/api/extension/upload-paper` | POST multipart/form-data | Bearer token or cookie | Upload one Chrome-downloaded PDF and save one paper |
 | `/api/extension/folders` | GET | Bearer token or cookie | List user folders |
 | `/api/extension/session` | GET | Cookie session | Issue JWT for extension connect |
 
@@ -63,7 +64,7 @@ If a result has no direct PDF link, the extension does not save a paper record. 
 }
 ```
 
-Papers are upserted with `providers: ["google_scholar"]`, marked `saved`, archived as PDFs, and assigned to the folders selected in the in-page picker.
+Papers are upserted with `providers: ["google_scholar"]`, marked `saved`, archived from the uploaded PDF file, and assigned to the folders selected in the in-page picker. The extension should prefer `/api/extension/upload-paper`; `/api/extension/save-paper` is only a server-side PDF download fallback.
 
 ## Auth
 
@@ -107,7 +108,7 @@ Cookie-based session auth still works for extension routes when the request incl
 1. Search on [Google Scholar](https://scholar.google.com/).
 2. Each result shows a **Save PDF to ResearchGPT** link.
 3. Click it to open the folder picker.
-4. Select one or more folders, then click **Save PDF**. This saves the PDF file and paper metadata to those folders.
+4. Select one or more folders, then click **Save PDF**. Chrome downloads the PDF, then the extension uploads and saves the PDF file plus paper metadata to those folders.
 5. If the result has no direct PDF link, the extension shows **No PDF link** and does not save anything.
 6. Open the popup to see the latest save status.
 
@@ -123,6 +124,7 @@ Extension requests from `chrome-extension://` origins are allowed by `lib/http/e
 | `app/api/extension/session/route.ts` | Cookie session → JWT for extension |
 | `app/extension/connect/page.tsx` | Connect page + manual token copy |
 | `app/api/extension/folders/route.ts` | Folder list for popup |
+| `app/api/extension/upload-paper/route.ts` | Extension PDF upload save endpoint |
 | `lib/literature/server/extension-auth.ts` | Bearer + cookie auth |
 | `lib/literature/server/extension-paper.ts` | Parse + upsert shared logic |
 | `lib/supabase/bearer-client.ts` | Supabase client from JWT |

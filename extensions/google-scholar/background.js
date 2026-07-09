@@ -56,6 +56,62 @@ async function savePaperToBackend(paper) {
   return savePaperToBackendWithFolders(paper, undefined);
 }
 
+function sanitizeFilePart(value) {
+  return String(value || "paper")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "paper";
+}
+
+function fileNameFromPaper(paper) {
+  try {
+    const url = new URL(paper?.pdfUrl || "");
+    const pathName = decodeURIComponent(url.pathname.split("/").pop() || "");
+    if (pathName.toLowerCase().endsWith(".pdf")) {
+      return sanitizeFilePart(pathName);
+    }
+  } catch {
+    // Fall back to the paper title below.
+  }
+
+  return `${sanitizeFilePart(paper?.title)}.pdf`;
+}
+
+async function downloadPdfFromBrowser(paper) {
+  const pdfUrl = String(paper?.pdfUrl || "").trim();
+
+  if (!pdfUrl) {
+    throw new Error("No direct PDF link was detected.");
+  }
+
+  const response = await fetch(pdfUrl, {
+    credentials: "include",
+    headers: {
+      Accept: "application/pdf,*/*;q=0.8",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`PDF download failed in Chrome: HTTP ${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type")?.toLowerCase() || "";
+  const arrayBuffer = await response.arrayBuffer();
+
+  if (!arrayBuffer.byteLength) {
+    throw new Error("Downloaded PDF is empty.");
+  }
+
+  const header = new TextDecoder()
+    .decode(new Uint8Array(arrayBuffer.slice(0, 5)));
+
+  if (header !== "%PDF-" && !contentType.includes("pdf")) {
+    throw new Error("Downloaded file is not a PDF.");
+  }
+
+  return new Blob([arrayBuffer], { type: "application/pdf" });
+}
+
 async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
   const config = await getConfig();
   const baseUrl = normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]);
@@ -72,13 +128,18 @@ async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
     );
   }
 
-  const response = await fetch(`${baseUrl}/api/extension/save-paper`, {
+  const pdfBlob = await downloadPdfFromBrowser(paper);
+  const formData = new FormData();
+  formData.append("paper", JSON.stringify(paper));
+  formData.append("folderIds", JSON.stringify(folderIds));
+  formData.append("file", pdfBlob, fileNameFromPaper(paper));
+
+  const response = await fetch(`${baseUrl}/api/extension/upload-paper`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       Authorization: `Bearer ${authToken}`,
     },
-    body: JSON.stringify({ paper, folderIds }),
+    body: formData,
   });
 
   const payload = await response.json().catch(() => ({}));
