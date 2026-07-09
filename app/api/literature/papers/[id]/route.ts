@@ -3,11 +3,14 @@ import { getPaperFolderIds } from "@/lib/literature/server/folder-repository";
 import { parsePaperStatus } from "@/lib/literature/server/parse";
 import {
   getLiteraturePaperById,
+  stripLiteraturePaperFullTextForResponse,
   updateLiteraturePaperStatus,
 } from "@/lib/literature/server/repository";
+import { archiveLiteraturePaperPdf } from "@/lib/literature/server/pdf-archive";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -20,7 +23,9 @@ export async function GET(_request: Request, context: RouteContext) {
     const paper = await getLiteraturePaperById(supabase, user.id, id);
     const folderIds = await getPaperFolderIds(supabase, user.id, id);
 
-    return Response.json({ paper: { ...paper, folderIds } });
+    return Response.json({
+      paper: stripLiteraturePaperFullTextForResponse({ ...paper, folderIds }),
+    });
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });
@@ -37,15 +42,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     const { id } = await context.params;
     const body = await request.json();
     const status = parsePaperStatus(body);
-    const paper = await updateLiteraturePaperStatus(
+    let paper = await updateLiteraturePaperStatus(
       supabase,
       user.id,
       id,
       status,
     );
+    if (status === "saved") {
+      paper = await archiveLiteraturePaperPdf(supabase, user.id, paper);
+    }
     const folderIds = await getPaperFolderIds(supabase, user.id, id);
 
-    return Response.json({ paper: { ...paper, folderIds } });
+    return Response.json({
+      paper: stripLiteraturePaperFullTextForResponse({ ...paper, folderIds }),
+    });
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });

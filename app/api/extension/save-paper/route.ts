@@ -11,6 +11,7 @@ import {
 } from "@/lib/literature/server/extension-paper";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 type SavePaperRequest = {
   paper?: unknown;

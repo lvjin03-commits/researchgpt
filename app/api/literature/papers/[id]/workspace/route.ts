@@ -3,6 +3,7 @@ import { getPaperFolderIds } from "@/lib/literature/server/folder-repository";
 import {
   getLiteraturePaperById,
   saveLiteraturePaperWorkspaceAnalysis,
+  stripLiteraturePaperFullTextForResponse,
 } from "@/lib/literature/server/repository";
 import {
   generatePaperWorkspaceAnalysis,
@@ -46,7 +47,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (!refresh && paper.workspaceAnalysis) {
       const folderIds = await getPaperFolderIds(supabase, user.id, id);
       return Response.json({
-        paper: { ...paper, folderIds },
+        paper: stripLiteraturePaperFullTextForResponse({ ...paper, folderIds }),
         workspaceAnalysis: paper.workspaceAnalysis,
       });
     }
@@ -61,7 +62,7 @@ export async function POST(request: Request, context: RouteContext) {
     const folderIds = await getPaperFolderIds(supabase, user.id, id);
 
     return Response.json({
-      paper: { ...updated, folderIds },
+      paper: stripLiteraturePaperFullTextForResponse({ ...updated, folderIds }),
       workspaceAnalysis,
     });
   } catch (error) {

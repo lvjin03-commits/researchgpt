@@ -2,6 +2,12 @@ export type LiteraturePriority = "recommended" | "skim" | "skip";
 
 export type LiteraturePaperStatus = "new" | "saved" | "skipped" | "read";
 
+export type LiteraturePdfDownloadStatus =
+  | "not_attempted"
+  | "stored"
+  | "failed"
+  | "unavailable";
+
 export type PaperWorkspaceDifficulty = "Beginner" | "Intermediate" | "Advanced";
 
 export type PaperReadingGuide = {
@@ -58,6 +64,13 @@ export type LiteraturePaper = {
   recommendationReason: string | null;
   status: LiteraturePaperStatus;
   fetchedAt: string;
+  pdfStoragePath?: string | null;
+  pdfFileName?: string | null;
+  pdfFileSize?: number | null;
+  pdfDownloadStatus?: LiteraturePdfDownloadStatus;
+  pdfDownloadError?: string | null;
+  fullText?: string | null;
+  fullTextExtractedAt?: string | null;
   folderIds?: string[];
   personalNotes?: string;
   workspaceAnalysis?: PaperWorkspaceAnalysis | null;

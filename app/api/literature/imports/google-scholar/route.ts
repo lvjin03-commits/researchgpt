@@ -9,9 +9,13 @@ import {
   parseExtensionScholarPaper,
   saveExtensionPaper,
 } from "@/lib/literature/server/extension-paper";
-import { listLiteraturePapers } from "@/lib/literature/server/repository";
+import {
+  listLiteraturePapers,
+  stripLiteraturePaperFullTextForResponse,
+} from "@/lib/literature/server/repository";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 type ScholarImportRequest = {
   papers?: unknown;
@@ -49,7 +53,9 @@ export async function POST(request: Request) {
       {
         imported,
         count: imported.length,
-        papers: await listLiteraturePapers(supabase, user.id),
+        papers: (await listLiteraturePapers(supabase, user.id)).map(
+          stripLiteraturePaperFullTextForResponse,
+        ),
       },
       { headers: extensionCorsHeaders(request) },
     );

@@ -6,6 +6,7 @@ import { parseLiteratureSettings } from "@/lib/literature/server/parse";
 import {
   listLiteraturePapers,
   saveLiteratureSettings,
+  stripLiteraturePaperFullTextForResponse,
   upsertAnalyzedPapers,
 } from "@/lib/literature/server/repository";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
     const returnStartedAt = Date.now();
     const response = Response.json({
       settings,
-      papers,
+      papers: papers.map(stripLiteraturePaperFullTextForResponse),
       ...(warnings.length > 0 ? { warnings } : {}),
       ...(failedProviders.length > 0
         ? { failedProviders: failedProviders.map((provider) => provider) }

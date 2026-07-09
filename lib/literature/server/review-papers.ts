@@ -33,7 +33,10 @@ export function buildReviewPaperContext(papers: LiteraturePaper[]) {
     authors: paper.authors,
     year: formatPaperYear(paper),
     abstract: paper.abstract.slice(0, 1200),
+    fullTextExcerpt: paper.fullText?.slice(0, 8000) ?? null,
+    evidenceLevel: paper.fullText ? "full_text" : "abstract_only",
     url: paper.absUrl,
+    pdfStored: paper.pdfDownloadStatus === "stored",
     citationCount: paper.citationCount ?? null,
   }));
 }

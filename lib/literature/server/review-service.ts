@@ -62,6 +62,7 @@ function buildInstructionSummary(request: LiteratureReviewRequest): string {
 
 function buildEvidenceRules(): string {
   return [
+    "When fullTextExcerpt is present, use it as the primary evidence; use abstract only when full text is unavailable.",
     "只能使用用户提供的文件夹文献作为证据来源。",
     "不得虚构论文、作者、年份、方法、数据集或实验结果。",
     "引用时必须使用提供文献中的真实标题、作者与年份。",

@@ -6,6 +6,7 @@ import {
   listLiteratureFolders,
 } from "@/lib/literature/server/folder-repository";
 import { listLiteratureLibraryPapers } from "@/lib/literature/server/repository";
+import { stripLiteraturePaperFullTextForResponse } from "@/lib/literature/server/repository";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 
 export const runtime = "nodejs";
@@ -28,7 +29,10 @@ export async function GET(request: Request) {
           paperFolderIds,
         );
 
-    return Response.json({ papers, folders });
+    return Response.json({
+      papers: papers.map(stripLiteraturePaperFullTextForResponse),
+      folders,
+    });
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });

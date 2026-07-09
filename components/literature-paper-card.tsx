@@ -94,6 +94,21 @@ export function LiteraturePaperCard({
   const externalLabel = "原文链接";
   const googleScholarUrl = getGoogleScholarUrl(paper);
   const publishedDateLabel = formatLiteraturePublishedDate(paper.publishedAt);
+  const pdfStatus = paper.pdfDownloadStatus ?? "not_attempted";
+  const pdfStatusLabel =
+    pdfStatus === "stored"
+      ? "PDF已入库"
+      : pdfStatus === "failed"
+        ? "PDF保存失败"
+        : pdfStatus === "unavailable"
+          ? "无PDF全文"
+          : null;
+  const pdfStatusClassName =
+    pdfStatus === "stored"
+      ? "bg-emerald-50 text-emerald-700"
+      : pdfStatus === "failed"
+        ? "bg-red-50 text-red-700"
+        : "bg-gray-100 text-gray-600";
   const hasMetrics =
     paper.relevanceScore !== null ||
     publishedDateLabel !== null ||
@@ -125,6 +140,14 @@ export function LiteraturePaperCard({
                     {LITERATURE_PROVIDER_BADGE_LABELS[provider]}
                   </span>
                 ))}
+              {pdfStatusLabel && (
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${pdfStatusClassName}`}
+                  title={paper.pdfDownloadError ?? undefined}
+                >
+                  {pdfStatusLabel}
+                </span>
+              )}
               {assignedFolderIds.map((folderId) => {
                 const name = folderNameById.get(folderId);
                 if (!name) {

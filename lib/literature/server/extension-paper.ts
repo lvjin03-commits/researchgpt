@@ -7,6 +7,7 @@ import {
   upsertAnalyzedPapers,
 } from "@/lib/literature/server/repository";
 import { setPaperFolderIds } from "@/lib/literature/server/folder-repository";
+import { archiveLiteraturePaperPdf } from "@/lib/literature/server/pdf-archive";
 import type { ArxivPaperDraft } from "@/lib/literature/types";
 
 export type ExtensionScholarPaperInput = {
@@ -132,14 +133,15 @@ export async function saveExtensionPaper(
     draft.arxivId,
     "saved",
   );
+  const archivedPaper = await archiveLiteraturePaperPdf(supabase, userId, paper);
 
   if (folderIds.length > 0) {
-    await setPaperFolderIds(supabase, userId, paper.id, folderIds);
+    await setPaperFolderIds(supabase, userId, archivedPaper.id, folderIds);
   }
 
   return {
-    id: paper.id,
-    title: paper.title,
-    arxivId: paper.arxivId,
+    id: archivedPaper.id,
+    title: archivedPaper.title,
+    arxivId: archivedPaper.arxivId,
   };
 }

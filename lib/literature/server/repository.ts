@@ -66,6 +66,13 @@ type DbPaperRow = {
   fetched_at: string;
   personal_notes?: string | null;
   workspace_analysis?: unknown | null;
+  pdf_storage_path?: string | null;
+  pdf_file_name?: string | null;
+  pdf_file_size?: number | null;
+  pdf_download_status?: string | null;
+  pdf_download_error?: string | null;
+  full_text?: string | null;
+  full_text_extracted_at?: string | null;
 };
 
 const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
@@ -159,6 +166,19 @@ function mapPaperRow(row: DbPaperRow): LiteraturePaper {
         ? row.status
         : "new",
     fetchedAt: row.fetched_at,
+    pdfStoragePath: row.pdf_storage_path ?? null,
+    pdfFileName: row.pdf_file_name ?? null,
+    pdfFileSize: row.pdf_file_size ?? null,
+    pdfDownloadStatus:
+      row.pdf_download_status === "stored" ||
+      row.pdf_download_status === "failed" ||
+      row.pdf_download_status === "unavailable" ||
+      row.pdf_download_status === "not_attempted"
+        ? row.pdf_download_status
+        : "not_attempted",
+    pdfDownloadError: row.pdf_download_error ?? null,
+    fullText: row.full_text ?? null,
+    fullTextExtractedAt: row.full_text_extracted_at ?? null,
     personalNotes: row.personal_notes ?? "",
     workspaceAnalysis,
     providers: metadata.providers,
@@ -327,6 +347,15 @@ export async function listLiteratureLibraryPapers(
     ...paper,
     folderIds: paperFolderIds.get(paper.id) ?? [],
   }));
+}
+
+export function stripLiteraturePaperFullTextForResponse(
+  paper: LiteraturePaper,
+): LiteraturePaper {
+  return {
+    ...paper,
+    fullText: paper.fullText ? null : paper.fullText,
+  };
 }
 
 export async function upsertAnalyzedPapers(
@@ -507,6 +536,76 @@ export async function updateLiteraturePaperStatusByExternalKey(
   }
 
   return updateLiteraturePaperStatus(supabase, userId, paper.id, status);
+}
+
+function isMissingPdfArchiveColumnError(error: {
+  message?: string;
+  code?: string;
+}): boolean {
+  const message = error.message?.toLowerCase() ?? "";
+  return (
+    isMissingTableError(error) ||
+    message.includes("pdf_storage_path") ||
+    message.includes("pdf_file_name") ||
+    message.includes("pdf_file_size") ||
+    message.includes("pdf_download_status") ||
+    message.includes("pdf_download_error") ||
+    message.includes("full_text") ||
+    message.includes("full_text_extracted_at")
+  );
+}
+
+export async function updateLiteraturePaperPdfArchive(
+  supabase: SupabaseClient,
+  userId: string,
+  paperId: string,
+  patch: {
+    pdfStoragePath?: string | null;
+    pdfFileName?: string | null;
+    pdfFileSize?: number | null;
+    pdfDownloadStatus: LiteraturePaper["pdfDownloadStatus"];
+    pdfDownloadError?: string | null;
+    fullText?: string | null;
+    fullTextExtractedAt?: string | null;
+  },
+): Promise<LiteraturePaper> {
+  const { data, error } = await supabase
+    .from("literature_papers")
+    .update({
+      pdf_storage_path: patch.pdfStoragePath ?? null,
+      pdf_file_name: patch.pdfFileName ?? null,
+      pdf_file_size: patch.pdfFileSize ?? null,
+      pdf_download_status: patch.pdfDownloadStatus ?? "not_attempted",
+      pdf_download_error: patch.pdfDownloadError ?? null,
+      full_text: patch.fullText ?? null,
+      full_text_extracted_at: patch.fullTextExtractedAt ?? null,
+    })
+    .eq("user_id", userId)
+    .eq("id", paperId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingPdfArchiveColumnError(error)) {
+      return updatePaperInFileStore(userId, paperId, {
+        pdfStoragePath: patch.pdfStoragePath ?? null,
+        pdfFileName: patch.pdfFileName ?? null,
+        pdfFileSize: patch.pdfFileSize ?? null,
+        pdfDownloadStatus: patch.pdfDownloadStatus ?? "not_attempted",
+        pdfDownloadError: patch.pdfDownloadError ?? null,
+        fullText: patch.fullText ?? null,
+        fullTextExtractedAt: patch.fullTextExtractedAt ?? null,
+      });
+    }
+
+    throw new LiteratureError(error.message, 500);
+  }
+
+  if (!data) {
+    throw new LiteratureError("Paper not found.", 404);
+  }
+
+  return mapPaperRow(data as DbPaperRow);
 }
 
 export async function getLiteraturePaperById(

@@ -3,6 +3,7 @@ import {
   getLiteratureSettings,
   listLiteraturePapers,
   saveLiteratureSettings,
+  stripLiteraturePaperFullTextForResponse,
 } from "@/lib/literature/server/repository";
 import { parseLiteratureSettings } from "@/lib/literature/server/parse";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
@@ -17,7 +18,10 @@ export async function GET() {
       listLiteraturePapers(supabase, user.id),
     ]);
 
-    return Response.json({ settings, papers });
+    return Response.json({
+      settings,
+      papers: papers.map(stripLiteraturePaperFullTextForResponse),
+    });
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });
