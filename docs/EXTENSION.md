@@ -28,6 +28,7 @@ If a result has no direct PDF link, the extension does not save a paper record. 
 |---|---|---|---|
 | `/api/extension/save-paper` | POST | Bearer token or cookie | Save one paper |
 | `/api/extension/folders` | GET | Bearer token or cookie | List user folders |
+| `/api/extension/session` | GET | Cookie session | Issue JWT for extension connect |
 
 ### Save paper request
 
@@ -64,16 +65,26 @@ Papers are upserted with `providers: ["google_scholar"]`, marked `saved`, and op
 
 ## Auth
 
-The extension stores a Supabase access token in `chrome.storage.local` under `researchAiAuthToken`.
+ResearchGPT uses **Supabase Auth via `@supabase/ssr`**. The web app stores the session in **HTTP cookies**, not Local Storage. You will not find `sb-*-auth-token` or `supabase.auth.token` under Application → Local Storage.
 
-1. Sign in to ResearchAI in the browser.
-2. Open DevTools → Application → Local Storage for your site.
-3. Find the Supabase session entry and copy the `access_token` value.
-4. Paste it into the extension popup.
+The extension stores the JWT in `chrome.storage.local` under `researchAiAuthToken` and sends it as `Authorization: Bearer <token>`.
 
-The backend validates the token via `supabase.auth.getUser(token)`.
+### How to connect
 
-Cookie-based session auth still works for the legacy import route (`/api/literature/imports/google-scholar`).
+1. Sign in to ResearchGPT in Chrome (same browser profile as the extension).
+2. Open the extension popup.
+3. Set **ResearchAI URL** (e.g. `http://localhost:3000`).
+4. Click **Connect account**.
+
+The popup calls `GET /api/extension/session` with `credentials: include`, reads the cookie session on the server, and returns `{ accessToken, expiresAt }`.
+
+If you are not signed in, the extension opens `/auth?next=/extension/connect`. After login, `/extension/connect` shows the token and the connect-bridge content script saves it to the extension automatically (localhost).
+
+Manual fallback: open `/extension/connect` while signed in and copy the access token into the popup.
+
+The backend validates Bearer tokens via `supabase.auth.getUser(token)`.
+
+Cookie-based session auth still works for extension routes when the request includes session cookies (same-origin browser requests).
 
 ## Install locally
 
@@ -86,9 +97,8 @@ Cookie-based session auth still works for the legacy import route (`/api/literat
 
 1. Open the extension popup.
 2. Set **ResearchAI URL** (e.g. `http://localhost:3000` or your deployed URL).
-3. Paste your **Auth token**.
-4. Click **Save settings**.
-5. Click **Load folders** and select default folders for saves.
+3. Click **Connect account** (sign in first if prompted).
+4. Click **Load folders** and select default folders for saves.
 
 ## Use on Google Scholar
 
@@ -107,7 +117,8 @@ Extension requests from `chrome-extension://` origins are allowed by `lib/http/e
 | Path | Role |
 |---|---|
 | `extensions/google-scholar/` | Extension source |
-| `app/api/extension/save-paper/route.ts` | Save endpoint |
+| `app/api/extension/session/route.ts` | Cookie session → JWT for extension |
+| `app/extension/connect/page.tsx` | Connect page + manual token copy |
 | `app/api/extension/folders/route.ts` | Folder list for popup |
 | `lib/literature/server/extension-auth.ts` | Bearer + cookie auth |
 | `lib/literature/server/extension-paper.ts` | Parse + upsert shared logic |
