@@ -6,12 +6,10 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://scholar.google.com/*",
-    "https://*/*",
-    "http://localhost/*"
+    "https://*/*"
   ],
   "externally_connectable": {
     "matches": [
-      "http://localhost:3000/*",
       "https://*/*"
     ]
   },
@@ -31,8 +29,7 @@
     },
     {
       "matches": [
-        "http://localhost:3000/extension/connect*",
-        "http://127.0.0.1:3000/extension/connect*"
+        "https://researchgpt-ivory.vercel.app/extension/connect*"
       ],
       "js": ["connect-bridge.js"],
       "run_at": "document_idle"

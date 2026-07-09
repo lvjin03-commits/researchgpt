@@ -22,7 +22,7 @@ Google Scholar page
 
 The extension does **not** scrape in the background. It only reads the DOM for a result the user explicitly clicks **Save PDF to ResearchGPT** on.
 
-If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead. The extension save step stores metadata, the PDF link, and folder assignment only; full PDF upload happens later when the user starts review/PPT analysis.
+If a result has no direct PDF link, the extension does not save a paper record. It shows a "No PDF link" message instead. A save only succeeds after the backend downloads the PDF, stores it, and records the selected folder assignment.
 
 ## Backend API
 
@@ -63,7 +63,7 @@ If a result has no direct PDF link, the extension does not save a paper record. 
 }
 ```
 
-Papers are upserted with `providers: ["google_scholar"]`, marked `saved`, and assigned to the folders selected in the in-page picker. The PDF file itself is not uploaded during this lightweight library-management step.
+Papers are upserted with `providers: ["google_scholar"]`, marked `saved`, archived as PDFs, and assigned to the folders selected in the in-page picker.
 
 ## Auth
 
@@ -75,12 +75,12 @@ The extension stores the JWT in `chrome.storage.local` under `researchAiAuthToke
 
 1. Sign in to ResearchGPT in Chrome (same browser profile as the extension).
 2. Open the extension popup.
-3. Set **ResearchAI URL** (e.g. `http://localhost:3000`).
+3. Set **ResearchAI URL** to `https://researchgpt-ivory.vercel.app`.
 4. Click **Connect account**.
 
 The popup calls `GET /api/extension/session` with `credentials: include`, reads the cookie session on the server, and returns `{ accessToken, expiresAt }`.
 
-If you are not signed in, the extension opens `/auth?next=/extension/connect`. After login, `/extension/connect` shows the token and the connect-bridge content script saves it to the extension automatically (localhost).
+If you are not signed in, the extension opens `/auth?next=/extension/connect`. After login, `/extension/connect` shows the token and the connect-bridge content script saves it to the extension automatically.
 
 Manual fallback: open `/extension/connect` while signed in and copy the access token into the popup.
 
@@ -98,7 +98,7 @@ Cookie-based session auth still works for extension routes when the request incl
 ## Configure
 
 1. Open the extension popup.
-2. Set **ResearchAI URL** (e.g. `http://localhost:3000` or your deployed URL).
+2. Set **ResearchAI URL** to `https://researchgpt-ivory.vercel.app`.
 3. Click **Connect account** (sign in first if prompted).
 4. Click **Load folders** to confirm the extension can read your folders.
 
@@ -107,7 +107,7 @@ Cookie-based session auth still works for extension routes when the request incl
 1. Search on [Google Scholar](https://scholar.google.com/).
 2. Each result shows a **Save PDF to ResearchGPT** link.
 3. Click it to open the folder picker.
-4. Select one or more folders, then click **Save PDF**. This saves the paper metadata and PDF link to those folders.
+4. Select one or more folders, then click **Save PDF**. This saves the PDF file and paper metadata to those folders.
 5. If the result has no direct PDF link, the extension shows **No PDF link** and does not save anything.
 6. Open the popup to see the latest save status.
 

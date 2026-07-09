@@ -1,4 +1,4 @@
-const DEFAULT_BASE_URL = "http://localhost:3000";
+const DEFAULT_BASE_URL = "https://researchgpt-ivory.vercel.app";
 
 const STORAGE_KEYS = {
   authToken: "researchAiAuthToken",
@@ -6,6 +6,21 @@ const STORAGE_KEYS = {
   folderIds: "researchAiFolderIds",
   lastSaveStatus: "researchAiLastSaveStatus",
 };
+
+function normalizeBaseUrl(value) {
+  const raw = String(value || DEFAULT_BASE_URL).replace(/\/$/, "");
+
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") {
+      return DEFAULT_BASE_URL;
+    }
+  } catch {
+    return DEFAULT_BASE_URL;
+  }
+
+  return raw;
+}
 
 function storageGet(defaults) {
   return new Promise((resolve) => {
@@ -43,10 +58,7 @@ async function savePaperToBackend(paper) {
 
 async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
   const config = await getConfig();
-  const baseUrl = String(config[STORAGE_KEYS.baseUrl] || DEFAULT_BASE_URL).replace(
-    /\/$/,
-    "",
-  );
+  const baseUrl = normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]);
   const authToken = String(config[STORAGE_KEYS.authToken] || "").trim();
   const folderIds = Array.isArray(selectedFolderIds)
     ? selectedFolderIds
@@ -80,10 +92,7 @@ async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
 
 async function loadFoldersFromBackend() {
   const config = await getConfig();
-  const baseUrl = String(config[STORAGE_KEYS.baseUrl] || DEFAULT_BASE_URL).replace(
-    /\/$/,
-    "",
-  );
+  const baseUrl = normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]);
   const authToken = String(config[STORAGE_KEYS.authToken] || "").trim();
   const selectedFolderIds = Array.isArray(config[STORAGE_KEYS.folderIds])
     ? config[STORAGE_KEYS.folderIds]

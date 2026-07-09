@@ -276,11 +276,13 @@
           : "Saved to ResearchGPT",
       );
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Save failed.";
       setButtonState(
         button,
         "error",
-        error instanceof Error ? error.message : "Save failed.",
+        message,
       );
+      window.alert(`ResearchGPT save failed: ${message}`);
     }
   }
 

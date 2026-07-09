@@ -1,4 +1,4 @@
-const DEFAULT_BASE_URL = "http://localhost:3000";
+const DEFAULT_BASE_URL = "https://researchgpt-ivory.vercel.app";
 
 const STORAGE_KEYS = {
   authToken: "researchAiAuthToken",
@@ -22,6 +22,21 @@ function setStatus(message) {
   statusEl.textContent = message;
 }
 
+function normalizeBaseUrl(value) {
+  const raw = String(value || DEFAULT_BASE_URL).replace(/\/$/, "");
+
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") {
+      return DEFAULT_BASE_URL;
+    }
+  } catch {
+    return DEFAULT_BASE_URL;
+  }
+
+  return raw;
+}
+
 function storageGet(defaults) {
   return new Promise((resolve) => {
     chrome.storage.local.get(defaults, resolve);
@@ -35,7 +50,7 @@ function storageSet(values) {
 }
 
 function getBaseUrl() {
-  return (baseUrlInput.value || DEFAULT_BASE_URL).replace(/\/$/, "");
+  return normalizeBaseUrl(baseUrlInput.value);
 }
 
 function getAuthToken() {
@@ -50,7 +65,7 @@ async function loadSettings() {
     [STORAGE_KEYS.lastSaveStatus]: null,
   });
 
-  baseUrlInput.value = settings[STORAGE_KEYS.baseUrl] || DEFAULT_BASE_URL;
+  baseUrlInput.value = normalizeBaseUrl(settings[STORAGE_KEYS.baseUrl]);
   authTokenInput.value = settings[STORAGE_KEYS.authToken] || "";
   renderSaveStatus(settings[STORAGE_KEYS.lastSaveStatus]);
 }
