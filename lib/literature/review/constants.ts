@@ -1,63 +1,67 @@
+const zh = (value: string) =>
+  JSON.parse(`"${value}"`) as string;
+
 export const REVIEW_PERSPECTIVE_OPTIONS = [
-  "技术路线综述",
-  "方法学比较",
-  "应用前景分析",
-  "产业化分析",
-  "开题报告背景",
-  "博士论文绪论",
-  "组会汇报",
-  "自定义",
+  zh("\\u6280\\u672f\\u8def\\u7ebf\\u7efc\\u8ff0"),
+  zh("\\u65b9\\u6cd5\\u5b66\\u6bd4\\u8f83"),
+  zh("\\u5e94\\u7528\\u524d\\u666f\\u5206\\u6790"),
+  zh("\\u4ea7\\u4e1a\\u5316\\u5206\\u6790"),
+  zh("\\u5f00\\u9898\\u62a5\\u544a\\u80cc\\u666f"),
+  zh("\\u535a\\u58eb\\u8bba\\u6587\\u7eea\\u8bba"),
+  zh("\\u7ec4\\u4f1a\\u6c47\\u62a5"),
+  zh("\\u81ea\\u5b9a\\u4e49"),
 ] as const;
 
 export const REVIEW_AUDIENCE_OPTIONS = [
-  "导师",
-  "课题组",
-  "开题委员会",
-  "同领域研究者",
-  "跨学科读者",
+  zh("\\u5bfc\\u5e08"),
+  zh("\\u8bfe\\u9898\\u7ec4"),
+  zh("\\u5f00\\u9898\\u59d4\\u5458\\u4f1a"),
+  zh("\\u540c\\u9886\\u57df\\u7814\\u7a76\\u8005"),
+  zh("\\u8de8\\u5b66\\u79d1\\u8bfb\\u8005"),
 ] as const;
 
 export const REVIEW_SECTION_OPTIONS = [
-  "研究背景",
-  "研究主题分类",
-  "技术路线",
-  "代表性文献",
-  "方法对比",
-  "实验结果对比",
-  "当前瓶颈",
-  "未来方向",
-  "总结",
-  "参考文献",
+  zh("\\u7814\\u7a76\\u80cc\\u666f"),
+  zh("\\u7814\\u7a76\\u4e3b\\u9898\\u5206\\u7c7b"),
+  zh("\\u6280\\u672f\\u8def\\u7ebf"),
+  zh("\\u4ee3\\u8868\\u6027\\u6587\\u732e"),
+  zh("\\u65b9\\u6cd5\\u5bf9\\u6bd4"),
+  zh("\\u5b9e\\u9a8c\\u7ed3\\u679c\\u5bf9\\u6bd4"),
+  zh("\\u5f53\\u524d\\u74f6\\u9888"),
+  zh("\\u672a\\u6765\\u65b9\\u5411"),
+  zh("\\u603b\\u7ed3"),
+  zh("\\u53c2\\u8003\\u6587\\u732e"),
 ] as const;
 
 export const REVIEW_OUTPUT_TYPE_OPTIONS = [
-  "综述文章",
-  "开题报告背景",
-  "博士论文绪论",
-  "组会汇报稿",
-  "PPT大纲",
+  zh("\\u7efc\\u8ff0\\u6587\\u7ae0"),
+  zh("\\u5f00\\u9898\\u62a5\\u544a\\u80cc\\u666f"),
+  zh("\\u535a\\u58eb\\u8bba\\u6587\\u7eea\\u8bba"),
+  zh("\\u7ec4\\u4f1a\\u6c47\\u62a5\\u7a3f"),
+  "PPT",
   "PPTX",
 ] as const;
 
-export const REVIEW_LANGUAGE_OPTIONS = ["中文", "英文", "中英双语"] as const;
+export const REVIEW_LANGUAGE_OPTIONS = [
+  zh("\\u4e2d\\u6587"),
+  zh("\\u82f1\\u6587"),
+  zh("\\u4e2d\\u82f1\\u53cc\\u8bed"),
+] as const;
 
 export const REVIEW_LENGTH_OPTIONS = [
-  "简短版",
-  "标准版",
-  "详细版",
-  "自定义字数",
+  zh("\\u7b80\\u77ed\\u7248"),
+  zh("\\u6807\\u51c6\\u7248"),
+  zh("\\u8be6\\u7ec6\\u7248"),
+  zh("\\u81ea\\u5b9a\\u4e49\\u5b57\\u6570"),
 ] as const;
 
 export const REVIEW_MIN_PAPER_COUNT = 3;
 
 export const REVIEW_MIN_PAPER_COUNT_ERROR =
-  "所选文献夹中的文献数量不足，至少需要 3 篇文献。";
+  zh("\\u6240\\u9009\\u6587\\u732e\\u5939\\u4e2d\\u7684\\u6587\\u732e\\u6570\\u91cf\\u4e0d\\u8db3\\uff0c\\u81f3\\u5c11\\u9700\\u8981 3 \\u7bc7\\u6587\\u732e\\u3002");
 
-export const REVIEW_LENGTH_WORD_TARGETS: Record<
-  Exclude<(typeof REVIEW_LENGTH_OPTIONS)[number], "自定义字数">,
-  string
-> = {
-  简短版: "1500-2500 字",
-  标准版: "3000-5000 字",
-  详细版: "6000-9000 字",
+export const REVIEW_LENGTH_WORD_TARGETS: Record<string, string> = {
+  [REVIEW_LENGTH_OPTIONS[0]]: "1500-2500 字",
+  [REVIEW_LENGTH_OPTIONS[1]]: "3000-5000 字",
+  [REVIEW_LENGTH_OPTIONS[2]]: "6000-9000 字",
 };

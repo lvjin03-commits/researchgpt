@@ -30,14 +30,14 @@ import {
 import type { LiteratureFolder } from "@/lib/literature/types";
 
 const DEFAULT_SECTIONS: ReviewSection[] = [
-  "研究背景",
-  "研究主题分类",
-  "技术路线",
-  "代表性文献",
-  "当前瓶颈",
-  "未来方向",
-  "总结",
-  "参考文献",
+  REVIEW_SECTION_OPTIONS[0],
+  REVIEW_SECTION_OPTIONS[1],
+  REVIEW_SECTION_OPTIONS[2],
+  REVIEW_SECTION_OPTIONS[3],
+  REVIEW_SECTION_OPTIONS[6],
+  REVIEW_SECTION_OPTIONS[7],
+  REVIEW_SECTION_OPTIONS[8],
+  REVIEW_SECTION_OPTIONS[9],
 ];
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -55,18 +55,24 @@ export function LiteratureReviewShell() {
   const [paperCount, setPaperCount] = useState(0);
   const [topic, setTopic] = useState("");
   const [perspective, setPerspective] =
-    useState<LiteratureReviewRequest["perspective"]>("技术路线综述");
+    useState<LiteratureReviewRequest["perspective"]>(
+      REVIEW_PERSPECTIVE_OPTIONS[0],
+    );
   const [customPerspective, setCustomPerspective] = useState("");
   const [targetAudience, setTargetAudience] =
-    useState<LiteratureReviewRequest["targetAudience"]>("导师");
+    useState<LiteratureReviewRequest["targetAudience"]>(
+      REVIEW_AUDIENCE_OPTIONS[0],
+    );
   const [requiredSections, setRequiredSections] =
     useState<ReviewSection[]>(DEFAULT_SECTIONS);
   const [outputType, setOutputType] =
-    useState<LiteratureReviewRequest["outputType"]>("综述文章");
+    useState<LiteratureReviewRequest["outputType"]>(
+      REVIEW_OUTPUT_TYPE_OPTIONS[0],
+    );
   const [language, setLanguage] =
-    useState<LiteratureReviewRequest["language"]>("中文");
+    useState<LiteratureReviewRequest["language"]>(REVIEW_LANGUAGE_OPTIONS[0]);
   const [length, setLength] =
-    useState<LiteratureReviewRequest["length"]>("标准版");
+    useState<LiteratureReviewRequest["length"]>(REVIEW_LENGTH_OPTIONS[1]);
   const [customWordCount, setCustomWordCount] = useState("5000");
   const [additionalInstructions, setAdditionalInstructions] = useState("");
   const [outline, setOutline] = useState("");
@@ -152,14 +158,16 @@ export function LiteratureReviewShell() {
       topic: topic.trim(),
       perspective,
       customPerspective:
-        perspective === "自定义" ? customPerspective.trim() : undefined,
+        perspective === REVIEW_PERSPECTIVE_OPTIONS[7]
+          ? customPerspective.trim()
+          : undefined,
       targetAudience,
       requiredSections,
       outputType,
       language,
       length,
       customWordCount:
-        length === "自定义字数" ? Number(customWordCount) : undefined,
+        length === REVIEW_LENGTH_OPTIONS[3] ? Number(customWordCount) : undefined,
       additionalInstructions: additionalInstructions.trim() || undefined,
     };
   }, [
@@ -178,13 +186,22 @@ export function LiteratureReviewShell() {
   ]);
 
   const hasEnoughPapers = paperCount >= REVIEW_MIN_PAPER_COUNT;
-  const canGenerateOutline =
-    Boolean(folderId && topic.trim() && requiredSections.length > 0) &&
-    hasEnoughPapers &&
-    !isGenerating;
+  const canClickGenerateOutline = !isGenerating && !isLoadingFolders;
 
-  const assertEnoughPapers = () => {
-    if (paperCount < REVIEW_MIN_PAPER_COUNT) {
+  const validateOutlineInput = () => {
+    if (!folderId) {
+      setError("请先选择一个文献夹。");
+      return false;
+    }
+    if (!topic.trim()) {
+      setError("请先填写综述主题。");
+      return false;
+    }
+    if (requiredSections.length === 0) {
+      setError("请至少选择一个必需结构。");
+      return false;
+    }
+    if (!hasEnoughPapers) {
       setError(REVIEW_MIN_PAPER_COUNT_ERROR);
       return false;
     }
@@ -218,7 +235,7 @@ export function LiteratureReviewShell() {
   };
 
   const handleGenerateOutline = async () => {
-    if (!assertEnoughPapers()) {
+    if (!validateOutlineInput()) {
       return;
     }
 
@@ -255,7 +272,8 @@ export function LiteratureReviewShell() {
       setError("请先生成并确认大纲。");
       return;
     }
-    if (!assertEnoughPapers()) {
+    if (!hasEnoughPapers) {
+      setError(REVIEW_MIN_PAPER_COUNT_ERROR);
       return;
     }
 
@@ -294,7 +312,8 @@ export function LiteratureReviewShell() {
       setError("请先生成综述正文。");
       return;
     }
-    if (!assertEnoughPapers()) {
+    if (!hasEnoughPapers) {
+      setError(REVIEW_MIN_PAPER_COUNT_ERROR);
       return;
     }
 
@@ -476,7 +495,7 @@ export function LiteratureReviewShell() {
               </select>
             </label>
 
-            {perspective === "自定义" && (
+            {perspective === REVIEW_PERSPECTIVE_OPTIONS[7] && (
               <label className="grid gap-2">
                 <FieldLabel>自定义视角</FieldLabel>
                 <input
@@ -566,7 +585,7 @@ export function LiteratureReviewShell() {
               </select>
             </label>
 
-            {length === "自定义字数" && (
+            {length === REVIEW_LENGTH_OPTIONS[3] && (
               <label className="grid gap-2">
                 <FieldLabel>目标字数</FieldLabel>
                 <input
@@ -614,7 +633,7 @@ export function LiteratureReviewShell() {
 
           <button
             type="button"
-            disabled={!canGenerateOutline}
+            disabled={!canClickGenerateOutline}
             onClick={() => {
               void handleGenerateOutline();
             }}
