@@ -5,8 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { LiteratureError } from "@/lib/literature/errors";
 import {
   deleteLiteraturePaper,
-  updateLiteraturePaperStatus,
-  upsertAnalyzedPapers,
+  upsertLiteraturePaperDraft,
 } from "@/lib/literature/server/repository";
 import { setPaperFolderIds } from "@/lib/literature/server/folder-repository";
 import { archiveLiteraturePaperPdf } from "@/lib/literature/server/pdf-archive";
@@ -127,15 +126,12 @@ export async function saveExtensionPaper(
   draft: ArxivPaperDraft,
   folderIds: string[],
 ): Promise<{ id: string; title: string; arxivId: string }> {
-  const upserted = await upsertAnalyzedPapers(supabase, userId, [draft], new Map());
-  const savedDraftPaper = upserted.papers.find(
-    (item) => item.arxivId === draft.arxivId,
+  const savedDraftPaper = await upsertLiteraturePaperDraft(
+    supabase,
+    userId,
+    draft,
+    "saved",
   );
-
-  if (!savedDraftPaper) {
-    throw new LiteratureError("Paper could not be saved before PDF download.", 500);
-  }
-
   const archivedPaper = await archiveLiteraturePaperPdf(
     supabase,
     userId,
@@ -154,20 +150,13 @@ export async function saveExtensionPaper(
     );
   }
 
-  const savedPaper = await updateLiteraturePaperStatus(
-    supabase,
-    userId,
-    archivedPaper.id,
-    "saved",
-  );
-
   if (folderIds.length > 0) {
-    await setPaperFolderIds(supabase, userId, savedPaper.id, folderIds);
+    await setPaperFolderIds(supabase, userId, archivedPaper.id, folderIds);
   }
 
   return {
-    id: savedPaper.id,
-    title: savedPaper.title,
-    arxivId: savedPaper.arxivId,
+    id: archivedPaper.id,
+    title: archivedPaper.title,
+    arxivId: archivedPaper.arxivId,
   };
 }

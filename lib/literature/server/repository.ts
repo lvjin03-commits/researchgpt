@@ -531,6 +531,99 @@ export async function upsertAnalyzedPapers(
   };
 }
 
+export async function upsertLiteraturePaperDraft(
+  supabase: SupabaseClient,
+  userId: string,
+  draft: ArxivPaperDraft,
+  status: LiteraturePaperStatus = "saved",
+): Promise<LiteraturePaper> {
+  const existing = (await listLiteraturePapers(supabase, userId)).find(
+    (paper) => paper.arxivId === draft.arxivId,
+  );
+  const preparedDraft = applyDraftProviderMetadata(draft);
+  const metadata = extractPaperProviderMetadata(preparedDraft.categories);
+  const id = existing?.id ?? randomUUID();
+  const now = new Date().toISOString();
+  const displayCategories = metadata.displayCategories;
+  const storedCategories = embedPaperProviderMetadata(displayCategories, {
+    providers: preparedDraft.providers ?? metadata.providers,
+    sourceUrls: preparedDraft.sourceUrls ?? metadata.sourceUrls,
+    rankingScore: preparedDraft.rankingScore ?? metadata.rankingScore,
+  });
+
+  const row = {
+    id,
+    user_id: userId,
+    arxiv_id: preparedDraft.arxivId,
+    title: preparedDraft.title,
+    abstract: preparedDraft.abstract,
+    authors: preparedDraft.authors,
+    published_at: preparedDraft.publishedAt,
+    pdf_url: preparedDraft.pdfUrl,
+    abs_url: preparedDraft.absUrl,
+    categories: storedCategories,
+    relevance_score: existing?.relevanceScore ?? null,
+    priority: existing?.priority ?? null,
+    chinese_summary: existing?.chineseSummary ?? null,
+    recommendation_reason: existing?.recommendationReason ?? null,
+    status,
+    fetched_at: now,
+  };
+
+  const { data, error } = await supabase
+    .from("literature_papers")
+    .upsert(row, { onConflict: "user_id,arxiv_id" })
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      const store = await readFileStore(userId);
+      const nextPaper: LiteraturePaper = {
+        id,
+        arxivId: preparedDraft.arxivId,
+        title: preparedDraft.title,
+        abstract: preparedDraft.abstract,
+        authors: preparedDraft.authors,
+        publishedAt: preparedDraft.publishedAt,
+        pdfUrl: preparedDraft.pdfUrl,
+        absUrl: preparedDraft.absUrl,
+        categories: displayCategories,
+        relevanceScore: existing?.relevanceScore ?? null,
+        priority: existing?.priority ?? null,
+        chineseSummary: existing?.chineseSummary ?? null,
+        recommendationReason: existing?.recommendationReason ?? null,
+        status,
+        fetchedAt: now,
+        citationCount: preparedDraft.citationCount ?? existing?.citationCount ?? null,
+        providers: preparedDraft.providers ?? metadata.providers,
+        sourceUrls: preparedDraft.sourceUrls ?? metadata.sourceUrls,
+        rankingScore: preparedDraft.rankingScore ?? metadata.rankingScore,
+      };
+      const index = store.papers.findIndex(
+        (paper) => paper.arxivId === preparedDraft.arxivId,
+      );
+
+      if (index >= 0) {
+        store.papers[index] = { ...store.papers[index], ...nextPaper };
+      } else {
+        store.papers.push(nextPaper);
+      }
+
+      await writeFileStore(userId, store);
+      return nextPaper;
+    }
+
+    throw new LiteratureError(error.message, 500);
+  }
+
+  if (!data) {
+    throw new LiteratureError("Paper could not be saved.", 500);
+  }
+
+  return mapPaperRow(data as DbPaperRow);
+}
+
 export async function updateLiteraturePaperStatus(
   supabase: SupabaseClient,
   userId: string,
