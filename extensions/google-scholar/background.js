@@ -77,6 +77,20 @@ function fileNameFromPaper(paper) {
   return `${sanitizeFilePart(paper?.title)}.pdf`;
 }
 
+function openPdfForManualDownload(pdfUrl) {
+  const url = String(pdfUrl || "").trim();
+
+  if (!url) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    chrome.tabs.create({ url, active: true }, () => {
+      resolve();
+    });
+  });
+}
+
 async function downloadPdfFromBrowser(paper) {
   const pdfUrl = String(paper?.pdfUrl || "").trim();
 
@@ -128,7 +142,18 @@ async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
     );
   }
 
-  const pdfBlob = await downloadPdfFromBrowser(paper);
+  let pdfBlob;
+  try {
+    pdfBlob = await downloadPdfFromBrowser(paper);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "PDF automatic download failed.";
+    await openPdfForManualDownload(paper?.pdfUrl);
+    throw new Error(
+      `自动保存失败：${message}。已打开 PDF 页面，请手动下载后在 ResearchGPT 文献库上传。`,
+    );
+  }
+
   const formData = new FormData();
   formData.append("paper", JSON.stringify(paper));
   formData.append("folderIds", JSON.stringify(folderIds));
