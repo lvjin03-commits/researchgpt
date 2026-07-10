@@ -240,7 +240,11 @@ export function LiteraturePaperCard({
               href={storedPdfUrl ?? paper.absUrl}
               target="_blank"
               rel="noreferrer"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+              className={
+                storedPdfUrl
+                  ? "rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
+                  : "rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+              }
             >
               {storedPdfUrl ? "打开PDF文件" : externalLabel}
             </a>
