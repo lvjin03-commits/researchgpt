@@ -28,6 +28,20 @@ const REVIEW_CONTEXT_LIMITS = {
   },
 } as const;
 
+function buildContextForPhase(
+  request: LiteratureReviewRequest,
+  papers: LiteraturePaper[],
+  phase: keyof typeof REVIEW_CONTEXT_LIMITS,
+) {
+  const academic = request.workflowMode === "academic_review";
+
+  return buildReviewPaperContext(papers, {
+    ...REVIEW_CONTEXT_LIMITS[phase],
+    includeFullText: academic,
+    includeWorkspaceAnalysis: academic,
+  });
+}
+
 function getClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -61,6 +75,11 @@ function resolveLengthTarget(request: LiteratureReviewRequest): string {
 
 function buildInstructionSummary(request: LiteratureReviewRequest): string {
   return [
+    `生成模式：${
+      request.workflowMode === "academic_review"
+        ? "学术汇报综述（基于全文分析）"
+        : "快速大纲（仅题目、摘要和元数据）"
+    }`,
     `综述主题：${request.topic}`,
     `写作视角：${resolvePerspective(request)}`,
     `目标读者：${request.targetAudience}`,
@@ -157,7 +176,7 @@ export async function generateReviewOutline(
   papers: LiteraturePaper[],
   signal?: AbortSignal,
 ): Promise<string> {
-  const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.outline);
+  const context = buildContextForPhase(request, papers, "outline");
   const client = getClient();
 
   const completion = await createReviewCompletion(
@@ -216,7 +235,7 @@ export async function generateReviewFullText(
   papers: LiteraturePaper[],
   signal?: AbortSignal,
 ): Promise<string> {
-  const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.full);
+  const context = buildContextForPhase(request, papers, "full");
   const client = getClient();
 
   const completion = await createReviewCompletion(
@@ -268,7 +287,7 @@ export async function generateReviewPptOutline(
   papers: LiteraturePaper[],
   signal?: AbortSignal,
 ): Promise<string> {
-  const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.ppt);
+  const context = buildContextForPhase(request, papers, "ppt");
   const client = getClient();
 
   const completion = await createReviewCompletion(

@@ -120,6 +120,7 @@ export function deriveWorkspaceAnalysisFromPaper(
     readingGuide: defaultReadingGuide(paper),
     researchValue: inferResearchValue(paper),
     generatedAt: new Date().toISOString(),
+    evidenceLevel: "abstract_only",
   };
 }
 

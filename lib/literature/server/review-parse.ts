@@ -12,9 +12,14 @@ import {
 import type {
   LiteratureReviewRequest,
   ReviewGenerationPhase,
+  ReviewWorkflowMode,
 } from "@/lib/literature/review/types";
 
 const PHASES = new Set<ReviewGenerationPhase>(["outline", "full", "ppt"]);
+const WORKFLOW_MODES = new Set<ReviewWorkflowMode>([
+  "quick_outline",
+  "academic_review",
+]);
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -78,9 +83,14 @@ export function parseLiteratureReviewRequest(
 
   const record = body as Record<string, unknown>;
   const phase = cleanString(record.phase) as ReviewGenerationPhase;
+  const workflowMode = cleanString(record.workflowMode) as ReviewWorkflowMode;
 
   if (!PHASES.has(phase)) {
     throw new LiteratureError('phase 必须是 "outline"、"full" 或 "ppt"。', 400);
+  }
+
+  if (!WORKFLOW_MODES.has(workflowMode)) {
+    throw new LiteratureError("请选择有效的综述生成模式。", 400);
   }
 
   const folderId = cleanString(record.folderId);
@@ -96,6 +106,7 @@ export function parseLiteratureReviewRequest(
 
   const request: LiteratureReviewRequest = {
     phase,
+    workflowMode,
     folderId,
     topic,
     perspective: pickOption(
@@ -134,6 +145,9 @@ export function parseLiteratureReviewRequest(
 
   if (phase === "full" && !request.confirmedOutline) {
     throw new LiteratureError("请确认或编辑大纲后再生成正文。", 400);
+  }
+  if (phase !== "outline" && workflowMode === "quick_outline") {
+    throw new LiteratureError("快速大纲模式只生成大纲，请选择学术汇报综述模式。", 400);
   }
 
   if (phase === "ppt" && !request.reviewContent) {

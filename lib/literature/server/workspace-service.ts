@@ -47,7 +47,10 @@ function parseDifficulty(value: unknown): PaperWorkspaceDifficulty {
   return "Intermediate";
 }
 
-function parseWorkspaceRecord(record: Record<string, unknown>): PaperWorkspaceAnalysis | null {
+function parseWorkspaceRecord(
+  record: Record<string, unknown>,
+  evidenceLevel: PaperWorkspaceAnalysis["evidenceLevel"],
+): PaperWorkspaceAnalysis | null {
   const readingGuideRaw =
     typeof record.readingGuide === "object" && record.readingGuide !== null
       ? (record.readingGuide as Record<string, unknown>)
@@ -97,6 +100,7 @@ function parseWorkspaceRecord(record: Record<string, unknown>): PaperWorkspaceAn
       readingPriority: clampScore(researchValueRaw.readingPriority),
     },
     generatedAt: new Date().toISOString(),
+    evidenceLevel,
   };
 
   return isValidWorkspaceAnalysis(workspace) ? workspace : null;
@@ -105,13 +109,23 @@ function parseWorkspaceRecord(record: Record<string, unknown>): PaperWorkspaceAn
 export async function generatePaperWorkspaceAnalysis(
   paper: LiteraturePaper,
   signal?: AbortSignal,
+  options: { requireFullText?: boolean } = {},
 ): Promise<PaperWorkspaceAnalysis> {
   try {
+    if (options.requireFullText && !paper.fullText?.trim()) {
+      throw new LiteratureError(
+        `《${paper.title}》没有可读取的 PDF 全文，请先上传有效 PDF。`,
+        422,
+      );
+    }
+
     const client = getClient();
+    const evidenceLevel = paper.fullText ? "full_text" : "abstract_only";
 
     const completion = await client.chat.completions.create(
       {
         model: getTextModel(),
+        max_completion_tokens: 1800,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -120,7 +134,7 @@ export async function generatePaperWorkspaceAnalysis(
               "You are a research paper analysis assistant for ResearchGPT.",
               "Return JSON only with shape:",
               '{"oneSentenceSummary":"...","researchProblem":"...","coreMethod":"...","mainContributions":"...","experimentalResults":"...","limitations":"...","whyItMatters":"...","readingGuide":{"estimatedReadingMinutes":15,"suggestedReadingOrder":["..."],"difficulty":"Beginner|Intermediate|Advanced"},"researchValue":{"novelty":1-5,"technicalDepth":1-5,"industrialPotential":1-5,"readingPriority":1-5}}',
-              "Write concise English. If fullTextExcerpt is present, base analysis on it first; otherwise use title and abstract.",
+              "Write concise English. When fullText is present, analyze evidence across the entire supplied paper text instead of relying on the abstract.",
               "Scores must be integers from 1 to 5.",
             ].join("\n"),
           },
@@ -130,8 +144,8 @@ export async function generatePaperWorkspaceAnalysis(
               title: paper.title,
               authors: paper.authors,
               abstract: paper.abstract.slice(0, 4000),
-              fullTextExcerpt: paper.fullText?.slice(0, 12000) ?? null,
-              evidenceLevel: paper.fullText ? "full_text" : "abstract_only",
+              fullText: paper.fullText?.slice(0, 60000) ?? null,
+              evidenceLevel,
               categories: paper.categories,
               existingSummary: paper.chineseSummary,
               recommendationReason: paper.recommendationReason,
@@ -158,7 +172,10 @@ export async function generatePaperWorkspaceAnalysis(
       );
     }
 
-    const workspace = parseWorkspaceRecord(parsed as Record<string, unknown>);
+    const workspace = parseWorkspaceRecord(
+      parsed as Record<string, unknown>,
+      evidenceLevel,
+    );
     if (!workspace) {
       throw new LiteratureError(
         "The workspace analysis provider returned an unexpected JSON shape.",
@@ -172,7 +189,30 @@ export async function generatePaperWorkspaceAnalysis(
       throw error;
     }
 
+    if (error instanceof OpenAI.APIError) {
+      throw new AIProviderError(`AI 文献分析失败：${error.message}`, {
+        statusCode: error.status ?? 502,
+        provider: "openai",
+        cause: error,
+      });
+    }
+
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new AIProviderError("文献分析已取消。", {
+        statusCode: 499,
+        provider: "openai",
+        cause: error,
+      });
+    }
+
     console.error("[literature] workspace analysis fallback:", error);
+    if (options.requireFullText) {
+      throw new AIProviderError("AI 无法完成该文献的全文分析。", {
+        statusCode: 502,
+        provider: "openai",
+        cause: error,
+      });
+    }
     return deriveWorkspaceAnalysisFromPaper(paper);
   }
 }

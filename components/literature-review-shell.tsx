@@ -6,6 +6,7 @@ import {
   exportLiteratureReview,
   fetchLiteratureFolders,
   fetchLiteratureLibrary,
+  generateLiteraturePaperWorkspace,
   generateLiteratureReview,
   LiteratureError,
 } from "@/lib/literature/client";
@@ -22,12 +23,13 @@ import {
 import type {
   LiteratureReviewRequest,
   ReviewSection,
+  ReviewWorkflowMode,
 } from "@/lib/literature/review/types";
 import {
   flattenFolderTree,
   formatFolderTreeLabel,
 } from "@/lib/literature/folder-tree";
-import type { LiteratureFolder } from "@/lib/literature/types";
+import type { LiteratureFolder, LiteraturePaper } from "@/lib/literature/types";
 
 const DEFAULT_SECTIONS: ReviewSection[] = [
   REVIEW_SECTION_OPTIONS[0],
@@ -48,11 +50,23 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+type AnalysisProgress = {
+  total: number;
+  completed: number;
+  failed: number;
+  currentTitle: string | null;
+  lastCompletedTitle: string | null;
+  failedTitles: string[];
+};
+
 export function LiteratureReviewShell() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const [folders, setFolders] = useState<LiteratureFolder[]>([]);
   const [folderId, setFolderId] = useState("");
   const [paperCount, setPaperCount] = useState(0);
+  const [folderPapers, setFolderPapers] = useState<LiteraturePaper[]>([]);
+  const [workflowMode, setWorkflowMode] =
+    useState<ReviewWorkflowMode>("quick_outline");
   const [topic, setTopic] = useState("");
   const [perspective, setPerspective] =
     useState<LiteratureReviewRequest["perspective"]>(
@@ -82,12 +96,15 @@ export function LiteratureReviewShell() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isLoadingFolders, setIsLoadingFolders] = useState(true);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
+  const [isAnalyzingPapers, setIsAnalyzingPapers] = useState(false);
   const [isGeneratingReview, setIsGeneratingReview] = useState(false);
   const [isGeneratingPpt, setIsGeneratingPpt] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  const [analysisProgress, setAnalysisProgress] =
+    useState<AnalysisProgress | null>(null);
   const isGenerating =
-    isGeneratingOutline || isGeneratingReview || isGeneratingPpt;
+    isAnalyzingPapers || isGeneratingOutline || isGeneratingReview || isGeneratingPpt;
   const folderTree = useMemo(() => flattenFolderTree(folders), [folders]);
   const selectedFolder = useMemo(
     () => folders.find((folder) => folder.id === folderId) ?? null,
@@ -132,10 +149,12 @@ export function LiteratureReviewShell() {
         });
         if (!cancelled) {
           setPaperCount(result.papers.length);
+          setFolderPapers(result.papers);
         }
       } catch {
         if (!cancelled) {
           setPaperCount(0);
+          setFolderPapers([]);
         }
       }
     })();
@@ -155,6 +174,7 @@ export function LiteratureReviewShell() {
     return {
       folderId: selectedFolder?.id ?? folderId,
       folderName: selectedFolder?.name,
+      workflowMode,
       topic: topic.trim(),
       perspective,
       customPerspective:
@@ -183,6 +203,7 @@ export function LiteratureReviewShell() {
     selectedFolder,
     targetAudience,
     topic,
+    workflowMode,
   ]);
 
   const hasEnoughPapers = paperCount >= REVIEW_MIN_PAPER_COUNT;
@@ -221,9 +242,111 @@ export function LiteratureReviewShell() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setIsGeneratingOutline(false);
+    setIsAnalyzingPapers(false);
     setIsGeneratingReview(false);
     setIsGeneratingPpt(false);
     setStatusMessage("已停止生成。");
+  };
+
+  const changeWorkflowMode = (mode: ReviewWorkflowMode) => {
+    setWorkflowMode(mode);
+    setOutline("");
+    setReview("");
+    setPptOutline("");
+    setAnalysisProgress(null);
+    setError(null);
+    setStatusMessage(null);
+  };
+
+  const analyzeAcademicPapers = async (abortController: AbortController) => {
+    const total = folderPapers.length;
+    let completed = 0;
+    let failed = 0;
+    let lastCompletedTitle: string | null = null;
+    const failedTitles: string[] = [];
+
+    setIsAnalyzingPapers(true);
+    setAnalysisProgress({
+      total,
+      completed,
+      failed,
+      currentTitle: null,
+      lastCompletedTitle,
+      failedTitles,
+    });
+
+    try {
+      for (const paper of folderPapers) {
+        if (abortController.signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+
+        if (paper.workspaceAnalysis?.evidenceLevel === "full_text") {
+          completed += 1;
+          lastCompletedTitle = paper.title;
+          setAnalysisProgress({
+            total,
+            completed,
+            failed,
+            currentTitle: null,
+            lastCompletedTitle,
+            failedTitles: [...failedTitles],
+          });
+          continue;
+        }
+
+        setAnalysisProgress({
+          total,
+          completed,
+          failed,
+          currentTitle: paper.title,
+          lastCompletedTitle,
+          failedTitles: [...failedTitles],
+        });
+
+        try {
+          const result = await generateLiteraturePaperWorkspace(paper.id, {
+            requireFullText: true,
+            signal: abortController.signal,
+          });
+          completed += 1;
+          lastCompletedTitle = paper.title;
+          setFolderPapers((current) =>
+            current.map((item) => (item.id === paper.id ? result.paper : item)),
+          );
+        } catch (err) {
+          if (isAbortError(err) || abortController.signal.aborted) {
+            throw err;
+          }
+          failed += 1;
+          failedTitles.push(paper.title);
+        }
+
+        setAnalysisProgress({
+          total,
+          completed,
+          failed,
+          currentTitle: null,
+          lastCompletedTitle,
+          failedTitles: [...failedTitles],
+        });
+      }
+
+      if (completed < REVIEW_MIN_PAPER_COUNT) {
+        throw new LiteratureError(
+          `只有 ${completed} 篇文献完成全文分析，至少需要 ${REVIEW_MIN_PAPER_COUNT} 篇。请检查失败文献是否已上传有效 PDF。`,
+          422,
+        );
+      }
+
+      setStatusMessage(
+        failed > 0
+          ? `已完成 ${completed} 篇全文分析，${failed} 篇失败；正在使用成功文献生成大纲。`
+          : `已完成全部 ${completed} 篇全文分析，正在生成大纲。`,
+      );
+    } finally {
+      setIsAnalyzingPapers(false);
+    }
   };
 
   const toggleSection = (section: ReviewSection) => {
@@ -243,6 +366,10 @@ export function LiteratureReviewShell() {
     setIsGeneratingOutline(true);
 
     try {
+      if (workflowMode === "academic_review") {
+        await analyzeAcademicPapers(abortController);
+      }
+
       const result = await generateLiteratureReview(
         {
           ...buildRequestBase(),
@@ -254,7 +381,11 @@ export function LiteratureReviewShell() {
       setOutline(result.outline ?? "");
       setReview("");
       setPptOutline("");
-      setStatusMessage("大纲已生成，请确认或编辑后继续。");
+      setStatusMessage(
+        workflowMode === "academic_review"
+          ? "全文分析与大纲生成完成，请确认或编辑后继续。"
+          : "快速大纲已生成。",
+      );
     } catch (err) {
       if (!isAbortError(err)) {
         setError(err instanceof LiteratureError ? err.message : "生成大纲失败。");
@@ -413,13 +544,62 @@ export function LiteratureReviewShell() {
           </p>
         )}
 
+        {!isGenerating &&
+          analysisProgress &&
+          analysisProgress.failedTitles.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-medium">以下文献未完成全文分析：</p>
+              <p className="mt-1 leading-6">
+                {analysisProgress.failedTitles
+                  .map((title) => `《${title}》`)
+                  .join("、")}
+              </p>
+            </div>
+          )}
+
         {isGenerating && (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-sm font-medium text-amber-900">正在生成内容...</p>
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-4">
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="text-sm font-semibold text-blue-950">
+                {isAnalyzingPapers ? "正在逐篇分析 PDF 全文" : "正在生成内容"}
+              </p>
+              {isAnalyzingPapers && analysisProgress && (
+                <>
+                  <div className="h-2 overflow-hidden rounded-full bg-blue-100">
+                    <div
+                      className="h-full rounded-full bg-blue-700 transition-[width] duration-300"
+                      style={{
+                        width: `${Math.round(
+                          ((analysisProgress.completed + analysisProgress.failed) /
+                            Math.max(1, analysisProgress.total)) *
+                            100,
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-sm text-blue-900">
+                    已完成 {analysisProgress.completed}/{analysisProgress.total} 篇
+                    {analysisProgress.failed > 0
+                      ? `，失败 ${analysisProgress.failed} 篇`
+                      : ""}
+                  </p>
+                  {analysisProgress.currentTitle && (
+                    <p className="truncate text-sm font-medium text-blue-950">
+                      正在分析《{analysisProgress.currentTitle}》
+                    </p>
+                  )}
+                  {analysisProgress.lastCompletedTitle && (
+                    <p className="truncate text-xs text-blue-700">
+                      已完成《{analysisProgress.lastCompletedTitle}》分析
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
             <button
               type="button"
               onClick={stopGeneration}
-              className="rounded-lg bg-amber-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-800"
+              className="shrink-0 rounded-lg bg-blue-950 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-900"
             >
               停止生成
             </button>
@@ -427,14 +607,80 @@ export function LiteratureReviewShell() {
         )}
 
         <section className="space-y-5 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-900">1. 选择文献夹</h2>
+          <h2 className="text-base font-semibold text-gray-900">1. 选择成果类型</h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label
+              className={`cursor-pointer rounded-xl border p-4 transition-colors ${
+                workflowMode === "quick_outline"
+                  ? "border-blue-600 bg-blue-50"
+                  : "border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  name="workflowMode"
+                  value="quick_outline"
+                  checked={workflowMode === "quick_outline"}
+                  disabled={isGenerating}
+                  onChange={() => changeWorkflowMode("quick_outline")}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-gray-950">
+                    快速大纲
+                  </span>
+                  <span className="mt-1 block text-sm leading-6 text-gray-600">
+                    分析题目、摘要和基础信息，快速生成研究大纲，不读取 PDF 全文。
+                  </span>
+                </span>
+              </div>
+            </label>
+            <label
+              className={`cursor-pointer rounded-xl border p-4 transition-colors ${
+                workflowMode === "academic_review"
+                  ? "border-blue-600 bg-blue-50"
+                  : "border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  name="workflowMode"
+                  value="academic_review"
+                  checked={workflowMode === "academic_review"}
+                  disabled={isGenerating}
+                  onChange={() => changeWorkflowMode("academic_review")}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-gray-950">
+                    学术汇报综述
+                  </span>
+                  <span className="mt-1 block text-sm leading-6 text-gray-600">
+                    逐篇分析 PDF 全文并展示进度，生成完整综述、证据图表和 PPT。
+                  </span>
+                </span>
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section className="space-y-5 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-gray-900">2. 选择文献夹</h2>
 
           <label className="grid gap-2">
             <FieldLabel>文献夹</FieldLabel>
             <select
               value={folderId}
               disabled={isLoadingFolders || isGenerating}
-              onChange={(event) => setFolderId(event.target.value)}
+              onChange={(event) => {
+                setFolderId(event.target.value);
+                setOutline("");
+                setReview("");
+                setPptOutline("");
+                setAnalysisProgress(null);
+              }}
               className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
             >
               {folderTree.length === 0 ? (
@@ -461,7 +707,7 @@ export function LiteratureReviewShell() {
         </section>
 
         <section className="space-y-5 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-900">2. 写作指令</h2>
+          <h2 className="text-base font-semibold text-gray-900">3. 写作指令</h2>
 
           <label className="grid gap-2">
             <FieldLabel>综述主题</FieldLabel>
@@ -639,13 +885,19 @@ export function LiteratureReviewShell() {
             }}
             className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
           >
-            {isGeneratingOutline ? "正在生成大纲..." : "生成综述大纲"}
+            {isAnalyzingPapers
+              ? "正在分析文献全文..."
+              : isGeneratingOutline
+                ? "正在生成大纲..."
+                : workflowMode === "academic_review"
+                  ? "分析全文并生成综述大纲"
+                  : "生成快速大纲"}
           </button>
         </section>
 
         {outline && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">3. 确认大纲</h2>
+            <h2 className="text-base font-semibold text-gray-900">4. 确认大纲</h2>
             <textarea
               value={outline}
               disabled={isGenerating}
@@ -653,22 +905,24 @@ export function LiteratureReviewShell() {
               rows={16}
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
             />
-            <button
-              type="button"
-              disabled={isGenerating}
-              onClick={() => {
-                void handleGenerateReview();
-              }}
-              className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
-            >
-              {isGeneratingReview ? "正在生成正文..." : "确认并生成综述正文"}
-            </button>
+            {workflowMode === "academic_review" && (
+              <button
+                type="button"
+                disabled={isGenerating}
+                onClick={() => {
+                  void handleGenerateReview();
+                }}
+                className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+              >
+                {isGeneratingReview ? "正在生成正文..." : "确认并生成综述正文"}
+              </button>
+            )}
           </section>
         )}
 
         {review && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">4. 综述正文</h2>
+            <h2 className="text-base font-semibold text-gray-900">5. 综述正文</h2>
             <textarea
               value={review}
               disabled={isGenerating}
@@ -703,7 +957,7 @@ export function LiteratureReviewShell() {
 
         {pptOutline && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">5. PPT 大纲</h2>
+            <h2 className="text-base font-semibold text-gray-900">6. PPT 大纲</h2>
             <textarea
               value={pptOutline}
               disabled={isGenerating}

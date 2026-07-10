@@ -1,4 +1,5 @@
 import { LiteratureError } from "@/lib/literature/errors";
+import { AIProviderError } from "@/lib/ai/errors";
 import { getPaperFolderIds } from "@/lib/literature/server/folder-repository";
 import {
   getLiteraturePaperById,
@@ -12,6 +13,7 @@ import {
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -41,10 +43,15 @@ export async function POST(request: Request, context: RouteContext) {
     const { id } = await context.params;
     const { searchParams } = new URL(request.url);
     const refresh = searchParams.get("refresh") === "true";
+    const requireFullText = searchParams.get("depth") === "full";
 
     const paper = await getLiteraturePaperById(supabase, user.id, id);
 
-    if (!refresh && paper.workspaceAnalysis) {
+    if (
+      !refresh &&
+      paper.workspaceAnalysis &&
+      (!requireFullText || paper.workspaceAnalysis.evidenceLevel === "full_text")
+    ) {
       const folderIds = await getPaperFolderIds(supabase, user.id, id);
       return Response.json({
         paper: stripLiteraturePaperFullTextForResponse({ ...paper, folderIds }),
@@ -52,7 +59,11 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
 
-    const workspaceAnalysis = await generatePaperWorkspaceAnalysis(paper);
+    const workspaceAnalysis = await generatePaperWorkspaceAnalysis(
+      paper,
+      request.signal,
+      { requireFullText },
+    );
     const updated = await saveLiteraturePaperWorkspaceAnalysis(
       supabase,
       user.id,
@@ -67,6 +78,10 @@ export async function POST(request: Request, context: RouteContext) {
     });
   } catch (error) {
     if (error instanceof LiteratureError) {
+      return Response.json({ error: error.message }, { status: error.statusCode });
+    }
+
+    if (error instanceof AIProviderError) {
       return Response.json({ error: error.message }, { status: error.statusCode });
     }
 

@@ -15,9 +15,11 @@ export type ReviewLanguage = (typeof REVIEW_LANGUAGE_OPTIONS)[number];
 export type ReviewLength = (typeof REVIEW_LENGTH_OPTIONS)[number];
 
 export type ReviewGenerationPhase = "outline" | "full" | "ppt";
+export type ReviewWorkflowMode = "quick_outline" | "academic_review";
 
 export type LiteratureReviewRequest = {
   phase: ReviewGenerationPhase;
+  workflowMode: ReviewWorkflowMode;
   folderId: string;
   topic: string;
   perspective: ReviewPerspective;

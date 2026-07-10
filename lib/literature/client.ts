@@ -617,11 +617,27 @@ export async function fetchLiteraturePaperCitationNetwork(
 
 export async function generateLiteraturePaperWorkspace(
   paperId: string,
-  refresh = false,
+  options:
+    | boolean
+    | {
+        refresh?: boolean;
+        requireFullText?: boolean;
+        signal?: AbortSignal;
+      } = {},
 ): Promise<{ paper: LiteraturePaper; workspaceAnalysis: PaperWorkspaceAnalysis }> {
-  const query = refresh ? "?refresh=true" : "";
+  const normalizedOptions =
+    typeof options === "boolean" ? { refresh: options } : options;
+  const searchParams = new URLSearchParams();
+  if (normalizedOptions.refresh) {
+    searchParams.set("refresh", "true");
+  }
+  if (normalizedOptions.requireFullText) {
+    searchParams.set("depth", "full");
+  }
+  const query = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
   const response = await fetch(`/api/literature/papers/${paperId}/workspace${query}`, {
     method: "POST",
+    signal: normalizedOptions.signal,
   });
 
   const payload = await parseJson<{

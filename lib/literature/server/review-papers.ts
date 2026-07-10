@@ -31,6 +31,8 @@ type ReviewPaperContextOptions = {
   maxFullTextChars?: number;
   maxFigureEvidence?: number;
   maxFigureCaptionChars?: number;
+  includeFullText?: boolean;
+  includeWorkspaceAnalysis?: boolean;
 };
 
 export function buildReviewPaperContext(
@@ -40,12 +42,15 @@ export function buildReviewPaperContext(
   const maxFullTextChars = options.maxFullTextChars ?? 5000;
   const maxFigureEvidence = options.maxFigureEvidence ?? 5;
   const maxFigureCaptionChars = options.maxFigureCaptionChars ?? 600;
+  const includeFullText = options.includeFullText ?? true;
+  const includeWorkspaceAnalysis = options.includeWorkspaceAnalysis ?? true;
 
   return papers.map((paper) => {
-    const figureEvidence =
-      paper.figureEvidence && paper.figureEvidence.length > 0
+    const figureEvidence = includeFullText
+      ? paper.figureEvidence && paper.figureEvidence.length > 0
         ? paper.figureEvidence
-        : extractFigureEvidenceFromText(paper.fullText, paper);
+        : extractFigureEvidenceFromText(paper.fullText, paper)
+      : [];
 
     return {
       id: paper.id,
@@ -53,8 +58,16 @@ export function buildReviewPaperContext(
       authors: paper.authors,
       year: formatPaperYear(paper),
       abstract: paper.abstract.slice(0, 1200),
-      fullTextExcerpt: paper.fullText?.slice(0, maxFullTextChars) ?? null,
-      evidenceLevel: paper.fullText ? "full_text" : "abstract_only",
+      fullTextExcerpt:
+        includeFullText && paper.fullText
+          ? paper.fullText.slice(0, maxFullTextChars)
+          : null,
+      evidenceLevel:
+        includeFullText && paper.fullText ? "full_text" : "abstract_only",
+      workspaceAnalysis:
+        includeWorkspaceAnalysis && paper.workspaceAnalysis
+          ? paper.workspaceAnalysis
+          : null,
       url: paper.absUrl,
       pdfStored: paper.pdfDownloadStatus === "stored",
       citationCount: paper.citationCount ?? null,

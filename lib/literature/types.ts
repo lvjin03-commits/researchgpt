@@ -44,6 +44,7 @@ export type PaperWorkspaceAnalysis = {
   readingGuide: PaperReadingGuide;
   researchValue: PaperResearchValue;
   generatedAt: string;
+  evidenceLevel?: "abstract_only" | "full_text";
 };
 
 export type LiteratureDisciplineId =
