@@ -16,6 +16,7 @@ import {
   REVIEW_LENGTH_OPTIONS,
   REVIEW_MIN_PAPER_COUNT,
   REVIEW_MIN_PAPER_COUNT_ERROR,
+  REVIEW_MODEL_OPTIONS,
   REVIEW_OUTPUT_TYPE_OPTIONS,
   REVIEW_PERSPECTIVE_OPTIONS,
   REVIEW_SECTION_OPTIONS,
@@ -23,6 +24,7 @@ import {
 import type {
   LiteratureReviewRequest,
   ReviewSection,
+  ReviewModel,
   ReviewWorkflowMode,
 } from "@/lib/literature/review/types";
 import {
@@ -67,6 +69,7 @@ export function LiteratureReviewShell() {
   const [folderPapers, setFolderPapers] = useState<LiteraturePaper[]>([]);
   const [workflowMode, setWorkflowMode] =
     useState<ReviewWorkflowMode>("quick_outline");
+  const [model, setModel] = useState<ReviewModel>("gpt-5.4-mini");
   const [topic, setTopic] = useState("");
   const [perspective, setPerspective] =
     useState<LiteratureReviewRequest["perspective"]>(
@@ -109,6 +112,9 @@ export function LiteratureReviewShell() {
   const selectedFolder = useMemo(
     () => folders.find((folder) => folder.id === folderId) ?? null,
     [folders, folderId],
+  );
+  const selectedModel = REVIEW_MODEL_OPTIONS.find(
+    (option) => option.id === model,
   );
 
   useEffect(() => {
@@ -175,6 +181,7 @@ export function LiteratureReviewShell() {
       folderId: selectedFolder?.id ?? folderId,
       folderName: selectedFolder?.name,
       workflowMode,
+      model,
       topic: topic.trim(),
       perspective,
       customPerspective:
@@ -197,6 +204,7 @@ export function LiteratureReviewShell() {
     folderId,
     language,
     length,
+    model,
     outputType,
     perspective,
     requiredSections,
@@ -253,6 +261,17 @@ export function LiteratureReviewShell() {
 
   const changeWorkflowMode = (mode: ReviewWorkflowMode) => {
     setWorkflowMode(mode);
+    setModel(mode === "academic_review" ? "gpt-5.4" : "gpt-5.4-mini");
+    setOutline("");
+    setReview("");
+    setPptOutline("");
+    setAnalysisProgress(null);
+    setError(null);
+    setStatusMessage(null);
+  };
+
+  const changeModel = (nextModel: ReviewModel) => {
+    setModel(nextModel);
     setOutline("");
     setReview("");
     setPptOutline("");
@@ -284,7 +303,10 @@ export function LiteratureReviewShell() {
           throw new DOMException("Aborted", "AbortError");
         }
 
-        if (paper.workspaceAnalysis?.evidenceLevel === "full_text") {
+        if (
+          paper.workspaceAnalysis?.evidenceLevel === "full_text" &&
+          paper.workspaceAnalysis.model === model
+        ) {
           completed += 1;
           lastCompletedTitle = paper.title;
           setAnalysisProgress({
@@ -311,6 +333,7 @@ export function LiteratureReviewShell() {
           const result = await generateLiteraturePaperWorkspace(paper.id, {
             requireFullText: true,
             signal: abortController.signal,
+            model,
           });
           completed += 1;
           lastCompletedTitle = paper.title;
@@ -723,6 +746,27 @@ export function LiteratureReviewShell() {
 
         <section className="space-y-5 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-gray-900">3. 写作指令</h2>
+
+          <label className="grid gap-2">
+            <FieldLabel>AI 模型</FieldLabel>
+            <select
+              value={model}
+              disabled={isGenerating}
+              onChange={(event) => changeModel(event.target.value as ReviewModel)}
+              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
+            >
+              {REVIEW_MODEL_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label} · {option.badge}
+                </option>
+              ))}
+            </select>
+            {selectedModel && (
+              <span className="text-sm leading-6 text-gray-500">
+                {selectedModel.description}
+              </span>
+            )}
+          </label>
 
           <label className="grid gap-2">
             <FieldLabel>综述主题</FieldLabel>

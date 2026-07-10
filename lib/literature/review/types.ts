@@ -5,6 +5,7 @@ import type {
   REVIEW_OUTPUT_TYPE_OPTIONS,
   REVIEW_PERSPECTIVE_OPTIONS,
   REVIEW_SECTION_OPTIONS,
+  REVIEW_MODEL_OPTIONS,
 } from "@/lib/literature/review/constants";
 
 export type ReviewPerspective = (typeof REVIEW_PERSPECTIVE_OPTIONS)[number];
@@ -13,6 +14,7 @@ export type ReviewSection = (typeof REVIEW_SECTION_OPTIONS)[number];
 export type ReviewOutputType = (typeof REVIEW_OUTPUT_TYPE_OPTIONS)[number];
 export type ReviewLanguage = (typeof REVIEW_LANGUAGE_OPTIONS)[number];
 export type ReviewLength = (typeof REVIEW_LENGTH_OPTIONS)[number];
+export type ReviewModel = (typeof REVIEW_MODEL_OPTIONS)[number]["id"];
 
 export type ReviewGenerationPhase = "outline" | "full" | "ppt";
 export type ReviewWorkflowMode = "quick_outline" | "academic_review";
@@ -20,6 +22,7 @@ export type ReviewWorkflowMode = "quick_outline" | "academic_review";
 export type LiteratureReviewRequest = {
   phase: ReviewGenerationPhase;
   workflowMode: ReviewWorkflowMode;
+  model: ReviewModel;
   folderId: string;
   topic: string;
   perspective: ReviewPerspective;

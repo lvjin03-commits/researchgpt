@@ -45,6 +45,7 @@ export type PaperWorkspaceAnalysis = {
   researchValue: PaperResearchValue;
   generatedAt: string;
   evidenceLevel?: "abstract_only" | "full_text";
+  model?: string;
 };
 
 export type LiteratureDisciplineId =

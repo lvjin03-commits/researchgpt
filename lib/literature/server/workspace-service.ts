@@ -12,6 +12,7 @@ import type {
   PaperWorkspaceAnalysis,
   PaperWorkspaceDifficulty,
 } from "@/lib/literature/types";
+import type { ReviewModel } from "@/lib/literature/review/types";
 
 function getClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -26,8 +27,8 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-function getTextModel(): string {
-  return process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+function getTextModel(model?: ReviewModel): string {
+  return model || process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
 }
 
 function clampScore(value: unknown): number {
@@ -50,6 +51,7 @@ function parseDifficulty(value: unknown): PaperWorkspaceDifficulty {
 function parseWorkspaceRecord(
   record: Record<string, unknown>,
   evidenceLevel: PaperWorkspaceAnalysis["evidenceLevel"],
+  model: string,
 ): PaperWorkspaceAnalysis | null {
   const readingGuideRaw =
     typeof record.readingGuide === "object" && record.readingGuide !== null
@@ -101,6 +103,7 @@ function parseWorkspaceRecord(
     },
     generatedAt: new Date().toISOString(),
     evidenceLevel,
+    model,
   };
 
   return isValidWorkspaceAnalysis(workspace) ? workspace : null;
@@ -109,7 +112,7 @@ function parseWorkspaceRecord(
 export async function generatePaperWorkspaceAnalysis(
   paper: LiteraturePaper,
   signal?: AbortSignal,
-  options: { requireFullText?: boolean } = {},
+  options: { requireFullText?: boolean; model?: ReviewModel } = {},
 ): Promise<PaperWorkspaceAnalysis> {
   try {
     if (options.requireFullText && !paper.fullText?.trim()) {
@@ -121,10 +124,11 @@ export async function generatePaperWorkspaceAnalysis(
 
     const client = getClient();
     const evidenceLevel = paper.fullText ? "full_text" : "abstract_only";
+    const model = getTextModel(options.model);
 
     const completion = await client.chat.completions.create(
       {
-        model: getTextModel(),
+        model,
         reasoning_effort: "none",
         max_completion_tokens: 2500,
         response_format: { type: "json_object" },
@@ -176,6 +180,7 @@ export async function generatePaperWorkspaceAnalysis(
     const workspace = parseWorkspaceRecord(
       parsed as Record<string, unknown>,
       evidenceLevel,
+      model,
     );
     if (!workspace) {
       throw new LiteratureError(

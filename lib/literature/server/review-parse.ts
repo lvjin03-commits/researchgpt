@@ -8,6 +8,7 @@ import {
   REVIEW_OUTPUT_TYPE_OPTIONS,
   REVIEW_PERSPECTIVE_OPTIONS,
   REVIEW_SECTION_OPTIONS,
+  REVIEW_MODEL_IDS,
 } from "@/lib/literature/review/constants";
 import type {
   LiteratureReviewRequest,
@@ -107,6 +108,7 @@ export function parseLiteratureReviewRequest(
   const request: LiteratureReviewRequest = {
     phase,
     workflowMode,
+    model: pickOption(record.model, REVIEW_MODEL_IDS, "model"),
     folderId,
     topic,
     perspective: pickOption(

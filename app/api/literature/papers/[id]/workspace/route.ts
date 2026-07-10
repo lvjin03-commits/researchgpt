@@ -12,6 +12,8 @@ import {
   resolvePaperWorkspaceAnalysis,
 } from "@/lib/literature/server/workspace-service";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
+import { REVIEW_MODEL_IDS } from "@/lib/literature/review/constants";
+import type { ReviewModel } from "@/lib/literature/review/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -45,6 +47,14 @@ export async function POST(request: Request, context: RouteContext) {
     const { searchParams } = new URL(request.url);
     const refresh = searchParams.get("refresh") === "true";
     const requireFullText = searchParams.get("depth") === "full";
+    const requestedModel = searchParams.get("model")?.trim() ?? "";
+    if (
+      requestedModel &&
+      !REVIEW_MODEL_IDS.includes(requestedModel as ReviewModel)
+    ) {
+      throw new LiteratureError("不支持所选 AI 模型。", 400);
+    }
+    const model = requestedModel ? (requestedModel as ReviewModel) : undefined;
 
     let paper = await getLiteraturePaperById(supabase, user.id, id);
 
@@ -55,7 +65,8 @@ export async function POST(request: Request, context: RouteContext) {
     if (
       !refresh &&
       paper.workspaceAnalysis &&
-      (!requireFullText || paper.workspaceAnalysis.evidenceLevel === "full_text")
+      (!requireFullText || paper.workspaceAnalysis.evidenceLevel === "full_text") &&
+      (!model || paper.workspaceAnalysis.model === model)
     ) {
       const folderIds = await getPaperFolderIds(supabase, user.id, id);
       return Response.json({
@@ -67,7 +78,7 @@ export async function POST(request: Request, context: RouteContext) {
     const workspaceAnalysis = await generatePaperWorkspaceAnalysis(
       paper,
       request.signal,
-      { requireFullText },
+      { requireFullText, model },
     );
     const updated = await saveLiteraturePaperWorkspaceAnalysis(
       supabase,

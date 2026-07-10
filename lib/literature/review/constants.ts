@@ -1,6 +1,29 @@
 const zh = (value: string) =>
   JSON.parse(`"${value}"`) as string;
 
+export const REVIEW_MODEL_OPTIONS = [
+  {
+    id: "gpt-5.4-mini",
+    label: "GPT-5.4 mini",
+    badge: "经济",
+    description: "速度快、费用低，适合快速大纲和摘要综述。",
+  },
+  {
+    id: "gpt-5.4",
+    label: "GPT-5.4",
+    badge: "均衡",
+    description: "质量与成本平衡，适合常规学术综述。",
+  },
+  {
+    id: "gpt-5.5",
+    label: "GPT-5.5",
+    badge: "高质量",
+    description: "质量最高、费用较高，适合最终成果。",
+  },
+] as const;
+
+export const REVIEW_MODEL_IDS = REVIEW_MODEL_OPTIONS.map((option) => option.id);
+
 export const REVIEW_PERSPECTIVE_OPTIONS = [
   zh("\\u6280\\u672f\\u8def\\u7ebf\\u7efc\\u8ff0"),
   zh("\\u65b9\\u6cd5\\u5b66\\u6bd4\\u8f83"),

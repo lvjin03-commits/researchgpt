@@ -18,6 +18,7 @@ import type {
   LiteratureReviewExportRequest,
   LiteratureReviewRequest,
   LiteratureReviewResponse,
+  ReviewModel,
 } from "@/lib/literature/review/types";
 import { downloadBlob } from "@/lib/export/download";
 
@@ -623,6 +624,7 @@ export async function generateLiteraturePaperWorkspace(
         refresh?: boolean;
         requireFullText?: boolean;
         signal?: AbortSignal;
+        model?: ReviewModel;
       } = {},
 ): Promise<{ paper: LiteraturePaper; workspaceAnalysis: PaperWorkspaceAnalysis }> {
   const normalizedOptions =
@@ -633,6 +635,9 @@ export async function generateLiteraturePaperWorkspace(
   }
   if (normalizedOptions.requireFullText) {
     searchParams.set("depth", "full");
+  }
+  if (normalizedOptions.model) {
+    searchParams.set("model", normalizedOptions.model);
   }
   const query = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
   const response = await fetch(`/api/literature/papers/${paperId}/workspace${query}`, {

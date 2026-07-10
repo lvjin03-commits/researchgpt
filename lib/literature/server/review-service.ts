@@ -55,10 +55,6 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-function getTextModel(): string {
-  return process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
-}
-
 function resolvePerspective(request: LiteratureReviewRequest): string {
   return request.perspective === "自定义"
     ? request.customPerspective || request.perspective
@@ -80,6 +76,7 @@ function buildInstructionSummary(request: LiteratureReviewRequest): string {
         ? "学术汇报综述（基于全文分析）"
         : "快速大纲（仅题目、摘要和元数据）"
     }`,
+    `AI 模型：${request.model}`,
     `综述主题：${request.topic}`,
     `写作视角：${resolvePerspective(request)}`,
     `目标读者：${request.targetAudience}`,
@@ -205,7 +202,7 @@ export async function generateReviewOutline(
   const completion = await createReviewCompletion(
     client,
     {
-      model: getTextModel(),
+      model: request.model,
       reasoning_effort: "none",
       max_completion_tokens: 5000,
       messages: [
@@ -265,7 +262,7 @@ export async function generateReviewFullText(
   const completion = await createReviewCompletion(
     client,
     {
-      model: getTextModel(),
+      model: request.model,
       reasoning_effort: "low",
       max_completion_tokens: 9000,
       messages: [
@@ -318,7 +315,7 @@ export async function generateReviewPptOutline(
   const completion = await createReviewCompletion(
     client,
     {
-      model: getTextModel(),
+      model: request.model,
       reasoning_effort: "none",
       max_completion_tokens: 5000,
       messages: [
