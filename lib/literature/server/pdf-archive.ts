@@ -116,7 +116,7 @@ async function extractPdfFullText(buffer: Buffer): Promise<string | null> {
   }
 }
 
-async function downloadStoredPdfBuffer(
+export async function downloadStoredPdfBuffer(
   supabase: SupabaseClient,
   userId: string,
   paper: LiteraturePaper,

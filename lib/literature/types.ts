@@ -16,6 +16,12 @@ export type LiteratureFigureEvidence = {
   sourceTitle: string;
   page: number | null;
   topics: string[];
+  imageStoragePath?: string | null;
+  imageMimeType?: "image/png" | "image/jpeg" | null;
+  imageWidth?: number | null;
+  imageHeight?: number | null;
+  extractionMethod?: "embedded_image" | "page_crop" | null;
+  captionMatched?: boolean;
 };
 
 export type PaperWorkspaceDifficulty = "Beginner" | "Intermediate" | "Advanced";

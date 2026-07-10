@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LiteraturePaperFolderSelector } from "@/components/literature-paper-folder-selector";
 import { LITERATURE_PRIORITY_LABELS } from "@/lib/literature/constants";
@@ -8,7 +9,9 @@ import {
   fetchLiteratureFolders,
   fetchLiteraturePaper,
   fetchLiteraturePaperCitationNetwork,
+  extractLiteraturePaperFigures,
   generateLiteraturePaperWorkspace,
+  type FigureExtractionSummary,
   LiteratureError,
   setPaperFolders,
   updateLiteraturePaperNotes,
@@ -209,6 +212,9 @@ export function LiteraturePaperDetailShell({
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isGeneratingWorkspace, setIsGeneratingWorkspace] = useState(false);
+  const [isExtractingFigures, setIsExtractingFigures] = useState(false);
+  const [figureExtractionSummary, setFigureExtractionSummary] =
+    useState<FigureExtractionSummary | null>(null);
   const [citationNetwork, setCitationNetwork] = useState<PaperCitationNetwork | null>(
     null,
   );
@@ -423,6 +429,25 @@ export function LiteraturePaperDetailShell({
     }
   };
 
+  const handleExtractFigures = async () => {
+    if (!paper) return;
+
+    setIsExtractingFigures(true);
+    setError(null);
+    setFigureExtractionSummary(null);
+    try {
+      const result = await extractLiteraturePaperFigures(paper.id);
+      setPaper(result.paper);
+      setFigureExtractionSummary(result.summary);
+    } catch (err) {
+      setError(
+        err instanceof LiteratureError ? err.message : "图表提取失败。",
+      );
+    } finally {
+      setIsExtractingFigures(false);
+    }
+  };
+
   const downloadText = (filename: string, content: string, mimeType: string) => {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -456,6 +481,10 @@ export function LiteraturePaperDetailShell({
   const storedPdfViewUrl = storedPdfDownloadUrl
     ? `${storedPdfDownloadUrl}/view`
     : null;
+  const extractedFigures =
+    paper?.figureEvidence?.filter((item) => item.imageStoragePath) ?? [];
+  const captionOnlyEvidence =
+    paper?.figureEvidence?.filter((item) => !item.imageStoragePath) ?? [];
   const hasCitationNetworkData =
     citationNetwork !== null &&
     (citationNetwork.citationCount !== null ||
@@ -656,6 +685,95 @@ export function LiteraturePaperDetailShell({
                   </a>
                 )}
               </div>
+            </WorkspaceSection>
+
+            <WorkspaceSection title="原文图表">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2 text-sm text-gray-600">
+                  <span>原图 {extractedFigures.length} 张</span>
+                  <span>图注记录 {captionOnlyEvidence.length} 条</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={
+                    isExtractingFigures || paper.pdfDownloadStatus !== "stored"
+                  }
+                  onClick={() => {
+                    void handleExtractFigures();
+                  }}
+                  className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {isExtractingFigures
+                    ? "正在提取图表…"
+                    : extractedFigures.length > 0
+                      ? "重新提取图表"
+                      : "提取图表"}
+                </button>
+              </div>
+
+              {paper.pdfDownloadStatus !== "stored" && (
+                <p className="mt-3 text-sm text-amber-700">请先上传 PDF 全文。</p>
+              )}
+
+              {figureExtractionSummary && (
+                <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  已检查 {figureExtractionSummary.pagesScanned} 页，提取原图{" "}
+                  {figureExtractionSummary.imagesExtracted} 张，匹配图注{" "}
+                  {figureExtractionSummary.captionsMatched} 张。
+                  {figureExtractionSummary.truncated ? " 结果已达到提取上限。" : ""}
+                </p>
+              )}
+
+              {extractedFigures.length > 0 ? (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  {extractedFigures.map((figure) => (
+                    <article
+                      key={figure.id}
+                      className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+                    >
+                      <a
+                        href={`/api/literature/papers/${paper.id}/figures/${encodeURIComponent(figure.id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="relative block aspect-[4/3] bg-gray-50"
+                      >
+                        <Image
+                          src={`/api/literature/papers/${paper.id}/figures/${encodeURIComponent(figure.id)}`}
+                          alt={`${figure.label}：${figure.caption}`}
+                          fill
+                          unoptimized
+                          sizes="(max-width: 640px) 100vw, 50vw"
+                          className="object-contain"
+                        />
+                      </a>
+                      <div className="space-y-2 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-sm font-semibold text-gray-900">
+                            {figure.label}
+                          </h3>
+                          <span className="text-xs text-gray-500">
+                            第 {figure.page ?? "?"} 页
+                          </span>
+                        </div>
+                        <p className="line-clamp-4 text-sm leading-relaxed text-gray-600">
+                          {figure.caption}
+                        </p>
+                        <span
+                          className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+                            figure.captionMatched
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {figure.captionMatched ? "图注已匹配" : "图注待确认"}
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-gray-500">暂无已提取的原文图表。</p>
+              )}
             </WorkspaceSection>
 
             <WorkspaceSection title="AI 分析">

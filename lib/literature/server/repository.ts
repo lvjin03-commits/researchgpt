@@ -157,6 +157,29 @@ function parseFigureEvidence(value: unknown): LiteratureFigureEvidence[] {
         topics: Array.isArray(record.topics)
           ? record.topics.filter((topic): topic is string => typeof topic === "string")
           : [],
+        imageStoragePath:
+          typeof record.imageStoragePath === "string"
+            ? record.imageStoragePath
+            : null,
+        imageMimeType:
+          record.imageMimeType === "image/png" ||
+          record.imageMimeType === "image/jpeg"
+            ? record.imageMimeType
+            : null,
+        imageWidth:
+          typeof record.imageWidth === "number" && Number.isFinite(record.imageWidth)
+            ? record.imageWidth
+            : null,
+        imageHeight:
+          typeof record.imageHeight === "number" && Number.isFinite(record.imageHeight)
+            ? record.imageHeight
+            : null,
+        extractionMethod:
+          record.extractionMethod === "embedded_image" ||
+          record.extractionMethod === "page_crop"
+            ? record.extractionMethod
+            : null,
+        captionMatched: record.captionMatched === true,
       };
     })
     .filter((item): item is LiteratureFigureEvidence => Boolean(item));

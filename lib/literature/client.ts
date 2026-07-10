@@ -360,6 +360,34 @@ export async function fetchLiteraturePaper(paperId: string): Promise<LiteratureP
   return payload.paper;
 }
 
+export type FigureExtractionSummary = {
+  pagesScanned: number;
+  imagesExtracted: number;
+  captionsMatched: number;
+  captionOnlyEvidence: number;
+  skippedImages: number;
+  truncated: boolean;
+};
+
+export async function extractLiteraturePaperFigures(
+  paperId: string,
+): Promise<{ paper: LiteraturePaper; summary: FigureExtractionSummary }> {
+  const response = await fetch(`/api/literature/papers/${paperId}/figures/extract`, {
+    method: "POST",
+  });
+  const payload = await parseJson<{
+    paper: LiteraturePaper;
+    summary: FigureExtractionSummary;
+    error?: string;
+  }>(response);
+
+  if (!response.ok) {
+    throw new LiteratureError(payload.error ?? "图表提取失败。", response.status);
+  }
+
+  return { paper: payload.paper, summary: payload.summary };
+}
+
 export async function updateLiteraturePaperStatus(
   paperId: string,
   status: LiteraturePaperStatus,
