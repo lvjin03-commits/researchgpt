@@ -920,18 +920,20 @@ export function LiteratureReviewShell() {
               rows={16}
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
             />
-            {workflowMode === "academic_review" && (
-              <button
-                type="button"
-                disabled={isGenerating}
-                onClick={() => {
-                  void handleGenerateReview();
-                }}
-                className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
-              >
-                {isGeneratingReview ? "正在生成正文..." : "确认并生成综述正文"}
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={() => {
+                void handleGenerateReview();
+              }}
+              className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+            >
+              {isGeneratingReview
+                ? "正在生成正文..."
+                : workflowMode === "academic_review"
+                  ? "确认大纲并生成全文综述"
+                  : "确认大纲并基于摘要生成综述"}
+            </button>
           </section>
         )}
 

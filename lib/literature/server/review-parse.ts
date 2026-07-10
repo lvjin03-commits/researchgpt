@@ -146,10 +146,6 @@ export function parseLiteratureReviewRequest(
   if (phase === "full" && !request.confirmedOutline) {
     throw new LiteratureError("请确认或编辑大纲后再生成正文。", 400);
   }
-  if (phase !== "outline" && workflowMode === "quick_outline") {
-    throw new LiteratureError("快速大纲模式只生成大纲，请选择学术汇报综述模式。", 400);
-  }
-
   if (phase === "ppt" && !request.reviewContent) {
     throw new LiteratureError("请先生成综述正文。", 400);
   }
