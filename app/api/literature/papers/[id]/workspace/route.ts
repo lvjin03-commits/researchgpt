@@ -1,6 +1,7 @@
 import { LiteratureError } from "@/lib/literature/errors";
 import { AIProviderError } from "@/lib/ai/errors";
 import { getPaperFolderIds } from "@/lib/literature/server/folder-repository";
+import { ensureLiteraturePaperFullText } from "@/lib/literature/server/pdf-archive";
 import {
   getLiteraturePaperById,
   saveLiteraturePaperWorkspaceAnalysis,
@@ -45,7 +46,11 @@ export async function POST(request: Request, context: RouteContext) {
     const refresh = searchParams.get("refresh") === "true";
     const requireFullText = searchParams.get("depth") === "full";
 
-    const paper = await getLiteraturePaperById(supabase, user.id, id);
+    let paper = await getLiteraturePaperById(supabase, user.id, id);
+
+    if (requireFullText && !paper.fullText?.trim()) {
+      paper = await ensureLiteraturePaperFullText(supabase, user.id, paper);
+    }
 
     if (
       !refresh &&

@@ -56,7 +56,7 @@ type AnalysisProgress = {
   failed: number;
   currentTitle: string | null;
   lastCompletedTitle: string | null;
-  failedTitles: string[];
+  failedPapers: Array<{ title: string; reason: string }>;
 };
 
 export function LiteratureReviewShell() {
@@ -207,6 +207,9 @@ export function LiteratureReviewShell() {
   ]);
 
   const hasEnoughPapers = paperCount >= REVIEW_MIN_PAPER_COUNT;
+  const readablePaperCount = folderPapers.filter(
+    (paper) => Boolean(paper.fullTextExtractedAt),
+  ).length;
   const canClickGenerateOutline = !isGenerating && !isLoadingFolders;
 
   const validateOutlineInput = () => {
@@ -263,7 +266,7 @@ export function LiteratureReviewShell() {
     let completed = 0;
     let failed = 0;
     let lastCompletedTitle: string | null = null;
-    const failedTitles: string[] = [];
+    const failedPapers: Array<{ title: string; reason: string }> = [];
 
     setIsAnalyzingPapers(true);
     setAnalysisProgress({
@@ -272,7 +275,7 @@ export function LiteratureReviewShell() {
       failed,
       currentTitle: null,
       lastCompletedTitle,
-      failedTitles,
+      failedPapers,
     });
 
     try {
@@ -290,7 +293,7 @@ export function LiteratureReviewShell() {
             failed,
             currentTitle: null,
             lastCompletedTitle,
-            failedTitles: [...failedTitles],
+            failedPapers: [...failedPapers],
           });
           continue;
         }
@@ -301,7 +304,7 @@ export function LiteratureReviewShell() {
           failed,
           currentTitle: paper.title,
           lastCompletedTitle,
-          failedTitles: [...failedTitles],
+          failedPapers: [...failedPapers],
         });
 
         try {
@@ -319,7 +322,10 @@ export function LiteratureReviewShell() {
             throw err;
           }
           failed += 1;
-          failedTitles.push(paper.title);
+          failedPapers.push({
+            title: paper.title,
+            reason: err instanceof Error ? err.message : "未知错误",
+          });
         }
 
         setAnalysisProgress({
@@ -328,13 +334,13 @@ export function LiteratureReviewShell() {
           failed,
           currentTitle: null,
           lastCompletedTitle,
-          failedTitles: [...failedTitles],
+          failedPapers: [...failedPapers],
         });
       }
 
       if (completed < REVIEW_MIN_PAPER_COUNT) {
         throw new LiteratureError(
-          `只有 ${completed} 篇文献完成全文分析，至少需要 ${REVIEW_MIN_PAPER_COUNT} 篇。请检查失败文献是否已上传有效 PDF。`,
+          `只有 ${completed} 篇文献完成全文分析，至少需要 ${REVIEW_MIN_PAPER_COUNT} 篇。请查看下方逐篇失败原因。`,
           422,
         );
       }
@@ -546,14 +552,16 @@ export function LiteratureReviewShell() {
 
         {!isGenerating &&
           analysisProgress &&
-          analysisProgress.failedTitles.length > 0 && (
+          analysisProgress.failedPapers.length > 0 && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <p className="font-medium">以下文献未完成全文分析：</p>
-              <p className="mt-1 leading-6">
-                {analysisProgress.failedTitles
-                  .map((title) => `《${title}》`)
-                  .join("、")}
-              </p>
+              <ul className="mt-1 space-y-1 leading-6">
+                {analysisProgress.failedPapers.map((item) => (
+                  <li key={`${item.title}:${item.reason}`}>
+                    《{item.title}》：{item.reason}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -698,6 +706,13 @@ export function LiteratureReviewShell() {
           <p className="text-sm text-gray-600">
             当前文献夹共 {paperCount} 篇论文。
           </p>
+
+          {workflowMode === "academic_review" && paperCount > 0 && (
+            <p className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              当前已有 {readablePaperCount}/{paperCount} 篇提取出可供 AI
+              阅读的全文；开始分析时会自动尝试从已上传 PDF 恢复其余全文。
+            </p>
+          )}
 
           {paperCount > 0 && paperCount < REVIEW_MIN_PAPER_COUNT && (
             <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

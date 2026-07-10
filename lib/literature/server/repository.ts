@@ -741,6 +741,17 @@ function isMissingPdfArchiveColumnError(error: {
   );
 }
 
+function isMissingFigureEvidenceColumnError(error: {
+  message?: string;
+  code?: string;
+}): boolean {
+  const message = error.message?.toLowerCase() ?? "";
+  return (
+    message.includes("figure_evidence") ||
+    message.includes("figure_evidence_extracted_at")
+  );
+}
+
 export async function updateLiteraturePaperPdfArchive(
   supabase: SupabaseClient,
   userId: string,
@@ -757,23 +768,40 @@ export async function updateLiteraturePaperPdfArchive(
     figureEvidenceExtractedAt?: string | null;
   },
 ): Promise<LiteraturePaper> {
-  const { data, error } = await supabase
+  const corePatch = {
+    pdf_storage_path: patch.pdfStoragePath ?? null,
+    pdf_file_name: patch.pdfFileName ?? null,
+    pdf_file_size: patch.pdfFileSize ?? null,
+    pdf_download_status: patch.pdfDownloadStatus ?? "not_attempted",
+    pdf_download_error: patch.pdfDownloadError ?? null,
+    full_text: patch.fullText ?? null,
+    full_text_extracted_at: patch.fullTextExtractedAt ?? null,
+  };
+  const archivePatch = {
+    ...corePatch,
+    figure_evidence: patch.figureEvidence ?? [],
+    figure_evidence_extracted_at: patch.figureEvidenceExtractedAt ?? null,
+  };
+
+  let { data, error } = await supabase
     .from("literature_papers")
-    .update({
-      pdf_storage_path: patch.pdfStoragePath ?? null,
-      pdf_file_name: patch.pdfFileName ?? null,
-      pdf_file_size: patch.pdfFileSize ?? null,
-      pdf_download_status: patch.pdfDownloadStatus ?? "not_attempted",
-      pdf_download_error: patch.pdfDownloadError ?? null,
-      full_text: patch.fullText ?? null,
-      full_text_extracted_at: patch.fullTextExtractedAt ?? null,
-      figure_evidence: patch.figureEvidence ?? [],
-      figure_evidence_extracted_at: patch.figureEvidenceExtractedAt ?? null,
-    })
+    .update(archivePatch)
     .eq("user_id", userId)
     .eq("id", paperId)
     .select("*")
     .maybeSingle();
+
+  if (error && isMissingFigureEvidenceColumnError(error)) {
+    const retry = await supabase
+      .from("literature_papers")
+      .update(corePatch)
+      .eq("user_id", userId)
+      .eq("id", paperId)
+      .select("*")
+      .maybeSingle();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     if (isMissingPdfArchiveColumnError(error)) {

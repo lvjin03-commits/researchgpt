@@ -116,6 +116,99 @@ async function extractPdfFullText(buffer: Buffer): Promise<string | null> {
   }
 }
 
+async function downloadStoredPdfBuffer(
+  supabase: SupabaseClient,
+  userId: string,
+  paper: LiteraturePaper,
+): Promise<{ buffer: Buffer; storagePath: string; fileName: string }> {
+  const bucket = supabase.storage.from(LITERATURE_PDFS_BUCKET);
+  const candidatePaths: string[] = [];
+
+  if (paper.pdfStoragePath) {
+    candidatePaths.push(paper.pdfStoragePath);
+  }
+
+  const folderPath = `${userId}/${paper.id}`;
+  const { data: storedFiles, error: listError } = await bucket.list(folderPath, {
+    limit: 100,
+    sortBy: { column: "updated_at", order: "desc" },
+  });
+
+  if (!listError) {
+    for (const file of storedFiles ?? []) {
+      if (file.name.toLowerCase().endsWith(".pdf")) {
+        const path = `${folderPath}/${file.name}`;
+        if (!candidatePaths.includes(path)) {
+          candidatePaths.push(path);
+        }
+      }
+    }
+  }
+
+  for (const storagePath of candidatePaths) {
+    const { data, error } = await bucket.download(storagePath);
+    if (!error && data) {
+      return {
+        buffer: Buffer.from(await data.arrayBuffer()),
+        storagePath,
+        fileName: paper.pdfFileName || storagePath.split("/").at(-1) || "paper.pdf",
+      };
+    }
+  }
+
+  if (listError) {
+    throw new LiteratureError(
+      `无法读取《${paper.title}》的 PDF 存储目录：${listError.message}`,
+      500,
+    );
+  }
+
+  throw new LiteratureError(
+    `未找到《${paper.title}》已上传的 PDF 文件，请重新上传。`,
+    422,
+  );
+}
+
+export async function ensureLiteraturePaperFullText(
+  supabase: SupabaseClient,
+  userId: string,
+  paper: LiteraturePaper,
+): Promise<LiteraturePaper> {
+  if (paper.fullText?.trim()) {
+    return paper;
+  }
+
+  const { buffer, storagePath, fileName } = await downloadStoredPdfBuffer(
+    supabase,
+    userId,
+    paper,
+  );
+  assertPdfBuffer(buffer);
+
+  const fullText = await extractPdfFullText(buffer);
+  if (!fullText) {
+    throw new LiteratureError(
+      `《${paper.title}》的 PDF 没有可提取文字，可能是扫描版或加密文件，请上传可复制文字的 PDF。`,
+      422,
+    );
+  }
+
+  const extractedAt = new Date().toISOString();
+  const figureEvidence = extractFigureEvidenceFromText(fullText, paper);
+
+  return updateLiteraturePaperPdfArchive(supabase, userId, paper.id, {
+    pdfStoragePath: storagePath,
+    pdfFileName: fileName,
+    pdfFileSize: buffer.byteLength,
+    pdfDownloadStatus: "stored",
+    pdfDownloadError: null,
+    fullText,
+    fullTextExtractedAt: extractedAt,
+    figureEvidence,
+    figureEvidenceExtractedAt: figureEvidence.length > 0 ? extractedAt : null,
+  });
+}
+
 async function storeLiteraturePaperPdfBuffer(
   supabase: SupabaseClient,
   userId: string,
