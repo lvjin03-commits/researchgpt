@@ -115,7 +115,7 @@ Cookie-based session auth still works for extension routes when the request incl
 
 ## CORS
 
-Extension requests from `chrome-extension://` origins are allowed by `lib/http/extension-cors.ts` with `Authorization` header support.
+Extension requests from `chrome-extension://` origins are allowed by `lib/http/extension-cors.ts` with `Authorization` header support. The Google Scholar page origin (`https://scholar.google.com`) is also allowed for the staged manual PDF upload dialog.
 
 ## Related code
 
