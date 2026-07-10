@@ -449,10 +449,13 @@ export function LiteraturePaperDetailShell({
   const assignedFolderIds = paper?.folderIds ?? [];
   const googleScholarUrl = paper ? getGoogleScholarUrl(paper) : null;
   const semanticScholarUrl = paper ? getSemanticScholarUrl(paper) : null;
-  const storedPdfUrl =
+  const storedPdfDownloadUrl =
     paper?.pdfDownloadStatus === "stored" && paper.pdfStoragePath
       ? `/api/literature/papers/${paper.id}/pdf`
       : null;
+  const storedPdfViewUrl = storedPdfDownloadUrl
+    ? `${storedPdfDownloadUrl}/view`
+    : null;
   const hasCitationNetworkData =
     citationNetwork !== null &&
     (citationNetwork.citationCount !== null ||
@@ -584,14 +587,24 @@ export function LiteraturePaperDetailShell({
 
             <WorkspaceSection title="外部链接">
               <div className="flex flex-wrap gap-2">
-                {storedPdfUrl && (
+                {storedPdfViewUrl && (
                   <a
-                    href={storedPdfUrl}
+                    href={storedPdfViewUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                    className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
                   >
-                    打开入库 PDF
+                    在线阅读
+                  </a>
+                )}
+                {storedPdfDownloadUrl && (
+                  <a
+                    href={storedPdfDownloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
+                  >
+                    下载PDF
                   </a>
                 )}
                 <a

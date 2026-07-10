@@ -122,11 +122,14 @@ export function LiteraturePaperCard({
   const googleScholarUrl = getGoogleScholarUrl(paper);
   const publishedDateLabel = formatLiteraturePublishedDate(paper.publishedAt);
   const pdfStatus = paper.pdfDownloadStatus ?? "not_attempted";
-  const storedPdfUrl =
+  const storedPdfDownloadUrl =
     pdfStatus === "stored" && paper.pdfStoragePath
       ? `/api/literature/papers/${paper.id}/pdf`
       : null;
-  const primaryPaperUrl = storedPdfUrl ?? googleScholarUrl ?? paper.absUrl;
+  const storedPdfViewUrl = storedPdfDownloadUrl
+    ? `${storedPdfDownloadUrl}/view`
+    : null;
+  const primaryPaperUrl = storedPdfViewUrl ?? googleScholarUrl ?? paper.absUrl;
   const pdfStatusLabel =
     pdfStatus === "stored"
       ? "PDF已入库"
@@ -236,18 +239,35 @@ export function LiteraturePaperCard({
             >
               查看详情
             </Link>
-            <a
-              href={storedPdfUrl ?? paper.absUrl}
-              target="_blank"
-              rel="noreferrer"
-              className={
-                storedPdfUrl
-                  ? "rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
-                  : "rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-              }
-            >
-              {storedPdfUrl ? "打开PDF文件" : externalLabel}
-            </a>
+            {storedPdfViewUrl && storedPdfDownloadUrl ? (
+              <>
+                <a
+                  href={storedPdfViewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
+                >
+                  在线阅读
+                </a>
+                <a
+                  href={storedPdfDownloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
+                >
+                  下载PDF
+                </a>
+              </>
+            ) : (
+              <a
+                href={paper.absUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+              >
+                {externalLabel}
+              </a>
+            )}
             {googleScholarUrl && (
               <a
                 href={googleScholarUrl}
