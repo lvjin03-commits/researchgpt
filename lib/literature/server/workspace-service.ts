@@ -125,7 +125,8 @@ export async function generatePaperWorkspaceAnalysis(
     const completion = await client.chat.completions.create(
       {
         model: getTextModel(),
-        max_completion_tokens: 1800,
+        reasoning_effort: "none",
+        max_completion_tokens: 2500,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -190,7 +191,11 @@ export async function generatePaperWorkspaceAnalysis(
     }
 
     if (error instanceof OpenAI.APIError) {
-      throw new AIProviderError(`AI 文献分析失败：${error.message}`, {
+      const message =
+        error.status === 429
+          ? "OpenAI API 额度不足或请求过于频繁，请检查账户余额后重试。"
+          : `AI 文献分析失败：${error.message}`;
+      throw new AIProviderError(message, {
         statusCode: error.status ?? 502,
         provider: "openai",
         cause: error,

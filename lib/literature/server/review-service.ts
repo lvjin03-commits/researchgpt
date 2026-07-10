@@ -133,7 +133,30 @@ async function createReviewCompletion(
   signal?: AbortSignal,
 ) {
   try {
-    return await client.chat.completions.create(params, { signal });
+    const completion = await client.chat.completions.create(params, { signal });
+    if (completion.choices[0]?.message?.content?.trim()) {
+      return completion;
+    }
+
+    const finishReason = completion.choices[0]?.finish_reason ?? "unknown";
+    const originalLimit = params.max_completion_tokens ?? 3000;
+    console.warn("[literature] empty review completion; retrying:", {
+      finishReason,
+      originalLimit,
+      reasoningEffort: params.reasoning_effort ?? "default",
+    });
+
+    return await client.chat.completions.create(
+      {
+        ...params,
+        reasoning_effort: "none",
+        max_completion_tokens: Math.min(
+          20_000,
+          Math.max(6000, originalLimit * 2),
+        ),
+      },
+      { signal },
+    );
   } catch (error) {
     if (error instanceof AIProviderError) {
       throw error;
@@ -183,7 +206,8 @@ export async function generateReviewOutline(
     client,
     {
       model: getTextModel(),
-      max_completion_tokens: 2200,
+      reasoning_effort: "none",
+      max_completion_tokens: 5000,
       messages: [
         {
           role: "system",
@@ -242,7 +266,8 @@ export async function generateReviewFullText(
     client,
     {
       model: getTextModel(),
-      max_completion_tokens: 5200,
+      reasoning_effort: "low",
+      max_completion_tokens: 9000,
       messages: [
         {
           role: "system",
@@ -294,7 +319,8 @@ export async function generateReviewPptOutline(
     client,
     {
       model: getTextModel(),
-      max_completion_tokens: 2600,
+      reasoning_effort: "none",
+      max_completion_tokens: 5000,
       messages: [
         {
           role: "system",
