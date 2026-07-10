@@ -220,9 +220,6 @@ async function storeLiteraturePaperPdfBuffer(
 
   const storagePath = buildPdfStoragePath(userId, paper, originalFileName);
   const fileName = originalFileName?.trim() || storagePath.split("/").at(-1) || "paper.pdf";
-  const fullText = await extractPdfFullText(buffer);
-  const figureEvidence = extractFigureEvidenceFromText(fullText, paper);
-  const extractedAt = fullText ? new Date().toISOString() : null;
 
   const { error } = await supabase.storage
     .from(LITERATURE_PDFS_BUCKET)
@@ -241,10 +238,10 @@ async function storeLiteraturePaperPdfBuffer(
     pdfFileSize: buffer.byteLength,
     pdfDownloadStatus: "stored",
     pdfDownloadError: null,
-    fullText,
-    fullTextExtractedAt: extractedAt,
-    figureEvidence,
-    figureEvidenceExtractedAt: figureEvidence.length > 0 ? extractedAt : null,
+    fullText: null,
+    fullTextExtractedAt: null,
+    figureEvidence: [],
+    figureEvidenceExtractedAt: null,
   });
 }
 

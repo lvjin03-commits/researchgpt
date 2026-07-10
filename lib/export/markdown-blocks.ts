@@ -8,6 +8,7 @@ export type InlineSpan = {
 export type MarkdownBlock =
   | { type: "heading"; level: 1 | 2 | 3; inlines: InlineSpan[] }
   | { type: "paragraph"; inlines: InlineSpan[] }
+  | { type: "table"; headers: InlineSpan[][]; rows: InlineSpan[][][] }
   | { type: "bullet"; items: InlineSpan[][] }
   | { type: "numbered"; items: InlineSpan[][] }
   | { type: "code"; content: string }
@@ -17,6 +18,24 @@ const HEADING_PATTERN = /^(#{1,3})\s+(.+)$/;
 const BULLET_PATTERN = /^[-*+]\s+(.+)$/;
 const NUMBERED_PATTERN = /^\d+\.\s+(.+)$/;
 const BLOCKQUOTE_PATTERN = /^>\s?(.+)$/;
+const TABLE_SEPARATOR_CELL_PATTERN = /^:?-{3,}:?$/;
+
+function parseTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.includes("|")) return null;
+
+  const withoutOuterPipes = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+  const cells = withoutOuterPipes.split("|").map((cell) => cell.trim());
+  return cells.length >= 2 ? cells : null;
+}
+
+function isTableSeparator(line: string, columnCount: number): boolean {
+  const cells = parseTableRow(line);
+  return (
+    cells?.length === columnCount &&
+    cells.every((cell) => TABLE_SEPARATOR_CELL_PATTERN.test(cell))
+  );
+}
 
 export function parseInlineMarkdown(text: string): InlineSpan[] {
   const spans: InlineSpan[] = [];
@@ -124,6 +143,30 @@ export function parseMarkdownBlocks(content: string): MarkdownBlock[] {
       continue;
     }
 
+    const tableHeaders = parseTableRow(line);
+    if (
+      tableHeaders &&
+      index + 1 < lines.length &&
+      isTableSeparator(lines[index + 1], tableHeaders.length)
+    ) {
+      index += 2;
+      const rows: InlineSpan[][][] = [];
+
+      while (index < lines.length) {
+        const cells = parseTableRow(lines[index]);
+        if (!cells || cells.length !== tableHeaders.length) break;
+        rows.push(cells.map(parseInlineMarkdown));
+        index += 1;
+      }
+
+      blocks.push({
+        type: "table",
+        headers: tableHeaders.map(parseInlineMarkdown),
+        rows,
+      });
+      continue;
+    }
+
     if (BULLET_PATTERN.test(line)) {
       const items: InlineSpan[][] = [];
 
@@ -162,7 +205,15 @@ export function parseMarkdownBlocks(content: string): MarkdownBlock[] {
       !HEADING_PATTERN.test(lines[index]) &&
       !BULLET_PATTERN.test(lines[index]) &&
       !NUMBERED_PATTERN.test(lines[index]) &&
-      !BLOCKQUOTE_PATTERN.test(lines[index])
+      !BLOCKQUOTE_PATTERN.test(lines[index]) &&
+      !(
+        parseTableRow(lines[index]) &&
+        index + 1 < lines.length &&
+        isTableSeparator(
+          lines[index + 1],
+          parseTableRow(lines[index])?.length ?? 0,
+        )
+      )
     ) {
       paragraphLines.push(lines[index]);
       index += 1;

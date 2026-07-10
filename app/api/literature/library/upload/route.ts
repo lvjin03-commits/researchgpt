@@ -4,6 +4,7 @@ import { parseExtensionFolderIds } from "@/lib/literature/server/extension-paper
 import { setPaperFolderIds } from "@/lib/literature/server/folder-repository";
 import { archiveUploadedLiteraturePaperPdf } from "@/lib/literature/server/pdf-archive";
 import {
+  deleteLiteraturePaper,
   stripLiteraturePaperFullTextForResponse,
   updateLiteraturePaperStatus,
   upsertAnalyzedPapers,
@@ -98,27 +99,41 @@ export async function POST(request: Request) {
       throw new LiteratureError("Uploaded paper could not be saved.", 500);
     }
 
-    let paper = await updateLiteraturePaperStatus(
-      supabase,
-      user.id,
-      savedDraftPaper.id,
-      "saved",
-    );
-    paper = await archiveUploadedLiteraturePaperPdf(supabase, user.id, paper, file);
+    try {
+      let paper = await updateLiteraturePaperStatus(
+        supabase,
+        user.id,
+        savedDraftPaper.id,
+        "saved",
+      );
+      paper = await archiveUploadedLiteraturePaperPdf(
+        supabase,
+        user.id,
+        paper,
+        file,
+      );
 
-    const assignedFolderIds = await setPaperFolderIds(
-      supabase,
-      user.id,
-      paper.id,
-      folderIds,
-    );
+      const assignedFolderIds = await setPaperFolderIds(
+        supabase,
+        user.id,
+        paper.id,
+        folderIds,
+      );
 
-    return Response.json({
-      paper: stripLiteraturePaperFullTextForResponse({
-        ...paper,
-        folderIds: assignedFolderIds,
-      }),
-    });
+      return Response.json({
+        paper: stripLiteraturePaperFullTextForResponse({
+          ...paper,
+          folderIds: assignedFolderIds,
+        }),
+      });
+    } catch (error) {
+      await deleteLiteraturePaper(supabase, user.id, savedDraftPaper.id).catch(
+        (cleanupError) => {
+          console.warn("[literature] failed to clean up local PDF save:", cleanupError);
+        },
+      );
+      throw error;
+    }
   } catch (error) {
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });

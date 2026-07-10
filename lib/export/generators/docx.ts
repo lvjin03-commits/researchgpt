@@ -10,8 +10,10 @@ import {
   ShadingType,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
+  VerticalAlign,
   WidthType,
 } from "docx";
 import {
@@ -170,6 +172,91 @@ function buildQuoteParagraph(inlines: InlineSpan[]): Paragraph {
   });
 }
 
+const DOCUMENT_CONTENT_WIDTH_DXA = 9720;
+
+function tableColumnWidths(columnCount: number): number[] {
+  const weights =
+    columnCount === 6
+      ? [1.15, 1.35, 1.55, 1.35, 1.55, 1.05]
+      : Array.from({ length: columnCount }, () => 1);
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const widths = weights.map((weight) =>
+    Math.floor((DOCUMENT_CONTENT_WIDTH_DXA * weight) / totalWeight),
+  );
+  widths[widths.length - 1] +=
+    DOCUMENT_CONTENT_WIDTH_DXA - widths.reduce((sum, width) => sum + width, 0);
+  return widths;
+}
+
+function buildMarkdownTable(
+  headers: InlineSpan[][],
+  rows: InlineSpan[][][],
+): Table {
+  const widths = tableColumnWidths(headers.length);
+  const fontSize = headers.length >= 6 ? 16 : headers.length >= 4 ? 18 : 20;
+  const cellMargins = { top: 90, bottom: 90, left: 100, right: 100 };
+  const borders = {
+    top: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 6 },
+    bottom: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 6 },
+    left: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 6 },
+    right: { style: BorderStyle.SINGLE, color: "CBD5E1", size: 6 },
+    insideHorizontal: { style: BorderStyle.SINGLE, color: "E2E8F0", size: 4 },
+    insideVertical: { style: BorderStyle.SINGLE, color: "E2E8F0", size: 4 },
+  } as const;
+
+  const makeCell = (
+    inlines: InlineSpan[],
+    columnIndex: number,
+    header: boolean,
+  ) =>
+    new TableCell({
+      width: { size: widths[columnIndex], type: WidthType.DXA },
+      margins: cellMargins,
+      verticalAlign: VerticalAlign.CENTER,
+      shading: header
+        ? { type: ShadingType.CLEAR, fill: "EAF2FF" }
+        : undefined,
+      children: [
+        new Paragraph({
+          spacing: { before: 0, after: 0, line: 260 },
+          children: inlines.map(
+            (span) =>
+              new TextRun({
+                text: span.text,
+                bold: header || span.bold,
+                italics: span.italic,
+                font: span.code ? "Courier New" : "Microsoft YaHei",
+                shading: span.code
+                  ? { type: ShadingType.CLEAR, fill: "F3F4F6" }
+                  : undefined,
+                size: fontSize,
+                color: header ? "163A70" : "172033",
+              }),
+          ),
+        }),
+      ],
+    });
+
+  return new Table({
+    width: { size: DOCUMENT_CONTENT_WIDTH_DXA, type: WidthType.DXA },
+    columnWidths: widths,
+    layout: TableLayoutType.FIXED,
+    borders,
+    rows: [
+      new TableRow({
+        tableHeader: true,
+        children: headers.map((cell, index) => makeCell(cell, index, true)),
+      }),
+      ...rows.map(
+        (row) =>
+          new TableRow({
+            children: row.map((cell, index) => makeCell(cell, index, false)),
+          }),
+      ),
+    ],
+  });
+}
+
 function blocksToDocxChildren(content: string): Array<Paragraph | Table> {
   const blocks = parseMarkdownBlocks(content);
   const children: Array<Paragraph | Table> = [...buildCoverParagraphs()];
@@ -201,6 +288,10 @@ function blocksToDocxChildren(content: string): Array<Paragraph | Table> {
             children: inlineSpansToTextRuns(block.inlines),
           }),
         );
+        break;
+      case "table":
+        children.push(buildMarkdownTable(block.headers, block.rows));
+        children.push(new Paragraph({ spacing: { after: 160 } }));
         break;
       case "bullet":
         for (const item of block.items) {
