@@ -108,6 +108,50 @@ function extractMarkdownContent(content: string): string {
   return content.trim();
 }
 
+async function createReviewCompletion(
+  client: OpenAI,
+  params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  signal?: AbortSignal,
+) {
+  try {
+    return await client.chat.completions.create(params, { signal });
+  } catch (error) {
+    if (error instanceof AIProviderError) {
+      throw error;
+    }
+
+    if (error instanceof OpenAI.APIError) {
+      let message = `AI 服务请求失败：${error.message}`;
+
+      if (error.status === 401) {
+        message = "AI 服务认证失败，请检查线上 OPENAI_API_KEY 配置。";
+      } else if (error.status === 429) {
+        message = "AI 服务额度不足或请求过于频繁，请稍后重试或检查账户额度。";
+      }
+
+      throw new AIProviderError(message, {
+        statusCode: error.status ?? 502,
+        provider: "openai",
+        cause: error,
+      });
+    }
+
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new AIProviderError("生成任务已取消。", {
+        statusCode: 499,
+        provider: "openai",
+        cause: error,
+      });
+    }
+
+    throw new AIProviderError("AI 服务暂时无法完成生成，请稍后重试。", {
+      statusCode: 502,
+      provider: "openai",
+      cause: error,
+    });
+  }
+}
+
 export async function generateReviewOutline(
   request: LiteratureReviewRequest,
   papers: LiteraturePaper[],
@@ -116,10 +160,11 @@ export async function generateReviewOutline(
   const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.outline);
   const client = getClient();
 
-  const completion = await client.chat.completions.create(
+  const completion = await createReviewCompletion(
+    client,
     {
       model: getTextModel(),
-      max_tokens: 2200,
+      max_completion_tokens: 2200,
       messages: [
         {
           role: "system",
@@ -155,7 +200,7 @@ export async function generateReviewOutline(
         },
       ],
     },
-    { signal },
+    signal,
   );
 
   const content = completion.choices[0]?.message?.content;
@@ -174,10 +219,11 @@ export async function generateReviewFullText(
   const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.full);
   const client = getClient();
 
-  const completion = await client.chat.completions.create(
+  const completion = await createReviewCompletion(
+    client,
     {
       model: getTextModel(),
-      max_tokens: 5200,
+      max_completion_tokens: 5200,
       messages: [
         {
           role: "system",
@@ -206,7 +252,7 @@ export async function generateReviewFullText(
         },
       ],
     },
-    { signal },
+    signal,
   );
 
   const content = completion.choices[0]?.message?.content;
@@ -225,10 +271,11 @@ export async function generateReviewPptOutline(
   const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.ppt);
   const client = getClient();
 
-  const completion = await client.chat.completions.create(
+  const completion = await createReviewCompletion(
+    client,
     {
       model: getTextModel(),
-      max_tokens: 2600,
+      max_completion_tokens: 2600,
       messages: [
         {
           role: "system",
@@ -266,7 +313,7 @@ export async function generateReviewPptOutline(
         },
       ],
     },
-    { signal },
+    signal,
   );
 
   const content = completion.choices[0]?.message?.content;
