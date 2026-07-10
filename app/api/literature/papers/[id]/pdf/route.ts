@@ -44,7 +44,7 @@ export async function GET(_request: Request, context: RouteContext) {
     return new Response(data, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${fileName}"`,
+        "Content-Disposition": `attachment; filename="${fileName}"`,
         "Cache-Control": "private, no-store",
       },
     });

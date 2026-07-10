@@ -591,7 +591,7 @@ export function LiteraturePaperDetailShell({
                     rel="noreferrer"
                     className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
                   >
-                    入库 PDF
+                    打开入库 PDF
                   </a>
                 )}
                 <a

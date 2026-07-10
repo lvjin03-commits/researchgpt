@@ -242,7 +242,7 @@ export function LiteraturePaperCard({
               rel="noreferrer"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >
-              {storedPdfUrl ? "PDF文件" : externalLabel}
+              {storedPdfUrl ? "打开PDF文件" : externalLabel}
             </a>
             {googleScholarUrl && (
               <a
