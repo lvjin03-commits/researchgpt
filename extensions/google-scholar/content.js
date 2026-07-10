@@ -485,7 +485,16 @@
   }
 
   function injectSaveButton(container) {
-    if (container.querySelector(BUTTON_SELECTOR)) {
+    const existingButton = container.querySelector(BUTTON_SELECTOR);
+    if (!parsePdfUrl(container)) {
+      existingButton?.previousSibling?.nodeType === Node.TEXT_NODE &&
+        existingButton.previousSibling.textContent === " | " &&
+        existingButton.previousSibling.remove();
+      existingButton?.remove();
+      return;
+    }
+
+    if (existingButton) {
       return;
     }
 

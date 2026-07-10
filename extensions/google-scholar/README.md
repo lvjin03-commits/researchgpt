@@ -7,9 +7,9 @@ See also: [`docs/EXTENSION.md`](../../docs/EXTENSION.md)
 ## What it does
 
 - Runs on `https://scholar.google.com/*`
-- Injects **Save PDF to ResearchGPT** on each visible search result
+- Injects **Save PDF to ResearchGPT** only on visible search results with a detected PDF link
 - Parses title, authors/meta, snippet, Scholar URL, and PDF URL when the user clicks save
-- Shows **No PDF link** and skips saving when no direct PDF link is detected
+- Skips results with no direct PDF link, so users do not see a save action that cannot work
 - Sends the paper to `POST /api/extension/save-paper` via the service worker
 - Supports default folder selection from the popup
 
