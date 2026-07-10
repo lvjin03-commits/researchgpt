@@ -9,7 +9,21 @@ type RouteContext = {
 };
 
 function contentDispositionFileName(fileName: string): string {
-  return fileName.replace(/["\\\r\n]/g, "_") || "paper.pdf";
+  const normalized = fileName.trim() || "paper.pdf";
+  const asciiFallback =
+    normalized
+      .replace(/\.pdf$/i, "")
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 80) || "paper";
+  const fallbackFileName = asciiFallback.toLowerCase().endsWith(".pdf")
+    ? asciiFallback
+    : `${asciiFallback}.pdf`;
+  const encodedFileName = encodeURIComponent(normalized).replace(/['()]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+
+  return `attachment; filename="${fallbackFileName}"; filename*=UTF-8''${encodedFileName}`;
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -37,14 +51,14 @@ export async function GET(_request: Request, context: RouteContext) {
       );
     }
 
-    const fileName = contentDispositionFileName(
+    const contentDisposition = contentDispositionFileName(
       paper.pdfFileName || `${paper.title}.pdf`,
     );
 
     return new Response(data, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
+        "Content-Disposition": contentDisposition,
         "Cache-Control": "private, no-store",
       },
     });
