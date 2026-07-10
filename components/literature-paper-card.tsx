@@ -122,6 +122,11 @@ export function LiteraturePaperCard({
   const googleScholarUrl = getGoogleScholarUrl(paper);
   const publishedDateLabel = formatLiteraturePublishedDate(paper.publishedAt);
   const pdfStatus = paper.pdfDownloadStatus ?? "not_attempted";
+  const storedPdfUrl =
+    pdfStatus === "stored" && paper.pdfStoragePath
+      ? `/api/literature/papers/${paper.id}/pdf`
+      : null;
+  const primaryPaperUrl = storedPdfUrl ?? googleScholarUrl ?? paper.absUrl;
   const pdfStatusLabel =
     pdfStatus === "stored"
       ? "PDF已入库"
@@ -194,7 +199,7 @@ export function LiteraturePaperCard({
 
             <h3 className="text-base font-semibold">
               <a
-                href={googleScholarUrl ?? paper.absUrl}
+                href={primaryPaperUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="text-blue-700 underline decoration-blue-300 underline-offset-2 transition-colors hover:text-blue-900 hover:decoration-blue-500"
@@ -232,12 +237,12 @@ export function LiteraturePaperCard({
               查看详情
             </Link>
             <a
-              href={paper.absUrl}
+              href={storedPdfUrl ?? paper.absUrl}
               target="_blank"
               rel="noreferrer"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >
-              {externalLabel}
+              {storedPdfUrl ? "PDF文件" : externalLabel}
             </a>
             {googleScholarUrl && (
               <a
