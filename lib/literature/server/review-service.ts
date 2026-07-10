@@ -10,6 +10,24 @@ import type { LiteraturePaper } from "@/lib/literature/types";
 
 type ReviewPaperContext = ReturnType<typeof buildReviewPaperContext>[number];
 
+const REVIEW_CONTEXT_LIMITS = {
+  outline: {
+    maxFullTextChars: 2500,
+    maxFigureEvidence: 4,
+    maxFigureCaptionChars: 450,
+  },
+  full: {
+    maxFullTextChars: 5000,
+    maxFigureEvidence: 6,
+    maxFigureCaptionChars: 600,
+  },
+  ppt: {
+    maxFullTextChars: 3000,
+    maxFigureEvidence: 5,
+    maxFigureCaptionChars: 500,
+  },
+} as const;
+
 function getClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -95,12 +113,13 @@ export async function generateReviewOutline(
   papers: LiteraturePaper[],
   signal?: AbortSignal,
 ): Promise<string> {
-  const context = buildReviewPaperContext(papers);
+  const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.outline);
   const client = getClient();
 
   const completion = await client.chat.completions.create(
     {
       model: getTextModel(),
+      max_tokens: 2200,
       messages: [
         {
           role: "system",
@@ -152,12 +171,13 @@ export async function generateReviewFullText(
   papers: LiteraturePaper[],
   signal?: AbortSignal,
 ): Promise<string> {
-  const context = buildReviewPaperContext(papers);
+  const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.full);
   const client = getClient();
 
   const completion = await client.chat.completions.create(
     {
       model: getTextModel(),
+      max_tokens: 5200,
       messages: [
         {
           role: "system",
@@ -202,12 +222,13 @@ export async function generateReviewPptOutline(
   papers: LiteraturePaper[],
   signal?: AbortSignal,
 ): Promise<string> {
-  const context = buildReviewPaperContext(papers);
+  const context = buildReviewPaperContext(papers, REVIEW_CONTEXT_LIMITS.ppt);
   const client = getClient();
 
   const completion = await client.chat.completions.create(
     {
       model: getTextModel(),
+      max_tokens: 2600,
       messages: [
         {
           role: "system",

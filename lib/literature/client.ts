@@ -29,10 +29,18 @@ export type LiteratureState = {
 };
 
 async function parseJson<T>(response: Response): Promise<T> {
+  const text = await response.text();
+
   try {
-    return (await response.json()) as T;
+    return JSON.parse(text) as T;
   } catch {
-    throw new LiteratureError("文献 API 响应无效。", response.status);
+    const preview = text.trim().slice(0, 220);
+    throw new LiteratureError(
+      preview
+        ? `文献 API 响应无效。状态码：${response.status}。返回内容：${preview}`
+        : `文献 API 响应无效。状态码：${response.status}。`,
+      response.status,
+    );
   }
 }
 

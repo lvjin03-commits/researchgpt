@@ -27,7 +27,20 @@ export function formatPaperYear(paper: LiteraturePaper): string {
   return Number.isFinite(year) ? String(year) : "年份未知";
 }
 
-export function buildReviewPaperContext(papers: LiteraturePaper[]) {
+type ReviewPaperContextOptions = {
+  maxFullTextChars?: number;
+  maxFigureEvidence?: number;
+  maxFigureCaptionChars?: number;
+};
+
+export function buildReviewPaperContext(
+  papers: LiteraturePaper[],
+  options: ReviewPaperContextOptions = {},
+) {
+  const maxFullTextChars = options.maxFullTextChars ?? 5000;
+  const maxFigureEvidence = options.maxFigureEvidence ?? 5;
+  const maxFigureCaptionChars = options.maxFigureCaptionChars ?? 600;
+
   return papers.map((paper) => {
     const figureEvidence =
       paper.figureEvidence && paper.figureEvidence.length > 0
@@ -40,15 +53,15 @@ export function buildReviewPaperContext(papers: LiteraturePaper[]) {
       authors: paper.authors,
       year: formatPaperYear(paper),
       abstract: paper.abstract.slice(0, 1200),
-      fullTextExcerpt: paper.fullText?.slice(0, 8000) ?? null,
+      fullTextExcerpt: paper.fullText?.slice(0, maxFullTextChars) ?? null,
       evidenceLevel: paper.fullText ? "full_text" : "abstract_only",
       url: paper.absUrl,
       pdfStored: paper.pdfDownloadStatus === "stored",
       citationCount: paper.citationCount ?? null,
-      figureEvidence: figureEvidence.slice(0, 8).map((item) => ({
+      figureEvidence: figureEvidence.slice(0, maxFigureEvidence).map((item) => ({
         kind: item.kind,
         label: item.label,
-        caption: item.caption.slice(0, 900),
+        caption: item.caption.slice(0, maxFigureCaptionChars),
         sourceTitle: item.sourceTitle || paper.title,
         page: item.page,
         topics: item.topics.slice(0, 8),
