@@ -16,7 +16,7 @@ export type ReviewLanguage = (typeof REVIEW_LANGUAGE_OPTIONS)[number];
 export type ReviewLength = (typeof REVIEW_LENGTH_OPTIONS)[number];
 export type ReviewModel = (typeof REVIEW_MODEL_OPTIONS)[number]["id"];
 
-export type ReviewGenerationPhase = "outline" | "ppt";
+export type ReviewGenerationPhase = "matrix" | "themes" | "outline" | "ppt";
 export type ReviewWorkflowMode = "quick_outline" | "academic_review";
 
 export type LiteratureMatrixRow = {
@@ -49,6 +49,7 @@ export type LiteratureReviewRequest = {
   length: ReviewLength;
   customWordCount?: number;
   additionalInstructions?: string;
+  confirmedThemes?: string;
   confirmedOutline?: string;
   /** Display name of the selected folder (logging / name-to-id resolution). */
   folderName?: string;
@@ -61,6 +62,7 @@ export type LiteratureReviewResponse = {
   paperCount: number;
   usedPaperTitles: string[];
   matrix?: LiteratureMatrixRow[];
+  themes?: string;
   outline?: string;
   pptOutline?: string;
 };

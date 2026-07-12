@@ -16,7 +16,12 @@ import type {
   ReviewWorkflowMode,
 } from "@/lib/literature/review/types";
 
-const PHASES = new Set<ReviewGenerationPhase>(["outline", "ppt"]);
+const PHASES = new Set<ReviewGenerationPhase>([
+  "matrix",
+  "themes",
+  "outline",
+  "ppt",
+]);
 const WORKFLOW_MODES = new Set<ReviewWorkflowMode>([
   "quick_outline",
   "academic_review",
@@ -133,6 +138,7 @@ export function parseLiteratureReviewRequest(
     customWordCount: parseOptionalNumber(record.customWordCount),
     additionalInstructions:
       cleanString(record.additionalInstructions) || undefined,
+    confirmedThemes: cleanString(record.confirmedThemes) || undefined,
     confirmedOutline: cleanString(record.confirmedOutline) || undefined,
   };
 
@@ -142,6 +148,10 @@ export function parseLiteratureReviewRequest(
 
   if (request.length === "自定义页数" && !request.customWordCount) {
     throw new LiteratureError("请填写自定义页数。", 400);
+  }
+
+  if (phase === "outline" && !request.confirmedThemes) {
+    throw new LiteratureError("请先确认主题归类。", 400);
   }
 
   if (phase === "ppt" && !request.confirmedOutline) {

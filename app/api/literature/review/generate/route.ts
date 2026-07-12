@@ -12,6 +12,7 @@ import {
   buildLiteratureMatrix,
   generateReviewOutline,
   generateReviewPptOutline,
+  generateReviewThemes,
 } from "@/lib/literature/server/review-service";
 
 export const runtime = "nodejs";
@@ -90,8 +91,15 @@ export async function POST(request: Request) {
       usedPaperTitles,
     };
 
-    if (reviewRequest.phase === "outline") {
+    if (reviewRequest.phase === "matrix") {
       response.matrix = buildLiteratureMatrix(papers);
+    } else if (reviewRequest.phase === "themes") {
+      response.themes = await generateReviewThemes(
+        reviewRequest,
+        papers,
+        request.signal,
+      );
+    } else if (reviewRequest.phase === "outline") {
       response.outline = await generateReviewOutline(
         reviewRequest,
         papers,

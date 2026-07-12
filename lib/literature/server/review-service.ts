@@ -177,6 +177,63 @@ export function buildLiteratureMatrix(
   });
 }
 
+export async function generateReviewThemes(
+  request: LiteratureReviewRequest,
+  papers: LiteraturePaper[],
+  signal?: AbortSignal,
+): Promise<string> {
+  const context = buildContextForPhase(request, papers, "outline");
+  const matrix = buildLiteratureMatrix(papers);
+  const client = getClient();
+
+  const completion = await createReviewCompletion(
+    client,
+    {
+      model: request.model,
+      reasoning_effort: "none",
+      max_completion_tokens: 3000,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "你是科研文献整理助手。请基于文献矩阵完成跨文献归类，不写论文大纲，不写PPT，也不复述完整矩阵。",
+            "必须严格区分文献事实与推断；证据不足时明确说明。",
+            "输出纯 Markdown。",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: [
+            buildInstructionSummary(request),
+            "",
+            "已确认的文献矩阵：",
+            JSON.stringify(matrix, null, 2),
+            "",
+            "可用文献上下文：",
+            buildPaperListPrompt(context),
+            "",
+            "请严格按以下结构输出：",
+            "## 主题分类",
+            "列出 3-8 个由当前文献实际内容驱动的主题，并标注对应文献。",
+            "## 研究共识",
+            "## 研究分歧",
+            "说明差异可能来自研究对象、条件、方法、指标或样本。",
+            "## 研究空白",
+            "## 对论文结构的启示",
+          ].join("\n"),
+        },
+      ],
+    },
+    signal,
+  );
+
+  const content = completion.choices[0]?.message?.content;
+  if (!content) {
+    throw new LiteratureError("AI 未返回有效主题归类。", 502);
+  }
+  return extractMarkdownContent(content);
+}
+
 function extractMarkdownContent(content: string): string {
   return content.trim();
 }
@@ -254,6 +311,7 @@ export async function generateReviewOutline(
   signal?: AbortSignal,
 ): Promise<string> {
   const context = buildContextForPhase(request, papers, "outline");
+  const matrix = buildLiteratureMatrix(papers);
   const client = getClient();
 
   const completion = await createReviewCompletion(
@@ -271,7 +329,8 @@ export async function generateReviewOutline(
             buildDeliverableRules(),
             "请生成可编辑的 Markdown 研究汇报大纲。",
             "大纲必须规划内容结构、图表结构、引用策略和汇报故事线。",
-            "前端会单独展示覆盖全部论文的文献矩阵；大纲必须使用全部可用文献的信息进行组织，但不要在 Markdown 中重复输出文献矩阵。",
+            "文献矩阵与主题归类已经由用户单独确认。大纲不得重复输出矩阵，也不得把主题归类原文粘贴进大纲。",
+            "每个章节必须给出：本节需要回答的问题、建议讨论内容、建议组织顺序、推荐引用文献及推荐理由。",
             "输出纯 Markdown，不要 JSON。",
           ].join("\n"),
         },
@@ -279,6 +338,12 @@ export async function generateReviewOutline(
           role: "user",
           content: [
             buildInstructionSummary(request),
+            "",
+            "用户确认的跨文献主题归类：",
+            request.confirmedThemes,
+            "",
+            "已确认的文献矩阵：",
+            JSON.stringify(matrix, null, 2),
             "",
             "可用文献（仅限以下条目）：",
             buildPaperListPrompt(context),

@@ -92,11 +92,14 @@ export function LiteratureReviewShell() {
   const [literatureMatrix, setLiteratureMatrix] = useState<
     LiteratureMatrixRow[]
   >([]);
+  const [matrixConfirmed, setMatrixConfirmed] = useState(false);
+  const [themes, setThemes] = useState("");
   const [pptOutline, setPptOutline] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isLoadingFolders, setIsLoadingFolders] = useState(true);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
+  const [isGeneratingThemes, setIsGeneratingThemes] = useState(false);
   const [isAnalyzingPapers, setIsAnalyzingPapers] = useState(false);
   const [isGeneratingPpt, setIsGeneratingPpt] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -104,7 +107,7 @@ export function LiteratureReviewShell() {
   const [analysisProgress, setAnalysisProgress] =
     useState<AnalysisProgress | null>(null);
   const isGenerating =
-    isAnalyzingPapers || isGeneratingOutline || isGeneratingPpt;
+    isAnalyzingPapers || isGeneratingThemes || isGeneratingOutline || isGeneratingPpt;
   const folderTree = useMemo(() => flattenFolderTree(folders), [folders]);
   const selectedFolder = useMemo(
     () => folders.find((folder) => folder.id === folderId) ?? null,
@@ -249,6 +252,7 @@ export function LiteratureReviewShell() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setIsGeneratingOutline(false);
+    setIsGeneratingThemes(false);
     setIsAnalyzingPapers(false);
     setIsGeneratingPpt(false);
     setStatusMessage("已停止生成。");
@@ -259,6 +263,8 @@ export function LiteratureReviewShell() {
     setModel(mode === "academic_review" ? "gpt-5.4" : "gpt-5.4-mini");
     setOutline("");
     setLiteratureMatrix([]);
+    setMatrixConfirmed(false);
+    setThemes("");
     setPptOutline("");
     setAnalysisProgress(null);
     setError(null);
@@ -269,6 +275,8 @@ export function LiteratureReviewShell() {
     setModel(nextModel);
     setOutline("");
     setLiteratureMatrix([]);
+    setMatrixConfirmed(false);
+    setThemes("");
     setPptOutline("");
     setAnalysisProgress(null);
     setError(null);
@@ -381,7 +389,7 @@ export function LiteratureReviewShell() {
     );
   };
 
-  const handleGenerateOutline = async () => {
+  const handleGenerateMatrix = async () => {
     if (!validateOutlineInput()) {
       return;
     }
@@ -397,19 +405,86 @@ export function LiteratureReviewShell() {
       const result = await generateLiteratureReview(
         {
           ...buildRequestBase(),
-          phase: "outline",
+          phase: "matrix",
           uiPaperCount: paperCount,
         },
         abortController.signal,
       );
       setLiteratureMatrix(result.matrix ?? []);
-      setOutline(result.outline ?? "");
+      setMatrixConfirmed(false);
+      setThemes("");
+      setOutline("");
       setPptOutline("");
       setStatusMessage(
         workflowMode === "academic_review"
-          ? "全文分析与大纲生成完成，请确认或编辑后继续。"
-          : "快速大纲已生成。",
+          ? "全文分析与文献矩阵生成完成，请检查矩阵后继续。"
+          : "文献矩阵已生成，请检查后继续。",
       );
+    } catch (err) {
+      if (!isAbortError(err)) {
+        setError(err instanceof LiteratureError ? err.message : "生成大纲失败。");
+      }
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+      setIsGeneratingOutline(false);
+    }
+  };
+
+  const handleGenerateThemes = async () => {
+    if (literatureMatrix.length === 0) {
+      setError("请先生成文献矩阵。");
+      return;
+    }
+    const abortController = startGeneration();
+    setMatrixConfirmed(true);
+    setIsGeneratingThemes(true);
+    try {
+      const result = await generateLiteratureReview(
+        {
+          ...buildRequestBase(),
+          phase: "themes",
+          uiPaperCount: paperCount,
+        },
+        abortController.signal,
+      );
+      setThemes(result.themes ?? "");
+      setOutline("");
+      setPptOutline("");
+      setStatusMessage("主题归类已生成，请检查或编辑后生成论文大纲。");
+    } catch (err) {
+      if (!isAbortError(err)) {
+        setError(err instanceof LiteratureError ? err.message : "生成主题归类失败。");
+      }
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+      setIsGeneratingThemes(false);
+    }
+  };
+
+  const handleGenerateOutline = async () => {
+    if (!themes.trim()) {
+      setError("请先生成并确认主题归类。");
+      return;
+    }
+    const abortController = startGeneration();
+    setIsGeneratingOutline(true);
+    try {
+      const result = await generateLiteratureReview(
+        {
+          ...buildRequestBase(),
+          phase: "outline",
+          confirmedThemes: themes.trim(),
+          uiPaperCount: paperCount,
+        },
+        abortController.signal,
+      );
+      setOutline(result.outline ?? "");
+      setPptOutline("");
+      setStatusMessage("证据驱动的大纲已生成，请检查后生成PPT。");
     } catch (err) {
       if (!isAbortError(err)) {
         setError(err instanceof LiteratureError ? err.message : "生成大纲失败。");
@@ -659,6 +734,8 @@ export function LiteratureReviewShell() {
                 setFolderId(event.target.value);
                 setOutline("");
                 setLiteratureMatrix([]);
+                setMatrixConfirmed(false);
+                setThemes("");
                 setPptOutline("");
                 setAnalysisProgress(null);
               }}
@@ -870,17 +947,17 @@ export function LiteratureReviewShell() {
             type="button"
             disabled={!canClickGenerateOutline}
             onClick={() => {
-              void handleGenerateOutline();
+              void handleGenerateMatrix();
             }}
             className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
           >
             {isAnalyzingPapers
               ? "正在分析文献全文..."
               : isGeneratingOutline
-                ? "正在生成大纲..."
+                ? "正在生成文献矩阵..."
                 : workflowMode === "academic_review"
-                  ? "分析全文并生成汇报大纲"
-                  : "生成快速大纲"}
+                  ? "分析全文并生成文献矩阵"
+                  : "生成文献矩阵"}
           </button>
         </section>
 
@@ -960,12 +1037,61 @@ export function LiteratureReviewShell() {
                 </tbody>
               </table>
             </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3">
+              <p className="text-sm text-gray-600">
+                {matrixConfirmed
+                  ? "该矩阵已作为主题归类的证据基础。"
+                  : "请检查文献数量、证据状态和关键信息后再继续。"}
+              </p>
+              <button
+                type="button"
+                disabled={isGenerating}
+                onClick={() => void handleGenerateThemes()}
+                className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+              >
+                {isGeneratingThemes
+                  ? "正在归类主题..."
+                  : themes
+                    ? "重新生成主题归类"
+                    : "确认矩阵并生成主题归类"}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {themes && (
+          <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">5. 主题归类</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                只整理主题、共识、分歧和研究空白，不生成论文大纲。
+              </p>
+            </div>
+            <textarea
+              value={themes}
+              disabled={isGenerating}
+              onChange={(event) => {
+                setThemes(event.target.value);
+                setOutline("");
+                setPptOutline("");
+              }}
+              rows={16}
+              className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
+            />
+            <button
+              type="button"
+              disabled={isGenerating || !themes.trim()}
+              onClick={() => void handleGenerateOutline()}
+              className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+            >
+              {isGeneratingOutline ? "正在生成论文大纲..." : "确认主题归类并生成论文大纲"}
+            </button>
           </section>
         )}
 
         {outline && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">5. 确认大纲</h2>
+            <h2 className="text-base font-semibold text-gray-900">6. 确认大纲</h2>
             <textarea
               value={outline}
               disabled={isGenerating}
@@ -988,7 +1114,7 @@ export function LiteratureReviewShell() {
 
         {pptOutline && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">6. PPT 大纲</h2>
+            <h2 className="text-base font-semibold text-gray-900">7. PPT 大纲</h2>
             <textarea
               value={pptOutline}
               disabled={isGenerating}
