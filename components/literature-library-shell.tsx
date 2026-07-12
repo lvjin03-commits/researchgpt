@@ -253,6 +253,12 @@ export function LiteratureLibraryShell() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/presentation"
+              className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+            >
+              根据大纲生成 PPT
+            </Link>
             <button
               type="button"
               onClick={() => setShowUploadModal(true)}
@@ -264,7 +270,7 @@ export function LiteratureLibraryShell() {
               href="/literature/review"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >
-              AI 学术汇报
+              文献生成 PPT
             </Link>
             <Link
               href="/translate"

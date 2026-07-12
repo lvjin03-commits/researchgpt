@@ -145,6 +145,12 @@ export function Sidebar({
 
         <div className="border-t border-gray-200 px-3 py-3">
           <Link
+            href="/presentation"
+            className="mb-2 flex w-full items-center justify-center rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+          >
+            根据大纲生成 PPT
+          </Link>
+          <Link
             href="/literature"
             className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
           >

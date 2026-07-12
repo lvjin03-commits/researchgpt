@@ -11,6 +11,7 @@ import type {
   PresentationSlide,
   PresentationSlideType,
   PresentationVisualMode,
+  ReviewModel,
 } from "@/lib/literature/review/types";
 import { buildReviewPaperContext } from "@/lib/literature/server/review-papers";
 import type { LiteraturePaper } from "@/lib/literature/types";
@@ -623,6 +624,56 @@ export async function generateReviewPptDeck(
   if (!content) throw new LiteratureError("AI 未返回有效 PPT 数据。", 502);
   try {
     return parsePresentationDeck(JSON.parse(content) as unknown, request.topic);
+  } catch (error) {
+    if (error instanceof LiteratureError) throw error;
+    throw new LiteratureError("AI 返回的 PPT JSON 无法解析。", 502);
+  }
+}
+
+export async function generatePresentationDeckFromOutline(input: {
+  title: string;
+  outline: string;
+  model: ReviewModel;
+  signal?: AbortSignal;
+}): Promise<PresentationDeck> {
+  const client = getClient();
+  const completion = await createReviewCompletion(
+    client,
+    {
+      model: input.model,
+      reasoning_effort: "none",
+      max_completion_tokens: 7000,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "你是专业学术PPT导演。把用户提供的大纲转换成结构化幻灯片数据，不要输出Markdown。",
+            "不得编造论文、引用、实验数据或图片来源。用户未提供证据时 citations 必须为空。",
+            "每页只表达一个结论；标题应为结论型标题；每页最多4个要点，每个要点尽量不超过36个中文字符。",
+            "第1页必须是cover，最后1页必须是summary，整体形成连贯故事线。",
+            "slide.type 只能是 cover、section、evidence、comparison、timeline、taxonomy、framework、insight、gap、future、summary。",
+            "visual.mode 只能是 native、placeholder、none。Timeline、Taxonomy、Comparison、Framework使用native。",
+            "复杂机理、分子结构、实验装置或用户未提供的证据图使用placeholder，并明确写出需要插入什么图片。",
+            "返回严格JSON对象：",
+            '{"schemaVersion":1,"title":"...","subtitle":"...","slides":[{"id":"slide-1","type":"cover","title":"...","takeaway":"...","bullets":["..."],"citations":[],"visual":{"mode":"none","type":"cover","title":"","description":"","source":"","aspectRatio":"16:9"},"speakerNotes":"..."}]}',
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: [`PPT标题：${input.title}`, "", "用户大纲：", input.outline].join(
+            "\n",
+          ),
+        },
+      ],
+    },
+    input.signal,
+  );
+
+  const content = completion.choices[0]?.message?.content;
+  if (!content) throw new LiteratureError("AI 未返回有效 PPT 数据。", 502);
+  try {
+    return parsePresentationDeck(JSON.parse(content) as unknown, input.title);
   } catch (error) {
     if (error instanceof LiteratureError) throw error;
     throw new LiteratureError("AI 返回的 PPT JSON 无法解析。", 502);

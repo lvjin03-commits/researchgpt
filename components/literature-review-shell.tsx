@@ -748,6 +748,12 @@ export function LiteratureReviewShell() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/presentation"
+              className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+            >
+              已有大纲生成 PPT
+            </Link>
             <button
               type="button"
               onClick={clearSavedProject}
