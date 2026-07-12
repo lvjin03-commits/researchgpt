@@ -11,6 +11,7 @@ import {
   REVIEW_MODEL_IDS,
 } from "@/lib/literature/review/constants";
 import type {
+  LiteratureMatrixRow,
   LiteratureReviewRequest,
   ReviewGenerationPhase,
   ReviewWorkflowMode,
@@ -80,6 +81,34 @@ function parseOptionalNumber(value: unknown): number | undefined {
   return Math.round(numeric);
 }
 
+function parseConfirmedMatrix(value: unknown): LiteratureMatrixRow[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const stringFields = [
+    "paperId",
+    "citation",
+    "researchTopic",
+    "researchProblem",
+    "researchObject",
+    "researchMethod",
+    "keyResults",
+    "conclusion",
+    "coreIdea",
+    "limitations",
+    "reviewRelation",
+  ] as const;
+
+  const rows = value.filter((item): item is LiteratureMatrixRow => {
+    if (typeof item !== "object" || item === null) return false;
+    const row = item as Record<string, unknown>;
+    return (
+      typeof row.included === "boolean" &&
+      stringFields.every((field) => typeof row[field] === "string") &&
+      (row.evidenceLevel === "full_text" || row.evidenceLevel === "abstract_only")
+    );
+  });
+  return rows.length > 0 ? rows : undefined;
+}
+
 export function parseLiteratureReviewRequest(
   body: unknown,
 ): LiteratureReviewRequest {
@@ -138,6 +167,7 @@ export function parseLiteratureReviewRequest(
     customWordCount: parseOptionalNumber(record.customWordCount),
     additionalInstructions:
       cleanString(record.additionalInstructions) || undefined,
+    confirmedMatrix: parseConfirmedMatrix(record.confirmedMatrix),
     confirmedThemes: cleanString(record.confirmedThemes) || undefined,
     confirmedOutline: cleanString(record.confirmedOutline) || undefined,
   };

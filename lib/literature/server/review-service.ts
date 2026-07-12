@@ -144,6 +144,7 @@ export function buildLiteratureMatrix(
 
     return {
       paperId: paper.id,
+      included: true,
       citation: `${author}${year ? `（${year}）` : ""}：《${paper.title}》`,
       researchTopic: compactMatrixValue(
         analysis?.oneSentenceSummary,
@@ -182,6 +183,7 @@ function isLiteratureMatrixRow(value: unknown): value is LiteratureMatrixRow {
   const row = value as Record<string, unknown>;
   return (
     typeof row.paperId === "string" &&
+    typeof row.included === "boolean" &&
     typeof row.citation === "string" &&
     typeof row.researchTopic === "string" &&
     typeof row.researchProblem === "string" &&
@@ -260,7 +262,9 @@ export async function generateReviewThemes(
   signal?: AbortSignal,
 ): Promise<string> {
   const context = buildContextForPhase(request, papers, "outline");
-  const matrix = buildLiteratureMatrix(papers);
+  const matrix = (request.confirmedMatrix ?? buildLiteratureMatrix(papers)).filter(
+    (row) => row.included,
+  );
   const client = getClient();
 
   const completion = await createReviewCompletion(
@@ -388,7 +392,9 @@ export async function generateReviewOutline(
   signal?: AbortSignal,
 ): Promise<string> {
   const context = buildContextForPhase(request, papers, "outline");
-  const matrix = buildLiteratureMatrix(papers);
+  const matrix = (request.confirmedMatrix ?? buildLiteratureMatrix(papers)).filter(
+    (row) => row.included,
+  );
   const client = getClient();
 
   const completion = await createReviewCompletion(

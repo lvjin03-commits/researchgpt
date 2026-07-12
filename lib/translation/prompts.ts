@@ -38,6 +38,7 @@ export function buildTranslationSystemPrompt(
     sourceLanguage: SourceLanguage;
     targetLanguage: TargetLanguage;
     style: TranslationStyle;
+    glossary?: string;
   },
 ): string {
   return [
@@ -52,6 +53,9 @@ export function buildTranslationSystemPrompt(
     "- Use one consistent English translation for the same technical term throughout the document.",
     "- Preserve numbers, URLs, emails, DOI strings, figure/table labels, and citation markers exactly as provided when they appear inside a segment.",
     "- Do not add commentary or explanations.",
+    options.glossary
+      ? `Mandatory terminology mapping (use consistently):\n${options.glossary}`
+      : "- Use standard academic terminology consistently.",
     "- Return ONLY valid JSON: an array of objects with keys id and translation.",
   ].join("\n");
 }

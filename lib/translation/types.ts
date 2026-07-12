@@ -34,6 +34,7 @@ export type TranslationProgressEvent =
       fileBase64: string;
       translatedCount: number;
       skippedCount: number;
+      qualityWarnings: string[];
     }
   | { type: "error"; message: string };
 
@@ -42,6 +43,7 @@ export type TranslationRequestOptions = {
   targetLanguage: TargetLanguage;
   outputMode: OutputMode;
   style: TranslationStyle;
+  glossary?: string;
 };
 
 export type DocxParagraphUnit = {

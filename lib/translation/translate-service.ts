@@ -87,6 +87,7 @@ export async function translateBatch(
     sourceLanguage: SourceLanguage;
     targetLanguage: TargetLanguage;
     style: TranslationStyle;
+    glossary?: string;
     signal?: AbortSignal;
   },
 ): Promise<Map<string, string>> {

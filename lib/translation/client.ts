@@ -22,6 +22,7 @@ export type TranslationFormValues = {
   targetLanguage: TargetLanguage;
   outputMode: OutputMode;
   style: TranslationStyle;
+  glossary?: string;
 };
 
 export type TranslationUiState = {
@@ -38,6 +39,7 @@ export type TranslationUiState = {
   filename?: string;
   translatedCount?: number;
   skippedCount?: number;
+  qualityWarnings?: string[];
 };
 
 function base64ToBlob(base64: string, mimeType: string): Blob {
@@ -64,6 +66,7 @@ export async function translateDocxFile(
   formData.append("targetLanguage", values.targetLanguage);
   formData.append("outputMode", values.outputMode);
   formData.append("style", values.style);
+  formData.append("glossary", values.glossary ?? "");
 
   options.onProgress({ stage: "uploaded" });
 
@@ -132,6 +135,7 @@ export async function translateDocxFile(
           filename: event.filename,
           translatedCount: event.translatedCount,
           skippedCount: event.skippedCount,
+          qualityWarnings: event.qualityWarnings,
         });
 
         downloadBlob(

@@ -78,6 +78,7 @@ export async function POST(request: Request) {
         const targetLanguage = String(formData.get("targetLanguage") ?? "english");
         const outputMode = String(formData.get("outputMode") ?? "replace");
         const style = String(formData.get("style") ?? "academic");
+        const glossary = String(formData.get("glossary") ?? "").trim();
 
         if (!(file instanceof File)) {
           emit({ type: "error", message: "Please upload a .docx file." });
@@ -109,6 +110,12 @@ export async function POST(request: Request) {
           return;
         }
 
+        if (glossary.length > 10_000) {
+          emit({ type: "error", message: "术语表不能超过 10,000 个字符。" });
+          controller.close();
+          return;
+        }
+
         const buffer = Buffer.from(await file.arrayBuffer());
         const result = await runDocxTranslationPipeline(
           buffer,
@@ -118,6 +125,7 @@ export async function POST(request: Request) {
             targetLanguage,
             outputMode,
             style,
+            glossary: glossary || undefined,
           },
           emit,
           request.signal,
@@ -129,6 +137,7 @@ export async function POST(request: Request) {
           fileBase64: result.buffer.toString("base64"),
           translatedCount: result.translatedCount,
           skippedCount: result.skippedCount,
+          qualityWarnings: result.qualityWarnings,
         });
         controller.close();
       } catch (error) {

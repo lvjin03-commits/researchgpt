@@ -44,6 +44,12 @@ const DEFAULT_SECTIONS: ReviewSection[] = [
   REVIEW_SECTION_OPTIONS[9],
 ];
 
+const REVIEW_DRAFT_STORAGE_KEY = "researchai:academic-workspace:v1";
+type EditableMatrixField = Exclude<
+  keyof LiteratureMatrixRow,
+  "paperId" | "included" | "evidenceLevel"
+>;
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-sm font-medium text-gray-900">{children}</span>;
 }
@@ -104,6 +110,8 @@ export function LiteratureReviewShell() {
   const [isGeneratingPpt, setIsGeneratingPpt] = useState(false);
   const [isExportingOutline, setIsExportingOutline] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const restoredFolderIdRef = useRef("");
 
   const [analysisProgress, setAnalysisProgress] =
     useState<AnalysisProgress | null>(null);
@@ -124,7 +132,7 @@ export function LiteratureReviewShell() {
         const loadedFolders = await fetchLiteratureFolders();
         setFolders(loadedFolders);
         const firstFolder = flattenFolderTree(loadedFolders)[0]?.folder;
-        if (firstFolder) {
+        if (firstFolder && !restoredFolderIdRef.current) {
           setFolderId(firstFolder.id);
         }
       } catch (err) {
@@ -136,6 +144,110 @@ export function LiteratureReviewShell() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(REVIEW_DRAFT_STORAGE_KEY);
+        if (raw) {
+          const draft = JSON.parse(raw) as {
+            folderId?: string;
+            topic?: string;
+            workflowMode?: ReviewWorkflowMode;
+            model?: ReviewModel;
+            perspective?: LiteratureReviewRequest["perspective"];
+            targetAudience?: LiteratureReviewRequest["targetAudience"];
+            requiredSections?: ReviewSection[];
+            additionalInstructions?: string;
+            literatureMatrix?: LiteratureMatrixRow[];
+            matrixConfirmed?: boolean;
+            themes?: string;
+            outline?: string;
+            pptOutline?: string;
+          };
+          if (draft.folderId) {
+            restoredFolderIdRef.current = draft.folderId;
+            setFolderId(draft.folderId);
+          }
+          setTopic(draft.topic ?? "");
+          if (draft.workflowMode) setWorkflowMode(draft.workflowMode);
+          if (draft.model) setModel(draft.model);
+          if (draft.perspective) setPerspective(draft.perspective);
+          if (draft.targetAudience) setTargetAudience(draft.targetAudience);
+          if (draft.requiredSections?.length) {
+            setRequiredSections(draft.requiredSections);
+          }
+          setAdditionalInstructions(draft.additionalInstructions ?? "");
+          setLiteratureMatrix(
+            (draft.literatureMatrix ?? []).map((row) => ({
+              ...row,
+              included: row.included !== false,
+            })),
+          );
+          setMatrixConfirmed(draft.matrixConfirmed === true);
+          setThemes(draft.themes ?? "");
+          setOutline(draft.outline ?? "");
+          setPptOutline(draft.pptOutline ?? "");
+        }
+      } catch {
+        window.localStorage.removeItem(REVIEW_DRAFT_STORAGE_KEY);
+      } finally {
+        setDraftLoaded(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
+    if (!draftLoaded) return;
+    window.localStorage.setItem(
+      REVIEW_DRAFT_STORAGE_KEY,
+      JSON.stringify({
+        folderId,
+        topic,
+        workflowMode,
+        model,
+        perspective,
+        targetAudience,
+        requiredSections,
+        additionalInstructions,
+        literatureMatrix,
+        matrixConfirmed,
+        themes,
+        outline,
+        pptOutline,
+        savedAt: new Date().toISOString(),
+      }),
+    );
+  }, [
+    draftLoaded,
+    folderId,
+    literatureMatrix,
+    matrixConfirmed,
+    outline,
+    pptOutline,
+    themes,
+    topic,
+    workflowMode,
+    model,
+    perspective,
+    targetAudience,
+    requiredSections,
+    additionalInstructions,
+  ]);
+
+  const clearSavedProject = () => {
+    window.localStorage.removeItem(REVIEW_DRAFT_STORAGE_KEY);
+    setLiteratureMatrix([]);
+    setMatrixConfirmed(false);
+    setThemes("");
+    setOutline("");
+    setPptOutline("");
+    setAnalysisProgress(null);
+    setStatusMessage("当前项目结果已清空。");
+    setError(null);
+  };
 
   useEffect(() => {
     if (!folderId) {
@@ -218,6 +330,13 @@ export function LiteratureReviewShell() {
   const readablePaperCount = folderPapers.filter(
     (paper) => Boolean(paper.fullTextExtractedAt),
   ).length;
+  const cachedAnalysisCount = folderPapers.filter(
+    (paper) => paper.workspaceAnalysis?.evidenceLevel === "full_text",
+  ).length;
+  const estimatedNewAnalysisCount =
+    workflowMode === "academic_review"
+      ? Math.max(0, paperCount - cachedAnalysisCount)
+      : 0;
   const canClickGenerateOutline = !isGenerating && !isLoadingFolders;
 
   const validateOutlineInput = () => {
@@ -390,6 +509,20 @@ export function LiteratureReviewShell() {
     );
   };
 
+  const updateMatrixRow = (
+    paperId: string,
+    patch: Partial<LiteratureMatrixRow>,
+  ) => {
+    setLiteratureMatrix((current) =>
+      current.map((row) => (row.paperId === paperId ? { ...row, ...patch } : row)),
+    );
+    setMatrixConfirmed(false);
+    setThemes("");
+    setOutline("");
+    setPptOutline("");
+    setStatusMessage("文献矩阵已修改，旧的主题归类、大纲和PPT已标记为过期。");
+  };
+
   const handleGenerateMatrix = async () => {
     if (!validateOutlineInput()) {
       return;
@@ -438,6 +571,10 @@ export function LiteratureReviewShell() {
       setError("请先生成文献矩阵。");
       return;
     }
+    if (literatureMatrix.filter((row) => row.included).length < REVIEW_MIN_PAPER_COUNT) {
+      setError(`请至少纳入 ${REVIEW_MIN_PAPER_COUNT} 篇文献。`);
+      return;
+    }
     const abortController = startGeneration();
     setMatrixConfirmed(true);
     setIsGeneratingThemes(true);
@@ -446,6 +583,7 @@ export function LiteratureReviewShell() {
         {
           ...buildRequestBase(),
           phase: "themes",
+          confirmedMatrix: literatureMatrix,
           uiPaperCount: paperCount,
         },
         abortController.signal,
@@ -478,6 +616,7 @@ export function LiteratureReviewShell() {
         {
           ...buildRequestBase(),
           phase: "outline",
+          confirmedMatrix: literatureMatrix,
           confirmedThemes: themes.trim(),
           uiPaperCount: paperCount,
         },
@@ -593,6 +732,14 @@ export function LiteratureReviewShell() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clearSavedProject}
+              disabled={isGenerating}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:text-gray-300"
+            >
+              清空项目
+            </button>
             <Link
               href="/translate"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
@@ -989,6 +1136,12 @@ export function LiteratureReviewShell() {
                   ? "分析全文并生成文献矩阵"
                   : "生成文献矩阵"}
           </button>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+            <span className="font-medium">预计处理：</span>
+            {workflowMode === "academic_review"
+              ? `${estimatedNewAnalysisCount} 篇需要新增全文分析，${cachedAnalysisCount} 篇可复用缓存；矩阵中文整理约 ${Math.ceil(Math.max(1, paperCount) / 8)} 批。`
+              : `不读取PDF全文；矩阵中文整理约 ${Math.ceil(Math.max(1, paperCount) / 8)} 批。`}
+          </div>
         </section>
 
         {literatureMatrix.length > 0 && (
@@ -998,7 +1151,8 @@ export function LiteratureReviewShell() {
                 4. 文献矩阵
               </h2>
               <span className="text-sm text-gray-500">
-                共 {literatureMatrix.length} 篇文献
+                已纳入 {literatureMatrix.filter((row) => row.included).length}/
+                {literatureMatrix.length} 篇文献
               </span>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-200">
@@ -1006,6 +1160,7 @@ export function LiteratureReviewShell() {
                 <thead className="bg-gray-50 text-xs font-semibold text-gray-700">
                   <tr>
                     {[
+                      "纳入",
                       "文献名称",
                       "研究主题",
                       "研究问题",
@@ -1030,23 +1185,48 @@ export function LiteratureReviewShell() {
                 <tbody className="align-top text-gray-700">
                   {literatureMatrix.map((row) => (
                     <tr key={row.paperId} className="even:bg-gray-50/60">
-                      {[
-                        row.citation,
-                        row.researchTopic,
-                        row.researchProblem,
-                        row.researchObject,
-                        row.researchMethod,
-                        row.keyResults,
-                        row.conclusion,
-                        row.coreIdea,
-                        row.limitations,
-                        row.reviewRelation,
-                      ].map((value, index) => (
+                      <td className="border-b border-r border-gray-200 px-3 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={row.included}
+                          disabled={isGenerating}
+                          aria-label={`纳入 ${row.citation}`}
+                          onChange={(event) =>
+                            updateMatrixRow(row.paperId, {
+                              included: event.target.checked,
+                            })
+                          }
+                        />
+                      </td>
+                      {(
+                        [
+                          ["citation", row.citation],
+                          ["researchTopic", row.researchTopic],
+                          ["researchProblem", row.researchProblem],
+                          ["researchObject", row.researchObject],
+                          ["researchMethod", row.researchMethod],
+                          ["keyResults", row.keyResults],
+                          ["conclusion", row.conclusion],
+                          ["coreIdea", row.coreIdea],
+                          ["limitations", row.limitations],
+                          ["reviewRelation", row.reviewRelation],
+                        ] as Array<[EditableMatrixField, string]>
+                      ).map(([field, value]) => (
                         <td
-                          key={`${row.paperId}-${index}`}
-                          className="max-w-64 border-b border-r border-gray-200 px-3 py-3 leading-6 last:border-r-0"
+                          key={`${row.paperId}-${field}`}
+                          className="max-w-64 border-b border-r border-gray-200 px-2 py-2 leading-6 last:border-r-0"
                         >
-                          {value}
+                          <textarea
+                            value={value}
+                            disabled={isGenerating}
+                            rows={4}
+                            onChange={(event) =>
+                              updateMatrixRow(row.paperId, {
+                                [field]: event.target.value,
+                              })
+                            }
+                            className="w-full min-w-48 resize-y rounded-md border border-transparent bg-transparent px-2 py-1.5 text-sm leading-5 outline-none transition-colors hover:border-gray-200 focus:border-blue-500 focus:bg-white"
+                          />
                         </td>
                       ))}
                       <td className="border-b border-gray-200 px-3 py-3">

@@ -21,6 +21,7 @@ export type ReviewWorkflowMode = "quick_outline" | "academic_review";
 
 export type LiteratureMatrixRow = {
   paperId: string;
+  included: boolean;
   citation: string;
   researchTopic: string;
   researchProblem: string;
@@ -49,6 +50,7 @@ export type LiteratureReviewRequest = {
   length: ReviewLength;
   customWordCount?: number;
   additionalInstructions?: string;
+  confirmedMatrix?: LiteratureMatrixRow[];
   confirmedThemes?: string;
   confirmedOutline?: string;
   /** Display name of the selected folder (logging / name-to-id resolution). */

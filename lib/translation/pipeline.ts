@@ -25,6 +25,7 @@ export async function runDocxTranslationPipeline(
   buffer: Buffer;
   translatedCount: number;
   skippedCount: number;
+  qualityWarnings: string[];
 }> {
   onProgress({ type: "progress", stage: "uploaded" });
   onProgress({ type: "progress", stage: "extracting" });
@@ -51,6 +52,7 @@ export async function runDocxTranslationPipeline(
       sourceLanguage: options.sourceLanguage,
       targetLanguage: options.targetLanguage,
       style: options.style,
+      glossary: options.glossary,
       signal,
     });
 
@@ -78,12 +80,27 @@ export async function runDocxTranslationPipeline(
     (paragraph) => paragraph.translatable,
   ).length;
   const skippedCount = parsed.paragraphs.length - translatedCount;
+  const qualityWarnings: string[] = [];
+  const numberPattern = /\b\d+(?:[.,]\d+)*(?:%|°C|K|h|min|s|mg|g|kg|mL|L|μL|nm|μm|mm|cm)?\b/g;
+
+  for (const paragraph of parsed.paragraphs.filter((item) => item.translatable)) {
+    const translated = translations.get(paragraph.id) ?? "";
+    const sourceNumbers = paragraph.text.match(numberPattern) ?? [];
+    const translatedNumbers = translated.match(numberPattern) ?? [];
+    if (sourceNumbers.join("|") !== translatedNumbers.join("|")) {
+      qualityWarnings.push(`第 ${Number(paragraph.id.replace("p-", "")) + 1} 段的数字或单位可能发生变化。`);
+    }
+    if (!translated.trim()) {
+      qualityWarnings.push(`第 ${Number(paragraph.id.replace("p-", "")) + 1} 段可能漏译。`);
+    }
+  }
 
   return {
     filename: buildTranslationOutputFilename(fileName, options.outputMode),
     buffer: outputBuffer,
     translatedCount,
     skippedCount,
+    qualityWarnings: qualityWarnings.slice(0, 20),
   };
 }
 

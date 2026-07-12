@@ -26,6 +26,7 @@ const STAGE_LABELS: Record<NonNullable<TranslationUiState["stage"]>, string> = {
 export function TranslationShell() {
   const [file, setFile] = useState<File | null>(null);
   const [outputMode, setOutputMode] = useState<OutputMode>("replace");
+  const [glossary, setGlossary] = useState("");
   const [uiState, setUiState] = useState<TranslationUiState>({ stage: "idle" });
   const [isTranslating, setIsTranslating] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -61,6 +62,7 @@ export function TranslationShell() {
       targetLanguage: "english",
       outputMode,
       style: "academic",
+      glossary: glossary.trim() || undefined,
     };
 
     try {
@@ -84,7 +86,7 @@ export function TranslationShell() {
       setIsTranslating(false);
       abortControllerRef.current = null;
     }
-  }, [file, isTranslating, outputMode]);
+  }, [file, glossary, isTranslating, outputMode]);
 
   const handleStop = () => {
     abortControllerRef.current?.abort();
@@ -112,6 +114,32 @@ export function TranslationShell() {
               将中文 Word 文档翻译为专业英文，保留原有文档结构。
             </p>
           </div>
+
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-gray-700">
+              固定术语（可选）
+            </span>
+            <textarea
+              value={glossary}
+              disabled={isTranslating}
+              onChange={(event) => setGlossary(event.target.value)}
+              rows={5}
+              maxLength={10_000}
+              placeholder={"每行一个术语，例如：\n有机催化 = organocatalysis\n转化率 = conversion\n选择性 = selectivity"}
+              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm leading-6 outline-none focus:border-blue-500"
+            />
+            <span className="text-xs text-gray-500">
+              锁定后的译法会在全文中优先保持一致。
+            </span>
+          </label>
+
+          {file && (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+              <span className="font-medium">处理提示：</span>
+              文件大小 {(file.size / 1024 / 1024).toFixed(2)} MB。系统按段落分批翻译，
+              相同文件重新翻译仍会产生新的AI调用。
+            </div>
+          )}
           <Link
             href="/literature/review"
             className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
@@ -198,7 +226,24 @@ export function TranslationShell() {
                 {uiState.skippedCount} 段。
               </p>
             )}
+            {uiState.stage === "completed" &&
+              (uiState.qualityWarnings?.length ?? 0) === 0 && (
+                <p className="mt-1 text-sm text-emerald-700">
+                  完整性检查未发现数字、单位或漏译风险。
+                </p>
+              )}
           </div>
+
+          {uiState.qualityWarnings && uiState.qualityWarnings.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-medium">翻译完成，但建议检查以下内容：</p>
+              <ul className="mt-2 space-y-1">
+                {uiState.qualityWarnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {uiState.error && (
             <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
