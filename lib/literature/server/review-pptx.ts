@@ -1,6 +1,11 @@
 // Server-only module.
 
 import pptxgen from "pptxgenjs";
+import type {
+  PresentationDeck,
+  PresentationSlideType,
+  PresentationVisualMode,
+} from "@/lib/literature/review/types";
 
 type VisualType =
   | "timeline"
@@ -13,10 +18,17 @@ type VisualType =
   | "summary";
 
 type SlideContent = {
+  type: PresentationSlideType;
   title: string;
   takeaway: string;
   visual: VisualType;
+  visualMode: PresentationVisualMode;
+  visualTitle: string;
+  visualDescription: string;
+  visualSource: string;
   bullets: string[];
+  citations: string[];
+  speakerNotes: string;
 };
 
 const VISUAL_TYPES = new Set<VisualType>([
@@ -81,10 +93,17 @@ function parseSlidesFromMarkdown(content: string): SlideContent[] {
   if (chunks.length === 0) {
     return [
       {
+        type: "summary",
         title: "学术汇报",
         takeaway: "形成可汇报的研究脉络",
         visual: "summary",
+        visualMode: "none",
+        visualTitle: "",
+        visualDescription: "",
+        visualSource: "",
         bullets: [normalized || "暂无内容"],
+        citations: [],
+        speakerNotes: "",
       },
     ];
   }
@@ -117,23 +136,57 @@ function parseSlidesFromMarkdown(content: string): SlideContent[] {
 
     const compactBullets = bullets.slice(0, 4);
     return {
+      type: visual ?? inferVisual(title, index),
       title,
       takeaway: takeaway || compactBullets[0] || "提炼核心结论",
       visual: visual ?? inferVisual(title, index),
+      visualMode: "native",
+      visualTitle: "建议图示",
+      visualDescription: "根据本页要点生成可编辑结构图。",
+      visualSource: "",
       bullets:
         compactBullets.length > 0 ? compactBullets : ["围绕该主题组织证据链"],
+      citations: [],
+      speakerNotes: "",
     };
   });
+}
+
+function parseSlidesFromContent(content: string): SlideContent[] {
+  try {
+    const deck = JSON.parse(content) as PresentationDeck;
+    if (deck.schemaVersion === 1 && Array.isArray(deck.slides)) {
+      return deck.slides.map((slide, index) => ({
+        type: slide.type,
+        title: slide.title,
+        takeaway: slide.takeaway,
+        visual:
+          normalizeVisual(slide.visual.type) ??
+          normalizeVisual(slide.type) ??
+          inferVisual(slide.title, index),
+        visualMode: slide.visual.mode,
+        visualTitle: slide.visual.title,
+        visualDescription: slide.visual.description,
+        visualSource: slide.visual.source,
+        bullets: slide.bullets.slice(0, 4),
+        citations: slide.citations.slice(0, 5),
+        speakerNotes: slide.speakerNotes,
+      }));
+    }
+  } catch {
+    // Older saved projects may still contain Markdown PPT outlines.
+  }
+  return parseSlidesFromMarkdown(content);
 }
 
 function addHeader(slide: pptxgen.Slide, slideContent: SlideContent) {
   slide.addText(slideContent.title, {
     x: 0.55,
     y: 0.28,
-    w: 8.8,
-    h: 0.42,
+    w: 12.2,
+    h: 0.62,
     fontFace: "Microsoft YaHei",
-    fontSize: 21,
+    fontSize: 35,
     bold: true,
     color: "0F172A",
     margin: 0,
@@ -142,11 +195,11 @@ function addHeader(slide: pptxgen.Slide, slideContent: SlideContent) {
 
   slide.addText(slideContent.takeaway, {
     x: 0.55,
-    y: 0.83,
+    y: 0.98,
     w: 12.2,
-    h: 0.46,
+    h: 0.52,
     fontFace: "Microsoft YaHei",
-    fontSize: 15,
+    fontSize: 18,
     bold: true,
     color: "1D4ED8",
     fill: { color: "EFF6FF" },
@@ -156,7 +209,23 @@ function addHeader(slide: pptxgen.Slide, slideContent: SlideContent) {
   });
 }
 
-function addFooter(slide: pptxgen.Slide, pageNumber: number) {
+function addFooter(
+  slide: pptxgen.Slide,
+  pageNumber: number,
+  citations: string[],
+) {
+  const sourceText = citations.length > 0 ? `Sources: ${citations.join("; ")}` : "";
+  slide.addText(sourceText, {
+    x: 0.55,
+    y: 6.93,
+    w: 10.6,
+    h: 0.25,
+    fontFace: "Microsoft YaHei",
+    fontSize: 7.5,
+    color: "64748B",
+    margin: 0,
+    fit: "shrink",
+  });
   slide.addText(`ResearchAI · ${pageNumber}`, {
     x: 0.55,
     y: 7.03,
@@ -168,6 +237,61 @@ function addFooter(slide: pptxgen.Slide, pageNumber: number) {
     align: "right",
     margin: 0,
   });
+}
+
+function addPlaceholder(slide: pptxgen.Slide, slideContent: SlideContent) {
+  slide.addText("建议补充专业图片", {
+    x: 0.8,
+    y: 2.0,
+    w: 5.35,
+    h: 0.45,
+    fontFace: "Microsoft YaHei",
+    fontSize: 15,
+    bold: true,
+    color: "334155",
+    align: "center",
+    margin: 0,
+  });
+  slide.addText(slideContent.visualTitle || "本页图示", {
+    x: 1.0,
+    y: 2.65,
+    w: 4.95,
+    h: 0.5,
+    fontFace: "Microsoft YaHei",
+    fontSize: 14,
+    bold: true,
+    color: "1D4ED8",
+    align: "center",
+    margin: 0.04,
+    fit: "shrink",
+  });
+  slide.addText(slideContent.visualDescription, {
+    x: 1.0,
+    y: 3.3,
+    w: 4.95,
+    h: 1.25,
+    fontFace: "Microsoft YaHei",
+    fontSize: 11,
+    color: "475569",
+    align: "center",
+    valign: "middle",
+    margin: 0.08,
+    fit: "shrink",
+  });
+  if (slideContent.visualSource) {
+    slide.addText(`来源建议：${slideContent.visualSource}`, {
+      x: 1.0,
+      y: 4.8,
+      w: 4.95,
+      h: 0.5,
+      fontFace: "Microsoft YaHei",
+      fontSize: 9,
+      color: "64748B",
+      align: "center",
+      margin: 0.04,
+      fit: "shrink",
+    });
+  }
 }
 
 function addVisualLabel(
@@ -185,7 +309,7 @@ function addVisualLabel(
     w,
     h,
     fontFace: "Microsoft YaHei",
-    fontSize: 10,
+    fontSize: 12,
     bold: true,
     color: "0F172A",
     fill: { color: fill },
@@ -325,6 +449,14 @@ function addVisual(slide: pptxgen.Slide, slideContent: SlideContent) {
     margin: 0,
   });
 
+  if (
+    slideContent.visualMode === "placeholder" ||
+    slideContent.visualMode === "evidence"
+  ) {
+    addPlaceholder(slide, slideContent);
+    return;
+  }
+
   switch (slideContent.visual) {
     case "timeline":
       addTimeline(slide, slideContent.bullets);
@@ -344,15 +476,57 @@ function addVisual(slide: pptxgen.Slide, slideContent: SlideContent) {
   }
 }
 
+function addCoverSlide(
+  slide: pptxgen.Slide,
+  slideContent: SlideContent,
+  deckTitle: string,
+) {
+  slide.background = { color: "F8FAFC" };
+  slide.addText(deckTitle || slideContent.title, {
+    x: 0.85,
+    y: 1.55,
+    w: 11.6,
+    h: 1.2,
+    fontFace: "Microsoft YaHei",
+    fontSize: 50,
+    bold: true,
+    color: "0F172A",
+    margin: 0,
+    fit: "shrink",
+  });
+  slide.addText(slideContent.takeaway, {
+    x: 0.88,
+    y: 3.05,
+    w: 9.6,
+    h: 0.65,
+    fontFace: "Microsoft YaHei",
+    fontSize: 22,
+    color: "1D4ED8",
+    margin: 0,
+    fit: "shrink",
+  });
+  slide.addText("EVIDENCE-DRIVEN ACADEMIC PRESENTATION", {
+    x: 0.88,
+    y: 5.65,
+    w: 5.8,
+    h: 0.3,
+    fontFace: "Aptos",
+    fontSize: 10,
+    bold: true,
+    color: "64748B",
+    margin: 0,
+  });
+}
+
 function addBulletCards(slide: pptxgen.Slide, bullets: string[]) {
   bullets.slice(0, 4).forEach((bullet, index) => {
     slide.addText(`${index + 1}`, {
       x: 6.85,
-      y: 1.7 + index * 1.08,
+      y: 1.75 + index * 1.18,
       w: 0.35,
       h: 0.35,
       fontFace: "Aptos",
-      fontSize: 10,
+      fontSize: 11,
       bold: true,
       color: "FFFFFF",
       fill: { color: "1D4ED8" },
@@ -362,11 +536,11 @@ function addBulletCards(slide: pptxgen.Slide, bullets: string[]) {
     });
     slide.addText(bullet, {
       x: 7.32,
-      y: 1.62 + index * 1.08,
+      y: 1.66 + index * 1.18,
       w: 5.05,
-      h: 0.62,
+      h: 0.82,
       fontFace: "Microsoft YaHei",
-      fontSize: 13,
+      fontSize: 16,
       bold: true,
       color: "111827",
       margin: 0.04,
@@ -379,7 +553,7 @@ export async function generateReviewPptxBuffer(
   title: string,
   outlineMarkdown: string,
 ): Promise<Buffer> {
-  const slides = parseSlidesFromMarkdown(outlineMarkdown);
+  const slides = parseSlidesFromContent(outlineMarkdown);
   const pptx = new pptxgen();
 
   pptx.layout = "LAYOUT_WIDE";
@@ -395,10 +569,15 @@ export async function generateReviewPptxBuffer(
   slides.forEach((slideContent, index) => {
     const slide = pptx.addSlide();
     slide.background = { color: "FFFFFF" };
-    addHeader(slide, slideContent);
-    addVisual(slide, slideContent);
-    addBulletCards(slide, slideContent.bullets);
-    addFooter(slide, index + 1);
+    if (slideContent.type === "cover") {
+      addCoverSlide(slide, slideContent, title);
+    } else {
+      addHeader(slide, slideContent);
+      addVisual(slide, slideContent);
+      addBulletCards(slide, slideContent.bullets);
+      addFooter(slide, index + 1, slideContent.citations);
+    }
+    if (slideContent.speakerNotes) slide.addNotes(slideContent.speakerNotes);
   });
 
   const output = await pptx.write({ outputType: "nodebuffer" });

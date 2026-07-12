@@ -7,6 +7,10 @@ import { REVIEW_LENGTH_WORD_TARGETS } from "@/lib/literature/review/constants";
 import type {
   LiteratureMatrixRow,
   LiteratureReviewRequest,
+  PresentationDeck,
+  PresentationSlide,
+  PresentationSlideType,
+  PresentationVisualMode,
 } from "@/lib/literature/review/types";
 import { buildReviewPaperContext } from "@/lib/literature/server/review-papers";
 import type { LiteraturePaper } from "@/lib/literature/types";
@@ -457,11 +461,115 @@ export async function generateReviewOutline(
   return extractMarkdownContent(content);
 }
 
-export async function generateReviewPptOutline(
+const PRESENTATION_SLIDE_TYPES = new Set<PresentationSlideType>([
+  "cover",
+  "section",
+  "evidence",
+  "comparison",
+  "timeline",
+  "taxonomy",
+  "framework",
+  "insight",
+  "gap",
+  "future",
+  "summary",
+]);
+const PRESENTATION_VISUAL_MODES = new Set<PresentationVisualMode>([
+  "native",
+  "evidence",
+  "placeholder",
+  "none",
+]);
+
+function cleanPresentationText(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value.trim().slice(0, 1200) : fallback;
+}
+
+function parsePresentationDeck(value: unknown, title: string): PresentationDeck {
+  if (typeof value !== "object" || value === null) {
+    throw new LiteratureError("AI 未返回有效的结构化 PPT 数据。", 502);
+  }
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.slides)) {
+    throw new LiteratureError("AI 返回的 PPT 缺少幻灯片列表。", 502);
+  }
+
+  const slides = record.slides
+    .slice(0, 15)
+    .map((raw, index): PresentationSlide | null => {
+      if (typeof raw !== "object" || raw === null) return null;
+      const slide = raw as Record<string, unknown>;
+      const type = PRESENTATION_SLIDE_TYPES.has(slide.type as PresentationSlideType)
+        ? (slide.type as PresentationSlideType)
+        : "insight";
+      const visualRaw =
+        typeof slide.visual === "object" && slide.visual !== null
+          ? (slide.visual as Record<string, unknown>)
+          : {};
+      const visualMode = PRESENTATION_VISUAL_MODES.has(
+        visualRaw.mode as PresentationVisualMode,
+      )
+        ? (visualRaw.mode as PresentationVisualMode)
+        : "placeholder";
+      const aspectRatio =
+        visualRaw.aspectRatio === "16:9" ||
+        visualRaw.aspectRatio === "4:3" ||
+        visualRaw.aspectRatio === "1:1"
+          ? visualRaw.aspectRatio
+          : "4:3";
+      const bullets = Array.isArray(slide.bullets)
+        ? slide.bullets
+            .map((item) => cleanPresentationText(item))
+            .filter(Boolean)
+            .slice(0, 4)
+        : [];
+      const citations = Array.isArray(slide.citations)
+        ? slide.citations
+            .map((item) => cleanPresentationText(item))
+            .filter(Boolean)
+            .slice(0, 5)
+        : [];
+
+      return {
+        id: cleanPresentationText(slide.id, `slide-${index + 1}`),
+        type,
+        title: cleanPresentationText(slide.title, `幻灯片 ${index + 1}`),
+        takeaway: cleanPresentationText(slide.takeaway, "本页结论待确认"),
+        bullets: bullets.length > 0 ? bullets : ["本页证据要点待确认"],
+        citations,
+        visual: {
+          mode: visualMode,
+          type: cleanPresentationText(visualRaw.type, type),
+          title: cleanPresentationText(visualRaw.title, "建议图示"),
+          description: cleanPresentationText(
+            visualRaw.description,
+            "请根据本页结论补充相关图示。",
+          ),
+          source: cleanPresentationText(visualRaw.source),
+          aspectRatio,
+        },
+        speakerNotes: cleanPresentationText(slide.speakerNotes),
+      };
+    })
+    .filter((slide): slide is PresentationSlide => slide !== null);
+
+  if (slides.length < 3) {
+    throw new LiteratureError("AI 返回的有效幻灯片数量不足。", 502);
+  }
+
+  return {
+    schemaVersion: 1,
+    title: cleanPresentationText(record.title, title),
+    subtitle: cleanPresentationText(record.subtitle, "基于所选文献的证据驱动汇报"),
+    slides,
+  };
+}
+
+export async function generateReviewPptDeck(
   request: LiteratureReviewRequest,
   papers: LiteraturePaper[],
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<PresentationDeck> {
   const context = buildContextForPhase(request, papers, "ppt");
   const client = getClient();
 
@@ -470,26 +578,26 @@ export async function generateReviewPptOutline(
     {
       model: request.model,
       reasoning_effort: "none",
-      max_completion_tokens: 5000,
+      max_completion_tokens: 7000,
+      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
           content: [
             "你是 ResearchAI 的学术汇报策划与 PPT 导演。",
             buildEvidenceRules(),
-            "请把用户确认的研究大纲转成学术汇报风格 PPT 大纲。",
-            "PPT 原则：少字、多图、强故事线；每页只讲一个点，每页必须有一句简洁结论。",
-            "每页必须指定图示类型：timeline、taxonomy、framework、comparison、insight、gap、future、summary 中的一种。",
-            "如果 figureEvidence 可用，每页尽量引用一个相关 Evidence Figure/Evidence Table，作为右侧证据说明。",
-            "每页格式必须严格如下：",
-            "## 页标题",
-            "结论：一句话结论，不超过 28 个中文字符。",
-            "图示：timeline/taxonomy/framework/comparison/insight/gap/future/summary",
-            "证据：Evidence Figure/Table｜来源论文标题｜该页结论对应的图表证据",
-            "- 要点 1（引用作者年份或文献标题）",
-            "- 要点 2",
-            "- 要点 3",
-            "输出 8-15 页，纯 Markdown。",
+            "请把用户确认的研究大纲转成结构化学术汇报方案，不要输出 Markdown。",
+            "PPT 原则：少字、多图、强故事线；每页只讲一个结论，标题必须是结论型标题。",
+            "输出 8-15 页。每页最多 4 个要点，每个要点尽量不超过 36 个中文字符。",
+            "第 1 页必须是 cover，最后 1 页必须是 summary；中间应按背景与问题、研究脉络、主题分类、方法或机制、代表性比较、核心洞察、研究空白、未来方向形成故事线。",
+            "除封面和章节过渡页外，每页 citations 应列出实际支撑本页结论的作者年份；没有可靠证据时不得伪造引用。",
+            "slide.type 只能是 cover、section、evidence、comparison、timeline、taxonomy、framework、insight、gap、future、summary。",
+            "visual.mode 只能是 native、evidence、placeholder、none。",
+            "若原文图表与结论直接相关，使用 evidence，并写明论文、Figure/Table编号和页码；不能确认时使用 placeholder。",
+            "Timeline、Taxonomy、Comparison、Framework 等可编辑结构图使用 native。",
+            "复杂化学机理、分子结构和实验装置无法可靠生成时必须使用 placeholder，并写清需要插入什么图。",
+            "返回 JSON 对象，严格格式：",
+            '{"schemaVersion":1,"title":"...","subtitle":"...","slides":[{"id":"slide-1","type":"cover","title":"...","takeaway":"...","bullets":["..."],"citations":["Author et al., 2024"],"visual":{"mode":"none","type":"cover","title":"","description":"","source":"","aspectRatio":"16:9"},"speakerNotes":"..."}]}',
           ].join("\n"),
         },
         {
@@ -503,7 +611,7 @@ export async function generateReviewPptOutline(
             "可用文献（仅限以下条目）：",
             buildPaperListPrompt(context),
             "",
-            "请生成可直接用于导师汇报的 PPT 大纲。",
+            "请生成可直接用于导师汇报、并可由程序稳定排版的结构化 PPT 数据。",
           ].join("\n"),
         },
       ],
@@ -512,9 +620,11 @@ export async function generateReviewPptOutline(
   );
 
   const content = completion.choices[0]?.message?.content;
-  if (!content) {
-    throw new LiteratureError("AI 未返回有效 PPT 大纲。", 502);
+  if (!content) throw new LiteratureError("AI 未返回有效 PPT 数据。", 502);
+  try {
+    return parsePresentationDeck(JSON.parse(content) as unknown, request.topic);
+  } catch (error) {
+    if (error instanceof LiteratureError) throw error;
+    throw new LiteratureError("AI 返回的 PPT JSON 无法解析。", 502);
   }
-
-  return extractMarkdownContent(content);
 }

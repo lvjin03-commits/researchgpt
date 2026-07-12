@@ -19,6 +19,52 @@ export type ReviewModel = (typeof REVIEW_MODEL_OPTIONS)[number]["id"];
 export type ReviewGenerationPhase = "matrix" | "themes" | "outline" | "ppt";
 export type ReviewWorkflowMode = "quick_outline" | "academic_review";
 
+export type PresentationSlideType =
+  | "cover"
+  | "section"
+  | "evidence"
+  | "comparison"
+  | "timeline"
+  | "taxonomy"
+  | "framework"
+  | "insight"
+  | "gap"
+  | "future"
+  | "summary";
+
+export type PresentationVisualMode =
+  | "native"
+  | "evidence"
+  | "placeholder"
+  | "none";
+
+export type PresentationVisual = {
+  mode: PresentationVisualMode;
+  type: string;
+  title: string;
+  description: string;
+  source: string;
+  aspectRatio: "16:9" | "4:3" | "1:1";
+};
+
+export type PresentationSlide = {
+  id: string;
+  type: PresentationSlideType;
+  title: string;
+  takeaway: string;
+  bullets: string[];
+  citations: string[];
+  visual: PresentationVisual;
+  speakerNotes: string;
+};
+
+export type PresentationDeck = {
+  schemaVersion: 1;
+  title: string;
+  subtitle: string;
+  slides: PresentationSlide[];
+};
+
 export type LiteratureMatrixRow = {
   paperId: string;
   included: boolean;
@@ -66,7 +112,7 @@ export type LiteratureReviewResponse = {
   matrix?: LiteratureMatrixRow[];
   themes?: string;
   outline?: string;
-  pptOutline?: string;
+  pptDeck?: PresentationDeck;
 };
 
 export type LiteratureReviewExportRequest = {

@@ -11,7 +11,7 @@ import { loadReviewFolderPapersWithLog } from "@/lib/literature/server/folder-pa
 import {
   generateLocalizedLiteratureMatrix,
   generateReviewOutline,
-  generateReviewPptOutline,
+  generateReviewPptDeck,
   generateReviewThemes,
 } from "@/lib/literature/server/review-service";
 
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
         request.signal,
       );
     } else {
-      response.pptOutline = await generateReviewPptOutline(
+      response.pptDeck = await generateReviewPptDeck(
         reviewRequest,
         papers,
         request.signal,

@@ -23,6 +23,7 @@ import {
 import type {
   LiteratureMatrixRow,
   LiteratureReviewRequest,
+  PresentationDeck,
   ReviewSection,
   ReviewModel,
   ReviewWorkflowMode,
@@ -100,7 +101,7 @@ export function LiteratureReviewShell() {
   >([]);
   const [matrixConfirmed, setMatrixConfirmed] = useState(false);
   const [themes, setThemes] = useState("");
-  const [pptOutline, setPptOutline] = useState("");
+  const [pptDeck, setPptDeck] = useState<PresentationDeck | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isLoadingFolders, setIsLoadingFolders] = useState(true);
@@ -163,7 +164,7 @@ export function LiteratureReviewShell() {
             matrixConfirmed?: boolean;
             themes?: string;
             outline?: string;
-            pptOutline?: string;
+            pptDeck?: PresentationDeck;
           };
           if (draft.folderId) {
             restoredFolderIdRef.current = draft.folderId;
@@ -187,7 +188,7 @@ export function LiteratureReviewShell() {
           setMatrixConfirmed(draft.matrixConfirmed === true);
           setThemes(draft.themes ?? "");
           setOutline(draft.outline ?? "");
-          setPptOutline(draft.pptOutline ?? "");
+          setPptDeck(draft.pptDeck ?? null);
         }
       } catch {
         window.localStorage.removeItem(REVIEW_DRAFT_STORAGE_KEY);
@@ -216,7 +217,7 @@ export function LiteratureReviewShell() {
         matrixConfirmed,
         themes,
         outline,
-        pptOutline,
+        pptDeck,
         savedAt: new Date().toISOString(),
       }),
     );
@@ -226,7 +227,7 @@ export function LiteratureReviewShell() {
     literatureMatrix,
     matrixConfirmed,
     outline,
-    pptOutline,
+    pptDeck,
     themes,
     topic,
     workflowMode,
@@ -243,7 +244,7 @@ export function LiteratureReviewShell() {
     setMatrixConfirmed(false);
     setThemes("");
     setOutline("");
-    setPptOutline("");
+    setPptDeck(null);
     setAnalysisProgress(null);
     setStatusMessage("当前项目结果已清空。");
     setError(null);
@@ -385,7 +386,7 @@ export function LiteratureReviewShell() {
     setLiteratureMatrix([]);
     setMatrixConfirmed(false);
     setThemes("");
-    setPptOutline("");
+    setPptDeck(null);
     setAnalysisProgress(null);
     setError(null);
     setStatusMessage(null);
@@ -397,7 +398,7 @@ export function LiteratureReviewShell() {
     setLiteratureMatrix([]);
     setMatrixConfirmed(false);
     setThemes("");
-    setPptOutline("");
+    setPptDeck(null);
     setAnalysisProgress(null);
     setError(null);
     setStatusMessage(null);
@@ -519,7 +520,7 @@ export function LiteratureReviewShell() {
     setMatrixConfirmed(false);
     setThemes("");
     setOutline("");
-    setPptOutline("");
+    setPptDeck(null);
     setStatusMessage("文献矩阵已修改，旧的主题归类、大纲和PPT已标记为过期。");
   };
 
@@ -548,7 +549,7 @@ export function LiteratureReviewShell() {
       setMatrixConfirmed(false);
       setThemes("");
       setOutline("");
-      setPptOutline("");
+      setPptDeck(null);
       setStatusMessage(
         workflowMode === "academic_review"
           ? "全文分析与文献矩阵生成完成，请检查矩阵后继续。"
@@ -590,7 +591,7 @@ export function LiteratureReviewShell() {
       );
       setThemes(result.themes ?? "");
       setOutline("");
-      setPptOutline("");
+      setPptDeck(null);
       setStatusMessage("主题归类已生成，请检查或编辑后生成论文大纲。");
     } catch (err) {
       if (!isAbortError(err)) {
@@ -623,7 +624,7 @@ export function LiteratureReviewShell() {
         abortController.signal,
       );
       setOutline(result.outline ?? "");
-      setPptOutline("");
+      setPptDeck(null);
       setStatusMessage("证据驱动的大纲已生成，请检查后生成PPT。");
     } catch (err) {
       if (!isAbortError(err)) {
@@ -660,7 +661,7 @@ export function LiteratureReviewShell() {
         },
         abortController.signal,
       );
-      setPptOutline(result.pptOutline ?? "");
+      setPptDeck(result.pptDeck ?? null);
       setStatusMessage("PPT 大纲已生成。");
     } catch (err) {
       if (!isAbortError(err)) {
@@ -675,8 +676,7 @@ export function LiteratureReviewShell() {
   };
 
   const handleExport = async () => {
-    const content = pptOutline.trim();
-    if (!content) {
+    if (!pptDeck) {
       setError("暂无可导出的 PPT 大纲。");
       return;
     }
@@ -688,7 +688,7 @@ export function LiteratureReviewShell() {
       const { filename } = await exportLiteratureReview({
         format: "pptx",
         title: topic.trim() || "学术汇报",
-        content,
+        content: JSON.stringify(pptDeck),
       });
       setStatusMessage(`已导出 ${filename}`);
     } catch (err) {
@@ -719,6 +719,22 @@ export function LiteratureReviewShell() {
     } finally {
       setIsExportingOutline(false);
     }
+  };
+
+  const updatePptSlide = (
+    slideId: string,
+    patch: Partial<PresentationDeck["slides"][number]>,
+  ) => {
+    setPptDeck((current) =>
+      current
+        ? {
+            ...current,
+            slides: current.slides.map((slide) =>
+              slide.id === slideId ? { ...slide, ...patch } : slide,
+            ),
+          }
+        : current,
+    );
   };
 
   return (
@@ -913,7 +929,7 @@ export function LiteratureReviewShell() {
                 setLiteratureMatrix([]);
                 setMatrixConfirmed(false);
                 setThemes("");
-                setPptOutline("");
+                setPptDeck(null);
                 setAnalysisProgress(null);
               }}
               className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
@@ -1283,7 +1299,7 @@ export function LiteratureReviewShell() {
               onChange={(event) => {
                 setThemes(event.target.value);
                 setOutline("");
-                setPptOutline("");
+                setPptDeck(null);
               }}
               rows={16}
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
@@ -1332,16 +1348,95 @@ export function LiteratureReviewShell() {
           </section>
         )}
 
-        {pptOutline && (
+        {pptDeck && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">7. PPT 大纲</h2>
-            <textarea
-              value={pptOutline}
-              disabled={isGenerating}
-              onChange={(event) => setPptOutline(event.target.value)}
-              rows={16}
-              className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
-            />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">
+                  7. 结构化 PPT 方案
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  共 {pptDeck.slides.length} 页。每页独立保存结论、证据、引用和图示策略。
+                </p>
+              </div>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                Slide JSON v{pptDeck.schemaVersion}
+              </span>
+            </div>
+            <div className="space-y-3">
+              {pptDeck.slides.map((slide, index) => (
+                <article
+                  key={slide.id}
+                  className="grid gap-4 rounded-xl border border-gray-200 p-4 lg:grid-cols-[150px_minmax(0,1fr)_280px]"
+                >
+                  <div>
+                    <p className="text-xs font-semibold uppercase text-gray-400">
+                      Slide {index + 1}
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-gray-800">
+                      {slide.type}
+                    </p>
+                    <span className="mt-2 inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                      {slide.visual.mode}
+                    </span>
+                  </div>
+                  <div className="grid gap-3">
+                    <input
+                      value={slide.title}
+                      disabled={isGenerating}
+                      onChange={(event) =>
+                        updatePptSlide(slide.id, { title: event.target.value })
+                      }
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold"
+                    />
+                    <input
+                      value={slide.takeaway}
+                      disabled={isGenerating}
+                      onChange={(event) =>
+                        updatePptSlide(slide.id, { takeaway: event.target.value })
+                      }
+                      className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+                    />
+                    <textarea
+                      value={slide.bullets.join("\n")}
+                      disabled={isGenerating}
+                      rows={4}
+                      onChange={(event) =>
+                        updatePptSlide(slide.id, {
+                          bullets: event.target.value
+                            .split("\n")
+                            .map((item) => item.trim())
+                            .filter(Boolean)
+                            .slice(0, 4),
+                        })
+                      }
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-sm leading-6"
+                    />
+                    <p className="text-xs text-gray-500">
+                      引用：{slide.citations.join("；") || "待确认"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3">
+                    <p className="text-xs font-semibold uppercase text-gray-500">
+                      {slide.visual.mode === "placeholder"
+                        ? "图片占位建议"
+                        : "图示规划"}
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-gray-900">
+                      {slide.visual.title || slide.visual.type}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-gray-600">
+                      {slide.visual.description || "本页无需额外图示。"}
+                    </p>
+                    {slide.visual.source && (
+                      <p className="mt-2 text-xs text-blue-700">
+                        来源：{slide.visual.source}
+                      </p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
             <button
               type="button"
               disabled={isExporting || isGenerating}
