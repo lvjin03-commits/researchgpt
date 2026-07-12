@@ -21,6 +21,7 @@ import {
   REVIEW_SECTION_OPTIONS,
 } from "@/lib/literature/review/constants";
 import type {
+  LiteratureMatrixRow,
   LiteratureReviewRequest,
   ReviewSection,
   ReviewModel,
@@ -88,6 +89,9 @@ export function LiteratureReviewShell() {
   const [customWordCount, setCustomWordCount] = useState("5000");
   const [additionalInstructions, setAdditionalInstructions] = useState("");
   const [outline, setOutline] = useState("");
+  const [literatureMatrix, setLiteratureMatrix] = useState<
+    LiteratureMatrixRow[]
+  >([]);
   const [pptOutline, setPptOutline] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -254,6 +258,7 @@ export function LiteratureReviewShell() {
     setWorkflowMode(mode);
     setModel(mode === "academic_review" ? "gpt-5.4" : "gpt-5.4-mini");
     setOutline("");
+    setLiteratureMatrix([]);
     setPptOutline("");
     setAnalysisProgress(null);
     setError(null);
@@ -263,6 +268,7 @@ export function LiteratureReviewShell() {
   const changeModel = (nextModel: ReviewModel) => {
     setModel(nextModel);
     setOutline("");
+    setLiteratureMatrix([]);
     setPptOutline("");
     setAnalysisProgress(null);
     setError(null);
@@ -396,6 +402,7 @@ export function LiteratureReviewShell() {
         },
         abortController.signal,
       );
+      setLiteratureMatrix(result.matrix ?? []);
       setOutline(result.outline ?? "");
       setPptOutline("");
       setStatusMessage(
@@ -651,6 +658,7 @@ export function LiteratureReviewShell() {
               onChange={(event) => {
                 setFolderId(event.target.value);
                 setOutline("");
+                setLiteratureMatrix([]);
                 setPptOutline("");
                 setAnalysisProgress(null);
               }}
@@ -876,9 +884,88 @@ export function LiteratureReviewShell() {
           </button>
         </section>
 
+        {literatureMatrix.length > 0 && (
+          <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-gray-900">
+                4. 文献矩阵
+              </h2>
+              <span className="text-sm text-gray-500">
+                共 {literatureMatrix.length} 篇文献
+              </span>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="min-w-[1800px] border-collapse text-left text-sm">
+                <thead className="bg-gray-50 text-xs font-semibold text-gray-700">
+                  <tr>
+                    {[
+                      "文献名称",
+                      "研究主题",
+                      "研究问题",
+                      "研究对象",
+                      "研究方法",
+                      "关键结果",
+                      "主要结论",
+                      "核心思想",
+                      "局限性",
+                      "与汇报的关系",
+                      "证据状态",
+                    ].map((heading) => (
+                      <th
+                        key={heading}
+                        className="min-w-40 border-b border-r border-gray-200 px-3 py-3 last:border-r-0"
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="align-top text-gray-700">
+                  {literatureMatrix.map((row) => (
+                    <tr key={row.paperId} className="even:bg-gray-50/60">
+                      {[
+                        row.citation,
+                        row.researchTopic,
+                        row.researchProblem,
+                        row.researchObject,
+                        row.researchMethod,
+                        row.keyResults,
+                        row.conclusion,
+                        row.coreIdea,
+                        row.limitations,
+                        row.reviewRelation,
+                      ].map((value, index) => (
+                        <td
+                          key={`${row.paperId}-${index}`}
+                          className="max-w-64 border-b border-r border-gray-200 px-3 py-3 leading-6 last:border-r-0"
+                        >
+                          {value}
+                        </td>
+                      ))}
+                      <td className="border-b border-gray-200 px-3 py-3">
+                        <span
+                          className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-xs font-medium ${
+                            row.evidenceLevel === "full_text"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {row.evidenceLevel === "full_text"
+                            ? "全文已分析"
+                            : "仅摘要"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         {outline && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">4. 确认大纲</h2>
+            <h2 className="text-base font-semibold text-gray-900">5. 确认大纲</h2>
             <textarea
               value={outline}
               disabled={isGenerating}
@@ -901,7 +988,7 @@ export function LiteratureReviewShell() {
 
         {pptOutline && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">5. PPT 大纲</h2>
+            <h2 className="text-base font-semibold text-gray-900">6. PPT 大纲</h2>
             <textarea
               value={pptOutline}
               disabled={isGenerating}

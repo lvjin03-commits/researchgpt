@@ -4,7 +4,10 @@ import OpenAI from "openai";
 import { AIProviderError } from "@/lib/ai/errors";
 import { LiteratureError } from "@/lib/literature/errors";
 import { REVIEW_LENGTH_WORD_TARGETS } from "@/lib/literature/review/constants";
-import type { LiteratureReviewRequest } from "@/lib/literature/review/types";
+import type {
+  LiteratureMatrixRow,
+  LiteratureReviewRequest,
+} from "@/lib/literature/review/types";
 import { buildReviewPaperContext } from "@/lib/literature/server/review-papers";
 import type { LiteraturePaper } from "@/lib/literature/types";
 
@@ -115,6 +118,65 @@ function buildPaperListPrompt(papers: ReviewPaperContext[]): string {
   return JSON.stringify(papers, null, 2);
 }
 
+function compactMatrixValue(value: string | null | undefined, fallback: string) {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return normalized ? normalized.slice(0, 600) : fallback;
+}
+
+export function buildLiteratureMatrix(
+  papers: LiteraturePaper[],
+): LiteratureMatrixRow[] {
+  return papers.map((paper) => {
+    const analysis = paper.workspaceAnalysis;
+    const year = paper.publishedAt
+      ? new Date(paper.publishedAt).getFullYear()
+      : null;
+    const author = paper.authors[0]
+      ? `${paper.authors[0]}${paper.authors.length > 1 ? " 等" : ""}`
+      : "作者未知";
+    const abstractFallback = compactMatrixValue(
+      paper.abstract,
+      "暂无摘要，待补充全文。",
+    );
+    const unavailable = analysis
+      ? "当前单篇分析未单独提取该字段。"
+      : "仅有摘要，待全文分析后确认。";
+
+    return {
+      paperId: paper.id,
+      citation: `${author}${year ? `（${year}）` : ""}：《${paper.title}》`,
+      researchTopic: compactMatrixValue(
+        analysis?.oneSentenceSummary,
+        abstractFallback,
+      ),
+      researchProblem: compactMatrixValue(
+        analysis?.researchProblem,
+        unavailable,
+      ),
+      researchObject: unavailable,
+      researchMethod: compactMatrixValue(analysis?.coreMethod, unavailable),
+      keyResults: compactMatrixValue(
+        analysis?.experimentalResults,
+        unavailable,
+      ),
+      conclusion: compactMatrixValue(
+        analysis?.mainContributions,
+        abstractFallback,
+      ),
+      coreIdea: compactMatrixValue(analysis?.whyItMatters, unavailable),
+      limitations: compactMatrixValue(analysis?.limitations, unavailable),
+      reviewRelation: compactMatrixValue(
+        paper.recommendationReason || analysis?.whyItMatters,
+        "需要结合综述主题由用户确认。",
+      ),
+      evidenceLevel:
+        analysis?.evidenceLevel === "full_text"
+          ? "full_text"
+          : "abstract_only",
+    };
+  });
+}
+
 function extractMarkdownContent(content: string): string {
   return content.trim();
 }
@@ -209,6 +271,7 @@ export async function generateReviewOutline(
             buildDeliverableRules(),
             "请生成可编辑的 Markdown 研究汇报大纲。",
             "大纲必须规划内容结构、图表结构、引用策略和汇报故事线。",
+            "前端会单独展示覆盖全部论文的文献矩阵；大纲必须使用全部可用文献的信息进行组织，但不要在 Markdown 中重复输出文献矩阵。",
             "输出纯 Markdown，不要 JSON。",
           ].join("\n"),
         },

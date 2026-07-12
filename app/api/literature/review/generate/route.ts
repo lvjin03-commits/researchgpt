@@ -9,6 +9,7 @@ import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { parseLiteratureReviewRequest } from "@/lib/literature/server/review-parse";
 import { loadReviewFolderPapersWithLog } from "@/lib/literature/server/folder-papers";
 import {
+  buildLiteratureMatrix,
   generateReviewOutline,
   generateReviewPptOutline,
 } from "@/lib/literature/server/review-service";
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
     };
 
     if (reviewRequest.phase === "outline") {
+      response.matrix = buildLiteratureMatrix(papers);
       response.outline = await generateReviewOutline(
         reviewRequest,
         papers,

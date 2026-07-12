@@ -19,6 +19,21 @@ export type ReviewModel = (typeof REVIEW_MODEL_OPTIONS)[number]["id"];
 export type ReviewGenerationPhase = "outline" | "ppt";
 export type ReviewWorkflowMode = "quick_outline" | "academic_review";
 
+export type LiteratureMatrixRow = {
+  paperId: string;
+  citation: string;
+  researchTopic: string;
+  researchProblem: string;
+  researchObject: string;
+  researchMethod: string;
+  keyResults: string;
+  conclusion: string;
+  coreIdea: string;
+  limitations: string;
+  reviewRelation: string;
+  evidenceLevel: "full_text" | "abstract_only";
+};
+
 export type LiteratureReviewRequest = {
   phase: ReviewGenerationPhase;
   workflowMode: ReviewWorkflowMode;
@@ -45,6 +60,7 @@ export type LiteratureReviewResponse = {
   phase: ReviewGenerationPhase;
   paperCount: number;
   usedPaperTitles: string[];
+  matrix?: LiteratureMatrixRow[];
   outline?: string;
   pptOutline?: string;
 };
