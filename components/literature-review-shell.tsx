@@ -102,6 +102,7 @@ export function LiteratureReviewShell() {
   const [isGeneratingThemes, setIsGeneratingThemes] = useState(false);
   const [isAnalyzingPapers, setIsAnalyzingPapers] = useState(false);
   const [isGeneratingPpt, setIsGeneratingPpt] = useState(false);
+  const [isExportingOutline, setIsExportingOutline] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
   const [analysisProgress, setAnalysisProgress] =
@@ -555,6 +556,29 @@ export function LiteratureReviewShell() {
       setError(err instanceof LiteratureError ? err.message : "导出失败。");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleExportOutline = async () => {
+    const content = outline.trim();
+    if (!content) {
+      setError("暂无可导出的论文大纲。");
+      return;
+    }
+
+    setError(null);
+    setIsExportingOutline(true);
+    try {
+      const { filename } = await exportLiteratureReview({
+        format: "docx",
+        title: `${topic.trim() || "论文"}-大纲`,
+        content,
+      });
+      setStatusMessage(`已导出 ${filename}`);
+    } catch (err) {
+      setError(err instanceof LiteratureError ? err.message : "导出论文大纲失败。");
+    } finally {
+      setIsExportingOutline(false);
     }
   };
 
@@ -1099,16 +1123,26 @@ export function LiteratureReviewShell() {
               rows={16}
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
             />
-            <button
-              type="button"
-              disabled={isGenerating}
-              onClick={() => {
-                void handleGeneratePpt();
-              }}
-              className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
-            >
-              {isGeneratingPpt ? "正在生成 PPT 大纲..." : "确认大纲并生成 PPT"}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                disabled={isGenerating || isExportingOutline}
+                onClick={() => void handleExportOutline()}
+                className="rounded-xl border border-blue-700 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                {isExportingOutline ? "正在导出大纲..." : "导出论文大纲（Word）"}
+              </button>
+              <button
+                type="button"
+                disabled={isGenerating}
+                onClick={() => {
+                  void handleGeneratePpt();
+                }}
+                className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+              >
+                {isGeneratingPpt ? "正在生成 PPT 大纲..." : "确认大纲并生成 PPT"}
+              </button>
+            </div>
           </section>
         )}
 

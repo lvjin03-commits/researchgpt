@@ -177,6 +177,83 @@ export function buildLiteratureMatrix(
   });
 }
 
+function isLiteratureMatrixRow(value: unknown): value is LiteratureMatrixRow {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.paperId === "string" &&
+    typeof row.citation === "string" &&
+    typeof row.researchTopic === "string" &&
+    typeof row.researchProblem === "string" &&
+    typeof row.researchObject === "string" &&
+    typeof row.researchMethod === "string" &&
+    typeof row.keyResults === "string" &&
+    typeof row.conclusion === "string" &&
+    typeof row.coreIdea === "string" &&
+    typeof row.limitations === "string" &&
+    typeof row.reviewRelation === "string" &&
+    (row.evidenceLevel === "full_text" || row.evidenceLevel === "abstract_only")
+  );
+}
+
+export async function generateLocalizedLiteratureMatrix(
+  request: LiteratureReviewRequest,
+  papers: LiteraturePaper[],
+  signal?: AbortSignal,
+): Promise<LiteratureMatrixRow[]> {
+  const sourceRows = buildLiteratureMatrix(papers);
+  const client = getClient();
+  const localizedRows: LiteratureMatrixRow[] = [];
+
+  for (let offset = 0; offset < sourceRows.length; offset += 8) {
+    const batch = sourceRows.slice(offset, offset + 8);
+    const completion = await createReviewCompletion(
+      client,
+      {
+        model: request.model,
+        reasoning_effort: "none",
+        max_completion_tokens: 5000,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: [
+              "你是科研文献矩阵的中文编辑。只做忠实翻译和简洁整理，不增加原文没有的事实。",
+              "将矩阵各说明字段转换为专业、准确、简洁的中文。",
+              "论文标题、作者姓名、期刊名、化学式、材料名、基因名、模型名、数据集名和通用专业缩写保持原文。",
+              "paperId、citation 和 evidenceLevel 必须原样保留。",
+              "缺失信息仍明确写为未提取或待全文确认，不得猜测。",
+              "返回 JSON 对象，格式为 {\"rows\":[...]}，字段和输入完全一致。",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({ rows: batch }),
+          },
+        ],
+      },
+      signal,
+    );
+
+    const content = completion.choices[0]?.message?.content;
+    try {
+      const parsed = JSON.parse(content ?? "{}") as { rows?: unknown[] };
+      const translatedById = new Map(
+        (parsed.rows ?? [])
+          .filter(isLiteratureMatrixRow)
+          .map((row) => [row.paperId, row] as const),
+      );
+      localizedRows.push(
+        ...batch.map((source) => translatedById.get(source.paperId) ?? source),
+      );
+    } catch {
+      localizedRows.push(...batch);
+    }
+  }
+
+  return localizedRows;
+}
+
 export async function generateReviewThemes(
   request: LiteratureReviewRequest,
   papers: LiteraturePaper[],

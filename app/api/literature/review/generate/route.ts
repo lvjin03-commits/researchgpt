@@ -9,7 +9,7 @@ import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { parseLiteratureReviewRequest } from "@/lib/literature/server/review-parse";
 import { loadReviewFolderPapersWithLog } from "@/lib/literature/server/folder-papers";
 import {
-  buildLiteratureMatrix,
+  generateLocalizedLiteratureMatrix,
   generateReviewOutline,
   generateReviewPptOutline,
   generateReviewThemes,
@@ -92,7 +92,11 @@ export async function POST(request: Request) {
     };
 
     if (reviewRequest.phase === "matrix") {
-      response.matrix = buildLiteratureMatrix(papers);
+      response.matrix = await generateLocalizedLiteratureMatrix(
+        reviewRequest,
+        papers,
+        request.signal,
+      );
     } else if (reviewRequest.phase === "themes") {
       response.themes = await generateReviewThemes(
         reviewRequest,

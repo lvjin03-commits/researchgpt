@@ -3,6 +3,7 @@ import { saveExport } from "@/lib/export/store";
 import { LiteratureError } from "@/lib/literature/errors";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { generateReviewPptxBuffer } from "@/lib/literature/server/review-pptx";
+import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
 
 export const runtime = "nodejs";
 
@@ -20,8 +21,8 @@ export async function POST(request: Request) {
     const title = typeof body.title === "string" ? body.title.trim() : "";
     const content = typeof body.content === "string" ? body.content.trim() : "";
 
-    if (format !== "pptx") {
-      throw new LiteratureError('format 必须是 "pptx"。', 400);
+    if (format !== "pptx" && format !== "docx") {
+      throw new LiteratureError('format 必须是 "docx" 或 "pptx"。', 400);
     }
 
     if (!title) {
@@ -32,11 +33,20 @@ export async function POST(request: Request) {
       throw new LiteratureError("content 不能为空。", 400);
     }
 
-    const buffer = await generateReviewPptxBuffer(title, content);
+    const buffer =
+      format === "pptx"
+        ? await generateReviewPptxBuffer(title, content)
+        : await generateExportBuffer("docx", {
+            title,
+            content,
+            metadata: { artifactType: "literature-outline" },
+          });
 
     const filename = buildExportFilename(title, format);
     const mimeType =
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+      format === "pptx"
+        ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     const record = await saveExport({
       filename,

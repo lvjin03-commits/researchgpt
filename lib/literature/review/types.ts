@@ -68,7 +68,7 @@ export type LiteratureReviewResponse = {
 };
 
 export type LiteratureReviewExportRequest = {
-  format: "pptx";
+  format: "docx" | "pptx";
   title: string;
   content: string;
 };
