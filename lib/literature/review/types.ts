@@ -16,7 +16,7 @@ export type ReviewLanguage = (typeof REVIEW_LANGUAGE_OPTIONS)[number];
 export type ReviewLength = (typeof REVIEW_LENGTH_OPTIONS)[number];
 export type ReviewModel = (typeof REVIEW_MODEL_OPTIONS)[number]["id"];
 
-export type ReviewGenerationPhase = "outline" | "full" | "ppt";
+export type ReviewGenerationPhase = "outline" | "ppt";
 export type ReviewWorkflowMode = "quick_outline" | "academic_review";
 
 export type LiteratureReviewRequest = {
@@ -35,7 +35,6 @@ export type LiteratureReviewRequest = {
   customWordCount?: number;
   additionalInstructions?: string;
   confirmedOutline?: string;
-  reviewContent?: string;
   /** Display name of the selected folder (logging / name-to-id resolution). */
   folderName?: string;
   /** Client-side folder paper count from GET /api/literature/library (for mismatch logging). */
@@ -47,12 +46,11 @@ export type LiteratureReviewResponse = {
   paperCount: number;
   usedPaperTitles: string[];
   outline?: string;
-  review?: string;
   pptOutline?: string;
 };
 
 export type LiteratureReviewExportRequest = {
-  format: "docx" | "pptx";
+  format: "pptx";
   title: string;
   content: string;
 };

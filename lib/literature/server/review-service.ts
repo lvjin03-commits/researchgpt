@@ -16,11 +16,6 @@ const REVIEW_CONTEXT_LIMITS = {
     maxFigureEvidence: 4,
     maxFigureCaptionChars: 450,
   },
-  full: {
-    maxFullTextChars: 5000,
-    maxFigureEvidence: 6,
-    maxFigureCaptionChars: 600,
-  },
   ppt: {
     maxFullTextChars: 3000,
     maxFigureEvidence: 5,
@@ -62,8 +57,8 @@ function resolvePerspective(request: LiteratureReviewRequest): string {
 }
 
 function resolveLengthTarget(request: LiteratureReviewRequest): string {
-  if (request.length === "自定义字数") {
-    return `约 ${request.customWordCount || 3000} 字`;
+  if (request.length === "自定义页数") {
+    return `约 ${request.customWordCount || 12} 页`;
   }
 
   return REVIEW_LENGTH_WORD_TARGETS[request.length];
@@ -73,11 +68,11 @@ function buildInstructionSummary(request: LiteratureReviewRequest): string {
   return [
     `生成模式：${
       request.workflowMode === "academic_review"
-        ? "学术汇报综述（基于全文分析）"
+        ? "学术汇报（基于全文分析）"
         : "快速大纲（仅题目、摘要和元数据）"
     }`,
     `AI 模型：${request.model}`,
-    `综述主题：${request.topic}`,
+    `汇报主题：${request.topic}`,
     `写作视角：${resolvePerspective(request)}`,
     `目标读者：${request.targetAudience}`,
     `输出类型：${request.outputType}`,
@@ -106,8 +101,8 @@ function buildEvidenceRules(): string {
 
 function buildDeliverableRules(): string {
   return [
-    "交付目标不是普通摘要，而是可直接用于导师汇报、课程作业和科研交流的成果稿。",
-    "必须包含：核心洞察、研究空白、未来方向、方法/框架对比、规范引用和参考文献。",
+    "交付目标是可直接用于导师汇报、组会和科研交流的研究大纲与演示文稿。",
+    "必须包含：核心洞察、研究空白、未来方向、方法/框架对比、规范引用和参考文献规划。",
     "必须主动设计图表说明，至少包含 Timeline、Taxonomy、Framework、Comparison 中的三类。",
     "如果可用文献中有 figureEvidence，优先输出证据图表块，格式必须为：",
     "> Evidence Figure: Figure 1｜图题｜来源论文标题｜该图表支持的结论｜caption 摘要",
@@ -212,8 +207,8 @@ export async function generateReviewOutline(
             "你是 ResearchAI 的高级科研写作与学术汇报策划助手。",
             buildEvidenceRules(),
             buildDeliverableRules(),
-            "请生成可编辑的 Markdown 综述大纲。",
-            "大纲必须同时规划正文结构、图表结构、引用策略和汇报故事线。",
+            "请生成可编辑的 Markdown 研究汇报大纲。",
+            "大纲必须规划内容结构、图表结构、引用策略和汇报故事线。",
             "输出纯 Markdown，不要 JSON。",
           ].join("\n"),
         },
@@ -251,59 +246,6 @@ export async function generateReviewOutline(
   return extractMarkdownContent(content);
 }
 
-export async function generateReviewFullText(
-  request: LiteratureReviewRequest,
-  papers: LiteraturePaper[],
-  signal?: AbortSignal,
-): Promise<string> {
-  const context = buildContextForPhase(request, papers, "full");
-  const client = getClient();
-
-  const completion = await createReviewCompletion(
-    client,
-    {
-      model: request.model,
-      reasoning_effort: "low",
-      max_completion_tokens: 9000,
-      messages: [
-        {
-          role: "system",
-          content: [
-            "你是 ResearchAI 的高级科研综述写作助手。",
-            buildEvidenceRules(),
-            buildDeliverableRules(),
-            "请严格遵循用户确认的大纲，撰写可直接交付的完整综述。",
-            "正文需要专业排版结构：摘要、关键词、引言、主题综述、图表说明、综合分析、研究空白、未来方向、结论、参考文献。",
-            "正文中必须插入明确的证据图表块。优先使用 Evidence Figure/Evidence Table 格式，让导出 DOCX 能自动排成图表说明框。",
-            "图表块必须与前后正文相关，用来证明或解释相邻段落的具体结论，不得随机插入。",
-            "输出纯 Markdown。",
-          ].join("\n"),
-        },
-        {
-          role: "user",
-          content: [
-            buildInstructionSummary(request),
-            "",
-            "用户确认的大纲：",
-            request.confirmedOutline,
-            "",
-            "可用文献（仅限以下条目）：",
-            buildPaperListPrompt(context),
-          ].join("\n"),
-        },
-      ],
-    },
-    signal,
-  );
-
-  const content = completion.choices[0]?.message?.content;
-  if (!content) {
-    throw new LiteratureError("AI 未返回有效综述正文。", 502);
-  }
-
-  return extractMarkdownContent(content);
-}
-
 export async function generateReviewPptOutline(
   request: LiteratureReviewRequest,
   papers: LiteraturePaper[],
@@ -324,7 +266,7 @@ export async function generateReviewPptOutline(
           content: [
             "你是 ResearchAI 的学术汇报策划与 PPT 导演。",
             buildEvidenceRules(),
-            "请把综述正文转成学术汇报风格 PPT 大纲。",
+            "请把用户确认的研究大纲转成学术汇报风格 PPT 大纲。",
             "PPT 原则：少字、多图、强故事线；每页只讲一个点，每页必须有一句简洁结论。",
             "每页必须指定图示类型：timeline、taxonomy、framework、comparison、insight、gap、future、summary 中的一种。",
             "如果 figureEvidence 可用，每页尽量引用一个相关 Evidence Figure/Evidence Table，作为右侧证据说明。",
@@ -344,8 +286,8 @@ export async function generateReviewPptOutline(
           content: [
             buildInstructionSummary(request),
             "",
-            "已生成综述正文：",
-            request.reviewContent,
+            "用户确认的研究大纲：",
+            request.confirmedOutline,
             "",
             "可用文献（仅限以下条目）：",
             buildPaperListPrompt(context),

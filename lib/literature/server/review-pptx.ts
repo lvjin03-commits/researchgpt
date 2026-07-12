@@ -81,7 +81,7 @@ function parseSlidesFromMarkdown(content: string): SlideContent[] {
   if (chunks.length === 0) {
     return [
       {
-        title: "文献综述",
+        title: "学术汇报",
         takeaway: "形成可汇报的研究脉络",
         visual: "summary",
         bullets: [normalized || "暂无内容"],

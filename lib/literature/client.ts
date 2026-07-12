@@ -708,7 +708,7 @@ export async function generateLiteratureReview(
   );
 
   if (!response.ok) {
-    throw new LiteratureError(payload.error ?? "生成文献综述失败。", response.status);
+    throw new LiteratureError(payload.error ?? "生成学术汇报失败。", response.status);
   }
 
   return payload;

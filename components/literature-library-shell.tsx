@@ -264,7 +264,7 @@ export function LiteratureLibraryShell() {
               href="/literature/review"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >
-              AI 综述
+              AI 学术汇报
             </Link>
             <Link
               href="/literature"

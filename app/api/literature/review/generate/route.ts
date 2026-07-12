@@ -9,7 +9,6 @@ import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { parseLiteratureReviewRequest } from "@/lib/literature/server/review-parse";
 import { loadReviewFolderPapersWithLog } from "@/lib/literature/server/folder-papers";
 import {
-  generateReviewFullText,
   generateReviewOutline,
   generateReviewPptOutline,
 } from "@/lib/literature/server/review-service";
@@ -96,12 +95,6 @@ export async function POST(request: Request) {
         papers,
         request.signal,
       );
-    } else if (reviewRequest.phase === "full") {
-      response.review = await generateReviewFullText(
-        reviewRequest,
-        papers,
-        request.signal,
-      );
     } else {
       response.pptOutline = await generateReviewPptOutline(
         reviewRequest,
@@ -120,7 +113,7 @@ export async function POST(request: Request) {
       return Response.json({ error: error.message }, { status: error.statusCode });
     }
 
-    console.error("[literature] review generate failed:", error);
-    return Response.json({ error: "生成文献综述失败。" }, { status: 500 });
+    console.error("[literature] presentation generate failed:", error);
+    return Response.json({ error: "生成学术汇报失败。" }, { status: 500 });
   }
 }

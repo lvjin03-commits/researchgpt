@@ -16,7 +16,7 @@ import type {
   ReviewWorkflowMode,
 } from "@/lib/literature/review/types";
 
-const PHASES = new Set<ReviewGenerationPhase>(["outline", "full", "ppt"]);
+const PHASES = new Set<ReviewGenerationPhase>(["outline", "ppt"]);
 const WORKFLOW_MODES = new Set<ReviewWorkflowMode>([
   "quick_outline",
   "academic_review",
@@ -87,11 +87,11 @@ export function parseLiteratureReviewRequest(
   const workflowMode = cleanString(record.workflowMode) as ReviewWorkflowMode;
 
   if (!PHASES.has(phase)) {
-    throw new LiteratureError('phase 必须是 "outline"、"full" 或 "ppt"。', 400);
+    throw new LiteratureError('phase 必须是 "outline" 或 "ppt"。', 400);
   }
 
   if (!WORKFLOW_MODES.has(workflowMode)) {
-    throw new LiteratureError("请选择有效的综述生成模式。", 400);
+    throw new LiteratureError("请选择有效的汇报生成模式。", 400);
   }
 
   const folderId = cleanString(record.folderId);
@@ -134,22 +134,18 @@ export function parseLiteratureReviewRequest(
     additionalInstructions:
       cleanString(record.additionalInstructions) || undefined,
     confirmedOutline: cleanString(record.confirmedOutline) || undefined,
-    reviewContent: cleanString(record.reviewContent) || undefined,
   };
 
   if (request.perspective === "自定义" && !request.customPerspective) {
     throw new LiteratureError("请填写自定义写作视角。", 400);
   }
 
-  if (request.length === "自定义字数" && !request.customWordCount) {
-    throw new LiteratureError("请填写自定义字数。", 400);
+  if (request.length === "自定义页数" && !request.customWordCount) {
+    throw new LiteratureError("请填写自定义页数。", 400);
   }
 
-  if (phase === "full" && !request.confirmedOutline) {
-    throw new LiteratureError("请确认或编辑大纲后再生成正文。", 400);
-  }
-  if (phase === "ppt" && !request.reviewContent) {
-    throw new LiteratureError("请先生成综述正文。", 400);
+  if (phase === "ppt" && !request.confirmedOutline) {
+    throw new LiteratureError("请先生成并确认汇报大纲。", 400);
   }
 
   return request;

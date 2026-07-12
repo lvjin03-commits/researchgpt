@@ -17,7 +17,6 @@ import {
   REVIEW_MIN_PAPER_COUNT,
   REVIEW_MIN_PAPER_COUNT_ERROR,
   REVIEW_MODEL_OPTIONS,
-  REVIEW_OUTPUT_TYPE_OPTIONS,
   REVIEW_PERSPECTIVE_OPTIONS,
   REVIEW_SECTION_OPTIONS,
 } from "@/lib/literature/review/constants";
@@ -82,10 +81,6 @@ export function LiteratureReviewShell() {
     );
   const [requiredSections, setRequiredSections] =
     useState<ReviewSection[]>(DEFAULT_SECTIONS);
-  const [outputType, setOutputType] =
-    useState<LiteratureReviewRequest["outputType"]>(
-      REVIEW_OUTPUT_TYPE_OPTIONS[0],
-    );
   const [language, setLanguage] =
     useState<LiteratureReviewRequest["language"]>(REVIEW_LANGUAGE_OPTIONS[0]);
   const [length, setLength] =
@@ -93,21 +88,19 @@ export function LiteratureReviewShell() {
   const [customWordCount, setCustomWordCount] = useState("5000");
   const [additionalInstructions, setAdditionalInstructions] = useState("");
   const [outline, setOutline] = useState("");
-  const [review, setReview] = useState("");
   const [pptOutline, setPptOutline] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isLoadingFolders, setIsLoadingFolders] = useState(true);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
   const [isAnalyzingPapers, setIsAnalyzingPapers] = useState(false);
-  const [isGeneratingReview, setIsGeneratingReview] = useState(false);
   const [isGeneratingPpt, setIsGeneratingPpt] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
   const [analysisProgress, setAnalysisProgress] =
     useState<AnalysisProgress | null>(null);
   const isGenerating =
-    isAnalyzingPapers || isGeneratingOutline || isGeneratingReview || isGeneratingPpt;
+    isAnalyzingPapers || isGeneratingOutline || isGeneratingPpt;
   const folderTree = useMemo(() => flattenFolderTree(folders), [folders]);
   const selectedFolder = useMemo(
     () => folders.find((folder) => folder.id === folderId) ?? null,
@@ -190,7 +183,7 @@ export function LiteratureReviewShell() {
           : undefined,
       targetAudience,
       requiredSections,
-      outputType,
+      outputType: "PPT",
       language,
       length,
       customWordCount:
@@ -205,7 +198,6 @@ export function LiteratureReviewShell() {
     language,
     length,
     model,
-    outputType,
     perspective,
     requiredSections,
     selectedFolder,
@@ -254,7 +246,6 @@ export function LiteratureReviewShell() {
     abortControllerRef.current = null;
     setIsGeneratingOutline(false);
     setIsAnalyzingPapers(false);
-    setIsGeneratingReview(false);
     setIsGeneratingPpt(false);
     setStatusMessage("已停止生成。");
   };
@@ -263,7 +254,6 @@ export function LiteratureReviewShell() {
     setWorkflowMode(mode);
     setModel(mode === "academic_review" ? "gpt-5.4" : "gpt-5.4-mini");
     setOutline("");
-    setReview("");
     setPptOutline("");
     setAnalysisProgress(null);
     setError(null);
@@ -273,7 +263,6 @@ export function LiteratureReviewShell() {
   const changeModel = (nextModel: ReviewModel) => {
     setModel(nextModel);
     setOutline("");
-    setReview("");
     setPptOutline("");
     setAnalysisProgress(null);
     setError(null);
@@ -408,7 +397,6 @@ export function LiteratureReviewShell() {
         abortController.signal,
       );
       setOutline(result.outline ?? "");
-      setReview("");
       setPptOutline("");
       setStatusMessage(
         workflowMode === "academic_review"
@@ -427,49 +415,9 @@ export function LiteratureReviewShell() {
     }
   };
 
-  const handleGenerateReview = async () => {
-    if (!outline.trim()) {
-      setError("请先生成并确认大纲。");
-      return;
-    }
-    if (!hasEnoughPapers) {
-      setError(REVIEW_MIN_PAPER_COUNT_ERROR);
-      return;
-    }
-
-    const abortController = startGeneration();
-    setIsGeneratingReview(true);
-
-    try {
-      const result = await generateLiteratureReview(
-        {
-          ...buildRequestBase(),
-          phase: "full",
-          confirmedOutline: outline.trim(),
-          uiPaperCount: paperCount,
-        },
-        abortController.signal,
-      );
-      setReview(result.review ?? "");
-      setPptOutline("");
-      setStatusMessage("综述正文已生成。");
-    } catch (err) {
-      if (!isAbortError(err)) {
-        setError(
-          err instanceof LiteratureError ? err.message : "生成综述正文失败。",
-        );
-      }
-    } finally {
-      if (abortControllerRef.current === abortController) {
-        abortControllerRef.current = null;
-      }
-      setIsGeneratingReview(false);
-    }
-  };
-
   const handleGeneratePpt = async () => {
-    if (!review.trim()) {
-      setError("请先生成综述正文。");
+    if (!outline.trim()) {
+      setError("请先生成并确认汇报大纲。");
       return;
     }
     if (!hasEnoughPapers) {
@@ -486,7 +434,6 @@ export function LiteratureReviewShell() {
           ...buildRequestBase(),
           phase: "ppt",
           confirmedOutline: outline.trim(),
-          reviewContent: review.trim(),
           uiPaperCount: paperCount,
         },
         abortController.signal,
@@ -505,14 +452,10 @@ export function LiteratureReviewShell() {
     }
   };
 
-  const handleExport = async (format: "docx" | "pptx") => {
-    const content = format === "docx" ? review.trim() : pptOutline.trim();
+  const handleExport = async () => {
+    const content = pptOutline.trim();
     if (!content) {
-      setError(
-        format === "docx"
-          ? "暂无可导出的综述正文。"
-          : "暂无可导出的 PPT 大纲。",
-      );
+      setError("暂无可导出的 PPT 大纲。");
       return;
     }
 
@@ -521,8 +464,8 @@ export function LiteratureReviewShell() {
 
     try {
       const { filename } = await exportLiteratureReview({
-        format,
-        title: topic.trim() || "文献综述",
+        format: "pptx",
+        title: topic.trim() || "学术汇报",
         content,
       });
       setStatusMessage(`已导出 ${filename}`);
@@ -538,9 +481,9 @@ export function LiteratureReviewShell() {
       <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">AI 文献综述</h1>
+            <h1 className="text-lg font-semibold text-gray-900">AI 学术汇报</h1>
             <p className="text-sm text-gray-500">
-              基于文献夹中的论文，按你的写作指令生成可编辑大纲与综述正文。
+              基于文献夹中的论文生成可编辑研究大纲与学术汇报 PPT。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -686,10 +629,10 @@ export function LiteratureReviewShell() {
                 />
                 <span>
                   <span className="block text-sm font-semibold text-gray-950">
-                    学术汇报综述
+                    全文学术汇报
                   </span>
                   <span className="mt-1 block text-sm leading-6 text-gray-600">
-                    逐篇分析 PDF 全文并展示进度，生成完整综述、证据图表和 PPT。
+                    逐篇分析 PDF 全文并展示进度，生成证据驱动的大纲和 PPT。
                   </span>
                 </span>
               </div>
@@ -708,7 +651,6 @@ export function LiteratureReviewShell() {
               onChange={(event) => {
                 setFolderId(event.target.value);
                 setOutline("");
-                setReview("");
                 setPptOutline("");
                 setAnalysisProgress(null);
               }}
@@ -769,7 +711,7 @@ export function LiteratureReviewShell() {
           </label>
 
           <label className="grid gap-2">
-            <FieldLabel>综述主题</FieldLabel>
+            <FieldLabel>汇报主题</FieldLabel>
             <input
               value={topic}
               disabled={isGenerating}
@@ -833,26 +775,6 @@ export function LiteratureReviewShell() {
             </label>
 
             <label className="grid gap-2">
-              <FieldLabel>输出类型</FieldLabel>
-              <select
-                value={outputType}
-                disabled={isGenerating}
-                onChange={(event) =>
-                  setOutputType(
-                    event.target.value as LiteratureReviewRequest["outputType"],
-                  )
-                }
-                className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
-              >
-                {REVIEW_OUTPUT_TYPE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-2">
               <FieldLabel>语言</FieldLabel>
               <select
                 value={language}
@@ -873,7 +795,7 @@ export function LiteratureReviewShell() {
             </label>
 
             <label className="grid gap-2">
-              <FieldLabel>篇幅</FieldLabel>
+              <FieldLabel>汇报深度</FieldLabel>
               <select
                 value={length}
                 disabled={isGenerating}
@@ -892,10 +814,10 @@ export function LiteratureReviewShell() {
 
             {length === REVIEW_LENGTH_OPTIONS[3] && (
               <label className="grid gap-2">
-                <FieldLabel>目标字数</FieldLabel>
+                <FieldLabel>目标页数</FieldLabel>
                 <input
                   type="number"
-                  min={500}
+                  min={5}
                   value={customWordCount}
                   disabled={isGenerating}
                   onChange={(event) => setCustomWordCount(event.target.value)}
@@ -949,7 +871,7 @@ export function LiteratureReviewShell() {
               : isGeneratingOutline
                 ? "正在生成大纲..."
                 : workflowMode === "academic_review"
-                  ? "分析全文并生成综述大纲"
+                  ? "分析全文并生成汇报大纲"
                   : "生成快速大纲"}
           </button>
         </section>
@@ -968,57 +890,18 @@ export function LiteratureReviewShell() {
               type="button"
               disabled={isGenerating}
               onClick={() => {
-                void handleGenerateReview();
+                void handleGeneratePpt();
               }}
               className="rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
             >
-              {isGeneratingReview
-                ? "正在生成正文..."
-                : workflowMode === "academic_review"
-                  ? "确认大纲并生成全文综述"
-                  : "确认大纲并基于摘要生成综述"}
+              {isGeneratingPpt ? "正在生成 PPT 大纲..." : "确认大纲并生成 PPT"}
             </button>
-          </section>
-        )}
-
-        {review && (
-          <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">5. 综述正文</h2>
-            <textarea
-              value={review}
-              disabled={isGenerating}
-              onChange={(event) => setReview(event.target.value)}
-              rows={20}
-              className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
-            />
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                disabled={isExporting || isGenerating}
-                onClick={() => {
-                  void handleExport("docx");
-                }}
-                className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                导出 DOCX
-              </button>
-              <button
-                type="button"
-                disabled={isGenerating}
-                onClick={() => {
-                  void handleGeneratePpt();
-                }}
-                className="rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400"
-              >
-                {isGeneratingPpt ? "正在生成 PPT 大纲..." : "生成 PPT 大纲"}
-              </button>
-            </div>
           </section>
         )}
 
         {pptOutline && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-semibold text-gray-900">6. PPT 大纲</h2>
+            <h2 className="text-base font-semibold text-gray-900">5. PPT 大纲</h2>
             <textarea
               value={pptOutline}
               disabled={isGenerating}
@@ -1030,7 +913,7 @@ export function LiteratureReviewShell() {
               type="button"
               disabled={isExporting || isGenerating}
               onClick={() => {
-                void handleExport("pptx");
+                void handleExport();
               }}
               className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >

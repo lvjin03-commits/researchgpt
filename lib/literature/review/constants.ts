@@ -6,13 +6,13 @@ export const REVIEW_MODEL_OPTIONS = [
     id: "gpt-5.4-mini",
     label: "GPT-5.4 mini",
     badge: "经济",
-    description: "速度快、费用低，适合快速大纲和摘要综述。",
+    description: "速度快、费用低，适合快速大纲和常规汇报。",
   },
   {
     id: "gpt-5.4",
     label: "GPT-5.4",
     badge: "均衡",
-    description: "质量与成本平衡，适合常规学术综述。",
+    description: "质量与成本平衡，适合全文分析和学术汇报。",
   },
   {
     id: "gpt-5.5",
@@ -57,12 +57,7 @@ export const REVIEW_SECTION_OPTIONS = [
 ] as const;
 
 export const REVIEW_OUTPUT_TYPE_OPTIONS = [
-  zh("\\u7efc\\u8ff0\\u6587\\u7ae0"),
-  zh("\\u5f00\\u9898\\u62a5\\u544a\\u80cc\\u666f"),
-  zh("\\u535a\\u58eb\\u8bba\\u6587\\u7eea\\u8bba"),
-  zh("\\u7ec4\\u4f1a\\u6c47\\u62a5\\u7a3f"),
   "PPT",
-  "PPTX",
 ] as const;
 
 export const REVIEW_LANGUAGE_OPTIONS = [
@@ -75,7 +70,7 @@ export const REVIEW_LENGTH_OPTIONS = [
   zh("\\u7b80\\u77ed\\u7248"),
   zh("\\u6807\\u51c6\\u7248"),
   zh("\\u8be6\\u7ec6\\u7248"),
-  zh("\\u81ea\\u5b9a\\u4e49\\u5b57\\u6570"),
+  "自定义页数",
 ] as const;
 
 export const REVIEW_MIN_PAPER_COUNT = 3;
@@ -84,7 +79,7 @@ export const REVIEW_MIN_PAPER_COUNT_ERROR =
   zh("\\u6240\\u9009\\u6587\\u732e\\u5939\\u4e2d\\u7684\\u6587\\u732e\\u6570\\u91cf\\u4e0d\\u8db3\\uff0c\\u81f3\\u5c11\\u9700\\u8981 3 \\u7bc7\\u6587\\u732e\\u3002");
 
 export const REVIEW_LENGTH_WORD_TARGETS: Record<string, string> = {
-  [REVIEW_LENGTH_OPTIONS[0]]: "1500-2500 字",
-  [REVIEW_LENGTH_OPTIONS[1]]: "3000-5000 字",
-  [REVIEW_LENGTH_OPTIONS[2]]: "6000-9000 字",
+  [REVIEW_LENGTH_OPTIONS[0]]: "8-10 页",
+  [REVIEW_LENGTH_OPTIONS[1]]: "10-15 页",
+  [REVIEW_LENGTH_OPTIONS[2]]: "15-20 页",
 };
