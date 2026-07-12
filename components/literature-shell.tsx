@@ -245,6 +245,12 @@ export function LiteratureShell() {
               AI 学术汇报
             </Link>
             <Link
+              href="/translate"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            >
+              AI 学术翻译
+            </Link>
+            <Link
               href="/chat"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
             >

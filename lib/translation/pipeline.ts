@@ -2,7 +2,7 @@
 
 import {
   buildTranslatedDocumentXml,
-  buildTranslatedFilename,
+  buildTranslationOutputFilename,
   packTranslatedDocx,
 } from "@/lib/translation/docx-build";
 import { parseDocxDocument } from "@/lib/translation/docx-parse";
@@ -80,7 +80,7 @@ export async function runDocxTranslationPipeline(
   const skippedCount = parsed.paragraphs.length - translatedCount;
 
   return {
-    filename: buildTranslatedFilename(fileName),
+    filename: buildTranslationOutputFilename(fileName, options.outputMode),
     buffer: outputBuffer,
     translatedCount,
     skippedCount,

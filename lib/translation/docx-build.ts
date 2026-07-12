@@ -62,3 +62,11 @@ export function buildTranslatedFilename(originalFileName: string): string {
 
   return `${baseName}_translated_${timestamp}.docx`;
 }
+
+export function buildTranslationOutputFilename(
+  originalFileName: string,
+  outputMode: OutputMode,
+): string {
+  const baseName = originalFileName.replace(/\.docx$/i, "") || "document";
+  return `${baseName}${outputMode === "bilingual" ? "-Bilingual" : "-English"}.docx`;
+}

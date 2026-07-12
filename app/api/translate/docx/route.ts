@@ -15,11 +15,11 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 function isSourceLanguage(value: string): value is SourceLanguage {
-  return value === "auto" || value === "chinese" || value === "english";
+  return value === "chinese";
 }
 
 function isTargetLanguage(value: string): value is TargetLanguage {
-  return value === "chinese" || value === "english";
+  return value === "english";
 }
 
 function isOutputMode(value: string): value is OutputMode {
@@ -74,10 +74,10 @@ export async function POST(request: Request) {
 
         const formData = await request.formData();
         const file = formData.get("file");
-        const sourceLanguage = String(formData.get("sourceLanguage") ?? "auto");
+        const sourceLanguage = String(formData.get("sourceLanguage") ?? "chinese");
         const targetLanguage = String(formData.get("targetLanguage") ?? "english");
         const outputMode = String(formData.get("outputMode") ?? "replace");
-        const style = String(formData.get("style") ?? "general");
+        const style = String(formData.get("style") ?? "academic");
 
         if (!(file instanceof File)) {
           emit({ type: "error", message: "Please upload a .docx file." });

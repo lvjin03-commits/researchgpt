@@ -24,13 +24,13 @@ export const TARGET_LANGUAGE_OPTIONS = [
 export const OUTPUT_MODE_OPTIONS = [
   {
     value: "replace",
-    label: "替换原文",
-    description: "用译文替换每个段落。",
+    label: "全英文",
+    description: "用专业英文替换中文原文，适合英文论文和报告初稿。",
   },
   {
     value: "bilingual",
-    label: "双语对照",
-    description: "保留原文，并在下方添加译文。",
+    label: "中英文对照",
+    description: "保留中文原文，并在每个中文段落下方添加英文译文。",
   },
 ] as const;
 
