@@ -16,6 +16,8 @@ export type ReviewLanguage = (typeof REVIEW_LANGUAGE_OPTIONS)[number];
 export type ReviewLength = (typeof REVIEW_LENGTH_OPTIONS)[number];
 export type ReviewModel = (typeof REVIEW_MODEL_OPTIONS)[number]["id"];
 
+export type PresentationTemplateId = "research-modern" | "teal-minimal";
+
 export type ReviewGenerationPhase = "matrix" | "themes" | "outline" | "ppt";
 export type ReviewWorkflowMode = "quick_outline" | "academic_review";
 
@@ -119,4 +121,5 @@ export type LiteratureReviewExportRequest = {
   format: "docx" | "pptx";
   title: string;
   content: string;
+  templateId?: PresentationTemplateId;
 };

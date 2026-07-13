@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PresentationTemplatePicker } from "@/components/presentation-template-picker";
 import {
   exportLiteratureReview,
   fetchLiteratureFolders,
@@ -24,10 +25,15 @@ import type {
   LiteratureMatrixRow,
   LiteratureReviewRequest,
   PresentationDeck,
+  PresentationTemplateId,
   ReviewSection,
   ReviewModel,
   ReviewWorkflowMode,
 } from "@/lib/literature/review/types";
+import {
+  DEFAULT_PRESENTATION_TEMPLATE_ID,
+  isPresentationTemplateId,
+} from "@/lib/presentation/templates";
 import {
   flattenFolderTree,
   formatFolderTreeLabel,
@@ -102,6 +108,9 @@ export function LiteratureReviewShell() {
   const [matrixConfirmed, setMatrixConfirmed] = useState(false);
   const [themes, setThemes] = useState("");
   const [pptDeck, setPptDeck] = useState<PresentationDeck | null>(null);
+  const [templateId, setTemplateId] = useState<PresentationTemplateId>(
+    DEFAULT_PRESENTATION_TEMPLATE_ID,
+  );
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isLoadingFolders, setIsLoadingFolders] = useState(true);
@@ -165,6 +174,7 @@ export function LiteratureReviewShell() {
             themes?: string;
             outline?: string;
             pptDeck?: PresentationDeck;
+            templateId?: PresentationTemplateId;
           };
           if (draft.folderId) {
             restoredFolderIdRef.current = draft.folderId;
@@ -189,6 +199,9 @@ export function LiteratureReviewShell() {
           setThemes(draft.themes ?? "");
           setOutline(draft.outline ?? "");
           setPptDeck(draft.pptDeck ?? null);
+          if (isPresentationTemplateId(draft.templateId)) {
+            setTemplateId(draft.templateId);
+          }
         }
       } catch {
         window.localStorage.removeItem(REVIEW_DRAFT_STORAGE_KEY);
@@ -218,6 +231,7 @@ export function LiteratureReviewShell() {
         themes,
         outline,
         pptDeck,
+        templateId,
         savedAt: new Date().toISOString(),
       }),
     );
@@ -228,6 +242,7 @@ export function LiteratureReviewShell() {
     matrixConfirmed,
     outline,
     pptDeck,
+    templateId,
     themes,
     topic,
     workflowMode,
@@ -689,6 +704,7 @@ export function LiteratureReviewShell() {
         format: "pptx",
         title: topic.trim() || "学术汇报",
         content: JSON.stringify(pptDeck),
+        templateId,
       });
       setStatusMessage(`已导出 ${filename}`);
     } catch (err) {
@@ -1330,6 +1346,11 @@ export function LiteratureReviewShell() {
               onChange={(event) => setOutline(event.target.value)}
               rows={16}
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 font-mono text-sm leading-6"
+            />
+            <PresentationTemplatePicker
+              value={templateId}
+              onChange={setTemplateId}
+              disabled={isExporting || isGenerating}
             />
             <div className="flex flex-wrap gap-3">
               <button

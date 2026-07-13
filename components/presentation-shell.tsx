@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { PresentationTemplatePicker } from "@/components/presentation-template-picker";
 import { exportLiteratureReview, LiteratureError } from "@/lib/literature/client";
 import { REVIEW_MODEL_OPTIONS } from "@/lib/literature/review/constants";
 import type {
   PresentationDeck,
   PresentationSlide,
+  PresentationTemplateId,
   ReviewModel,
 } from "@/lib/literature/review/types";
+import {
+  DEFAULT_PRESENTATION_TEMPLATE_ID,
+  isPresentationTemplateId,
+} from "@/lib/presentation/templates";
 
 const STORAGE_KEY = "researchai:outline-to-ppt:v1";
 
@@ -16,6 +22,9 @@ export function PresentationShell() {
   const [title, setTitle] = useState("");
   const [outline, setOutline] = useState("");
   const [model, setModel] = useState<ReviewModel>("gpt-5.4-mini");
+  const [templateId, setTemplateId] = useState<PresentationTemplateId>(
+    DEFAULT_PRESENTATION_TEMPLATE_ID,
+  );
   const [deck, setDeck] = useState<PresentationDeck | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -32,11 +41,15 @@ export function PresentationShell() {
           title?: string;
           outline?: string;
           model?: ReviewModel;
+          templateId?: PresentationTemplateId;
           deck?: PresentationDeck;
         };
         setTitle(saved.title ?? "");
         setOutline(saved.outline ?? "");
         if (saved.model) setModel(saved.model);
+        if (isPresentationTemplateId(saved.templateId)) {
+          setTemplateId(saved.templateId);
+        }
         setDeck(saved.deck ?? null);
       } catch {
         window.localStorage.removeItem(STORAGE_KEY);
@@ -51,9 +64,9 @@ export function PresentationShell() {
     if (!draftLoaded) return;
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ title, outline, model, deck }),
+      JSON.stringify({ title, outline, model, templateId, deck }),
     );
-  }, [deck, draftLoaded, model, outline, title]);
+  }, [deck, draftLoaded, model, outline, templateId, title]);
 
   const generateDeck = async () => {
     if (!title.trim()) {
@@ -112,6 +125,7 @@ export function PresentationShell() {
         format: "pptx",
         title: title.trim() || deck.title,
         content: JSON.stringify(deck),
+        templateId,
       });
       setMessage(`已导出 ${result.filename}`);
     } catch (err) {
@@ -205,6 +219,11 @@ export function PresentationShell() {
               className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm leading-6"
             />
           </label>
+          <PresentationTemplatePicker
+            value={templateId}
+            onChange={setTemplateId}
+            disabled={isGenerating || isExporting}
+          />
           <button
             type="button"
             disabled={isGenerating}

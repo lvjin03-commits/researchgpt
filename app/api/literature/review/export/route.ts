@@ -4,6 +4,8 @@ import { LiteratureError } from "@/lib/literature/errors";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { generateReviewPptxBuffer } from "@/lib/literature/server/review-pptx";
 import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
+import { isPresentationTemplateId } from "@/lib/presentation/templates";
+import type { PresentationTemplateId } from "@/lib/literature/review/types";
 
 export const runtime = "nodejs";
 
@@ -11,6 +13,7 @@ type ReviewExportRequest = {
   format?: unknown;
   title?: unknown;
   content?: unknown;
+  templateId?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -20,6 +23,11 @@ export async function POST(request: Request) {
     const format = typeof body.format === "string" ? body.format.trim() : "";
     const title = typeof body.title === "string" ? body.title.trim() : "";
     const content = typeof body.content === "string" ? body.content.trim() : "";
+    const templateId: PresentationTemplateId = isPresentationTemplateId(
+      body.templateId,
+    )
+      ? body.templateId
+      : "research-modern";
 
     if (format !== "pptx" && format !== "docx") {
       throw new LiteratureError('format 必须是 "docx" 或 "pptx"。', 400);
@@ -35,7 +43,7 @@ export async function POST(request: Request) {
 
     const buffer =
       format === "pptx"
-        ? await generateReviewPptxBuffer(title, content)
+        ? await generateReviewPptxBuffer(title, content, templateId)
         : await generateExportBuffer("docx", {
             title,
             content,

@@ -4,6 +4,7 @@ import pptxgen from "pptxgenjs";
 import type {
   PresentationDeck,
   PresentationSlideType,
+  PresentationTemplateId,
   PresentationVisualMode,
 } from "@/lib/literature/review/types";
 
@@ -46,6 +47,14 @@ const COLORS = {
   paper: "FFFFFF",
   wash: "F4F7FB",
   line: "D8E0EA",
+};
+const TEAL_TEMPLATE = {
+  teal: "607F89",
+  tealDark: "435F68",
+  pale: "EEF3F4",
+  paper: "FFFFFF",
+  ink: "172126",
+  muted: "607078",
 };
 
 const VISUAL_TYPES = new Set<VisualType>([
@@ -331,6 +340,167 @@ function addCoverSlide(slide: pptxgen.Slide, content: SlideContent, deckTitle: s
     fontSize: 13,
     color: "91A7BE",
     margin: 0,
+  });
+}
+
+function addTealMinimalCoverSlide(
+  slide: pptxgen.Slide,
+  content: SlideContent,
+  deckTitle: string,
+) {
+  slide.background = { color: TEAL_TEMPLATE.teal };
+  slide.addShape(SHAPE.rect, {
+    x: 0.48,
+    y: 0.48,
+    w: 12.37,
+    h: 6.54,
+    line: { color: TEAL_TEMPLATE.paper, transparency: 100 },
+    fill: { color: TEAL_TEMPLATE.paper },
+  });
+  slide.addText("ACADEMIC  PRESENTATION", {
+    x: 1.55,
+    y: 1.62,
+    w: 10.25,
+    h: 0.35,
+    fontFace: FONT_LATIN,
+    fontSize: 13,
+    charSpacing: 5,
+    color: TEAL_TEMPLATE.ink,
+    align: "center",
+    margin: 0,
+  });
+  slide.addText(compact(content.title || deckTitle, 42), {
+    x: 1.35,
+    y: 2.18,
+    w: 10.65,
+    h: 1.2,
+    fontFace: FONT_CN,
+    fontSize: 38,
+    bold: true,
+    color: TEAL_TEMPLATE.ink,
+    align: "center",
+    valign: "middle",
+    margin: 0,
+    fit: "shrink",
+  });
+  slide.addText(compact(content.takeaway || "结构清晰的学术汇报", 82), {
+    x: 2.0,
+    y: 3.55,
+    w: 9.33,
+    h: 0.65,
+    fontFace: FONT_CN,
+    fontSize: 15,
+    italic: true,
+    color: TEAL_TEMPLATE.muted,
+    align: "center",
+    valign: "middle",
+    margin: 0,
+    fit: "shrink",
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 2.05,
+    y: 4.38,
+    w: 9.23,
+    h: 0.5,
+    line: { color: TEAL_TEMPLATE.teal, transparency: 100 },
+    fill: { color: TEAL_TEMPLATE.teal },
+  });
+  slide.addText("RESEARCHAI · 学术汇报", {
+    x: 2.05,
+    y: 4.48,
+    w: 9.23,
+    h: 0.26,
+    fontFace: FONT_CN,
+    fontSize: 12,
+    color: TEAL_TEMPLATE.paper,
+    align: "center",
+    charSpacing: 2,
+    margin: 0,
+  });
+}
+
+function addTealMinimalSectionSlide(
+  slide: pptxgen.Slide,
+  content: SlideContent,
+  page: number,
+) {
+  slide.background = { color: TEAL_TEMPLATE.teal };
+  slide.addText(String(page).padStart(2, "0"), {
+    x: 0.85,
+    y: 0.55,
+    w: 3.3,
+    h: 2.2,
+    fontFace: FONT_LATIN,
+    fontSize: 112,
+    bold: true,
+    color: TEAL_TEMPLATE.paper,
+    transparency: 12,
+    margin: 0,
+  });
+  slide.addShape(SHAPE.line, {
+    x: 1.05,
+    y: 3.05,
+    w: 1.15,
+    h: 0,
+    line: { color: TEAL_TEMPLATE.paper, width: 3 },
+  });
+  slide.addText(content.title, {
+    x: 1.05,
+    y: 3.34,
+    w: 10.9,
+    h: 1.15,
+    fontFace: FONT_CN,
+    fontSize: 38,
+    bold: true,
+    color: TEAL_TEMPLATE.paper,
+    margin: 0,
+    fit: "shrink",
+  });
+  slide.addText(content.takeaway, {
+    x: 1.08,
+    y: 4.72,
+    w: 9.7,
+    h: 0.75,
+    fontFace: FONT_CN,
+    fontSize: 18,
+    color: TEAL_TEMPLATE.pale,
+    margin: 0,
+    fit: "shrink",
+  });
+}
+
+function addTealMinimalFrame(slide: pptxgen.Slide) {
+  slide.addShape(SHAPE.rect, {
+    x: 0,
+    y: 0,
+    w: 13.333,
+    h: 0.12,
+    line: { color: TEAL_TEMPLATE.teal, transparency: 100 },
+    fill: { color: TEAL_TEMPLATE.teal },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 0,
+    y: 7.38,
+    w: 13.333,
+    h: 0.12,
+    line: { color: TEAL_TEMPLATE.teal, transparency: 100 },
+    fill: { color: TEAL_TEMPLATE.teal },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 0,
+    y: 0,
+    w: 0.12,
+    h: 7.5,
+    line: { color: TEAL_TEMPLATE.teal, transparency: 100 },
+    fill: { color: TEAL_TEMPLATE.teal },
+  });
+  slide.addShape(SHAPE.rect, {
+    x: 13.213,
+    y: 0,
+    w: 0.12,
+    h: 7.5,
+    line: { color: TEAL_TEMPLATE.teal, transparency: 100 },
+    fill: { color: TEAL_TEMPLATE.teal },
   });
 }
 
@@ -735,7 +905,11 @@ function renderContentSlide(slide: pptxgen.Slide, content: SlideContent) {
   }
 }
 
-export async function generateReviewPptxBuffer(title: string, outlineMarkdown: string): Promise<Buffer> {
+export async function generateReviewPptxBuffer(
+  title: string,
+  outlineMarkdown: string,
+  templateId: PresentationTemplateId = "research-modern",
+): Promise<Buffer> {
   const slides = parseSlidesFromContent(outlineMarkdown);
   const pptx = new pptxgen();
   pptx.layout = "LAYOUT_WIDE";
@@ -749,12 +923,21 @@ export async function generateReviewPptxBuffer(title: string, outlineMarkdown: s
     const slide = pptx.addSlide();
     slide.background = { color: COLORS.paper };
     if (content.type === "cover") {
-      addCoverSlide(slide, content, title);
+      if (templateId === "teal-minimal") {
+        addTealMinimalCoverSlide(slide, content, title);
+      } else {
+        addCoverSlide(slide, content, title);
+      }
     } else if (content.type === "section") {
-      addSectionSlide(slide, content, index + 1);
+      if (templateId === "teal-minimal") {
+        addTealMinimalSectionSlide(slide, content, index + 1);
+      } else {
+        addSectionSlide(slide, content, index + 1);
+      }
     } else {
       renderContentSlide(slide, content);
       addFooter(slide, index + 1, content.citations);
+      if (templateId === "teal-minimal") addTealMinimalFrame(slide);
     }
     if (content.speakerNotes) slide.addNotes(content.speakerNotes);
   });
