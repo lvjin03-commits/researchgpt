@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { LiteratureKeywordHighlight } from "@/components/literature-keyword-highlight";
+import {
+  buildLiteratureKeywordSnippet,
+  LiteratureKeywordHighlight,
+} from "@/components/literature-keyword-highlight";
 import { LiteraturePaperFolderSelector } from "@/components/literature-paper-folder-selector";
 import { LITERATURE_PRIORITY_LABELS } from "@/lib/literature/constants";
 import { setPaperFolders } from "@/lib/literature/client";
@@ -63,6 +66,14 @@ export function LiteraturePaperCard({
   const folderNameById = useMemo(
     () => new Map(folders.map((folder) => [folder.id, folder.name])),
     [folders],
+  );
+  const abstractSnippet = useMemo(
+    () =>
+      buildLiteratureKeywordSnippet(
+        paper.abstract,
+        highlightKeywords ?? "",
+      ),
+    [highlightKeywords, paper.abstract],
   );
 
   const assignedFolderIds = paper.folderIds ?? [];
@@ -287,9 +298,10 @@ export function LiteraturePaperCard({
           </div>
         </div>
 
-        <p className="mt-3 text-sm leading-relaxed text-gray-700 line-clamp-3">
+        <p className="mt-3 text-sm leading-relaxed text-gray-700">
+          <span className="font-medium text-gray-500">摘要：</span>
           <LiteratureKeywordHighlight
-            text={paper.abstract}
+            text={abstractSnippet}
             keywords={highlightKeywords}
           />
         </p>

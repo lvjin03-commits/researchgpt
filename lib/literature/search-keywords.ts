@@ -116,33 +116,40 @@ export function findLiteratureKeywordMatchRanges(
       continue;
     }
 
-    let searchFrom = 0;
-    while (searchFrom < normalized.text.length) {
-      const matchStart = normalized.text.indexOf(normalizedTerm, searchFrom);
-      if (matchStart < 0) {
-        break;
-      }
+    const variants = CJK_PATTERN.test(normalizedTerm)
+      ? [normalizedTerm]
+      : getNormalizedTermVariants(normalizedTerm);
 
-      const matchEnd = matchStart + normalizedTerm.length;
-      const isCjkTerm = CJK_PATTERN.test(normalizedTerm);
-      const hasValidBoundaries =
-        isCjkTerm ||
-        ((matchStart === 0 || normalized.text[matchStart - 1] === " ") &&
-          (matchEnd === normalized.text.length || normalized.text[matchEnd] === " "));
-
-      if (hasValidBoundaries) {
-        const sourceStart = normalized.starts[matchStart];
-        const sourceEnd = normalized.ends[matchEnd - 1];
-        const overlapsExisting = ranges.some(
-          (range) => sourceStart < range.end && sourceEnd > range.start,
-        );
-
-        if (!overlapsExisting) {
-          ranges.push({ start: sourceStart, end: sourceEnd });
+    for (const variant of variants) {
+      let searchFrom = 0;
+      while (searchFrom < normalized.text.length) {
+        const matchStart = normalized.text.indexOf(variant, searchFrom);
+        if (matchStart < 0) {
+          break;
         }
-      }
 
-      searchFrom = matchStart + Math.max(1, normalizedTerm.length);
+        const matchEnd = matchStart + variant.length;
+        const isCjkTerm = CJK_PATTERN.test(variant);
+        const hasValidBoundaries =
+          isCjkTerm ||
+          ((matchStart === 0 || normalized.text[matchStart - 1] === " ") &&
+            (matchEnd === normalized.text.length ||
+              normalized.text[matchEnd] === " "));
+
+        if (hasValidBoundaries) {
+          const sourceStart = normalized.starts[matchStart];
+          const sourceEnd = normalized.ends[matchEnd - 1];
+          const overlapsExisting = ranges.some(
+            (range) => sourceStart < range.end && sourceEnd > range.start,
+          );
+
+          if (!overlapsExisting) {
+            ranges.push({ start: sourceStart, end: sourceEnd });
+          }
+        }
+
+        searchFrom = matchStart + Math.max(1, variant.length);
+      }
     }
   }
 
@@ -159,7 +166,23 @@ function includesNormalizedTerm(haystack: string, term: string): boolean {
     return haystack.includes(normalizedTerm);
   }
 
-  return ` ${haystack} `.includes(` ${normalizedTerm} `);
+  return getNormalizedTermVariants(normalizedTerm).some((variant) =>
+    ` ${haystack} `.includes(` ${variant} `),
+  );
+}
+
+function getNormalizedTermVariants(normalizedTerm: string): string[] {
+  const variants = new Set([normalizedTerm]);
+
+  if (
+    normalizedTerm.length >= 3 &&
+    !normalizedTerm.endsWith("s")
+  ) {
+    variants.add(`${normalizedTerm}s`);
+    variants.add(`${normalizedTerm}es`);
+  }
+
+  return [...variants].sort((left, right) => right.length - left.length);
 }
 
 export function matchesLiteratureKeywords(

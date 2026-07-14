@@ -6,6 +6,47 @@ type LiteratureKeywordHighlightProps = {
   keywords?: string;
 };
 
+export function buildLiteratureKeywordSnippet(
+  text: string,
+  keywords: string,
+  maxLength = 360,
+): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  const firstMatch = findLiteratureKeywordMatchRanges(text, keywords)[0];
+  if (!firstMatch) {
+    return `${text.slice(0, maxLength).trimEnd()}...`;
+  }
+
+  const preferredContextBefore = Math.floor(maxLength * 0.35);
+  let start = Math.max(0, firstMatch.start - preferredContextBefore);
+  let end = Math.min(text.length, start + maxLength);
+
+  if (end === text.length) {
+    start = Math.max(0, end - maxLength);
+  }
+
+  if (start > 0) {
+    const nextSpace = text.indexOf(" ", start);
+    if (nextSpace >= 0 && nextSpace < firstMatch.start) {
+      start = nextSpace + 1;
+    }
+  }
+
+  if (end < text.length) {
+    const previousSpace = text.lastIndexOf(" ", end);
+    if (previousSpace > firstMatch.end) {
+      end = previousSpace;
+    }
+  }
+
+  return `${start > 0 ? "..." : ""}${text.slice(start, end).trim()}${
+    end < text.length ? "..." : ""
+  }`;
+}
+
 export function LiteratureKeywordHighlight({
   text,
   keywords = "",
