@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { LiteratureKeywordHighlight } from "@/components/literature-keyword-highlight";
 import { LiteraturePaperFolderSelector } from "@/components/literature-paper-folder-selector";
 import { LITERATURE_PRIORITY_LABELS } from "@/lib/literature/constants";
 import { setPaperFolders } from "@/lib/literature/client";
@@ -37,6 +38,7 @@ type LiteraturePaperCardProps = {
   onDelete?: (paperId: string) => Promise<void>;
   onFoldersListUpdated?: (folders: LiteratureFolder[]) => void;
   showProviderInternals?: boolean;
+  highlightKeywords?: string;
 };
 
 export function LiteraturePaperCard({
@@ -50,6 +52,7 @@ export function LiteraturePaperCard({
   onDelete,
   onFoldersListUpdated,
   showProviderInternals = false,
+  highlightKeywords,
 }: LiteraturePaperCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -207,7 +210,10 @@ export function LiteraturePaperCard({
                 rel="noreferrer"
                 className="text-blue-700 underline decoration-blue-300 underline-offset-2 transition-colors hover:text-blue-900 hover:decoration-blue-500"
               >
-                {paper.title}
+                <LiteratureKeywordHighlight
+                  text={paper.title}
+                  keywords={highlightKeywords}
+                />
               </a>
             </h3>
             <p className="mt-1 text-sm text-gray-500">
@@ -282,7 +288,10 @@ export function LiteraturePaperCard({
         </div>
 
         <p className="mt-3 text-sm leading-relaxed text-gray-700 line-clamp-3">
-          {paper.abstract}
+          <LiteratureKeywordHighlight
+            text={paper.abstract}
+            keywords={highlightKeywords}
+          />
         </p>
 
         {paper.recommendationReason && (

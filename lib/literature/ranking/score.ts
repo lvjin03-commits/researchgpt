@@ -1,4 +1,9 @@
 import type { LiteratureProviderId } from "@/lib/literature/providers/base";
+import {
+  normalizeLiteratureSearchText,
+  parseLiteratureKeywordEntries,
+  parseLiteratureKeywordTerms,
+} from "@/lib/literature/search-keywords";
 import type { ArxivPaperDraft } from "@/lib/literature/types";
 
 export type LiteratureRankingInput = {
@@ -87,18 +92,7 @@ function clamp01(value: number): number {
 }
 
 function normalizeText(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function parseCommaTerms(value: string): string[] {
-  return value
-    .split(",")
-    .map((term) => normalizeText(term))
-    .filter(Boolean);
+  return normalizeLiteratureSearchText(value);
 }
 
 function parseSearchTerms(value: string): string[] {
@@ -107,7 +101,7 @@ function parseSearchTerms(value: string): string[] {
     return [];
   }
 
-  const phrases = parseCommaTerms(value);
+  const phrases = parseLiteratureKeywordEntries(value).map(normalizeText);
   const tokens = normalized
     .split(/\s+/)
     .filter((term) => term.length > 2);
@@ -141,7 +135,9 @@ function keywordUnionScore(
 }
 
 function phraseMatchScore(title: string, abstract: string, keywords: string): number {
-  const phrases = parseCommaTerms(keywords).filter((term) => term.includes(" "));
+  const phrases = parseLiteratureKeywordEntries(keywords)
+    .map(normalizeText)
+    .filter((term) => term.includes(" "));
   if (phrases.length === 0) {
     return 0;
   }
@@ -312,7 +308,9 @@ function toRankingScore(
 export function computeLiteratureRankingBreakdown(
   input: LiteratureRankingInput,
 ): LiteratureRankingBreakdown {
-  const keywordTerms = parseCommaTerms(input.keywords);
+  const keywordTerms = parseLiteratureKeywordTerms(input.keywords).map(
+    normalizeText,
+  );
   const partial = {
     keywordMatch: keywordUnionScore(input.title, input.abstract, keywordTerms),
     titleMatch: termCoverageScore(input.title, keywordTerms),

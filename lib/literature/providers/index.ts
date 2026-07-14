@@ -4,6 +4,7 @@ import { LITERATURE_MAX_ARXIV_RESULTS } from "@/lib/literature/constants";
 import { LiteratureError } from "@/lib/literature/errors";
 import { applyDraftProviderMetadata } from "@/lib/literature/paper-providers";
 import { rankLiteraturePapers } from "@/lib/literature/ranking/ranking";
+import { matchesLiteratureKeywords } from "@/lib/literature/search-keywords";
 import type { LiteratureSearchDebug } from "@/lib/literature/search-debug";
 import { buildLiteratureSearchDebug } from "@/lib/literature/server/search-debug";
 import { isLiteratureDebugEnabled } from "@/lib/literature/server/debug";
@@ -52,6 +53,7 @@ export type LiteratureSearchQualityMetrics = {
   exactMatches: number;
   fuzzyMatches: number;
   afterExcludeKeywords: number;
+  afterKeywordMatch: number;
   finalCount: number;
 };
 
@@ -77,7 +79,7 @@ function logSearchQualityMetrics(metrics: LiteratureSearchQualityMetrics): void 
     `[literature] search quality: fetched googleScholar=${metrics.fetchedByProvider.google_scholar ?? 0} openalex=${metrics.fetchedByProvider.openalex ?? 0} arxiv=${metrics.fetchedByProvider.arxiv ?? 0} pubmed=${metrics.fetchedByProvider.pubmed ?? 0} crossref=${metrics.fetchedByProvider.crossref ?? 0} dblp=${metrics.fetchedByProvider.dblp ?? 0} openreview=${metrics.fetchedByProvider.openreview ?? 0} totalFetched=${metrics.fetchedTotal}`,
   );
   console.log(
-    `[literature] search quality: merged=${metrics.mergedTotal} duplicatesRemoved=${metrics.duplicatesRemoved} exactMatches=${metrics.exactMatches} fuzzyMatches=${metrics.fuzzyMatches} afterExclude=${metrics.afterExcludeKeywords} final=${metrics.finalCount}`,
+    `[literature] search quality: merged=${metrics.mergedTotal} duplicatesRemoved=${metrics.duplicatesRemoved} exactMatches=${metrics.exactMatches} fuzzyMatches=${metrics.fuzzyMatches} afterExclude=${metrics.afterExcludeKeywords} afterKeywordMatch=${metrics.afterKeywordMatch} final=${metrics.finalCount}`,
   );
 }
 
@@ -194,14 +196,17 @@ export async function searchLiteratureProviders(
 
   const { papers: deduped, stats: dedupeStats, debugRecords } =
     deduplicateUnifiedPapers(allUnified);
-  const finalPairs = deduped
+  const afterExcludePairs = deduped
     .map((paper, index) => ({
       paper,
       debug: debugRecords[index]!,
     }))
     .filter(({ paper }) => !matchesExcludeKeywords(paper, options.excludeKeywords));
-  const afterExclude = finalPairs.map(({ paper }) => paper);
-  const drafts = afterExclude
+  const keywordMatchedPairs = afterExcludePairs.filter(({ paper }) =>
+    matchesLiteratureKeywords(paper.title, paper.abstract, settings.keywords),
+  );
+  const drafts = keywordMatchedPairs
+    .map(({ paper }) => paper)
     .map(unifiedPaperToDraft)
     .map(applyDraftProviderMetadata);
 
@@ -225,7 +230,7 @@ export async function searchLiteratureProviders(
   const finalDrafts =
     qualityFilteredDrafts.length > 0 ? qualityFilteredDrafts : rankedDrafts;
   const finalPaperIds = new Set(finalDrafts.map((paper) => paper.arxivId));
-  const debugPairs = finalPairs.filter(({ paper }) =>
+  const debugPairs = keywordMatchedPairs.filter(({ paper }) =>
     finalPaperIds.has(paper.externalKey),
   );
 
@@ -244,7 +249,8 @@ export async function searchLiteratureProviders(
     duplicatesRemoved: dedupeStats.duplicatesRemoved,
     exactMatches: dedupeStats.exactMatches,
     fuzzyMatches: dedupeStats.fuzzyMatches,
-    afterExcludeKeywords: afterExclude.length,
+    afterExcludeKeywords: afterExcludePairs.length,
+    afterKeywordMatch: keywordMatchedPairs.length,
     finalCount: finalDrafts.length,
   };
 
@@ -256,7 +262,7 @@ export async function searchLiteratureProviders(
 
   if (finalDrafts.length === 0) {
     throw new LiteratureError(
-      "未找到符合关键词与时间范围的论文。",
+      "未找到标题或摘要命中关键词的论文，请调整关键词或扩大时间范围。",
       404,
     );
   }

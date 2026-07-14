@@ -40,6 +40,61 @@ const DEFAULT_SETTINGS: LiteratureSettings = normalizeLiteratureSettings({
   dateRangeDays: LITERATURE_DATE_RANGE_DAYS,
 });
 
+const TRACKER_SESSION_STORAGE_KEY = "researchgpt:literature-tracker-session:v1";
+
+type LiteratureTrackerSession = {
+  settings: LiteratureSettings;
+  papers: LiteraturePaper[];
+  sortKey: LiteraturePaperSortKey;
+};
+
+function isLiteraturePaperSortKey(
+  value: unknown,
+): value is LiteraturePaperSortKey {
+  return LITERATURE_PAPER_SORT_OPTIONS.some(
+    (option) => option.value === value,
+  );
+}
+
+function readTrackerSession(): LiteratureTrackerSession | null {
+  try {
+    const raw = window.sessionStorage.getItem(TRACKER_SESSION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<LiteratureTrackerSession>;
+    if (
+      !parsed.settings ||
+      typeof parsed.settings !== "object" ||
+      !Array.isArray(parsed.papers)
+    ) {
+      return null;
+    }
+
+    return {
+      settings: normalizeLiteratureSettings(parsed.settings),
+      papers: parsed.papers,
+      sortKey: isLiteraturePaperSortKey(parsed.sortKey)
+        ? parsed.sortKey
+        : DEFAULT_LITERATURE_PAPER_SORT,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeTrackerSession(session: LiteratureTrackerSession): void {
+  try {
+    window.sessionStorage.setItem(
+      TRACKER_SESSION_STORAGE_KEY,
+      JSON.stringify(session),
+    );
+  } catch {
+    // The server remains the fallback when browser storage is unavailable.
+  }
+}
+
 export function LiteratureShell() {
   const [settings, setSettings] = useState<LiteratureSettings>(DEFAULT_SETTINGS);
   const [papers, setPapers] = useState<LiteraturePaper[]>([]);
@@ -55,19 +110,35 @@ export function LiteratureShell() {
   const [searchDebug, setSearchDebug] = useState<LiteratureSearchDebug | null>(
     null,
   );
+  const [isSessionReady, setIsSessionReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    const cachedSession = readTrackerSession();
 
     void (async () => {
+      await Promise.resolve();
+      if (cancelled) {
+        return;
+      }
+
+      if (cachedSession) {
+        setSettings(cachedSession.settings);
+        setPapers(cachedSession.papers);
+        setSortKey(cachedSession.sortKey);
+      }
+      setIsSessionReady(true);
+
       try {
         const [state, loadedFolders] = await Promise.all([
           fetchLiteratureState(),
           fetchLiteratureFolders(),
         ]);
         if (!cancelled) {
-          setSettings(state.settings);
-          setPapers(state.papers);
+          if (!cachedSession) {
+            setSettings(state.settings);
+            setPapers(state.papers);
+          }
           setFolders(loadedFolders);
         }
       } catch (err) {
@@ -90,13 +161,20 @@ export function LiteratureShell() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isSessionReady) {
+      return;
+    }
+
+    writeTrackerSession({ settings, papers, sortKey });
+  }, [isSessionReady, papers, settings, sortKey]);
+
   const handleUpdatePapers = useCallback(async () => {
     setIsUpdating(true);
     setError(null);
     setWarning(null);
     setStatusMessage(null);
     setSearchDebug(null);
-    setPapers([]);
 
     try {
       const result = await updateLiteraturePapers(settings);
@@ -466,6 +544,7 @@ export function LiteratureShell() {
                         onUploadPdfToFolders={handleUploadPdfToFolders}
                         onFoldersListUpdated={setFolders}
                         showProviderInternals={searchDebug !== null}
+                        highlightKeywords={settings.keywords}
                       />
                       {paperDebug && (
                         <LiteraturePaperDebugPanel paperDebug={paperDebug} />
