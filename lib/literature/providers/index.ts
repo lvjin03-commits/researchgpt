@@ -202,8 +202,10 @@ export async function searchLiteratureProviders(
       debug: debugRecords[index]!,
     }))
     .filter(({ paper }) => !matchesExcludeKeywords(paper, options.excludeKeywords));
-  const keywordMatchedPairs = afterExcludePairs.filter(({ paper }) =>
-    matchesLiteratureKeywords(paper.title, paper.abstract, settings.keywords),
+  const keywordMatchedPairs = afterExcludePairs.filter(
+    ({ paper }) =>
+      paper.abstract.trim().length > 0 &&
+      matchesLiteratureKeywords(paper.title, paper.abstract, settings.keywords),
   );
   const drafts = keywordMatchedPairs
     .map(({ paper }) => paper)

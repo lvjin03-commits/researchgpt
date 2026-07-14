@@ -46,6 +46,7 @@ type LiteratureTrackerSession = {
   settings: LiteratureSettings;
   papers: LiteraturePaper[];
   sortKey: LiteraturePaperSortKey;
+  resultKeywords: string;
 };
 
 function isLiteraturePaperSortKey(
@@ -78,6 +79,10 @@ function readTrackerSession(): LiteratureTrackerSession | null {
       sortKey: isLiteraturePaperSortKey(parsed.sortKey)
         ? parsed.sortKey
         : DEFAULT_LITERATURE_PAPER_SORT,
+      resultKeywords:
+        typeof parsed.resultKeywords === "string"
+          ? parsed.resultKeywords
+          : parsed.settings.keywords,
     };
   } catch {
     return null;
@@ -111,6 +116,7 @@ export function LiteratureShell() {
     null,
   );
   const [isSessionReady, setIsSessionReady] = useState(false);
+  const [resultKeywords, setResultKeywords] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +132,7 @@ export function LiteratureShell() {
         setSettings(cachedSession.settings);
         setPapers(cachedSession.papers);
         setSortKey(cachedSession.sortKey);
+        setResultKeywords(cachedSession.resultKeywords);
       }
       setIsSessionReady(true);
 
@@ -138,6 +145,7 @@ export function LiteratureShell() {
           if (!cachedSession) {
             setSettings(state.settings);
             setPapers(state.papers);
+            setResultKeywords(state.settings.keywords);
           }
           setFolders(loadedFolders);
         }
@@ -166,8 +174,8 @@ export function LiteratureShell() {
       return;
     }
 
-    writeTrackerSession({ settings, papers, sortKey });
-  }, [isSessionReady, papers, settings, sortKey]);
+    writeTrackerSession({ settings, papers, sortKey, resultKeywords });
+  }, [isSessionReady, papers, resultKeywords, settings, sortKey]);
 
   const handleUpdatePapers = useCallback(async () => {
     setIsUpdating(true);
@@ -180,6 +188,7 @@ export function LiteratureShell() {
       const result = await updateLiteraturePapers(settings);
       setSettings(result.settings);
       setPapers(result.papers);
+      setResultKeywords(result.settings.keywords);
       setSearchDebug(result.debug ?? null);
       setStatusMessage(`已更新 ${result.papers.length} 篇文献。`);
 
@@ -544,7 +553,7 @@ export function LiteratureShell() {
                         onUploadPdfToFolders={handleUploadPdfToFolders}
                         onFoldersListUpdated={setFolders}
                         showProviderInternals={searchDebug !== null}
-                        highlightKeywords={settings.keywords}
+                        highlightKeywords={resultKeywords}
                       />
                       {paperDebug && (
                         <LiteraturePaperDebugPanel paperDebug={paperDebug} />
