@@ -119,6 +119,7 @@ export function LiteratureReviewShell() {
   const [isAnalyzingPapers, setIsAnalyzingPapers] = useState(false);
   const [isGeneratingPpt, setIsGeneratingPpt] = useState(false);
   const [isExportingOutline, setIsExportingOutline] = useState(false);
+  const [isExportingMatrix, setIsExportingMatrix] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const restoredFolderIdRef = useRef("");
@@ -737,6 +738,28 @@ export function LiteratureReviewShell() {
     }
   };
 
+  const handleExportMatrix = async () => {
+    if (literatureMatrix.length === 0) {
+      setError("暂无可导出的文献矩阵。");
+      return;
+    }
+
+    setError(null);
+    setIsExportingMatrix(true);
+    try {
+      const { filename } = await exportLiteratureReview({
+        format: "xlsx",
+        title: `${topic.trim() || "研究主题"}-文献矩阵`,
+        content: JSON.stringify(literatureMatrix),
+      });
+      setStatusMessage(`已导出 ${filename}`);
+    } catch (err) {
+      setError(err instanceof LiteratureError ? err.message : "导出文献矩阵失败。");
+    } finally {
+      setIsExportingMatrix(false);
+    }
+  };
+
   const updatePptSlide = (
     slideId: string,
     patch: Partial<PresentationDeck["slides"][number]>,
@@ -1188,10 +1211,20 @@ export function LiteratureReviewShell() {
               <h2 className="text-base font-semibold text-gray-900">
                 4. 文献矩阵
               </h2>
-              <span className="text-sm text-gray-500">
-                已纳入 {literatureMatrix.filter((row) => row.included).length}/
-                {literatureMatrix.length} 篇文献
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-sm text-gray-500">
+                  已纳入 {literatureMatrix.filter((row) => row.included).length}/
+                  {literatureMatrix.length} 篇文献
+                </span>
+                <button
+                  type="button"
+                  disabled={isGenerating || isExportingMatrix}
+                  onClick={() => void handleExportMatrix()}
+                  className="rounded-lg border border-blue-700 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                >
+                  {isExportingMatrix ? "正在导出..." : "导出文献矩阵（Excel）"}
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-200">
               <table className="min-w-[1800px] border-collapse text-left text-sm">

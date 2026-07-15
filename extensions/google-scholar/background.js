@@ -16,6 +16,17 @@ class ManualUploadRequiredError extends Error {
   }
 }
 
+const RECONNECT_MESSAGE =
+  "登录状态已失效。请先登录 ResearchGPT 网站，再打开插件点击 Connect account（连接账户），然后点击 Load folders（加载文件夹）后重试。";
+
+function responseErrorMessage(response, payload) {
+  if (response.status === 401) {
+    return RECONNECT_MESSAGE;
+  }
+
+  return payload?.error || `ResearchAI returned ${response.status}`;
+}
+
 function normalizeBaseUrl(value) {
   const raw = String(value || DEFAULT_BASE_URL).replace(/\/$/, "");
 
@@ -59,6 +70,54 @@ async function saveAuthToken(accessToken) {
 
   await storageSet({ [STORAGE_KEYS.authToken]: token });
   return true;
+}
+
+function readJwtExpiresAt(token) {
+  try {
+    const payloadPart = String(token || "").split(".")[1];
+    if (!payloadPart) {
+      return null;
+    }
+
+    const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(padded));
+    return Number.isFinite(payload?.exp) ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshAuthToken(baseUrl) {
+  const response = await fetch(`${baseUrl}/api/extension/session`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok || !payload.accessToken) {
+    await storageSet({ [STORAGE_KEYS.authToken]: "" });
+    throw new Error(
+      response.status === 401
+        ? RECONNECT_MESSAGE
+        : payload.error || `ResearchAI returned ${response.status}`,
+    );
+  }
+
+  await saveAuthToken(payload.accessToken);
+  return payload.accessToken;
+}
+
+async function getUsableAuthToken(baseUrl, storedToken, forceRefresh = false) {
+  const token = String(storedToken || "").trim();
+  const expiresAt = readJwtExpiresAt(token);
+  const expiresSoon = expiresAt !== null && expiresAt <= Date.now() + 60_000;
+
+  if (forceRefresh || !token || expiresSoon) {
+    return refreshAuthToken(baseUrl);
+  }
+
+  return token;
 }
 
 async function savePaperToBackend(paper) {
@@ -141,18 +200,15 @@ async function downloadPdfFromBrowser(paper) {
 async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
   const config = await getConfig();
   const baseUrl = normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]);
-  const authToken = String(config[STORAGE_KEYS.authToken] || "").trim();
+  let authToken = await getUsableAuthToken(
+    baseUrl,
+    config[STORAGE_KEYS.authToken],
+  );
   const folderIds = Array.isArray(selectedFolderIds)
     ? selectedFolderIds
     : Array.isArray(config[STORAGE_KEYS.folderIds])
     ? config[STORAGE_KEYS.folderIds]
     : [];
-
-  if (!authToken) {
-    throw new Error(
-      "Missing auth token. Open the extension popup and click Connect account.",
-    );
-  }
 
   let pdfBlob;
   try {
@@ -172,18 +228,25 @@ async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
   formData.append("folderIds", JSON.stringify(folderIds));
   formData.append("file", pdfBlob, fileNameFromPaper(paper));
 
-  const response = await fetch(`${baseUrl}/api/extension/upload-paper`, {
+  let response = await fetch(`${baseUrl}/api/extension/upload-paper`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-    },
+    headers: { Authorization: `Bearer ${authToken}` },
     body: formData,
   });
+
+  if (response.status === 401) {
+    authToken = await getUsableAuthToken(baseUrl, authToken, true);
+    response = await fetch(`${baseUrl}/api/extension/upload-paper`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${authToken}` },
+      body: formData,
+    });
+  }
 
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(payload.error || `ResearchAI returned ${response.status}`);
+    throw new Error(responseErrorMessage(response, payload));
   }
 
   return payload;
@@ -192,26 +255,31 @@ async function savePaperToBackendWithFolders(paper, selectedFolderIds) {
 async function loadFoldersFromBackend() {
   const config = await getConfig();
   const baseUrl = normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]);
-  const authToken = String(config[STORAGE_KEYS.authToken] || "").trim();
+  let authToken = await getUsableAuthToken(
+    baseUrl,
+    config[STORAGE_KEYS.authToken],
+  );
   const selectedFolderIds = Array.isArray(config[STORAGE_KEYS.folderIds])
     ? config[STORAGE_KEYS.folderIds]
     : [];
 
-  if (!authToken) {
-    throw new Error(
-      "Missing auth token. Open the extension popup and click Connect account.",
-    );
-  }
-
-  const response = await fetch(`${baseUrl}/api/extension/folders`, {
+  let response = await fetch(`${baseUrl}/api/extension/folders`, {
     headers: {
       Authorization: `Bearer ${authToken}`,
     },
   });
+
+  if (response.status === 401) {
+    authToken = await getUsableAuthToken(baseUrl, authToken, true);
+    response = await fetch(`${baseUrl}/api/extension/folders`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+  }
+
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(payload.error || `ResearchAI returned ${response.status}`);
+    throw new Error(responseErrorMessage(response, payload));
   }
 
   return {
@@ -222,16 +290,14 @@ async function loadFoldersFromBackend() {
 
 async function getUploadConfig() {
   const config = await getConfig();
-  const authToken = String(config[STORAGE_KEYS.authToken] || "").trim();
-
-  if (!authToken) {
-    throw new Error(
-      "Missing auth token. Open the extension popup and click Connect account.",
-    );
-  }
+  const baseUrl = normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]);
+  const authToken = await getUsableAuthToken(
+    baseUrl,
+    config[STORAGE_KEYS.authToken],
+  );
 
   return {
-    baseUrl: normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]),
+    baseUrl,
     authToken,
   };
 }
@@ -273,6 +339,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             error instanceof Error
               ? error.message
               : "Could not prepare PDF upload.",
+        });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === "REFRESH_AUTH_TOKEN") {
+    void (async () => {
+      try {
+        const config = await getConfig();
+        const baseUrl = normalizeBaseUrl(config[STORAGE_KEYS.baseUrl]);
+        const authToken = await refreshAuthToken(baseUrl);
+        sendResponse({ ok: true, baseUrl, authToken });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not refresh your login.",
         });
       }
     })();

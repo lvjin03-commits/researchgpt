@@ -87,6 +87,11 @@ Manual fallback: open `/extension/connect` while signed in and copy the access t
 
 The backend validates Bearer tokens via `supabase.auth.getUser(token)`.
 
+Before saving or loading folders, the service worker checks the token expiry. It
+automatically requests a fresh token from `/api/extension/session` when the web
+session is still signed in, and retries one time after a `401` response. If the
+web session has also expired, the user is asked to sign in and connect again.
+
 Cookie-based session auth still works for extension routes when the request includes session cookies (same-origin browser requests).
 
 ## Install locally

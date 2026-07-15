@@ -118,7 +118,7 @@ export type LiteratureReviewResponse = {
 };
 
 export type LiteratureReviewExportRequest = {
-  format: "docx" | "pptx";
+  format: "docx" | "pptx" | "xlsx";
   title: string;
   content: string;
   templateId?: PresentationTemplateId;

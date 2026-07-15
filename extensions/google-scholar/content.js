@@ -5,6 +5,17 @@
   const MANUAL_UPLOAD_MODAL_SELECTOR = "[data-researchai-manual-upload-modal]";
   const NO_PDF_MESSAGE =
     "No direct PDF link was detected. Upload the PDF from your literature library when needed.";
+  const RECONNECT_MESSAGE =
+    "登录状态已失效。请先登录 ResearchGPT 网站，再打开插件点击 Connect account（连接账户），然后点击 Load folders（加载文件夹）后重试。";
+
+  function userFacingErrorMessage(value) {
+    const message = String(value || "").trim();
+    if (/unauthorized|401|jwt|token.*(?:expired|invalid)/i.test(message)) {
+      return RECONNECT_MESSAGE;
+    }
+
+    return message || "保存失败，请稍后重试。";
+  }
 
   function text(element) {
     return element ? element.textContent.replace(/\s+/g, " ").trim() : "";
@@ -259,6 +270,24 @@
     });
   }
 
+  function refreshUploadConfig() {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "REFRESH_AUTH_TOKEN" }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+
+        if (!response?.ok) {
+          reject(new Error(response?.error || "Could not refresh your login."));
+          return;
+        }
+
+        resolve(response);
+      });
+    });
+  }
+
   async function uploadManualPdf(paper, folderIds, file) {
     if (!file) {
       throw new Error("Please choose a PDF file.");
@@ -270,23 +299,41 @@
       throw new Error("Please choose a PDF file.");
     }
 
-    const config = await getUploadConfig();
+    let config = await getUploadConfig();
     const formData = new FormData();
     formData.append("paper", JSON.stringify(paper));
     formData.append("folderIds", JSON.stringify(folderIds));
     formData.append("file", file, file.name || "paper.pdf");
 
-    const response = await fetch(`${config.baseUrl}/api/extension/upload-paper`, {
+    let response = await fetch(`${config.baseUrl}/api/extension/upload-paper`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.authToken}`,
       },
       body: formData,
     });
+
+    if (response.status === 401) {
+      config = await refreshUploadConfig();
+      response = await fetch(`${config.baseUrl}/api/extension/upload-paper`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.authToken}`,
+        },
+        body: formData,
+      });
+    }
+
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(payload.error || `ResearchGPT returned ${response.status}`);
+      throw new Error(
+        response.status === 401
+          ? RECONNECT_MESSAGE
+          : userFacingErrorMessage(
+              payload.error || `ResearchGPT returned ${response.status}`,
+            ),
+      );
     }
 
     return payload;
@@ -399,8 +446,11 @@
               : "Saved to ResearchGPT",
           );
         } catch (uploadError) {
-          const message =
-            uploadError instanceof Error ? uploadError.message : "Upload failed.";
+          const message = userFacingErrorMessage(
+            uploadError instanceof Error
+              ? uploadError.message
+              : "Upload failed.",
+          );
           upload.disabled = !selectedFile;
           choose.disabled = false;
           cancel.disabled = false;
@@ -474,7 +524,9 @@
           : "Saved to ResearchGPT",
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Save failed.";
+      const message = userFacingErrorMessage(
+        error instanceof Error ? error.message : "Save failed.",
+      );
       setButtonState(
         button,
         "error",

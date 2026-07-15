@@ -3,6 +3,7 @@ import { saveExport } from "@/lib/export/store";
 import { LiteratureError } from "@/lib/literature/errors";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { generateReviewPptxBuffer } from "@/lib/literature/server/review-pptx";
+import { generateLiteratureMatrixXlsxBuffer } from "@/lib/literature/server/review-matrix-xlsx";
 import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
 import { isPresentationTemplateId } from "@/lib/presentation/templates";
 import type { PresentationTemplateId } from "@/lib/literature/review/types";
@@ -29,8 +30,8 @@ export async function POST(request: Request) {
       ? body.templateId
       : "research-modern";
 
-    if (format !== "pptx" && format !== "docx") {
-      throw new LiteratureError('format 必须是 "docx" 或 "pptx"。', 400);
+    if (format !== "pptx" && format !== "docx" && format !== "xlsx") {
+      throw new LiteratureError("不支持该导出格式。", 400);
     }
 
     if (!title) {
@@ -44,17 +45,21 @@ export async function POST(request: Request) {
     const buffer =
       format === "pptx"
         ? await generateReviewPptxBuffer(title, content, templateId)
-        : await generateExportBuffer("docx", {
-            title,
-            content,
-            metadata: { artifactType: "literature-outline" },
-          });
+        : format === "xlsx"
+          ? generateLiteratureMatrixXlsxBuffer(content)
+          : await generateExportBuffer("docx", {
+              title,
+              content,
+              metadata: { artifactType: "literature-outline" },
+            });
 
     const filename = buildExportFilename(title, format);
     const mimeType =
       format === "pptx"
         ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        : format === "xlsx"
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     const record = await saveExport({
       filename,

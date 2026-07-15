@@ -17,6 +17,17 @@ const statusEl = document.getElementById("status");
 const saveStatusEl = document.getElementById("saveStatus");
 const openScholarButton = document.getElementById("openScholar");
 const openLibraryButton = document.getElementById("openLibrary");
+const RECONNECT_MESSAGE =
+  "登录状态已失效。请先登录 ResearchGPT 网站，再点击 Connect account（连接账户），然后点击 Load folders（加载文件夹）。";
+
+function userFacingErrorMessage(value) {
+  const message = String(value || "").trim();
+  if (/unauthorized|401|jwt|token.*(?:expired|invalid)/i.test(message)) {
+    return RECONNECT_MESSAGE;
+  }
+
+  return message || "操作失败，请稍后重试。";
+}
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -190,7 +201,7 @@ async function loadFolders() {
     setStatus("Folders loaded.");
   } catch (error) {
     setStatus(
-      `Could not load folders. Check your URL and token. ${error.message || ""}`,
+      userFacingErrorMessage(error?.message),
     );
   }
 }
