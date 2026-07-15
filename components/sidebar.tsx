@@ -144,21 +144,24 @@ export function Sidebar({
         </nav>
 
         <div className="border-t border-gray-200 px-3 py-3">
+          <p className="mb-2 px-1 text-xs font-bold uppercase text-gray-500">
+            切换功能
+          </p>
           <Link
             href="/presentation"
-            className="mb-2 flex w-full items-center justify-center rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-800"
+            className="mb-2 flex w-full items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 transition-colors hover:border-gray-300 hover:bg-gray-100"
           >
             成果制作
           </Link>
           <Link
             href="/literature"
-            className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-bold text-gray-800 transition-colors hover:bg-gray-200 hover:text-gray-950"
+            className="mb-2 flex w-full items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 transition-colors hover:border-gray-300 hover:bg-gray-100"
           >
             文献工作台
           </Link>
           <Link
             href="/translate"
-            className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-bold text-gray-800 transition-colors hover:bg-gray-200 hover:text-gray-950"
+            className="mb-3 flex w-full items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 transition-colors hover:border-gray-300 hover:bg-gray-100"
           >
             学术翻译
           </Link>
@@ -166,7 +169,7 @@ export function Sidebar({
             type="button"
             onClick={onLogout}
             disabled={isLoggingOut}
-            className="flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex w-full items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isLoggingOut ? "正在退出…" : "退出登录"}
           </button>

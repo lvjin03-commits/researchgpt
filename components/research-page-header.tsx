@@ -63,10 +63,10 @@ export function ResearchPageHeader({
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-bold transition-colors ${
+                  className={`whitespace-nowrap rounded-md border px-3 py-2 text-sm font-bold transition-colors ${
                     active
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-800 hover:bg-gray-100 hover:text-gray-950"
+                      ? "border-gray-900 bg-gray-900 text-white"
+                      : "border-gray-200 bg-white text-gray-800 hover:border-gray-300 hover:bg-gray-100 hover:text-gray-950"
                   }`}
                 >
                   {item.label}
