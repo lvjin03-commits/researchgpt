@@ -63,10 +63,10 @@ export function ResearchPageHeader({
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-bold transition-colors ${
                     active
                       ? "bg-gray-900 text-white"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-950"
+                      : "text-gray-800 hover:bg-gray-100 hover:text-gray-950"
                   }`}
                 >
                   {item.label}
@@ -93,10 +93,10 @@ export function ResearchPageHeader({
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+                  className={`whitespace-nowrap border-b-2 px-1 py-3 text-sm font-bold transition-colors ${
                     active
                       ? "border-blue-700 text-blue-800"
-                      : "border-transparent text-gray-500 hover:text-gray-900"
+                      : "border-transparent text-gray-700 hover:text-gray-950"
                   }`}
                 >
                   {item.label}

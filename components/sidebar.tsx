@@ -146,19 +146,19 @@ export function Sidebar({
         <div className="border-t border-gray-200 px-3 py-3">
           <Link
             href="/presentation"
-            className="mb-2 flex w-full items-center justify-center rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+            className="mb-2 flex w-full items-center justify-center rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-800"
           >
             成果制作
           </Link>
           <Link
             href="/literature"
-            className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
+            className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-bold text-gray-800 transition-colors hover:bg-gray-200 hover:text-gray-950"
           >
             文献工作台
           </Link>
           <Link
             href="/translate"
-            className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
+            className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-bold text-gray-800 transition-colors hover:bg-gray-200 hover:text-gray-950"
           >
             学术翻译
           </Link>
