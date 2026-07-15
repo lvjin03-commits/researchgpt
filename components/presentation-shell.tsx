@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PresentationTemplatePicker } from "@/components/presentation-template-picker";
+import { ResearchPageHeader } from "@/components/research-page-header";
 import { exportLiteratureReview, LiteratureError } from "@/lib/literature/client";
 import { REVIEW_MODEL_OPTIONS } from "@/lib/literature/review/constants";
 import type {
@@ -137,32 +138,38 @@ export function PresentationShell() {
 
   return (
     <div className="min-h-dvh bg-white">
-      <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">大纲生成 PPT</h1>
-            <p className="text-sm text-gray-500">
-              粘贴已有大纲，生成可编辑的结构化学术PPT。
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link
-              href="/literature/review"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
-            >
-              文献生成PPT
-            </Link>
-            <Link
-              href="/chat"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
-            >
-              返回对话
-            </Link>
-          </div>
-        </div>
-      </header>
+      <ResearchPageHeader
+        title="成果制作"
+        description="将已有大纲转换为可编辑的结构化学术 PPT。"
+      />
 
       <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-base font-semibold text-gray-950">选择内容来源</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              已有大纲可直接制作；尚未整理文献时先进入文献分析。
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border-2 border-blue-700 bg-blue-50 p-4">
+              <p className="text-sm font-semibold text-blue-950">已有大纲</p>
+              <p className="mt-1 text-sm leading-6 text-blue-800">
+                粘贴自己的 PPT 大纲，选择模板后生成演示文稿。
+              </p>
+            </div>
+            <Link
+              href="/literature/review"
+              className="rounded-lg border border-gray-200 p-4 transition-colors hover:border-gray-300 hover:bg-gray-50"
+            >
+              <p className="text-sm font-semibold text-gray-950">从文献开始</p>
+              <p className="mt-1 text-sm leading-6 text-gray-600">
+                先生成文献矩阵和证据大纲，再继续制作 PPT。
+              </p>
+            </Link>
+          </div>
+        </section>
+
         {error && (
           <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}

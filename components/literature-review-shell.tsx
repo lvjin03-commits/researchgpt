@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PresentationTemplatePicker } from "@/components/presentation-template-picker";
+import { ResearchPageHeader } from "@/components/research-page-header";
 import {
   exportLiteratureReview,
   fetchLiteratureFolders,
@@ -121,6 +121,7 @@ export function LiteratureReviewShell() {
   const [isExportingOutline, setIsExportingOutline] = useState(false);
   const [isExportingMatrix, setIsExportingMatrix] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showPreparation, setShowPreparation] = useState(true);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const restoredFolderIdRef = useRef("");
 
@@ -562,6 +563,7 @@ export function LiteratureReviewShell() {
         abortController.signal,
       );
       setLiteratureMatrix(result.matrix ?? []);
+      setShowPreparation(false);
       setMatrixConfirmed(false);
       setThemes("");
       setOutline("");
@@ -778,52 +780,43 @@ export function LiteratureReviewShell() {
 
   return (
     <div className="min-h-dvh bg-white">
-      <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">AI 学术汇报</h1>
-            <p className="text-sm text-gray-500">
-              基于文献夹中的论文生成可编辑研究大纲与学术汇报 PPT。
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/presentation"
-              className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
-            >
-              已有大纲生成 PPT
-            </Link>
-            <button
-              type="button"
-              onClick={clearSavedProject}
-              disabled={isGenerating}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:text-gray-300"
-            >
-              清空项目
-            </button>
-            <Link
-              href="/translate"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              AI 学术翻译
-            </Link>
-            <Link
-              href="/literature/library"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              文献库
-            </Link>
-            <Link
-              href="/literature"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              文献追踪
-            </Link>
-          </div>
-        </div>
-      </header>
+      <ResearchPageHeader
+        title="文献分析"
+        description="从文献夹生成文献矩阵、主题归类、证据大纲和学术汇报。"
+        actions={
+          <button
+            type="button"
+            onClick={clearSavedProject}
+            disabled={isGenerating}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-950 disabled:cursor-not-allowed disabled:text-gray-300"
+          >
+            清空当前项目
+          </button>
+        }
+      />
 
       <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
+        <ol className="grid grid-cols-3 border-b border-gray-200" aria-label="文献分析进度">
+          {[
+            { label: "准备资料", active: literatureMatrix.length === 0 },
+            {
+              label: "整理证据",
+              active: literatureMatrix.length > 0 && !outline,
+            },
+            { label: "制作成果", active: Boolean(outline) },
+          ].map((step, index) => (
+            <li
+              key={step.label}
+              className={`border-b-2 px-2 py-3 text-center text-sm font-medium ${
+                step.active
+                  ? "border-blue-700 text-blue-800"
+                  : "border-transparent text-gray-400"
+              }`}
+            >
+              {index + 1}. {step.label}
+            </li>
+          ))}
+        </ol>
         {error && (
           <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
@@ -900,6 +893,27 @@ export function LiteratureReviewShell() {
           </div>
         )}
 
+        {literatureMatrix.length > 0 && !showPreparation && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-gray-900">分析设置已完成</p>
+              <p className="mt-1 text-sm text-gray-500">
+                {selectedFolder?.name || "当前文献夹"} · {topic || "未命名主题"} · {paperCount} 篇文献
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPreparation(true)}
+              disabled={isGenerating}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              修改分析设置
+            </button>
+          </div>
+        )}
+
+        {(literatureMatrix.length === 0 || showPreparation) && (
+          <>
         <section className="space-y-5 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-gray-900">1. 选择成果类型</h2>
           <div className="grid gap-3 md:grid-cols-2">
@@ -1204,6 +1218,21 @@ export function LiteratureReviewShell() {
               : `不读取PDF全文；矩阵中文整理约 ${Math.ceil(Math.max(1, paperCount) / 8)} 批。`}
           </div>
         </section>
+
+        {literatureMatrix.length > 0 && showPreparation && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowPreparation(false)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              收起分析设置
+            </button>
+          </div>
+        )}
+
+          </>
+        )}
 
         {literatureMatrix.length > 0 && (
           <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">

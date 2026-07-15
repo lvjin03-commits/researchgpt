@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { LiteratureLibraryUploadModal } from "@/components/literature-library-upload-modal";
 import { LiteraturePaperCard } from "@/components/literature-paper-card";
+import { ResearchPageHeader } from "@/components/research-page-header";
 import {
   createLiteratureFolder,
   deleteLiteratureFolder,
@@ -244,49 +244,20 @@ export function LiteratureLibraryShell() {
 
   return (
     <div className="min-h-dvh bg-white">
-      <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">文献库</h1>
-            <p className="text-sm text-gray-500">
-              将已收藏、已读与已忽略的论文整理到文献夹中。
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/presentation"
-              className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
-            >
-              根据大纲生成 PPT
-            </Link>
-            <button
-              type="button"
-              onClick={() => setShowUploadModal(true)}
-              className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
-            >
-              上传 PDF
-            </button>
-            <Link
-              href="/literature/review"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              文献生成 PPT
-            </Link>
-            <Link
-              href="/translate"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              AI 学术翻译
-            </Link>
-            <Link
-              href="/literature"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              返回文献追踪
-            </Link>
-          </div>
-        </div>
-      </header>
+      <ResearchPageHeader
+        title="文献库"
+        description="集中管理 PDF、文献夹和阅读状态，为后续分析准备资料。"
+        maxWidth="6xl"
+        actions={
+          <button
+            type="button"
+            onClick={() => setShowUploadModal(true)}
+            className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+          >
+            上传 PDF
+          </button>
+        }
+      />
 
       <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 lg:flex-row lg:items-start lg:px-6">
         <aside className="w-full shrink-0 space-y-6 lg:w-64">

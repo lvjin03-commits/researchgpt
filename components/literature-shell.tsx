@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LiteraturePaperCard } from "@/components/literature-paper-card";
+import { ResearchPageHeader } from "@/components/research-page-header";
 import {
   LiteraturePaperDebugPanel,
   LiteratureSearchDebugSummary,
@@ -302,56 +302,20 @@ export function LiteratureShell() {
 
   return (
     <div className="min-h-dvh bg-white">
-      <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">文献追踪</h1>
-            <p className="text-sm text-gray-500">
-              输入关键词，从 OpenAlex、arXiv 与 PubMed 检索最新论文并由 AI 评估相关度。
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/presentation"
-              className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
-            >
-              生成 PPT
-            </Link>
-            <a
-              href={googleScholarUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-            >
-              Google Scholar
-            </a>
-            <Link
-              href="/literature/library"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              文献库
-            </Link>
-            <Link
-              href="/literature/review"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              文献生成 PPT
-            </Link>
-            <Link
-              href="/translate"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              AI 学术翻译
-            </Link>
-            <Link
-              href="/chat"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              返回对话
-            </Link>
-          </div>
-        </div>
-      </header>
+      <ResearchPageHeader
+        title="搜索与追踪"
+        description="检索、筛选并追踪与你研究方向相关的文献。"
+        actions={
+          <a
+            href={googleScholarUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
+          >
+            在 Google Scholar 搜索
+          </a>
+        }
+      />
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">

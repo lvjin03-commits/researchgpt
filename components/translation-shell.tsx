@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
+import { ResearchPageHeader } from "@/components/research-page-header";
 import {
   MAX_DOCX_TRANSLATION_MB,
   OUTPUT_MODE_OPTIONS,
@@ -104,50 +104,11 @@ export function TranslationShell() {
 
   return (
     <div className="min-h-dvh bg-white">
-      <header className="border-b border-gray-100 px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">
-              AI 学术翻译
-            </h1>
-            <p className="text-sm text-gray-500">
-              将中文 Word 文档翻译为专业英文，保留原有文档结构。
-            </p>
-          </div>
-
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-gray-700">
-              固定术语（可选）
-            </span>
-            <textarea
-              value={glossary}
-              disabled={isTranslating}
-              onChange={(event) => setGlossary(event.target.value)}
-              rows={5}
-              maxLength={10_000}
-              placeholder={"每行一个术语，例如：\n有机催化 = organocatalysis\n转化率 = conversion\n选择性 = selectivity"}
-              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm leading-6 outline-none focus:border-blue-500"
-            />
-            <span className="text-xs text-gray-500">
-              锁定后的译法会在全文中优先保持一致。
-            </span>
-          </label>
-
-          {file && (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-              <span className="font-medium">处理提示：</span>
-              文件大小 {(file.size / 1024 / 1024).toFixed(2)} MB。系统按段落分批翻译，
-              相同文件重新翻译仍会产生新的AI调用。
-            </div>
-          )}
-          <Link
-            href="/literature/review"
-            className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-          >
-            AI 学术汇报
-          </Link>
-        </div>
-      </header>
+      <ResearchPageHeader
+        title="学术翻译"
+        description="将中文 Word 文档翻译为专业英文，并保留原有文档结构。"
+        maxWidth="4xl"
+      />
 
       <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
         <section className="border-b border-gray-200 pb-5">
@@ -176,9 +137,14 @@ export function TranslationShell() {
               最大 {MAX_DOCX_TRANSLATION_MB}MB。尽可能保留段落、标题、列表和表格单元格。
             </p>
             {file && (
-              <p className="mt-2 text-sm text-gray-600">
-                已选择：<span className="font-medium">{file.name}</span>
-              </p>
+              <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                <p>
+                  已选择：<span className="font-medium">{file.name}</span>
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  文件大小 {(file.size / 1024 / 1024).toFixed(2)} MB。系统按段落分批翻译；重复翻译会产生新的 AI 调用。
+                </p>
+              </div>
             )}
           </div>
 
@@ -217,6 +183,24 @@ export function TranslationShell() {
               ))}
             </div>
           </div>
+
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-gray-700">
+              固定术语（可选）
+            </span>
+            <textarea
+              value={glossary}
+              disabled={isTranslating}
+              onChange={(event) => setGlossary(event.target.value)}
+              rows={4}
+              maxLength={10_000}
+              placeholder={"每行一个术语，例如：\n有机催化 = organocatalysis\n转化率 = conversion"}
+              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm leading-6 outline-none focus:border-blue-500"
+            />
+            <span className="text-xs text-gray-500">
+              锁定后的译法会在全文中优先保持一致。
+            </span>
+          </label>
 
           <div className="rounded-2xl bg-gray-50 px-4 py-3">
             <p className="text-sm font-medium text-gray-900">{progressLabel}</p>

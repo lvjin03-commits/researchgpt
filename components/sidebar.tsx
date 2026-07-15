@@ -148,19 +148,19 @@ export function Sidebar({
             href="/presentation"
             className="mb-2 flex w-full items-center justify-center rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
           >
-            根据大纲生成 PPT
+            成果制作
           </Link>
           <Link
             href="/literature"
             className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
           >
-            文献追踪
+            文献工作台
           </Link>
           <Link
             href="/translate"
             className="mb-2 flex w-full items-center justify-center rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
           >
-            AI 学术翻译
+            学术翻译
           </Link>
           <button
             type="button"

@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LiteraturePaperFolderSelector } from "@/components/literature-paper-folder-selector";
+import { ResearchPageHeader } from "@/components/research-page-header";
 import { LITERATURE_PRIORITY_LABELS } from "@/lib/literature/constants";
 import {
   fetchLiteratureFolders,
@@ -496,30 +496,11 @@ export function LiteraturePaperDetailShell({
 
   return (
     <div className="min-h-dvh bg-gray-50">
-      <header className="border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">论文详情</h1>
-            <p className="text-sm text-gray-500">
-              论文分析、阅读指南与个人笔记工作区。
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/literature/library"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              文献库
-            </Link>
-            <Link
-              href="/literature"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-            >
-              文献追踪
-            </Link>
-          </div>
-        </div>
-      </header>
+      <ResearchPageHeader
+        title="论文详情"
+        description="查看全文、图表、引用关系、AI 分析和个人笔记。"
+        maxWidth="6xl"
+      />
 
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6">
         {error && (
