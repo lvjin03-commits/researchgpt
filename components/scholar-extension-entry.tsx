@@ -3,77 +3,78 @@
 import { useState } from "react";
 import { CloseIcon } from "@/components/icons";
 
-const EXTENSION_INSTALL_URL =
-  process.env.NEXT_PUBLIC_GOOGLE_SCHOLAR_EXTENSION_URL?.trim() ?? "";
+const EXTENSION_VERSION = "0.2.8";
+const EXTENSION_DOWNLOAD_URL =
+  "/downloads/researchai-scholar-saver-0.2.8.zip";
 
 const INSTRUCTIONS = [
   {
-    title: "安装并固定插件",
-    description: "从 Chrome 商店安装 ResearchAI Scholar Saver，并固定到浏览器工具栏。",
+    title: "下载并解压内测包",
+    description:
+      "点击“下载内测版 ZIP”，下载完成后将压缩包解压到一个固定文件夹，请勿直接在 ZIP 内打开。",
+  },
+  {
+    title: "打开扩展程序管理页",
+    description:
+      "在 Chrome 地址栏输入 chrome://extensions，然后打开右上角的“开发者模式”。",
+  },
+  {
+    title: "加载已解压的扩展程序",
+    description:
+      "点击“加载已解压的扩展程序”，选择刚才解压且能直接看到 manifest.json 的文件夹。",
   },
   {
     title: "连接 ResearchAI 账户",
-    description: "先登录本网站，再打开插件并点击 Connect account（连接账户）。",
-  },
-  {
-    title: "加载文献夹",
-    description: "点击 Load folders（加载文件夹），并选择保存 PDF 的默认文献夹。",
+    description:
+      "先登录本网站，再打开插件，依次点击 Connect account（连接账户）和 Load folders（加载文件夹）。",
   },
   {
     title: "在 Scholar 保存 PDF",
-    description: "有直接 PDF 的结果旁会显示 Save PDF to ResearchGPT，点击后即可保存全文。",
+    description:
+      "Google Scholar 中有直接 PDF 的结果旁会显示 Save PDF to ResearchGPT，点击后选择文献夹并保存全文。",
   },
 ] as const;
 
 export function ScholarExtensionEntry() {
   const [showInstructions, setShowInstructions] = useState(false);
-  const hasInstallUrl = Boolean(EXTENSION_INSTALL_URL);
 
   return (
     <>
       <div className="border-t border-gray-200 pt-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-gray-950">Google Scholar 保存助手</p>
+            <p className="text-sm font-bold text-gray-950">
+              Google Scholar 保存助手
+            </p>
             <p className="mt-1 text-xs leading-5 text-gray-600">
-              可选安装。将 Scholar 中可下载的 PDF 直接保存到文献夹。
+              可选内测功能。将 Scholar 中可下载的 PDF 直接保存到文献夹。
             </p>
           </div>
-          <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">
-            可选
+          <span className="shrink-0 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+            内测版
           </span>
         </div>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-          {hasInstallUrl ? (
-            <a
-              href={EXTENSION_INSTALL_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-lg bg-blue-700 px-3 py-2.5 text-center text-sm font-bold text-white transition-colors hover:bg-blue-800"
-            >
-              安装插件
-            </a>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowInstructions(true)}
-              className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2.5 text-sm font-bold text-gray-600"
-            >
-              一键安装
-            </button>
-          )}
+          <a
+            href={EXTENSION_DOWNLOAD_URL}
+            download
+            onClick={() => setShowInstructions(true)}
+            className="rounded-lg bg-blue-700 px-3 py-2.5 text-center text-sm font-bold text-white transition-colors hover:bg-blue-800"
+          >
+            下载内测版 ZIP
+          </a>
           <button
             type="button"
             onClick={() => setShowInstructions(true)}
             className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-bold text-gray-800 transition-colors hover:bg-gray-50"
           >
-            查看使用说明
+            查看安装说明
           </button>
         </div>
 
         <p className="mt-3 text-xs leading-5 text-gray-500">
-          不安装插件也可以先下载 PDF，再到文献库手动上传。
+          需要 Chrome 开发者模式。内测版不会自动更新；不安装也可以在文献库手动上传 PDF。
         </p>
       </div>
 
@@ -95,20 +96,25 @@ export function ScholarExtensionEntry() {
           >
             <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
               <div>
-                <h2
-                  id="scholar-extension-title"
-                  className="text-lg font-semibold text-gray-950"
-                >
-                  Google Scholar 保存助手
-                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2
+                    id="scholar-extension-title"
+                    className="text-lg font-semibold text-gray-950"
+                  >
+                    安装 Google Scholar 保存助手
+                  </h2>
+                  <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+                    内测版 {EXTENSION_VERSION}
+                  </span>
+                </div>
                 <p className="mt-1 text-sm leading-6 text-gray-600">
-                  用于保存 PDF 全文，不是使用网站核心功能的必要条件。
+                  这是开发者模式安装包，仅建议测试用户使用。
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowInstructions(false)}
-                aria-label="关闭使用说明"
+                aria-label="关闭安装说明"
                 className="rounded-md p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
               >
                 <CloseIcon className="h-5 w-5" />
@@ -116,11 +122,9 @@ export function ScholarExtensionEntry() {
             </header>
 
             <div className="px-5 py-5">
-              {!hasInstallUrl && (
-                <p className="mb-5 border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                  Chrome 商店版本尚未发布。正式链接上线后，这里会自动显示“安装插件”。
-                </p>
-              )}
+              <p className="mb-5 border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                Chrome 不允许普通网站静默安装扩展。内测阶段需要下载 ZIP，并在扩展程序管理页手动加载一次。
+              </p>
 
               <ol className="space-y-5">
                 {INSTRUCTIONS.map((item, index) => (
@@ -129,7 +133,9 @@ export function ScholarExtensionEntry() {
                       {index + 1}
                     </span>
                     <div>
-                      <p className="text-sm font-bold text-gray-950">{item.title}</p>
+                      <p className="text-sm font-bold text-gray-950">
+                        {item.title}
+                      </p>
                       <p className="mt-1 text-sm leading-6 text-gray-600">
                         {item.description}
                       </p>
@@ -140,29 +146,26 @@ export function ScholarExtensionEntry() {
 
               <div className="mt-6 border-t border-gray-200 pt-4 text-sm leading-6 text-gray-600">
                 <p>只有检测到直接 PDF 的结果才显示保存入口。</p>
-                <p>下载受阻时，请先完成下载，再选择该 PDF 上传。</p>
+                <p>更新内测版时，需要重新下载、覆盖原文件夹并在扩展页点击刷新。</p>
                 <p>登录失效时，重新连接账户并加载文件夹后重试。</p>
               </div>
             </div>
 
-            <footer className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
+            <footer className="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-4">
               <button
                 type="button"
                 onClick={() => setShowInstructions(false)}
                 className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-bold text-gray-800 hover:bg-gray-50"
               >
-                知道了
+                关闭
               </button>
-              {hasInstallUrl && (
-                <a
-                  href={EXTENSION_INSTALL_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800"
-                >
-                  前往安装
-                </a>
-              )}
+              <a
+                href={EXTENSION_DOWNLOAD_URL}
+                download
+                className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800"
+              >
+                下载内测版 ZIP
+              </a>
             </footer>
           </section>
         </div>
