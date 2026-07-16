@@ -24,6 +24,9 @@ export function normalizeLiteratureSettings(
     raw.selectedSources && raw.selectedSources.length > 0
       ? raw.selectedSources.filter((source) => allowedSources.has(source))
       : defaultSources;
+  const upgradedSelectedSources = [
+    ...new Set([...selectedSources, "semantic_scholar"]),
+  ];
 
   return {
     researchDirection: raw.researchDirection ?? "",
@@ -31,7 +34,9 @@ export function normalizeLiteratureSettings(
     excludeKeywords: raw.excludeKeywords ?? "",
     discipline,
     selectedSources:
-      selectedSources.length > 0 ? [...new Set(selectedSources)] : defaultSources,
+      upgradedSelectedSources.length > 0
+        ? upgradedSelectedSources
+        : defaultSources,
     dateRangeDays,
   };
 }

@@ -65,7 +65,12 @@ export type DisciplineDefinition = {
   sources: TaxonomySource[];
 };
 
-export const AVAILABLE_LITERATURE_SOURCE_IDS = ["openalex", "arxiv", "pubmed"] as const;
+export const AVAILABLE_LITERATURE_SOURCE_IDS = [
+  "openalex",
+  "semantic_scholar",
+  "arxiv",
+  "pubmed",
+] as const;
 
 export type AvailableLiteratureSourceId =
   (typeof AVAILABLE_LITERATURE_SOURCE_IDS)[number];
@@ -130,6 +135,16 @@ function openalex(): TaxonomySource {
   };
 }
 
+function semanticScholar(): TaxonomySource {
+  return {
+    id: "semantic_scholar",
+    name: "Semantic Scholar",
+    kind: "platform",
+    status: "available",
+    provider: "semantic_scholar",
+  };
+}
+
 function conference(name: string): TaxonomySource {
   return item(name, "conference");
 }
@@ -167,9 +182,9 @@ export const LITERATURE_DISCIPLINES: DisciplineDefinition[] = [
     label: "人工智能",
     sources: [
       openalex(),
+      semanticScholar(),
       arxiv(),
       platform("OpenReview", "openreview"),
-      platform("Semantic Scholar", "semantic_scholar"),
       platform("Papers with Code"),
       code("GitHub"),
       code("Hugging Face"),

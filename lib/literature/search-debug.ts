@@ -18,6 +18,7 @@ export type UnifiedPaperDebugRecord = {
 export type LiteratureSearchDebugSummary = {
   googleScholar: number;
   openalex: number;
+  semanticScholar: number;
   arxiv: number;
   pubmed: number;
   crossref: number;

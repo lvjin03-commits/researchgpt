@@ -40,6 +40,10 @@ export function LiteratureSearchDebugSummary({
       <div className="space-y-1">
         <DebugRow label="Google Scholar:" value={summary.googleScholar} />
         <DebugRow label="OpenAlex:" value={summary.openalex} />
+        <DebugRow
+          label="Semantic Scholar:"
+          value={summary.semanticScholar}
+        />
         <DebugRow label="PubMed:" value={summary.pubmed} />
         <DebugRow label="arXiv:" value={summary.arxiv} />
         <DebugRow label="Crossref:" value={summary.crossref} />

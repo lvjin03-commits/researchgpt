@@ -57,7 +57,7 @@ export function parseLiteratureSettings(
   );
   const normalizedSources =
     selectedSources.length > 0
-      ? [...new Set(selectedSources)]
+      ? [...new Set([...selectedSources, "semantic_scholar"])]
       : [...DEFAULT_LITERATURE_PIPELINE_SOURCES];
 
   if (!keywords) {

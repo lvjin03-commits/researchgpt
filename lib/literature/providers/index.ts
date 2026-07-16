@@ -24,6 +24,7 @@ import { dblpProvider } from "@/lib/literature/providers/dblp";
 import { openReviewProvider } from "@/lib/literature/providers/openreview";
 import { openAlexProvider } from "@/lib/literature/providers/openalex";
 import { pubmedProvider } from "@/lib/literature/providers/pubmed";
+import { semanticScholarProvider } from "@/lib/literature/providers/semantic-scholar";
 import { FUTURE_LITERATURE_PROVIDERS } from "@/lib/literature/providers/placeholders";
 import type { ArxivPaperDraft, LiteratureSettings } from "@/lib/literature/types";
 
@@ -33,6 +34,7 @@ export { DEFAULT_LITERATURE_PIPELINE_SOURCES } from "@/lib/literature/constants"
 /** Providers used by the literature search pipeline, in priority order. */
 export const ACTIVE_LITERATURE_PROVIDERS: LiteratureProvider[] = [
   openAlexProvider,
+  semanticScholarProvider,
   arxivProvider,
   pubmedProvider,
   crossrefProvider,
@@ -277,6 +279,8 @@ export async function searchLiteratureProviders(
         {
           googleScholar: quality.fetchedByProvider.google_scholar ?? 0,
           openalex: quality.fetchedByProvider.openalex ?? 0,
+          semanticScholar:
+            quality.fetchedByProvider.semantic_scholar ?? 0,
           arxiv: quality.fetchedByProvider.arxiv ?? 0,
           pubmed: quality.fetchedByProvider.pubmed ?? 0,
           crossref: quality.fetchedByProvider.crossref ?? 0,
