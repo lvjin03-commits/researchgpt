@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
 import { MenuIcon } from "@/components/icons";
 import { Sidebar } from "@/components/sidebar";
 import type { ChatMessage } from "@/lib/ai/types";
+import {
+  DEFAULT_CHAT_MODEL_TIER,
+  isChatModelTier,
+  type ChatModelTier,
+} from "@/lib/ai/chat-models";
 import { ChatClientError, isAbortError, streamChatResponse } from "@/lib/chat/client";
 import {
   defaultContentForAttachments,
@@ -57,7 +62,22 @@ export function ChatShell() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modelTier, setModelTier] = useState<ChatModelTier>(
+    DEFAULT_CHAT_MODEL_TIER,
+  );
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const savedTier = window.localStorage.getItem("researchgpt-chat-model-tier");
+    if (isChatModelTier(savedTier)) {
+      setModelTier(savedTier);
+    }
+  }, []);
+
+  const handleModelTierChange = useCallback((tier: ChatModelTier) => {
+    setModelTier(tier);
+    window.localStorage.setItem("researchgpt-chat-model-tier", tier);
+  }, []);
 
   const {
     conversations,
@@ -160,6 +180,7 @@ export function ChatShell() {
         await streamChatResponse(apiMessages, {
           files: payload.files,
           signal: abortController.signal,
+          modelTier,
           onChunk: (chunk) => {
             streamingMessages = streamingMessages.map((message, index) => {
               if (
@@ -208,6 +229,7 @@ export function ChatShell() {
       ensureActiveConversation,
       persistConversation,
       flushCloudSync,
+      modelTier,
     ],
   );
 
@@ -285,6 +307,8 @@ export function ChatShell() {
             onSend={handleSend}
             onStop={handleStop}
             isStreaming={isStreaming}
+            modelTier={modelTier}
+            onModelTierChange={handleModelTierChange}
           />
         </main>
       </div>

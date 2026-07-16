@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AttachmentPreview } from "@/components/attachment-preview";
-import { PaperclipIcon, SendIcon, StopIcon } from "@/components/icons";
+import {
+  ChevronDownIcon,
+  PaperclipIcon,
+  SendIcon,
+  StopIcon,
+} from "@/components/icons";
 import {
   ACCEPTED_FILE_TYPES,
   MAX_IMAGE_UPLOAD_MB,
@@ -16,6 +21,10 @@ import {
   revokePendingAttachmentPreviews,
   type PendingAttachment,
 } from "@/lib/uploads/client-attachments";
+import {
+  CHAT_MODEL_OPTIONS,
+  type ChatModelTier,
+} from "@/lib/ai/chat-models";
 
 const MAX_TEXTAREA_HEIGHT = 200;
 
@@ -29,6 +38,8 @@ type ChatInputProps = {
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
+  modelTier: ChatModelTier;
+  onModelTierChange: (tier: ChatModelTier) => void;
 };
 
 export function ChatInput({
@@ -36,13 +47,21 @@ export function ChatInput({
   onStop,
   isStreaming = false,
   disabled = false,
+  modelTier,
+  onModelTierChange,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
+
+  const selectedModel =
+    CHAT_MODEL_OPTIONS.find((option) => option.tier === modelTier) ??
+    CHAT_MODEL_OPTIONS[1];
 
   const adjustHeight = useCallback(() => {
     const textarea = textareaRef.current;
@@ -156,7 +175,16 @@ export function ChatInput({
   attachmentsRef.current = attachments;
 
   useEffect(() => {
+    const closeModelMenu = (event: MouseEvent) => {
+      if (!modelMenuRef.current?.contains(event.target as Node)) {
+        setModelMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeModelMenu);
+
     return () => {
+      document.removeEventListener("mousedown", closeModelMenu);
       revokePendingAttachmentPreviews(attachmentsRef.current);
     };
   }, []);
@@ -220,6 +248,63 @@ export function ChatInput({
               >
                 <PaperclipIcon className="h-5 w-5" />
               </button>
+
+              <div ref={modelMenuRef} className="relative ml-1">
+                {modelMenuOpen && (
+                  <div className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.14)]">
+                    <p className="px-3 pb-1.5 pt-1 text-xs font-semibold text-gray-500">
+                      选择模型
+                    </p>
+                    {CHAT_MODEL_OPTIONS.map((option) => {
+                      const selected = option.tier === modelTier;
+
+                      return (
+                        <button
+                          key={option.tier}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          onClick={() => {
+                            onModelTierChange(option.tier);
+                            setModelMenuOpen(false);
+                          }}
+                          className={`flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                            selected ? "bg-gray-100" : "hover:bg-gray-50"
+                          }`}
+                        >
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold text-gray-900">
+                              {option.label}
+                            </span>
+                            <span className="mt-0.5 block text-xs leading-5 text-gray-500">
+                              {option.description}
+                            </span>
+                          </span>
+                          <span className="shrink-0 pt-0.5 text-[11px] font-medium text-gray-400">
+                            {option.model}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setModelMenuOpen((open) => !open)}
+                  disabled={inputLocked}
+                  aria-haspopup="menu"
+                  aria-expanded={modelMenuOpen}
+                  className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {selectedModel.label}
+                  <ChevronDownIcon
+                    className={`h-3.5 w-3.5 transition-transform ${
+                      modelMenuOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
 
             <label htmlFor="chat-input" className="sr-only">

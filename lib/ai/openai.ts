@@ -76,11 +76,13 @@ function toOpenAIMessages(
 export async function openChatCompletionStream({
   messages,
   signal,
+  model: requestedModel,
+  reasoningEffort,
 }: StreamChatOptions): Promise<
   AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>
 > {
   const client = getClient();
-  const model = getModelForMessages(messages);
+  const model = requestedModel || getModelForMessages(messages);
   const openaiMessages = toOpenAIMessages(messages);
 
   console.log(
@@ -122,6 +124,9 @@ export async function openChatCompletionStream({
         model,
         messages: openaiMessages,
         stream: true,
+        ...(reasoningEffort
+          ? { reasoning_effort: reasoningEffort }
+          : {}),
       },
       { signal },
     );

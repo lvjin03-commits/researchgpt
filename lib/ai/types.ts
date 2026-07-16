@@ -25,6 +25,8 @@ export type ChatMessage = {
 export type StreamChatOptions = {
   messages: ChatMessage[];
   signal?: AbortSignal;
+  model?: string;
+  reasoningEffort?: "none" | "low" | "medium";
 };
 
 export type AIProviderName = "openai" | "openrouter";

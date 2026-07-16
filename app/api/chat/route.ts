@@ -4,6 +4,11 @@ import {
   validateChatMessages,
 } from "@/lib/ai/provider";
 import type { ChatMessage, MessageContent } from "@/lib/ai/types";
+import {
+  DEFAULT_CHAT_MODEL_TIER,
+  getChatModelOption,
+  isChatModelTier,
+} from "@/lib/ai/chat-models";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
@@ -16,6 +21,7 @@ export const runtime = "nodejs";
 
 type ChatRequestBody = {
   messages?: unknown;
+  modelTier?: unknown;
 };
 
 function summarizeContentForDebug(content: MessageContent): unknown {
@@ -62,6 +68,10 @@ export async function POST(request: Request) {
     await requireChatUser();
 
     const body = (await request.json()) as ChatRequestBody;
+    const modelTier = isChatModelTier(body.modelTier)
+      ? body.modelTier
+      : DEFAULT_CHAT_MODEL_TIER;
+    const modelOption = getChatModelOption(modelTier);
 
     console.log(
       "[api/chat] before sanitize:",
@@ -77,6 +87,7 @@ export async function POST(request: Request) {
 
     const messages = withModelIdentity(
       withExportGuidance(validateChatMessages(sanitized as ChatMessage[])),
+      modelOption.model,
     );
 
     console.log(
@@ -87,6 +98,8 @@ export async function POST(request: Request) {
     const stream = await createConnectedChatStream({
       messages,
       signal: request.signal,
+      model: modelOption.model,
+      reasoningEffort: modelOption.reasoningEffort,
     });
 
     return new Response(stream, {

@@ -9,8 +9,10 @@ export function getConfiguredModelLabel(): string {
   return process.env.OPENAI_MODEL?.trim() || "default OpenAI model";
 }
 
-export function buildModelIdentitySystemMessage(): ChatMessage {
-  const configuredModel = getConfiguredModelLabel();
+export function buildModelIdentitySystemMessage(
+  selectedModel?: string,
+): ChatMessage {
+  const configuredModel = selectedModel?.trim() || getConfiguredModelLabel();
 
   return {
     role: "system",
@@ -23,7 +25,10 @@ export function buildModelIdentitySystemMessage(): ChatMessage {
   };
 }
 
-export function withModelIdentity(messages: ChatMessage[]): ChatMessage[] {
+export function withModelIdentity(
+  messages: ChatMessage[],
+  selectedModel?: string,
+): ChatMessage[] {
   const hasModelIdentity = messages.some(
     (message) =>
       message.role === "system" &&
@@ -35,5 +40,5 @@ export function withModelIdentity(messages: ChatMessage[]): ChatMessage[] {
     return messages;
   }
 
-  return [buildModelIdentitySystemMessage(), ...messages];
+  return [buildModelIdentitySystemMessage(selectedModel), ...messages];
 }

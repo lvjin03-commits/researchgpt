@@ -1,6 +1,7 @@
 // Client-only module. Do not import from API routes.
 
 import type { ChatMessage } from "@/lib/ai/types";
+import type { ChatModelTier } from "@/lib/ai/chat-models";
 import { uploadChatAttachments } from "@/lib/uploads/storage-client";
 import type { AttachmentStorageMetadata } from "@/lib/uploads/types";
 
@@ -128,6 +129,7 @@ export async function streamChatResponse(
   options: {
     signal?: AbortSignal;
     files?: File[];
+    modelTier: ChatModelTier;
     onChunk: (chunk: string) => void;
   },
 ): Promise<void> {
@@ -144,7 +146,10 @@ export async function streamChatResponse(
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: preparedMessages }),
+    body: JSON.stringify({
+      messages: preparedMessages,
+      modelTier: options.modelTier,
+    }),
     signal: options.signal,
   });
 
