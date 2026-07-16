@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LiteraturePaperCard } from "@/components/literature-paper-card";
 import { ResearchPageHeader } from "@/components/research-page-header";
+import { ScholarExtensionEntry } from "@/components/scholar-extension-entry";
 import {
   LiteraturePaperDebugPanel,
   LiteratureSearchDebugSummary,
@@ -434,6 +435,7 @@ export function LiteratureShell() {
             >
               在 Google Scholar 搜索
             </a>
+            <ScholarExtensionEntry />
           </section>
 
           <section className="space-y-4">
