@@ -60,7 +60,7 @@ export function ScholarExtensionEntry() {
               onClick={() => setShowInstructions(true)}
               className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2.5 text-sm font-bold text-gray-600"
             >
-              商店版本准备中
+              一键安装
             </button>
           )}
           <button
