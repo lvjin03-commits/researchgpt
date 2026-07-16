@@ -52,7 +52,12 @@ function parseAttachments(value: Json | null): DisplayAttachment[] | null {
       return [];
     }
 
-    return [{ name: record.name, kind: record.kind as AttachmentKind }];
+    return [{
+      name: record.name,
+      kind: record.kind as AttachmentKind,
+      context:
+        typeof record.context === "string" ? record.context : undefined,
+    }];
   });
 
   return attachments.length > 0 ? attachments : null;

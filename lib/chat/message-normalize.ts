@@ -442,7 +442,13 @@ export function normalizeDisplayMessage(
         (attachment): attachment is DisplayAttachment =>
           typeof attachment?.name === "string" &&
           (attachment.kind === "image" || attachment.kind === "document"),
-      )
+      ).map((attachment) => ({
+        ...attachment,
+        context:
+          typeof attachment.context === "string"
+            ? attachment.context.slice(0, 30000)
+            : undefined,
+      }))
     : undefined;
 
   return {
@@ -457,11 +463,17 @@ export function displayMessageToApiMessage(
   options: { allowAttachmentPlaceholder?: boolean } = {},
 ): ApiTextMessage | null {
   const normalized = normalizeDisplayMessage(message);
+  const attachmentContext = normalized.attachments
+    ?.map((attachment) => attachment.context?.trim())
+    .filter((context): context is string => Boolean(context))
+    .join("\n\n");
 
   return coerceRawToApiMessage(
     {
       role: normalized.role,
-      content: normalized.content,
+      content: attachmentContext
+        ? `${normalized.content}\n\n[已解析附件内容]\n${attachmentContext}`
+        : normalized.content,
       attachments: normalized.attachments,
     },
     { allowAttachmentPlaceholder: options.allowAttachmentPlaceholder },

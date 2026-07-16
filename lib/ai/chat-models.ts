@@ -10,6 +10,7 @@ export type ChatModelOption = {
   description: string;
   model: string;
   reasoningEffort: "none" | "low" | "medium";
+  maxOutputTokens: number;
 };
 
 export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
@@ -19,6 +20,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     description: "快速问答与日常处理",
     model: "gpt-5.4-mini",
     reasoningEffort: "none",
+    maxOutputTokens: 1800,
   },
   {
     tier: "standard",
@@ -26,6 +28,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     description: "科研讨论与论文解释",
     model: "gpt-5.5",
     reasoningEffort: "medium",
+    maxOutputTokens: 4000,
   },
   {
     tier: "advanced",
@@ -33,6 +36,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     description: "复杂分析与高质量推理",
     model: "gpt-5.6",
     reasoningEffort: "medium",
+    maxOutputTokens: 7000,
   },
 ] as const;
 

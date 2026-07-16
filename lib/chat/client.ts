@@ -4,6 +4,7 @@ import type { ChatMessage } from "@/lib/ai/types";
 import type { ChatModelTier } from "@/lib/ai/chat-models";
 import { uploadChatAttachments } from "@/lib/uploads/storage-client";
 import type { AttachmentStorageMetadata } from "@/lib/uploads/types";
+import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
 
 export class ChatClientError extends Error {
   readonly statusCode: number;
@@ -38,7 +39,6 @@ async function parseApiError(
   responseBodyText?: string,
 ): Promise<never> {
   let message = fallback;
-  let code: string | undefined;
   let payload: AttachmentErrorPayload | undefined;
 
   if (responseBodyText !== undefined) {
@@ -63,10 +63,8 @@ async function parseApiError(
     message = `${message}: ${payload.details}`;
   }
 
-  code = payload?.code;
-
-  if (process.env.NODE_ENV !== "production" && code) {
-    message = `${message} (${code})`;
+  if (process.env.NODE_ENV !== "production" && payload?.code) {
+    message = `${message} (${payload.code})`;
   }
 
   throw new ChatClientError(message, response.status);
@@ -76,7 +74,7 @@ async function prepareMessagesWithAttachments(
   messages: ChatMessage[],
   files: File[],
   signal?: AbortSignal,
-): Promise<ChatMessage[]> {
+): Promise<{ messages: ChatMessage[]; attachmentContext: string }> {
   let storageAttachments: AttachmentStorageMetadata[];
 
   try {
@@ -109,7 +107,7 @@ async function prepareMessagesWithAttachments(
     );
   }
 
-  let payload: { messages?: ChatMessage[] };
+  let payload: { messages?: ChatMessage[]; attachmentContext?: string };
 
   try {
     payload = JSON.parse(responseBodyText) as { messages?: ChatMessage[] };
@@ -121,7 +119,13 @@ async function prepareMessagesWithAttachments(
     throw new ChatClientError("附件预处理响应无效", 502);
   }
 
-  return payload.messages;
+  return {
+    messages: payload.messages,
+    attachmentContext:
+      typeof payload.attachmentContext === "string"
+        ? payload.attachmentContext
+        : "",
+  };
 }
 
 export async function streamChatResponse(
@@ -130,25 +134,38 @@ export async function streamChatResponse(
     signal?: AbortSignal;
     files?: File[];
     modelTier: ChatModelTier;
+    webSearch: boolean;
+    useLibrary: boolean;
+    memory: string;
     onChunk: (chunk: string) => void;
+    onStatus?: (message: string) => void;
+    onUsage?: (usage: Extract<ChatStreamEvent, { type: "usage" }>) => void;
+    onAttachmentsPrepared?: (context: string) => void;
   },
 ): Promise<void> {
   const hasFiles = Boolean(options.files && options.files.length > 0);
 
-  const preparedMessages = hasFiles
+  const prepared = hasFiles
     ? await prepareMessagesWithAttachments(
         messages,
         options.files!,
         options.signal,
       )
-    : messages;
+    : { messages, attachmentContext: "" };
+
+  if (prepared.attachmentContext) {
+    options.onAttachmentsPrepared?.(prepared.attachmentContext);
+  }
 
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      messages: preparedMessages,
+      messages: prepared.messages,
       modelTier: options.modelTier,
+      webSearch: options.webSearch,
+      useLibrary: options.useLibrary,
+      memory: options.memory,
     }),
     signal: options.signal,
   });
@@ -163,6 +180,7 @@ export async function streamChatResponse(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let pending = "";
 
   try {
     while (true) {
@@ -173,9 +191,19 @@ export async function streamChatResponse(
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value, { stream: true });
-      if (chunk) {
-        options.onChunk(chunk);
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line) as ChatStreamEvent;
+        if (event.type === "text") options.onChunk(event.delta);
+        if (event.type === "status") options.onStatus?.(event.message);
+        if (event.type === "usage") options.onUsage?.(event);
+        if (event.type === "error") {
+          throw new ChatClientError(event.message, 502);
+        }
       }
     }
   } catch (error) {

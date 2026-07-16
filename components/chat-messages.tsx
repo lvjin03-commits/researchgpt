@@ -9,6 +9,9 @@ type ChatMessagesProps = {
   chatTitle: string;
   isStreaming: boolean;
   error: string | null;
+  activity: string | null;
+  onEditMessage: (index: number) => void;
+  onRetryMessage: (index: number) => void;
 };
 
 export function ChatMessages({
@@ -16,6 +19,9 @@ export function ChatMessages({
   chatTitle,
   isStreaming,
   error,
+  activity,
+  onEditMessage,
+  onRetryMessage,
 }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -30,6 +36,8 @@ export function ChatMessages({
           key={`${message.role}-${index}-${message.content.slice(0, 24)}-${message.attachments?.map((attachment) => attachment.name).join("|") ?? ""}`}
           message={message}
           chatTitle={chatTitle}
+          onEdit={message.role === "user" ? () => onEditMessage(index) : undefined}
+          onRetry={message.role === "assistant" ? () => onRetryMessage(index) : undefined}
         />
       ))}
 
@@ -46,6 +54,10 @@ export function ChatMessages({
             </div>
           </div>
         )}
+
+      {isStreaming && activity && (
+        <div className="text-sm font-medium text-gray-500">{activity}</div>
+      )}
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

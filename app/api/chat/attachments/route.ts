@@ -1,5 +1,6 @@
 import { AIProviderError, validateChatMessages } from "@/lib/ai/provider";
 import type { ChatMessage } from "@/lib/ai/types";
+import { getTextFromMessageContent } from "@/lib/ai/types";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
 import { prepareChatMessages } from "@/lib/chat/server/prepare-messages";
 import {
@@ -117,7 +118,16 @@ export async function POST(request: Request) {
 
     console.log("[attachments] all files prepared successfully");
 
-    return Response.json({ messages: preparedMessages });
+    const preparedUserMessage = [...preparedMessages]
+      .reverse()
+      .find((message) => message.role === "user");
+
+    return Response.json({
+      messages: preparedMessages,
+      attachmentContext: preparedUserMessage
+        ? getTextFromMessageContent(preparedUserMessage.content).slice(0, 30000)
+        : "",
+    });
   } catch (error) {
     if (storageAttachments.length > 0) {
       try {

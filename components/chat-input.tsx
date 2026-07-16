@@ -40,6 +40,12 @@ type ChatInputProps = {
   disabled?: boolean;
   modelTier: ChatModelTier;
   onModelTierChange: (tier: ChatModelTier) => void;
+  webSearch: boolean;
+  useLibrary: boolean;
+  onWebSearchChange: (enabled: boolean) => void;
+  onUseLibraryChange: (enabled: boolean) => void;
+  memory: string;
+  onMemoryChange: (memory: string) => void;
 };
 
 export function ChatInput({
@@ -49,6 +55,12 @@ export function ChatInput({
   disabled = false,
   modelTier,
   onModelTierChange,
+  webSearch,
+  useLibrary,
+  onWebSearchChange,
+  onUseLibraryChange,
+  memory,
+  onMemoryChange,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
@@ -172,7 +184,10 @@ export function ChatInput({
   };
 
   const attachmentsRef = useRef(attachments);
-  attachmentsRef.current = attachments;
+
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
 
   useEffect(() => {
     const closeModelMenu = (event: MouseEvent) => {
@@ -286,6 +301,22 @@ export function ChatInput({
                         </button>
                       );
                     })}
+                    <div className="mt-1 border-t border-gray-100 px-2 py-2">
+                      <label className="block text-xs font-semibold text-gray-600">
+                        科研偏好记忆
+                      </label>
+                      <textarea
+                        value={memory}
+                        onChange={(event) => onMemoryChange(event.target.value)}
+                        maxLength={2000}
+                        rows={3}
+                        placeholder="例如：材料化学；默认中文；使用 GB/T 7714 引用格式"
+                        className="mt-1.5 w-full resize-none rounded-lg border border-gray-200 px-2.5 py-2 text-xs leading-5 text-gray-800 outline-none focus:border-gray-400"
+                      />
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        仅保存你明确填写的偏好，不保存对话中的实验数据。
+                      </p>
+                    </div>
                   </div>
                 )}
 
@@ -305,6 +336,35 @@ export function ChatInput({
                   />
                 </button>
               </div>
+
+              <button
+                type="button"
+                aria-pressed={webSearch}
+                onClick={() => onWebSearchChange(!webSearch)}
+                disabled={inputLocked}
+                title="允许模型在需要最新信息时搜索网络"
+                className={`ml-1 h-9 rounded-lg px-2.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                  webSearch
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-500 hover:bg-gray-100"
+                }`}
+              >
+                联网
+              </button>
+              <button
+                type="button"
+                aria-pressed={useLibrary}
+                onClick={() => onUseLibraryChange(!useLibrary)}
+                disabled={inputLocked}
+                title="从你的文献库标题、摘要和PDF全文中检索证据"
+                className={`ml-1 h-9 rounded-lg px-2.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                  useLibrary
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "text-gray-500 hover:bg-gray-100"
+                }`}
+              >
+                文献库
+              </button>
             </div>
 
             <label htmlFor="chat-input" className="sr-only">

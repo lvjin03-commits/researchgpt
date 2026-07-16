@@ -4,6 +4,7 @@ import type { AttachmentKind } from "@/lib/uploads/constants";
 export type DisplayAttachment = {
   name: string;
   kind: AttachmentKind;
+  context?: string;
 };
 
 export type DisplayChatMessage = {

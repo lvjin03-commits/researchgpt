@@ -62,21 +62,48 @@ export function ChatShell() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activity, setActivity] = useState<string | null>(null);
+  const [usage, setUsage] = useState({ input: 0, output: 0, total: 0 });
+  const [webSearch, setWebSearch] = useState(true);
+  const [useLibrary, setUseLibrary] = useState(false);
+  const [memory, setMemory] = useState("");
   const [modelTier, setModelTier] = useState<ChatModelTier>(
     DEFAULT_CHAT_MODEL_TIER,
   );
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    const savedTier = window.localStorage.getItem("researchgpt-chat-model-tier");
-    if (isChatModelTier(savedTier)) {
-      setModelTier(savedTier);
-    }
+    const timer = window.setTimeout(() => {
+      const savedTier = window.localStorage.getItem("researchgpt-chat-model-tier");
+      if (isChatModelTier(savedTier)) {
+        setModelTier(savedTier);
+      }
+      setWebSearch(window.localStorage.getItem("researchgpt-chat-web") !== "false");
+      setUseLibrary(window.localStorage.getItem("researchgpt-chat-library") === "true");
+      setMemory(window.localStorage.getItem("researchgpt-chat-memory") ?? "");
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   const handleModelTierChange = useCallback((tier: ChatModelTier) => {
     setModelTier(tier);
     window.localStorage.setItem("researchgpt-chat-model-tier", tier);
+  }, []);
+
+  const handleWebSearchChange = useCallback((enabled: boolean) => {
+    setWebSearch(enabled);
+    window.localStorage.setItem("researchgpt-chat-web", String(enabled));
+  }, []);
+
+  const handleUseLibraryChange = useCallback((enabled: boolean) => {
+    setUseLibrary(enabled);
+    window.localStorage.setItem("researchgpt-chat-library", String(enabled));
+  }, []);
+
+  const handleMemoryChange = useCallback((value: string) => {
+    setMemory(value);
+    window.localStorage.setItem("researchgpt-chat-memory", value);
   }, []);
 
   const {
@@ -144,8 +171,8 @@ export function ChatShell() {
     abortControllerRef.current?.abort();
   }, []);
 
-  const handleSend = useCallback(
-    async (payload: ChatSendPayload) => {
+  const submitMessage = useCallback(
+    async (payload: ChatSendPayload, history: DisplayChatMessage[] = activeMessages) => {
       abortControllerRef.current?.abort();
 
       const displayUserMessage = toDisplayUserMessage(payload);
@@ -155,7 +182,7 @@ export function ChatShell() {
       };
 
       const nextMessages: DisplayChatMessage[] = [
-        ...activeMessages,
+        ...history,
         displayUserMessage,
         assistantMessage,
       ];
@@ -164,11 +191,12 @@ export function ChatShell() {
       persistConversation(conversationId, nextMessages);
 
       const apiMessages = buildChatApiMessages(
-        activeMessages,
+        history,
         toApiUserMessage(payload),
       );
 
       setError(null);
+      setActivity("正在准备回答");
       setIsStreaming(true);
 
       const abortController = new AbortController();
@@ -181,6 +209,31 @@ export function ChatShell() {
           files: payload.files,
           signal: abortController.signal,
           modelTier,
+          webSearch,
+          useLibrary,
+          memory,
+          onStatus: setActivity,
+          onUsage: (nextUsage) =>
+            setUsage((current) => ({
+              input: current.input + nextUsage.inputTokens,
+              output: current.output + nextUsage.outputTokens,
+              total: current.total + nextUsage.totalTokens,
+            })),
+          onAttachmentsPrepared: (context) => {
+            streamingMessages = streamingMessages.map((message, index) => {
+              if (index !== history.length || message.role !== "user") {
+                return message;
+              }
+              return {
+                ...message,
+                attachments: message.attachments?.map((attachment) => ({
+                  ...attachment,
+                  context,
+                })),
+              };
+            });
+            persistConversation(conversationId, streamingMessages);
+          },
           onChunk: (chunk) => {
             streamingMessages = streamingMessages.map((message, index) => {
               if (
@@ -220,6 +273,7 @@ export function ChatShell() {
         setError(message);
       } finally {
         setIsStreaming(false);
+        setActivity(null);
         abortControllerRef.current = null;
         await flushCloudSync();
       }
@@ -230,7 +284,38 @@ export function ChatShell() {
       persistConversation,
       flushCloudSync,
       modelTier,
+      webSearch,
+      useLibrary,
+      memory,
     ],
+  );
+
+  const handleSend = useCallback(
+    (payload: ChatSendPayload) => submitMessage(payload),
+    [submitMessage],
+  );
+
+  const handleEditMessage = useCallback(
+    (index: number) => {
+      const message = activeMessages[index];
+      if (!message || message.role !== "user") return;
+      const edited = window.prompt("编辑消息", message.content);
+      if (!edited?.trim()) return;
+      void submitMessage({ message: edited.trim() }, activeMessages.slice(0, index));
+    },
+    [activeMessages, submitMessage],
+  );
+
+  const handleRetryMessage = useCallback(
+    (index: number) => {
+      const userMessage = activeMessages[index - 1];
+      if (!userMessage || userMessage.role !== "user") return;
+      void submitMessage(
+        { message: userMessage.content },
+        activeMessages.slice(0, index - 1),
+      );
+    },
+    [activeMessages, submitMessage],
   );
 
   const hasMessages = activeMessages.length > 0;
@@ -285,6 +370,9 @@ export function ChatShell() {
                 chatTitle={chatTitle}
                 isStreaming={isStreaming}
                 error={error}
+                activity={activity}
+                onEditMessage={handleEditMessage}
+                onRetryMessage={handleRetryMessage}
               />
             </div>
           ) : (
@@ -309,7 +397,18 @@ export function ChatShell() {
             isStreaming={isStreaming}
             modelTier={modelTier}
             onModelTierChange={handleModelTierChange}
+            webSearch={webSearch}
+            useLibrary={useLibrary}
+            onWebSearchChange={handleWebSearchChange}
+            onUseLibraryChange={handleUseLibraryChange}
+            memory={memory}
+            onMemoryChange={handleMemoryChange}
           />
+          {usage.total > 0 && (
+            <div className="pointer-events-none absolute bottom-1 left-1/2 z-20 -translate-x-1/2 text-[10px] text-gray-400">
+              本次会话约 {usage.total.toLocaleString()} tokens
+            </div>
+          )}
         </main>
       </div>
     </div>

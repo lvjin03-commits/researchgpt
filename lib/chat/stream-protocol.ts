@@ -1,0 +1,14 @@
+export type ChatStreamEvent =
+  | { type: "status"; message: string }
+  | { type: "text"; delta: string }
+  | { type: "error"; message: string; code?: string }
+  | {
+      type: "usage";
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    };
+
+export function encodeChatStreamEvent(event: ChatStreamEvent): Uint8Array {
+  return new TextEncoder().encode(`${JSON.stringify(event)}\n`);
+}

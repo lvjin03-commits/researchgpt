@@ -2,12 +2,42 @@ import { MessageExportMenu } from "@/components/message-export-menu";
 import type { DisplayChatMessage } from "@/lib/chat/types";
 import { DocumentIcon, ImageIcon } from "@/components/icons";
 
+function renderLinkedText(content: string) {
+  return content.split(/(https?:\/\/[^\s]+)/g).map((part, index) => {
+    if (!part.startsWith("http://") && !part.startsWith("https://")) {
+      return part;
+    }
+    const cleanUrl = part.replace(/[),.;，。；]+$/, "");
+    const suffix = part.slice(cleanUrl.length);
+    return (
+      <span key={`${cleanUrl}-${index}`}>
+        <a
+          href={cleanUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-800"
+        >
+          {cleanUrl}
+        </a>
+        {suffix}
+      </span>
+    );
+  });
+}
+
 type ChatMessageProps = {
   message: DisplayChatMessage;
   chatTitle: string;
+  onEdit?: () => void;
+  onRetry?: () => void;
 };
 
-export function ChatMessageBubble({ message, chatTitle }: ChatMessageProps) {
+export function ChatMessageBubble({
+  message,
+  chatTitle,
+  onEdit,
+  onRetry,
+}: ChatMessageProps) {
   const isUser = message.role === "user";
   const canExport =
     message.role === "assistant" && message.content.trim().length > 0;
@@ -48,12 +78,34 @@ export function ChatMessageBubble({ message, chatTitle }: ChatMessageProps) {
           )}
 
           {message.content && (
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            <p className="whitespace-pre-wrap break-words">
+              {renderLinkedText(message.content)}
+            </p>
           )}
         </div>
 
         {canExport && (
-          <MessageExportMenu content={message.content} chatTitle={chatTitle} />
+          <div className="flex items-center gap-2">
+            <MessageExportMenu content={message.content} chatTitle={chatTitle} />
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="text-xs font-semibold text-gray-500 hover:text-gray-900"
+              >
+                重新生成
+              </button>
+            )}
+          </div>
+        )}
+        {isUser && onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="mt-1 self-end text-xs font-semibold text-gray-400 hover:text-gray-700"
+          >
+            编辑
+          </button>
         )}
       </div>
     </div>

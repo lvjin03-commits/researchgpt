@@ -1,9 +1,6 @@
-import {
-  AIProviderError,
-  createConnectedChatStream,
-  validateChatMessages,
-} from "@/lib/ai/provider";
-import type { ChatMessage, MessageContent } from "@/lib/ai/types";
+import { validateChatMessages } from "@/lib/ai/provider";
+import { openResponsesChatStream } from "@/lib/ai/openai";
+import type { ChatMessage } from "@/lib/ai/types";
 import {
   DEFAULT_CHAT_MODEL_TIER,
   getChatModelOption,
@@ -16,95 +13,130 @@ import {
   requireChatUser,
   toChatApiErrorResponse,
 } from "@/lib/chat/server/errors";
+import { buildLiteratureLibraryContext } from "@/lib/chat/server/library-context";
+import { encodeChatStreamEvent } from "@/lib/chat/stream-protocol";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 type ChatRequestBody = {
   messages?: unknown;
   modelTier?: unknown;
+  webSearch?: unknown;
+  useLibrary?: unknown;
+  memory?: unknown;
 };
-
-function summarizeContentForDebug(content: MessageContent): unknown {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  return content.map((part) => {
-    if (part.type === "text") {
-      return { type: "text", text: part.text };
-    }
-
-    const url = part.image_url.url;
-    const preview =
-      url.length > 80 ? `${url.slice(0, 80)}… (${url.length} chars)` : url;
-
-    return {
-      type: "image_url",
-      image_url: { url: preview, detail: part.image_url.detail },
-    };
-  });
-}
-
-function summarizeMessagesForDebug(messages: unknown): unknown {
-  if (!Array.isArray(messages)) {
-    return messages;
-  }
-
-  return messages.map((message) => {
-    if (typeof message !== "object" || message === null) {
-      return message;
-    }
-
-    const record = message as Record<string, unknown>;
-    return {
-      role: record.role,
-      content: summarizeContentForDebug(record.content as MessageContent),
-    };
-  });
-}
 
 export async function POST(request: Request) {
   try {
-    await requireChatUser();
-
+    const user = await requireChatUser();
     const body = (await request.json()) as ChatRequestBody;
     const modelTier = isChatModelTier(body.modelTier)
       ? body.modelTier
       : DEFAULT_CHAT_MODEL_TIER;
     const modelOption = getChatModelOption(modelTier);
-
-    console.log(
-      "[api/chat] before sanitize:",
-      JSON.stringify(summarizeMessagesForDebug(body.messages)),
-    );
-
+    const webSearch = body.webSearch === true;
+    const useLibrary = body.useLibrary === true;
+    const memory =
+      typeof body.memory === "string" ? body.memory.trim().slice(0, 2000) : "";
     const sanitized = sanitizeIncomingChatMessages(body.messages);
 
-    console.log(
-      "[api/chat] after sanitize:",
-      JSON.stringify(summarizeMessagesForDebug(sanitized)),
-    );
-
-    const messages = withModelIdentity(
+    let messages = withModelIdentity(
       withExportGuidance(validateChatMessages(sanitized as ChatMessage[])),
       modelOption.model,
     );
 
-    console.log(
-      "[api/chat] before OpenAI call:",
-      JSON.stringify(summarizeMessagesForDebug(messages)),
-    );
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === "user");
+    const query =
+      typeof lastUserMessage?.content === "string"
+        ? lastUserMessage.content
+        : lastUserMessage?.content
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n") ?? "";
 
-    const stream = await createConnectedChatStream({
-      messages,
-      signal: request.signal,
+    let libraryStatus = "";
+    if (useLibrary) {
+      const supabase = await createClient();
+      const library = await buildLiteratureLibraryContext(supabase, user.id, query);
+      libraryStatus = `已从文献库匹配 ${library.paperCount} 篇相关文献`;
+      messages = [
+        {
+          role: "system",
+          content: [
+            "回答时优先使用以下用户文献库证据。必须区分PDF全文与摘要证据。",
+            "引用文献库内容时使用格式：[文献题目，文献ID]。不要编造页码。",
+            library.context || "没有匹配到相关文献。",
+          ].join("\n\n"),
+        },
+        ...messages,
+      ];
+    }
+
+    if (memory) {
+      messages = [
+        {
+          role: "system",
+          content: `用户明确保存的偏好（仅用于调整回答方式，不可视为事实证据）：${memory}`,
+        },
+        ...messages,
+      ];
+    }
+
+    console.log("[api/chat] request", {
       model: modelOption.model,
-      reasoningEffort: modelOption.reasoningEffort,
+      messageCount: messages.length,
+      webSearch,
+      useLibrary,
+    });
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          if (useLibrary) {
+            controller.enqueue(
+              encodeChatStreamEvent({ type: "status", message: libraryStatus }),
+            );
+          }
+          controller.enqueue(
+            encodeChatStreamEvent({
+              type: "status",
+              message: webSearch
+                ? "正在判断是否需要联网检索"
+                : "正在分析问题",
+            }),
+          );
+
+          for await (const event of openResponsesChatStream({
+            messages,
+            signal: request.signal,
+            model: modelOption.model,
+            reasoningEffort: modelOption.reasoningEffort,
+            webSearch,
+            maxOutputTokens: modelOption.maxOutputTokens,
+          })) {
+            controller.enqueue(encodeChatStreamEvent(event));
+          }
+          controller.close();
+        } catch (error) {
+          const mapped = toChatApiErrorResponse(error);
+          controller.enqueue(
+            encodeChatStreamEvent({
+              type: "error",
+              message: mapped.body.error,
+              code: mapped.body.code,
+            }),
+          );
+          controller.close();
+        }
+      },
     });
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Type": "application/x-ndjson; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
         "X-Content-Type-Options": "nosniff",

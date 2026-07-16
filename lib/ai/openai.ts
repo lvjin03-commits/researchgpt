@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { AIProviderError } from "@/lib/ai/errors";
 import type { AIProviderAdapter, ChatMessage, StreamChatOptions } from "@/lib/ai/types";
 import { messagesIncludeImages } from "@/lib/ai/types";
+import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
 
 const DEFAULT_TEXT_MODEL = "gpt-4o-mini";
 const DEFAULT_VISION_MODEL = "gpt-4.1-mini";
@@ -19,6 +20,106 @@ function getClient(): OpenAI {
   }
 
   return new OpenAI({ apiKey });
+}
+
+export type ResponsesChatOptions = StreamChatOptions & {
+  webSearch?: boolean;
+  maxOutputTokens?: number;
+};
+
+export async function* openResponsesChatStream({
+  messages,
+  signal,
+  model: requestedModel,
+  reasoningEffort,
+  webSearch = false,
+  maxOutputTokens = 4000,
+}: ResponsesChatOptions): AsyncGenerator<ChatStreamEvent> {
+  const client = getClient();
+  const model = requestedModel || getModelForMessages(messages);
+  const instructions = messages
+    .filter((message) => message.role === "system")
+    .map((message) =>
+      typeof message.content === "string"
+        ? message.content
+        : message.content
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n"),
+    )
+    .join("\n\n");
+  const input = messages
+    .filter((message) => message.role !== "system")
+    .map((message) => ({
+      role: message.role,
+      content:
+        typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) =>
+              part.type === "text"
+                ? { type: "input_text" as const, text: part.text }
+                : {
+                    type: "input_image" as const,
+                    image_url: part.image_url.url,
+                    detail: part.image_url.detail ?? "auto",
+                  },
+            ),
+    }));
+
+  try {
+    const stream = await client.responses.create(
+      {
+        model,
+        instructions,
+        input,
+        stream: true,
+        max_output_tokens: maxOutputTokens,
+        reasoning: { effort: reasoningEffort ?? "none" },
+        ...(webSearch ? { tools: [{ type: "web_search" as const }] } : {}),
+      },
+      { signal },
+    );
+
+    for await (const event of stream) {
+      if (event.type === "response.output_text.delta") {
+        yield { type: "text", delta: event.delta };
+      } else if (event.type === "response.web_search_call.searching") {
+        yield { type: "status", message: "正在搜索网络并核对来源" };
+      } else if (event.type === "response.web_search_call.completed") {
+        yield { type: "status", message: "网络检索完成，正在组织回答" };
+      } else if (event.type === "response.completed") {
+        const citedUrls = new Map<string, string>();
+        for (const item of event.response.output) {
+          if (item.type !== "message") continue;
+          for (const content of item.content) {
+            if (content.type !== "output_text") continue;
+            for (const annotation of content.annotations) {
+              if (annotation.type === "url_citation") {
+                citedUrls.set(annotation.url, annotation.title);
+              }
+            }
+          }
+        }
+        if (citedUrls.size > 0) {
+          const sources = Array.from(citedUrls.entries())
+            .map(([url, title], index) => `${index + 1}. ${title}\n${url}`)
+            .join("\n");
+          yield { type: "text", delta: `\n\n来源\n${sources}` };
+        }
+        const usage = event.response.usage;
+        if (usage) {
+          yield {
+            type: "usage",
+            inputTokens: usage.input_tokens,
+            outputTokens: usage.output_tokens,
+            totalTokens: usage.total_tokens,
+          };
+        }
+      }
+    }
+  } catch (error) {
+    throw toProviderError(error);
+  }
 }
 
 function getTextModel(): string {
