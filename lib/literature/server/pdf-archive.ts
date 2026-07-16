@@ -261,6 +261,35 @@ export async function archiveUploadedLiteraturePaperPdf(
   );
 }
 
+export async function registerUploadedLiteraturePaperPdf(
+  supabase: SupabaseClient,
+  userId: string,
+  paper: LiteraturePaper,
+  input: { storagePath: string; fileName: string; fileSize: number },
+): Promise<LiteraturePaper> {
+  if (!input.storagePath.startsWith(`${userId}/`)) {
+    throw new LiteratureError("Invalid PDF storage path.", 403);
+  }
+  if (!input.storagePath.toLowerCase().endsWith(".pdf")) {
+    throw new LiteratureError("Uploaded file must be a PDF.", 415);
+  }
+  if (!Number.isFinite(input.fileSize) || input.fileSize <= 0 || input.fileSize > MAX_PDF_BYTES) {
+    throw new LiteratureError("PDF size is invalid or exceeds 50 MB.", 413);
+  }
+
+  return updateLiteraturePaperPdfArchive(supabase, userId, paper.id, {
+    pdfStoragePath: input.storagePath,
+    pdfFileName: input.fileName,
+    pdfFileSize: input.fileSize,
+    pdfDownloadStatus: "stored",
+    pdfDownloadError: null,
+    fullText: null,
+    fullTextExtractedAt: null,
+    figureEvidence: [],
+    figureEvidenceExtractedAt: null,
+  });
+}
+
 export async function archiveLiteraturePaperPdf(
   supabase: SupabaseClient,
   userId: string,

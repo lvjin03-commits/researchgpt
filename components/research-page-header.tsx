@@ -21,6 +21,7 @@ const PRIMARY_NAV = [
 const LITERATURE_NAV = [
   { href: "/literature", label: "搜索与追踪" },
   { href: "/literature/library", label: "文献库" },
+  { href: "/literature/reading", label: "单篇精读" },
   { href: "/literature/review", label: "文献分析" },
 ] as const;
 
@@ -90,6 +91,9 @@ export function ResearchPageHeader({
                   : item.href === "/literature/review"
                     ? isExactOrChild(pathname, item.href) ||
                       /^\/literature\/papers\/[^/]+\/reading(?:\/|$)/.test(pathname)
+                    : item.href === "/literature/reading"
+                      ? isExactOrChild(pathname, item.href) ||
+                        /^\/literature\/papers\/[^/]+\/reading(?:\/|$)/.test(pathname)
                     : isExactOrChild(pathname, item.href);
               return (
                 <Link

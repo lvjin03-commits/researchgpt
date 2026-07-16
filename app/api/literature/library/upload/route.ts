@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { LiteratureError } from "@/lib/literature/errors";
 import { parseExtensionFolderIds } from "@/lib/literature/server/extension-paper";
 import { setPaperFolderIds } from "@/lib/literature/server/folder-repository";
-import { archiveUploadedLiteraturePaperPdf } from "@/lib/literature/server/pdf-archive";
+import { registerUploadedLiteraturePaperPdf } from "@/lib/literature/server/pdf-archive";
 import {
   deleteLiteraturePaper,
   stripLiteraturePaperFullTextForResponse,
@@ -13,59 +13,59 @@ import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import type { ArxivPaperDraft } from "@/lib/literature/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
-function parseJsonField(value: FormDataEntryValue | null): unknown {
-  if (typeof value !== "string") {
-    return null;
-  }
+type DirectUploadPayload = {
+  folderIds?: unknown;
+  storagePath?: unknown;
+  fileName?: unknown;
+  fileSize?: unknown;
+  lastModified?: unknown;
+};
 
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-function assertPdfFile(value: FormDataEntryValue | null): File {
-  if (!(value instanceof File)) {
-    throw new LiteratureError("Please upload a PDF file.", 400);
-  }
-
-  if (value.size <= 0) {
-    throw new LiteratureError("Uploaded PDF is empty.", 422);
-  }
-
-  const name = value.name.toLowerCase();
-  const type = value.type.toLowerCase();
-  if (!name.endsWith(".pdf") && !type.includes("pdf")) {
-    throw new LiteratureError("Uploaded file must be a PDF.", 415);
-  }
-
-  return value;
+function cleanString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function titleFromFileName(fileName: string): string {
-  return (
-    fileName
-      .replace(/\.pdf$/i, "")
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim() || "Untitled PDF"
-  );
+  return fileName.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || "Untitled PDF";
 }
 
-function buildLocalUploadDraft(file: File): ArxivPaperDraft {
-  const title = titleFromFileName(file.name);
+function parsePayload(raw: DirectUploadPayload, userId: string) {
+  const storagePath = cleanString(raw.storagePath);
+  const fileName = cleanString(raw.fileName);
+  const fileSize = Number(raw.fileSize);
+  const lastModified = Number(raw.lastModified);
+
+  if (!storagePath.startsWith(`${userId}/`) || !storagePath.toLowerCase().endsWith(".pdf")) {
+    throw new LiteratureError("Invalid PDF storage path.", 403);
+  }
+  if (!fileName.toLowerCase().endsWith(".pdf")) {
+    throw new LiteratureError("Uploaded file must be a PDF.", 415);
+  }
+  if (!Number.isFinite(fileSize) || fileSize <= 0 || fileSize > 50 * 1024 * 1024) {
+    throw new LiteratureError("PDF size is invalid or exceeds 50 MB.", 413);
+  }
+
+  return {
+    folderIds: parseExtensionFolderIds(raw.folderIds),
+    storagePath,
+    fileName,
+    fileSize,
+    lastModified: Number.isFinite(lastModified) ? lastModified : 0,
+  };
+}
+
+function buildDraft(input: ReturnType<typeof parsePayload>): ArxivPaperDraft {
   const digest = createHash("sha1")
-    .update(`${file.name}:${file.size}:${file.lastModified}`)
+    .update(`${input.fileName}:${input.fileSize}:${input.lastModified}`)
     .digest("hex")
     .slice(0, 16);
   const localUrl = `local-pdf:${digest}`;
 
   return {
     arxivId: localUrl,
-    title,
+    title: titleFromFileName(input.fileName),
     abstract: "Local PDF uploaded to the literature library.",
     authors: [],
     publishedAt: null,
@@ -78,68 +78,54 @@ function buildLocalUploadDraft(file: File): ArxivPaperDraft {
 }
 
 export async function POST(request: Request) {
+  let uploadedPath = "";
+  let savedPaperId = "";
+
   try {
     const { supabase, user } = await requireLiteratureUser();
-    const formData = await request.formData();
-    const file = assertPdfFile(formData.get("file"));
-    const folderIds = parseExtensionFolderIds(parseJsonField(formData.get("folderIds")));
-    const draft = buildLocalUploadDraft(file);
+    const raw = (await request.json()) as DirectUploadPayload;
+    const input = parsePayload(raw, user.id);
+    uploadedPath = input.storagePath;
+    const draft = buildDraft(input);
 
-    const upserted = await upsertAnalyzedPapers(
-      supabase,
-      user.id,
-      [draft],
-      new Map(),
-    );
-    const savedDraftPaper = upserted.papers.find(
-      (item) => item.arxivId === draft.arxivId,
-    );
-
-    if (!savedDraftPaper) {
-      throw new LiteratureError("Uploaded paper could not be saved.", 500);
+    const pathParts = input.storagePath.split("/");
+    const storedFileName = pathParts.pop() ?? "";
+    const storedFolder = pathParts.join("/");
+    const { data: storedFiles, error: storageError } = await supabase.storage
+      .from("literature-pdfs")
+      .list(storedFolder, { limit: 10, search: storedFileName });
+    const stored = storedFiles?.some((item) => item.name === storedFileName);
+    if (storageError || !stored) {
+      throw new LiteratureError("PDF 上传未完成，请重新选择文件上传。", 422);
     }
 
-    try {
-      let paper = await updateLiteraturePaperStatus(
-        supabase,
-        user.id,
-        savedDraftPaper.id,
-        "saved",
-      );
-      paper = await archiveUploadedLiteraturePaperPdf(
-        supabase,
-        user.id,
-        paper,
-        file,
-      );
+    const upserted = await upsertAnalyzedPapers(supabase, user.id, [draft], new Map());
+    const saved = upserted.papers.find((item) => item.arxivId === draft.arxivId);
+    if (!saved) throw new LiteratureError("Uploaded paper could not be saved.", 500);
+    savedPaperId = saved.id;
 
-      const assignedFolderIds = await setPaperFolderIds(
-        supabase,
-        user.id,
-        paper.id,
-        folderIds,
-      );
+    let paper = await updateLiteraturePaperStatus(supabase, user.id, saved.id, "saved");
+    paper = await registerUploadedLiteraturePaperPdf(supabase, user.id, paper, input);
+    const folderIds = await setPaperFolderIds(supabase, user.id, paper.id, input.folderIds);
 
-      return Response.json({
-        paper: stripLiteraturePaperFullTextForResponse({
-          ...paper,
-          folderIds: assignedFolderIds,
-        }),
-      });
-    } catch (error) {
-      await deleteLiteraturePaper(supabase, user.id, savedDraftPaper.id).catch(
-        (cleanupError) => {
-          console.warn("[literature] failed to clean up local PDF save:", cleanupError);
-        },
-      );
-      throw error;
-    }
+    return Response.json({
+      paper: stripLiteraturePaperFullTextForResponse({ ...paper, folderIds }),
+    });
   } catch (error) {
+    try {
+      const { supabase, user } = await requireLiteratureUser();
+      if (uploadedPath.startsWith(`${user.id}/`)) {
+        await supabase.storage.from("literature-pdfs").remove([uploadedPath]);
+      }
+      if (savedPaperId) await deleteLiteraturePaper(supabase, user.id, savedPaperId);
+    } catch (cleanupError) {
+      console.warn("[literature] failed to clean up direct PDF upload:", cleanupError);
+    }
+
     if (error instanceof LiteratureError) {
       return Response.json({ error: error.message }, { status: error.statusCode });
     }
-
-    console.error("[literature] local library PDF upload failed:", error);
-    return Response.json({ error: "Failed to upload PDF." }, { status: 500 });
+    console.error("[literature] direct local PDF upload failed:", error);
+    return Response.json({ error: "Failed to register uploaded PDF." }, { status: 500 });
   }
 }
