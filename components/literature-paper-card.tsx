@@ -251,6 +251,12 @@ export function LiteraturePaperCard({
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Link
+              href={`/literature/papers/${paper.id}/reading`}
+              className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-gray-800"
+            >
+              AI精读
+            </Link>
+            <Link
               href={`/literature/papers/${paper.id}`}
               className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
             >

@@ -87,7 +87,10 @@ export function ResearchPageHeader({
               const active =
                 item.href === "/literature"
                   ? pathname === item.href
-                  : isExactOrChild(pathname, item.href);
+                  : item.href === "/literature/review"
+                    ? isExactOrChild(pathname, item.href) ||
+                      /^\/literature\/papers\/[^/]+\/reading(?:\/|$)/.test(pathname)
+                    : isExactOrChild(pathname, item.href);
               return (
                 <Link
                   key={item.href}

@@ -117,6 +117,13 @@ export function deriveWorkspaceAnalysisFromPaper(
     whyItMatters:
       paper.recommendationReason ||
       "本文可能与你的文献追踪研究方向相关。",
+    coreHypothesis: "摘要信息不足以可靠识别核心假设，请使用 PDF 全文精读。",
+    technicalRoute: [],
+    keyExperiments: [],
+    evidenceItems: [],
+    innovations: contributions ? [contributions] : [],
+    futureDirections: [],
+    visualizationPlans: [],
     readingGuide: defaultReadingGuide(paper),
     researchValue: inferResearchValue(paper),
     generatedAt: new Date().toISOString(),

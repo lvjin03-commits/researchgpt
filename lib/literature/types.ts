@@ -39,6 +39,64 @@ export type PaperResearchValue = {
   readingPriority: number;
 };
 
+export type PaperEvidenceStrength = "high" | "medium" | "low";
+
+export type PaperEvidenceItem = {
+  id: string;
+  claim: string;
+  sourceType: "figure" | "table" | "text";
+  sourceRef: string;
+  page: number | null;
+  evidence: string;
+  interpretation: string;
+  limitation: string;
+  strength: PaperEvidenceStrength;
+};
+
+export type PaperKeyExperiment = {
+  title: string;
+  purpose: string;
+  design: string;
+  variables: string;
+  conditions: string;
+  result: string;
+  evidenceRefs: string[];
+};
+
+export type PaperChartDataPoint = {
+  label: string;
+  value: number;
+  unit: string;
+  series: string;
+};
+
+export type PaperVisualizationPlan = {
+  id: string;
+  title: string;
+  chartType:
+    | "bar"
+    | "line"
+    | "scatter"
+    | "heatmap"
+    | "pie"
+    | "stacked_bar"
+    | "process"
+    | "timeline"
+    | "mechanism"
+    | "evidence_card";
+  purpose: string;
+  takeaway: string;
+  sourceRefs: string[];
+  dataStatus:
+    | "exact"
+    | "table_extractable"
+    | "figure_only"
+    | "conceptual"
+    | "insufficient";
+  dataPoints: PaperChartDataPoint[];
+  caution: string;
+};
+
 export type PaperWorkspaceAnalysis = {
   oneSentenceSummary: string;
   researchProblem: string;
@@ -47,6 +105,13 @@ export type PaperWorkspaceAnalysis = {
   experimentalResults: string;
   limitations: string;
   whyItMatters: string;
+  coreHypothesis?: string;
+  technicalRoute?: string[];
+  keyExperiments?: PaperKeyExperiment[];
+  evidenceItems?: PaperEvidenceItem[];
+  innovations?: string[];
+  futureDirections?: string[];
+  visualizationPlans?: PaperVisualizationPlan[];
   readingGuide: PaperReadingGuide;
   researchValue: PaperResearchValue;
   generatedAt: string;
