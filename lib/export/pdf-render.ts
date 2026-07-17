@@ -1,6 +1,7 @@
 // Server-only module. Do not import from client components or /api/chat route entry.
 
 import PDFDocument from "pdfkit";
+import path from "node:path";
 import {
   inlineSpansToPlainText,
   parseMarkdownBlocks,
@@ -10,8 +11,27 @@ import {
 
 const PAGE_MARGIN = 54;
 const CONTENT_WIDTH = 612 - PAGE_MARGIN * 2;
+const FONT_REGULAR = "NotoSansCJKsc";
+const FONT_BOLD = "NotoSansCJKsc-Bold";
+const FONT_REGULAR_PATH = path.join(
+  process.cwd(),
+  "public",
+  "fonts",
+  "NotoSansCJKsc-Regular.otf",
+);
+const FONT_BOLD_PATH = path.join(
+  process.cwd(),
+  "public",
+  "fonts",
+  "NotoSansCJKsc-Bold.otf",
+);
 
 type PdfDoc = InstanceType<typeof PDFDocument>;
+
+function registerPdfFonts(doc: PdfDoc): void {
+  doc.registerFont(FONT_REGULAR, FONT_REGULAR_PATH);
+  doc.registerFont(FONT_BOLD, FONT_BOLD_PATH);
+}
 
 function appendPlainText(
   doc: PdfDoc,
@@ -21,13 +41,7 @@ function appendPlainText(
   const fontSize = options.fontSize ?? 11;
 
   doc
-    .font(
-      options.monospace
-        ? "Courier"
-        : options.bold
-          ? "Helvetica-Bold"
-          : "Helvetica",
-    )
+    .font(options.bold ? FONT_BOLD : FONT_REGULAR)
     .fontSize(fontSize)
     .text(text, {
       width: CONTENT_WIDTH,
@@ -57,7 +71,7 @@ function renderBlock(doc: PdfDoc, block: MarkdownBlock): void {
       break;
     case "bullet":
       for (const item of block.items) {
-        appendPlainText(doc, `• ${inlineSpansToPlainText(item)}`);
+        appendPlainText(doc, `- ${inlineSpansToPlainText(item)}`);
         doc.moveDown(0.25);
       }
       doc.moveDown(0.35);
@@ -104,6 +118,7 @@ export function renderMarkdownToPdfBuffer(content: string): Promise<Buffer> {
     });
     doc.on("error", reject);
 
+    registerPdfFonts(doc);
     const blocks = parseMarkdownBlocks(content);
 
     if (blocks.length === 0) {
