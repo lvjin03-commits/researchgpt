@@ -10,6 +10,7 @@ import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
 import { withResponseStyle } from "@/lib/chat/response-style";
+import { routeChatTask } from "@/lib/chat/task-router";
 import {
   requireChatUser,
   toChatApiErrorResponse,
@@ -59,6 +60,12 @@ export async function POST(request: Request) {
             .filter((part) => part.type === "text")
             .map((part) => part.text)
             .join("\n") ?? "";
+    const taskRoute = routeChatTask(messages);
+    const effectiveWebSearch = webSearch || taskRoute.autoWebSearch;
+    messages = [
+      { role: "system", content: taskRoute.systemInstruction },
+      ...messages,
+    ];
 
     let libraryStatus = "";
     if (useLibrary) {
@@ -91,8 +98,9 @@ export async function POST(request: Request) {
     console.log("[api/chat] request", {
       model: modelOption.model,
       messageCount: messages.length,
-      webSearch,
+      webSearch: effectiveWebSearch,
       useLibrary,
+      task: taskRoute.kind,
     });
 
     const stream = new ReadableStream<Uint8Array>({
@@ -106,9 +114,7 @@ export async function POST(request: Request) {
           controller.enqueue(
             encodeChatStreamEvent({
               type: "status",
-              message: webSearch
-                ? "正在判断是否需要联网检索"
-                : "正在分析问题",
+              message: taskRoute.status,
             }),
           );
 
@@ -117,7 +123,8 @@ export async function POST(request: Request) {
             signal: request.signal,
             model: modelOption.model,
             reasoningEffort: modelOption.reasoningEffort,
-            webSearch,
+            webSearch: effectiveWebSearch,
+            codeInterpreter: taskRoute.useCodeInterpreter,
             maxOutputTokens: modelOption.maxOutputTokens,
           })) {
             controller.enqueue(encodeChatStreamEvent(event));

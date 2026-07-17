@@ -40,8 +40,14 @@ function toAttachmentsErrorResponse(
     return {
       status: error.statusCode,
       body: {
-        error: "Attachment parsing failed",
-        details: error.details,
+        error: `无法读取文件“${error.fileName}”`,
+        details: [
+          error.details,
+          error.fileType === "application/pdf" ||
+          error.fileName.toLowerCase().endsWith(".pdf")
+            ? "请确认 PDF 未加密且包含可提取文字；扫描版 PDF 请先执行 OCR。"
+            : "请确认文件未损坏，或另存为受支持的标准格式后重试。",
+        ].join(" "),
         fileName: error.fileName,
         fileType: error.fileType,
         stage: error.stage,
@@ -112,7 +118,8 @@ export async function POST(request: Request) {
     }
 
     const files = await downloadChatAttachments(storageAttachments, user.id);
-    const preparedMessages = await prepareChatMessages(parsed.messages, files);
+    const prepared = await prepareChatMessages(parsed.messages, files);
+    const preparedMessages = prepared.messages;
 
     await deleteChatAttachments(storageAttachments, user.id);
 
@@ -124,6 +131,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       messages: preparedMessages,
+      fileResults: prepared.fileResults,
       attachmentContext: preparedUserMessage
         ? getTextFromMessageContent(preparedUserMessage.content).slice(0, 30000)
         : "",

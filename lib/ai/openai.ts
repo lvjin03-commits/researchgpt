@@ -24,6 +24,7 @@ function getClient(): OpenAI {
 
 export type ResponsesChatOptions = StreamChatOptions & {
   webSearch?: boolean;
+  codeInterpreter?: boolean;
   maxOutputTokens?: number;
 };
 
@@ -33,6 +34,7 @@ export async function* openResponsesChatStream({
   model: requestedModel,
   reasoningEffort,
   webSearch = false,
+  codeInterpreter = false,
   maxOutputTokens = 4000,
 }: ResponsesChatOptions): AsyncGenerator<ChatStreamEvent> {
   const client = getClient();
@@ -67,6 +69,17 @@ export async function* openResponsesChatStream({
     }));
 
   try {
+    const tools: OpenAI.Responses.Tool[] = [];
+    if (webSearch) {
+      tools.push({ type: "web_search" });
+    }
+    if (codeInterpreter) {
+      tools.push({
+        type: "code_interpreter",
+        container: { type: "auto" },
+      });
+    }
+
     const stream = await client.responses.create(
       {
         model,
@@ -75,7 +88,7 @@ export async function* openResponsesChatStream({
         stream: true,
         max_output_tokens: maxOutputTokens,
         reasoning: { effort: reasoningEffort ?? "none" },
-        ...(webSearch ? { tools: [{ type: "web_search" as const }] } : {}),
+        ...(tools.length > 0 ? { tools } : {}),
       },
       { signal },
     );
@@ -87,6 +100,13 @@ export async function* openResponsesChatStream({
         yield { type: "status", message: "正在搜索网络并核对来源" };
       } else if (event.type === "response.web_search_call.completed") {
         yield { type: "status", message: "网络检索完成，正在组织回答" };
+      } else if (
+        event.type === "response.code_interpreter_call.in_progress" ||
+        event.type === "response.code_interpreter_call.interpreting"
+      ) {
+        yield { type: "status", message: "正在执行数据计算并核对结果" };
+      } else if (event.type === "response.code_interpreter_call.completed") {
+        yield { type: "status", message: "数据计算完成，正在生成结论和图表" };
       } else if (event.type === "response.completed") {
         const citedUrls = new Map<string, string>();
         for (const item of event.response.output) {
@@ -101,10 +121,13 @@ export async function* openResponsesChatStream({
           }
         }
         if (citedUrls.size > 0) {
-          const sources = Array.from(citedUrls.entries())
-            .map(([url, title], index) => `${index + 1}. ${title}\n${url}`)
-            .join("\n");
-          yield { type: "text", delta: `\n\n来源\n${sources}` };
+          yield {
+            type: "sources",
+            sources: Array.from(citedUrls.entries()).map(([url, title]) => ({
+              title: title || new URL(url).hostname,
+              url,
+            })),
+          };
         }
         const usage = event.response.usage;
         if (usage) {

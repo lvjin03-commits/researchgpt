@@ -220,6 +220,30 @@ export function ChatShell() {
               output: current.output + nextUsage.outputTokens,
               total: current.total + nextUsage.totalTokens,
             })),
+          onSources: (sources) => {
+            if (sources.length === 0) return;
+            const sourceSection = [
+              "",
+              "",
+              "### 来源",
+              ...sources.map(
+                (source, index) =>
+                  `${index + 1}. [${source.title.replaceAll("[", "").replaceAll("]", "")}](${source.url})`,
+              ),
+            ].join("\n");
+
+            streamingMessages = streamingMessages.map((message, index) => {
+              if (
+                index !== streamingMessages.length - 1 ||
+                message.role !== "assistant" ||
+                message.content.includes("### 来源")
+              ) {
+                return message;
+              }
+              return { ...message, content: message.content + sourceSection };
+            });
+            persistConversation(conversationId, streamingMessages);
+          },
           onAttachmentsPrepared: (context) => {
             streamingMessages = streamingMessages.map((message, index) => {
               if (index !== history.length || message.role !== "user") {
@@ -234,6 +258,19 @@ export function ChatShell() {
               };
             });
             persistConversation(conversationId, streamingMessages);
+          },
+          onAttachmentResults: (results) => {
+            const readyCount = results.filter(
+              (result) => result.status === "ready",
+            ).length;
+            const failed = results.filter(
+              (result) => result.status === "failed",
+            );
+            setActivity(
+              failed.length > 0
+                ? `已读取 ${readyCount} 个文件，${failed.length} 个文件解析失败，将继续分析可用文件`
+                : `已成功读取 ${readyCount} 个文件，正在分析内容`,
+            );
           },
           onChunk: (chunk) => {
             streamingMessages = streamingMessages.map((message, index) => {

@@ -33,6 +33,15 @@ type AttachmentErrorPayload = {
   code?: string;
 };
 
+export type AttachmentPreparationResult = {
+  fileName: string;
+  status: "ready" | "failed";
+  kind?: "document" | "image";
+  truncated?: boolean;
+  error?: string;
+  stage?: string;
+};
+
 async function parseApiError(
   response: Response,
   fallback: string,
@@ -74,7 +83,11 @@ async function prepareMessagesWithAttachments(
   messages: ChatMessage[],
   files: File[],
   signal?: AbortSignal,
-): Promise<{ messages: ChatMessage[]; attachmentContext: string }> {
+): Promise<{
+  messages: ChatMessage[];
+  attachmentContext: string;
+  fileResults: AttachmentPreparationResult[];
+}> {
   let storageAttachments: AttachmentStorageMetadata[];
 
   try {
@@ -107,7 +120,11 @@ async function prepareMessagesWithAttachments(
     );
   }
 
-  let payload: { messages?: ChatMessage[]; attachmentContext?: string };
+  let payload: {
+    messages?: ChatMessage[];
+    attachmentContext?: string;
+    fileResults?: AttachmentPreparationResult[];
+  };
 
   try {
     payload = JSON.parse(responseBodyText) as { messages?: ChatMessage[] };
@@ -125,6 +142,7 @@ async function prepareMessagesWithAttachments(
       typeof payload.attachmentContext === "string"
         ? payload.attachmentContext
         : "",
+    fileResults: Array.isArray(payload.fileResults) ? payload.fileResults : [],
   };
 }
 
@@ -140,7 +158,11 @@ export async function streamChatResponse(
     onChunk: (chunk: string) => void;
     onStatus?: (message: string) => void;
     onUsage?: (usage: Extract<ChatStreamEvent, { type: "usage" }>) => void;
+    onSources?: (
+      sources: Extract<ChatStreamEvent, { type: "sources" }>["sources"],
+    ) => void;
     onAttachmentsPrepared?: (context: string) => void;
+    onAttachmentResults?: (results: AttachmentPreparationResult[]) => void;
   },
 ): Promise<void> {
   const hasFiles = Boolean(options.files && options.files.length > 0);
@@ -151,10 +173,13 @@ export async function streamChatResponse(
         options.files!,
         options.signal,
       )
-    : { messages, attachmentContext: "" };
+    : { messages, attachmentContext: "", fileResults: [] };
 
   if (prepared.attachmentContext) {
     options.onAttachmentsPrepared?.(prepared.attachmentContext);
+  }
+  if (prepared.fileResults.length > 0) {
+    options.onAttachmentResults?.(prepared.fileResults);
   }
 
   const response = await fetch("/api/chat", {
@@ -201,6 +226,7 @@ export async function streamChatResponse(
         if (event.type === "text") options.onChunk(event.delta);
         if (event.type === "status") options.onStatus?.(event.message);
         if (event.type === "usage") options.onUsage?.(event);
+        if (event.type === "sources") options.onSources?.(event.sources);
         if (event.type === "error") {
           throw new ChatClientError(event.message, 502);
         }

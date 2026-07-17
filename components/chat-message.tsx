@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Check, Copy, RefreshCw } from "lucide-react";
+import { BarChart3, Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MessageExportMenu } from "@/components/message-export-menu";
@@ -14,6 +14,219 @@ type ChatMessageProps = {
   onEdit?: () => void;
   onRetry?: () => void;
 };
+
+type ChartSpec = {
+  type: "bar" | "line";
+  title: string;
+  labels: string[];
+  series: Array<{ name: string; values: number[] }>;
+};
+
+function parseChartSpec(value: string): ChartSpec | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<ChartSpec>;
+    if (
+      (parsed.type !== "bar" && parsed.type !== "line") ||
+      typeof parsed.title !== "string" ||
+      !Array.isArray(parsed.labels) ||
+      !parsed.labels.every((label) => typeof label === "string") ||
+      !Array.isArray(parsed.series) ||
+      parsed.series.length === 0
+    ) {
+      return null;
+    }
+
+    const series = parsed.series.filter(
+      (item): item is { name: string; values: number[] } =>
+        typeof item?.name === "string" &&
+        Array.isArray(item.values) &&
+        item.values.length === parsed.labels!.length &&
+        item.values.every(Number.isFinite),
+    );
+    if (series.length === 0 || parsed.labels.length > 24 || series.length > 4) {
+      return null;
+    }
+
+    return {
+      type: parsed.type,
+      title: parsed.title,
+      labels: parsed.labels,
+      series,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function ChartBlock({ value }: { value: string }) {
+  const chart = parseChartSpec(value);
+  if (!chart) {
+    return <CodeBlock language="chart">{value}</CodeBlock>;
+  }
+
+  const width = 720;
+  const height = 330;
+  const margin = { top: 24, right: 20, bottom: 64, left: 54 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const values = chart.series.flatMap((item) => item.values);
+  const minimum = Math.min(0, ...values);
+  const maximum = Math.max(0, ...values);
+  const range = maximum - minimum || 1;
+  const y = (value: number) =>
+    margin.top + ((maximum - value) / range) * plotHeight;
+  const zeroY = y(0);
+  const colors = ["#2563eb", "#0f766e", "#d97706", "#7c3aed"];
+  const groupWidth = plotWidth / Math.max(chart.labels.length, 1);
+  const barWidth = Math.min(
+    34,
+    (groupWidth * 0.72) / Math.max(chart.series.length, 1),
+  );
+
+  return (
+    <figure className="my-5 overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <figcaption className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-950">
+        <BarChart3 className="h-4 w-4 text-blue-600" />
+        {chart.title}
+      </figcaption>
+      <div className="overflow-x-auto p-3">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="min-w-[620px]"
+          role="img"
+          aria-label={chart.title}
+        >
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const tickValue = maximum - range * ratio;
+            const tickY = margin.top + plotHeight * ratio;
+            return (
+              <g key={ratio}>
+                <line
+                  x1={margin.left}
+                  x2={width - margin.right}
+                  y1={tickY}
+                  y2={tickY}
+                  stroke="#e5e7eb"
+                />
+                <text
+                  x={margin.left - 8}
+                  y={tickY + 4}
+                  textAnchor="end"
+                  fontSize="11"
+                  fill="#6b7280"
+                >
+                  {Number(tickValue.toPrecision(4))}
+                </text>
+              </g>
+            );
+          })}
+          <line
+            x1={margin.left}
+            x2={width - margin.right}
+            y1={zeroY}
+            y2={zeroY}
+            stroke="#9ca3af"
+          />
+
+          {chart.type === "bar"
+            ? chart.series.flatMap((series, seriesIndex) =>
+                series.values.map((value, valueIndex) => {
+                  const x =
+                    margin.left +
+                    valueIndex * groupWidth +
+                    (groupWidth - barWidth * chart.series.length) / 2 +
+                    seriesIndex * barWidth;
+                  const valueY = y(value);
+                  return (
+                    <rect
+                      key={`${series.name}-${valueIndex}`}
+                      x={x}
+                      y={Math.min(valueY, zeroY)}
+                      width={Math.max(barWidth - 2, 2)}
+                      height={Math.max(Math.abs(zeroY - valueY), 1)}
+                      fill={colors[seriesIndex]}
+                      rx="2"
+                    />
+                  );
+                }),
+              )
+            : chart.series.map((series, seriesIndex) => {
+                const points = series.values
+                  .map((value, index) => {
+                    const x =
+                      margin.left + groupWidth * index + groupWidth / 2;
+                    return `${x},${y(value)}`;
+                  })
+                  .join(" ");
+                return (
+                  <g key={series.name}>
+                    <polyline
+                      points={points}
+                      fill="none"
+                      stroke={colors[seriesIndex]}
+                      strokeWidth="3"
+                      strokeLinejoin="round"
+                    />
+                    {series.values.map((value, index) => (
+                      <circle
+                        key={`${series.name}-${index}`}
+                        cx={margin.left + groupWidth * index + groupWidth / 2}
+                        cy={y(value)}
+                        r="4"
+                        fill={colors[seriesIndex]}
+                      />
+                    ))}
+                  </g>
+                );
+              })}
+
+          {chart.labels.map((label, index) => (
+            <text
+              key={`${label}-${index}`}
+              x={margin.left + groupWidth * index + groupWidth / 2}
+              y={height - 38}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#4b5563"
+            >
+              {label.length > 12 ? `${label.slice(0, 11)}…` : label}
+            </text>
+          ))}
+
+          {chart.series.map((series, index) => (
+            <g
+              key={series.name}
+              transform={`translate(${margin.left + index * 150}, ${height - 12})`}
+            >
+              <rect width="12" height="12" rx="2" fill={colors[index]} />
+              <text x="18" y="10" fontSize="11" fill="#374151">
+                {series.name.slice(0, 18)}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+    </figure>
+  );
+}
+
+function splitSources(content: string): {
+  body: string;
+  sources: Array<{ title: string; url: string }>;
+} {
+  const marker = "\n### 来源";
+  const markerIndex = content.lastIndexOf(marker);
+  if (markerIndex < 0) return { body: content, sources: [] };
+
+  const sourceText = content.slice(markerIndex + marker.length);
+  const sources = Array.from(
+    sourceText.matchAll(/\d+\.\s+\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g),
+  ).map((match) => ({ title: match[1], url: match[2] }));
+
+  return sources.length > 0
+    ? { body: content.slice(0, markerIndex).trimEnd(), sources }
+    : { body: content, sources: [] };
+}
 
 function CodeBlock({
   children,
@@ -57,6 +270,7 @@ function CodeBlock({
 }
 
 function AssistantMarkdown({ content }: { content: string }) {
+  const { body, sources } = splitSources(content);
   return (
     <div className="min-w-0 text-[15px] leading-7 text-gray-900">
       <ReactMarkdown
@@ -138,6 +352,10 @@ function AssistantMarkdown({ content }: { content: string }) {
             const value = String(children).replace(/\n$/, "");
             const isBlock = Boolean(className) || value.includes("\n");
 
+            if (language === "chart") {
+              return <ChartBlock value={value} />;
+            }
+
             if (isBlock) {
               return <CodeBlock language={language}>{value}</CodeBlock>;
             }
@@ -150,8 +368,34 @@ function AssistantMarkdown({ content }: { content: string }) {
           },
         }}
       >
-        {content}
+        {body}
       </ReactMarkdown>
+      {sources.length > 0 && (
+        <section className="mt-6 border-t border-gray-200 pt-4">
+          <h3 className="mb-3 text-sm font-semibold text-gray-950">
+            来源 {sources.length}
+          </h3>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {sources.map((source, index) => (
+              <a
+                key={`${source.url}-${index}`}
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group flex min-h-14 items-start justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm leading-5 text-gray-700 no-underline transition hover:border-blue-300 hover:bg-blue-50"
+              >
+                <span className="line-clamp-2">
+                  <span className="mr-1.5 font-semibold text-gray-500">
+                    {index + 1}.
+                  </span>
+                  {source.title}
+                </span>
+                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400 group-hover:text-blue-600" />
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

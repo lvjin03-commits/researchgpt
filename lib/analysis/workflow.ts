@@ -19,6 +19,7 @@ import type {
   AnalysisInput,
   AnalysisResult,
   AnalysisWorkflow,
+  AttachmentProcessingResult,
   ImageEvidence,
   StructuredDocument,
 } from "./types";
@@ -109,24 +110,75 @@ export class DefaultAnalysisWorkflow implements AnalysisWorkflow {
   async run(input: AnalysisInput): Promise<AnalysisResult> {
     const documents: StructuredDocument[] = [];
     const images: ImageEvidence[] = [];
+    const fileResults: AttachmentProcessingResult[] = [];
+    let firstError: unknown;
 
     for (const file of input.files) {
-      const parsed = await parseAttachmentFile(file);
+      try {
+        const parsed = await parseAttachmentFile(file);
 
-      if (parsed.kind === "image") {
-        images.push(parsed.image);
-      } else {
-        documents.push(parsed.document);
+        if (parsed.kind === "image") {
+          images.push(parsed.image);
+          fileResults.push({
+            fileName: file.name,
+            status: "ready",
+            kind: "image",
+          });
+        } else {
+          documents.push(parsed.document);
+          fileResults.push({
+            fileName: file.name,
+            status: "ready",
+            kind: "document",
+            truncated: parsed.document.truncated,
+          });
+        }
+      } catch (error) {
+        firstError ??= error;
+        fileResults.push({
+          fileName: file.name,
+          status: "failed",
+          error:
+            error instanceof AttachmentParseError
+              ? error.details
+              : error instanceof Error
+                ? error.message
+                : "未知解析错误",
+          stage:
+            error instanceof AttachmentParseError ? error.stage : "parse",
+        });
       }
     }
 
+    if (documents.length === 0 && images.length === 0) {
+      throw firstError ?? new UploadError("没有附件能够被成功解析");
+    }
+
     const evidence = buildAnalysisEvidence(documents, images);
-    const messages = applyEvidenceToMessages(
+    let messages = applyEvidenceToMessages(
       input.messages,
       input.userMessage,
       evidence,
     );
 
-    return { messages, evidence };
+    const failed = fileResults.filter((item) => item.status === "failed");
+    if (failed.length > 0) {
+      messages = [
+        {
+          role: "system",
+          content: [
+            "Some attachments could not be parsed. Continue with successful files only.",
+            "Do not imply that failed files were read.",
+            ...failed.map(
+              (item) =>
+                `Failed file: ${item.fileName}; stage: ${item.stage}; reason: ${item.error}`,
+            ),
+          ].join("\n"),
+        },
+        ...messages,
+      ];
+    }
+
+    return { messages, evidence, fileResults };
   }
 }

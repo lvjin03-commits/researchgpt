@@ -30,6 +30,16 @@ export type AnalysisInput = {
 export type AnalysisResult = {
   messages: ChatMessage[];
   evidence: AnalysisEvidence;
+  fileResults: AttachmentProcessingResult[];
+};
+
+export type AttachmentProcessingResult = {
+  fileName: string;
+  status: "ready" | "failed";
+  kind?: "document" | "image";
+  truncated?: boolean;
+  error?: string;
+  stage?: string;
 };
 
 export interface AnalysisWorkflow {

@@ -1,6 +1,10 @@
 export type ChatStreamEvent =
   | { type: "status"; message: string }
   | { type: "text"; delta: string }
+  | {
+      type: "sources";
+      sources: Array<{ title: string; url: string }>;
+    }
   | { type: "error"; message: string; code?: string }
   | {
       type: "usage";

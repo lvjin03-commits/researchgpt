@@ -7,12 +7,17 @@ import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { withResponseStyle } from "@/lib/chat/response-style";
 
 import type { AttachmentInput } from "@/lib/uploads/types";
+import type { AttachmentProcessingResult } from "@/lib/analysis/types";
 
 export async function prepareChatMessages(
   messages: ChatMessage[],
   files: AttachmentInput[],
-): Promise<ChatMessage[]> {
+): Promise<{
+  messages: ChatMessage[];
+  fileResults: AttachmentProcessingResult[];
+}> {
   let prepared = messages;
+  let fileResults: AttachmentProcessingResult[] = [];
 
   if (files.length > 0) {
     const lastMessage = messages.at(-1);
@@ -28,12 +33,17 @@ export async function prepareChatMessages(
       "@/lib/chat/server/attachments"
     );
 
-    prepared = await injectAttachmentsIntoMessages(
+    const result = await injectAttachmentsIntoMessages(
       messages,
       userMessage,
       files,
     );
+    prepared = result.messages;
+    fileResults = result.fileResults;
   }
 
-  return withResponseStyle(withExportGuidance(prepared));
+  return {
+    messages: withResponseStyle(withExportGuidance(prepared)),
+    fileResults,
+  };
 }

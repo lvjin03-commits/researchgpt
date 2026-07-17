@@ -3,12 +3,13 @@
 import type { ChatMessage } from "@/lib/ai/types";
 import { UploadError } from "@/lib/uploads/errors";
 import type { AttachmentInput } from "@/lib/uploads/types";
+import type { AnalysisResult } from "@/lib/analysis/types";
 
 export async function injectAttachmentsIntoMessages(
   messages: ChatMessage[],
   userMessage: string,
   files: AttachmentInput[],
-): Promise<ChatMessage[]> {
+): Promise<AnalysisResult> {
   if (messages.length === 0) {
     throw new UploadError("messages must be a non-empty array");
   }
@@ -20,16 +21,18 @@ export async function injectAttachmentsIntoMessages(
   }
 
   if (files.length === 0) {
-    return messages;
+    return {
+      messages,
+      evidence: { documents: [], images: [] },
+      fileResults: [],
+    };
   }
 
   const { createDefaultAnalysisEngine } = await import("@/lib/analysis/engine");
   const engine = createDefaultAnalysisEngine();
-  const { messages: updated } = await engine.analyze({
+  return engine.analyze({
     messages,
     userMessage,
     files,
   });
-
-  return updated;
 }
