@@ -71,6 +71,7 @@ export function ChatShell() {
     DEFAULT_CHAT_MODEL_TIER,
   );
   const abortControllerRef = useRef<AbortController | null>(null);
+  const messageScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -364,13 +365,17 @@ export function ChatShell() {
 
         <main className="relative flex flex-1 flex-col overflow-hidden">
           {hasMessages ? (
-            <div className="flex-1 overflow-y-auto pb-36 sm:pb-40">
+            <div
+              ref={messageScrollRef}
+              className="flex-1 overflow-y-auto pb-36 sm:pb-40"
+            >
               <ChatMessages
                 messages={activeMessages}
                 chatTitle={chatTitle}
                 isStreaming={isStreaming}
                 error={error}
                 activity={activity}
+                scrollContainerRef={messageScrollRef}
                 onEditMessage={handleEditMessage}
                 onRetryMessage={handleRetryMessage}
               />
