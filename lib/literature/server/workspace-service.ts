@@ -170,44 +170,51 @@ async function extractFullTextEvidenceDigest(
   paper: LiteraturePaper,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const completion = await client.chat.completions.create(
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
-      model,
-      reasoning_effort: "none",
-      max_completion_tokens: 3600,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: [
-            "你负责从论文全文片段中提取紧凑、可追溯的证据摘要。只返回JSON。",
-            "包含 sectionSummaries、keyExperiments、evidenceItems、numericFindings、limitations、figureAndTableRefs。",
-            "每条证据必须保留原文中的 Figure、Table、章节或页码线索；没有明确线索时写 null，禁止编造。",
-            "控制篇幅：实验最多8项、证据最多12项、数值最多16项。所有说明使用中文。",
-          ].join("\n"),
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            title: paper.title,
-            abstract: paper.abstract.slice(0, 4000),
-            fullTextSegments: buildFullTextEvidenceSample(paper.fullText ?? ""),
-            extractedFigures: (paper.figureEvidence ?? []).slice(0, 30).map((figure) => ({
-              label: figure.label,
-              kind: figure.kind,
-              caption: figure.caption,
-              page: figure.page,
-            })),
-          }),
-        },
-      ],
+      role: "system",
+      content: [
+        "你负责从论文全文片段中提取紧凑、可追溯的证据摘要。只返回JSON。",
+        "只使用以下顶层字段：sectionSummaries、keyExperiments、evidenceItems、numericFindings、limitations、figureAndTableRefs。",
+        "每条证据必须保留原文中的 Figure、Table、章节或页码线索；没有明确线索时写 null，禁止编造。",
+        "严格限制篇幅：章节最多8项、实验最多6项、证据最多10项、数值最多12项、图表引用最多12项。",
+        "每个字符串不超过120个中文字符，不复述摘要，不输出Markdown。所有说明使用中文。",
+      ].join("\n"),
     },
-    { signal },
-  );
+    {
+      role: "user",
+      content: JSON.stringify({
+        title: paper.title,
+        abstract: paper.abstract.slice(0, 4000),
+        fullTextSegments: buildFullTextEvidenceSample(paper.fullText ?? ""),
+        extractedFigures: (paper.figureEvidence ?? []).slice(0, 30).map((figure) => ({
+          label: figure.label,
+          kind: figure.kind,
+          caption: figure.caption,
+          page: figure.page,
+        })),
+      }),
+    },
+  ];
 
-  const choice = completion.choices[0];
+  let completion: OpenAI.Chat.Completions.ChatCompletion | null = null;
+  for (const maxCompletionTokens of [4000, 6500]) {
+    completion = await client.chat.completions.create(
+      {
+        model,
+        reasoning_effort: "none",
+        max_completion_tokens: maxCompletionTokens,
+        response_format: { type: "json_object" },
+        messages,
+      },
+      { signal },
+    );
+    if (completion.choices[0]?.finish_reason !== "length") break;
+  }
+
+  const choice = completion?.choices[0];
   if (choice?.finish_reason === "length") {
-    throw new AIProviderError("AI 证据提取输出被截断，请重试或改用更高质量模型。", {
+    throw new AIProviderError("AI 证据提取连续两次达到输出上限，请缩小分析范围或改用更高质量模型。", {
       statusCode: 502,
       provider: "openai",
     });
