@@ -9,6 +9,7 @@ import {
 import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
+import { withResponseStyle } from "@/lib/chat/response-style";
 import {
   requireChatUser,
   toChatApiErrorResponse,
@@ -41,9 +42,11 @@ export async function POST(request: Request) {
       typeof body.memory === "string" ? body.memory.trim().slice(0, 2000) : "";
     const sanitized = sanitizeIncomingChatMessages(body.messages);
 
-    let messages = withModelIdentity(
-      withExportGuidance(validateChatMessages(sanitized as ChatMessage[])),
-      modelOption.model,
+    let messages = withResponseStyle(
+      withModelIdentity(
+        withExportGuidance(validateChatMessages(sanitized as ChatMessage[])),
+        modelOption.model,
+      ),
     );
 
     const lastUserMessage = [...messages]

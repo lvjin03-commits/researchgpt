@@ -4,6 +4,7 @@ import { AIProviderError } from "@/lib/ai/errors";
 import type { ChatMessage } from "@/lib/ai/types";
 import { getTextFromMessageContent } from "@/lib/ai/types";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
+import { withResponseStyle } from "@/lib/chat/response-style";
 
 import type { AttachmentInput } from "@/lib/uploads/types";
 
@@ -34,5 +35,5 @@ export async function prepareChatMessages(
     );
   }
 
-  return withExportGuidance(prepared);
+  return withResponseStyle(withExportGuidance(prepared));
 }

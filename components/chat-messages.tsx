@@ -30,7 +30,7 @@ export function ChatMessages({
   }, [messages, isStreaming, error]);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 sm:px-6">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6">
       {messages.map((message, index) => (
         <ChatMessageBubble
           key={`${message.role}-${index}-${message.content.slice(0, 24)}-${message.attachments?.map((attachment) => attachment.name).join("|") ?? ""}`}
@@ -44,8 +44,8 @@ export function ChatMessages({
       {isStreaming &&
         messages.at(-1)?.role === "assistant" &&
         messages.at(-1)?.content === "" && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl bg-gray-100 px-4 py-3">
+          <div className="flex justify-start" aria-label="正在生成回答">
+            <div className="px-1 py-3">
               <span className="inline-flex gap-1">
                 <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.3s]" />
                 <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.15s]" />
@@ -56,7 +56,10 @@ export function ChatMessages({
         )}
 
       {isStreaming && activity && (
-        <div className="text-sm font-medium text-gray-500">{activity}</div>
+        <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+          {activity}
+        </div>
       )}
 
       {error && (
