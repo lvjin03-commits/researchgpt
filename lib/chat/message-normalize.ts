@@ -463,10 +463,13 @@ export function displayMessageToApiMessage(
   options: { allowAttachmentPlaceholder?: boolean } = {},
 ): ApiTextMessage | null {
   const normalized = normalizeDisplayMessage(message);
-  const attachmentContext = normalized.attachments
-    ?.map((attachment) => attachment.context?.trim())
-    .filter((context): context is string => Boolean(context))
-    .join("\n\n");
+  const attachmentContext = Array.from(
+    new Set(
+      normalized.attachments
+        ?.map((attachment) => attachment.context?.trim())
+        .filter((context): context is string => Boolean(context)) ?? [],
+    ),
+  ).join("\n\n");
 
   return coerceRawToApiMessage(
     {

@@ -64,7 +64,7 @@ export function ChatShell() {
   const [error, setError] = useState<string | null>(null);
   const [activity, setActivity] = useState<string | null>(null);
   const [usage, setUsage] = useState({ input: 0, output: 0, total: 0 });
-  const [webSearch, setWebSearch] = useState(true);
+  const [webSearch, setWebSearch] = useState(false);
   const [useLibrary, setUseLibrary] = useState(false);
   const [memory, setMemory] = useState("");
   const [modelTier, setModelTier] = useState<ChatModelTier>(
@@ -79,7 +79,7 @@ export function ChatShell() {
       if (isChatModelTier(savedTier)) {
         setModelTier(savedTier);
       }
-      setWebSearch(window.localStorage.getItem("researchgpt-chat-web") !== "false");
+      setWebSearch(window.localStorage.getItem("researchgpt-chat-web") === "true");
       setUseLibrary(window.localStorage.getItem("researchgpt-chat-library") === "true");
       setMemory(window.localStorage.getItem("researchgpt-chat-memory") ?? "");
     }, 0);
@@ -275,9 +275,9 @@ export function ChatShell() {
               }
               return {
                 ...message,
-                attachments: message.attachments?.map((attachment) => ({
+                attachments: message.attachments?.map((attachment, attachmentIndex) => ({
                   ...attachment,
-                  context,
+                  context: attachmentIndex === 0 ? context : undefined,
                 })),
               };
             });
