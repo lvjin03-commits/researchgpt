@@ -5,6 +5,7 @@ import { AIProviderError } from "@/lib/ai/errors";
 import type { AIProviderAdapter, ChatMessage, StreamChatOptions } from "@/lib/ai/types";
 import { messagesIncludeImages } from "@/lib/ai/types";
 import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
+import { extractImagesFromSources } from "@/lib/chat/server/source-images";
 
 const DEFAULT_TEXT_MODEL = "gpt-4o-mini";
 const DEFAULT_VISION_MODEL = "gpt-4.1-mini";
@@ -121,12 +122,18 @@ export async function* openResponsesChatStream({
           }
         }
         if (citedUrls.size > 0) {
+          const sources = Array.from(citedUrls.entries()).map(([url, title]) => ({
+            title: title || new URL(url).hostname,
+            url,
+          }));
+          yield { type: "status", message: "正在获取来源中的相关图片" };
+          const images = await extractImagesFromSources(sources);
+          if (images.length > 0) {
+            yield { type: "images", images };
+          }
           yield {
             type: "sources",
-            sources: Array.from(citedUrls.entries()).map(([url, title]) => ({
-              title: title || new URL(url).hostname,
-              url,
-            })),
+            sources,
           };
         }
         const usage = event.response.usage;

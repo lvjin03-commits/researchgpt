@@ -161,6 +161,9 @@ export async function streamChatResponse(
     onSources?: (
       sources: Extract<ChatStreamEvent, { type: "sources" }>["sources"],
     ) => void;
+    onImages?: (
+      images: Extract<ChatStreamEvent, { type: "images" }>["images"],
+    ) => void;
     onAttachmentsPrepared?: (context: string) => void;
     onAttachmentResults?: (results: AttachmentPreparationResult[]) => void;
   },
@@ -227,6 +230,7 @@ export async function streamChatResponse(
         if (event.type === "status") options.onStatus?.(event.message);
         if (event.type === "usage") options.onUsage?.(event);
         if (event.type === "sources") options.onSources?.(event.sources);
+        if (event.type === "images") options.onImages?.(event.images);
         if (event.type === "error") {
           throw new ChatClientError(event.message, 502);
         }

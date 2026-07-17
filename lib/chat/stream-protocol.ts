@@ -5,6 +5,15 @@ export type ChatStreamEvent =
       type: "sources";
       sources: Array<{ title: string; url: string }>;
     }
+  | {
+      type: "images";
+      images: Array<{
+        title: string;
+        imageUrl: string;
+        sourceUrl: string;
+        sourceTitle: string;
+      }>;
+    }
   | { type: "error"; message: string; code?: string }
   | {
       type: "usage";

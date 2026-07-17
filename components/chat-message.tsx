@@ -228,6 +228,29 @@ function splitSources(content: string): {
     : { body: content, sources: [] };
 }
 
+function splitImageGallery(content: string): {
+  body: string;
+  images: Array<{ title: string; imageUrl: string; sourceUrl: string }>;
+} {
+  const marker = "\n### 相关图片";
+  const markerIndex = content.lastIndexOf(marker);
+  if (markerIndex < 0) return { body: content, images: [] };
+
+  const imageText = content.slice(markerIndex + marker.length);
+  const images = imageText.split("\n").flatMap((line) => {
+    const match =
+      /^\d+\.\s+\[!\[(.*?)\]\((https?:\/\/.+)\)\]\((https?:\/\/.+)\)$/.exec(
+        line.trim(),
+      );
+    if (!match) return [];
+    return [{ title: match[1], imageUrl: match[2], sourceUrl: match[3] }];
+  });
+
+  return images.length > 0
+    ? { body: content.slice(0, markerIndex).trimEnd(), images }
+    : { body: content, images: [] };
+}
+
 function CodeBlock({
   children,
   language,
@@ -270,7 +293,11 @@ function CodeBlock({
 }
 
 function AssistantMarkdown({ content }: { content: string }) {
-  const { body, sources } = splitSources(content);
+  const sourceSplit = splitSources(content);
+  const imageSplit = splitImageGallery(sourceSplit.body);
+  const body = imageSplit.body;
+  const sources = sourceSplit.sources;
+  const images = imageSplit.images;
   return (
     <div className="min-w-0 text-[15px] leading-7 text-gray-900">
       <ReactMarkdown
@@ -370,6 +397,41 @@ function AssistantMarkdown({ content }: { content: string }) {
       >
         {body}
       </ReactMarkdown>
+      {images.length > 0 && (
+        <section className="mt-6">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-950">
+            <ImageIcon className="h-4 w-4 text-blue-600" />
+            相关图片
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {images.map((image, index) => (
+              <a
+                key={`${image.imageUrl}-${index}`}
+                href={image.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="group overflow-hidden rounded-lg border border-gray-200 bg-gray-50 no-underline transition hover:border-blue-300 hover:shadow-sm"
+              >
+                {/* External source previews intentionally use the cited page URL. */}
+                <img
+                  src={image.imageUrl}
+                  alt={image.title}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  className="aspect-[4/3] w-full bg-gray-100 object-cover"
+                />
+                <span className="flex items-start justify-between gap-2 px-3 py-2 text-xs leading-5 text-gray-700">
+                  <span className="line-clamp-2">{image.title}</span>
+                  <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400 group-hover:text-blue-600" />
+                </span>
+              </a>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            图片来自对应引用网页，点击可查看原始来源。
+          </p>
+        </section>
+      )}
       {sources.length > 0 && (
         <section className="mt-6 border-t border-gray-200 pt-4">
           <h3 className="mb-3 text-sm font-semibold text-gray-950">

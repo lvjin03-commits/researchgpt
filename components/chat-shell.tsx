@@ -244,6 +244,30 @@ export function ChatShell() {
             });
             persistConversation(conversationId, streamingMessages);
           },
+          onImages: (images) => {
+            if (images.length === 0) return;
+            const imageSection = [
+              "",
+              "",
+              "### 相关图片",
+              ...images.map(
+                (image, index) =>
+                  `${index + 1}. [![${image.title.replaceAll("[", "").replaceAll("]", "")}](${image.imageUrl})](${image.sourceUrl})`,
+              ),
+            ].join("\n");
+
+            streamingMessages = streamingMessages.map((message, index) => {
+              if (
+                index !== streamingMessages.length - 1 ||
+                message.role !== "assistant" ||
+                message.content.includes("### 相关图片")
+              ) {
+                return message;
+              }
+              return { ...message, content: message.content + imageSection };
+            });
+            persistConversation(conversationId, streamingMessages);
+          },
           onAttachmentsPrepared: (context) => {
             streamingMessages = streamingMessages.map((message, index) => {
               if (index !== history.length || message.role !== "user") {

@@ -17,7 +17,7 @@ export type ChatTaskRoute = {
 };
 
 const WEB_PATTERN =
-  /(最新|今天|目前|近期|新闻|价格|政策|法规|标准|搜索|检索|查找|核实|来源|引用|链接|latest|current|today|news|price|search|verify|source|citation)/i;
+  /(最新|今天|目前|近期|新闻|价格|政策|法规|标准|搜索|检索|查找|核实|来源|引用|链接|图片|照片|地图|火点|山火|天气|地震|卫星|latest|current|today|news|price|search|verify|source|citation|image|photo|map)/i;
 const DATA_PATTERN =
   /(数据分析|统计|计算|对比数据|趋势|相关性|回归|均值|中位数|标准差|柱状图|折线图|饼图|散点图|可视化|chart|plot|graph|calculate|statistics|regression|correlation)/i;
 const ARTIFACT_PATTERN =
