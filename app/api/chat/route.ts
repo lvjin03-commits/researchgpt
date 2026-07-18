@@ -11,6 +11,7 @@ import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
 import { withResponseStyle } from "@/lib/chat/response-style";
 import { routeChatTask } from "@/lib/chat/task-router";
+import { withScientificVisualPolicy } from "@/lib/chat/visual-policy";
 import {
   requireChatUser,
   toChatApiErrorResponse,
@@ -62,10 +63,13 @@ export async function POST(request: Request) {
             .join("\n") ?? "";
     const taskRoute = routeChatTask(messages);
     const effectiveWebSearch = webSearch || taskRoute.autoWebSearch;
-    messages = [
-      { role: "system", content: taskRoute.systemInstruction },
-      ...messages,
-    ];
+    messages = withScientificVisualPolicy(
+      [
+        { role: "system", content: taskRoute.systemInstruction },
+        ...messages,
+      ],
+      modelOption,
+    );
 
     let libraryStatus = "";
     if (useLibrary) {

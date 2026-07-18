@@ -20,6 +20,12 @@ type ChartSpec = {
   title: string;
   labels: string[];
   series: Array<{ name: string; values: number[] }>;
+  xAxis?: string;
+  yAxis?: string;
+  unit?: string;
+  caption?: string;
+  source?: string;
+  evidenceType?: "user_data" | "literature" | "ai_structure";
 };
 
 function parseChartSpec(value: string): ChartSpec | null {
@@ -52,6 +58,17 @@ function parseChartSpec(value: string): ChartSpec | null {
       title: parsed.title,
       labels: parsed.labels,
       series,
+      xAxis: typeof parsed.xAxis === "string" ? parsed.xAxis : undefined,
+      yAxis: typeof parsed.yAxis === "string" ? parsed.yAxis : undefined,
+      unit: typeof parsed.unit === "string" ? parsed.unit : undefined,
+      caption: typeof parsed.caption === "string" ? parsed.caption : undefined,
+      source: typeof parsed.source === "string" ? parsed.source : undefined,
+      evidenceType:
+        parsed.evidenceType === "user_data" ||
+        parsed.evidenceType === "literature" ||
+        parsed.evidenceType === "ai_structure"
+          ? parsed.evidenceType
+          : undefined,
     };
   } catch {
     return null;
@@ -127,6 +144,31 @@ function ChartBlock({ value }: { value: string }) {
             y2={zeroY}
             stroke="#9ca3af"
           />
+          {(chart.yAxis || chart.unit) && (
+            <text
+              x="14"
+              y={margin.top + plotHeight / 2}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#4b5563"
+              transform={`rotate(-90 14 ${margin.top + plotHeight / 2})`}
+            >
+              {[chart.yAxis, chart.unit ? `(${chart.unit})` : ""]
+                .filter(Boolean)
+                .join(" ")}
+            </text>
+          )}
+          {chart.xAxis && (
+            <text
+              x={margin.left + plotWidth / 2}
+              y={height - 23}
+              textAnchor="middle"
+              fontSize="11"
+              fill="#4b5563"
+            >
+              {chart.xAxis}
+            </text>
+          )}
 
           {chart.type === "bar"
             ? chart.series.flatMap((series, seriesIndex) =>
@@ -206,8 +248,316 @@ function ChartBlock({ value }: { value: string }) {
           ))}
         </svg>
       </div>
+      <VisualEvidenceFooter visual={chart} />
     </figure>
   );
+}
+
+type VisualEvidence = {
+  caption?: string;
+  source?: string;
+  evidenceType?: "user_data" | "literature" | "ai_structure";
+};
+
+type FishboneSpec = VisualEvidence & {
+  type: "fishbone";
+  title: string;
+  problem: string;
+  branches: Array<{ name: string; causes: string[] }>;
+};
+
+type ProcessSpec = VisualEvidence & {
+  type: "process";
+  title: string;
+  steps: Array<{ title: string; description?: string }>;
+};
+
+type TimelineSpec = VisualEvidence & {
+  type: "timeline";
+  title: string;
+  events: Array<{ label: string; title: string; description?: string }>;
+};
+
+type StructureVisualSpec = FishboneSpec | ProcessSpec | TimelineSpec;
+
+const EVIDENCE_LABELS = {
+  user_data: "用户数据",
+  literature: "文献证据",
+  ai_structure: "AI 证据结构图",
+} as const;
+
+function normalizeVisualEvidence(
+  parsed: Record<string, unknown>,
+): VisualEvidence {
+  return {
+    caption: typeof parsed.caption === "string" ? parsed.caption : undefined,
+    source: typeof parsed.source === "string" ? parsed.source : undefined,
+    evidenceType:
+      parsed.evidenceType === "user_data" ||
+      parsed.evidenceType === "literature" ||
+      parsed.evidenceType === "ai_structure"
+        ? parsed.evidenceType
+        : undefined,
+  };
+}
+
+function parseStructureVisualSpec(value: string): StructureVisualSpec | null {
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (typeof parsed.title !== "string") return null;
+    const evidence = normalizeVisualEvidence(parsed);
+
+    if (
+      parsed.type === "fishbone" &&
+      typeof parsed.problem === "string" &&
+      Array.isArray(parsed.branches)
+    ) {
+      const branches = parsed.branches
+        .flatMap((branch) => {
+          if (typeof branch !== "object" || branch === null) return [];
+          const record = branch as Record<string, unknown>;
+          if (typeof record.name !== "string" || !Array.isArray(record.causes)) {
+            return [];
+          }
+          const causes = record.causes
+            .filter((cause): cause is string => typeof cause === "string")
+            .slice(0, 6);
+          return causes.length > 0
+            ? [{ name: record.name, causes }]
+            : [];
+        })
+        .slice(0, 6);
+
+      return branches.length > 0
+        ? {
+            type: "fishbone",
+            title: parsed.title,
+            problem: parsed.problem,
+            branches,
+            ...evidence,
+          }
+        : null;
+    }
+
+    if (parsed.type === "process" && Array.isArray(parsed.steps)) {
+      const steps = parsed.steps
+        .flatMap((step) => {
+          if (typeof step !== "object" || step === null) return [];
+          const record = step as Record<string, unknown>;
+          if (typeof record.title !== "string") return [];
+          return [
+            {
+              title: record.title,
+              description:
+                typeof record.description === "string"
+                  ? record.description
+                  : undefined,
+            },
+          ];
+        })
+        .slice(0, 8);
+
+      return steps.length > 0
+        ? { type: "process", title: parsed.title, steps, ...evidence }
+        : null;
+    }
+
+    if (parsed.type === "timeline" && Array.isArray(parsed.events)) {
+      const events = parsed.events
+        .flatMap((event) => {
+          if (typeof event !== "object" || event === null) return [];
+          const record = event as Record<string, unknown>;
+          if (
+            typeof record.label !== "string" ||
+            typeof record.title !== "string"
+          ) {
+            return [];
+          }
+          return [
+            {
+              label: record.label,
+              title: record.title,
+              description:
+                typeof record.description === "string"
+                  ? record.description
+                  : undefined,
+            },
+          ];
+        })
+        .slice(0, 8);
+
+      return events.length > 0
+        ? { type: "timeline", title: parsed.title, events, ...evidence }
+        : null;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function VisualEvidenceFooter({ visual }: { visual: VisualEvidence }) {
+  if (!visual.caption && !visual.source && !visual.evidenceType) return null;
+
+  return (
+    <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 text-xs leading-5 text-gray-600">
+      <div className="flex flex-wrap items-center gap-2">
+        {visual.evidenceType && (
+          <span className="rounded bg-blue-100 px-2 py-0.5 font-semibold text-blue-800">
+            {EVIDENCE_LABELS[visual.evidenceType]}
+          </span>
+        )}
+        {visual.caption && <span>{visual.caption}</span>}
+      </div>
+      {visual.source && (
+        <p className="mt-1 text-gray-500">来源：{visual.source}</p>
+      )}
+      {visual.evidenceType === "ai_structure" && (
+        <p className="mt-1 text-amber-700">
+          本图为基于现有信息整理的结构图，不代表原始实验数据。
+        </p>
+      )}
+    </div>
+  );
+}
+
+function FishboneBlock({ visual }: { visual: FishboneSpec }) {
+  const top = visual.branches.filter((_, index) => index % 2 === 0);
+  const bottom = visual.branches.filter((_, index) => index % 2 === 1);
+
+  const renderBranch = (
+    branch: FishboneSpec["branches"][number],
+    position: "top" | "bottom",
+  ) => (
+    <div
+      key={`${position}-${branch.name}`}
+      className="relative rounded border border-blue-200 bg-white px-3 py-2 shadow-sm"
+    >
+      <p className="mb-1 text-sm font-bold text-blue-900">{branch.name}</p>
+      <ul className="space-y-0.5 text-xs leading-5 text-gray-700">
+        {branch.causes.map((cause) => (
+          <li key={cause}>• {cause}</li>
+        ))}
+      </ul>
+      <span
+        className={`absolute left-1/2 h-10 w-px bg-blue-400 ${
+          position === "top"
+            ? "top-full origin-top -rotate-[32deg]"
+            : "bottom-full origin-bottom rotate-[32deg]"
+        }`}
+      />
+    </div>
+  );
+
+  return (
+    <figure className="my-5 overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <figcaption className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-950">
+        <BarChart3 className="h-4 w-4 text-blue-600" />
+        {visual.title}
+      </figcaption>
+      <div className="overflow-x-auto p-4">
+        <div className="relative min-w-[780px] py-3">
+          <div className="grid grid-cols-3 gap-5 pr-52">
+            {top.map((branch) => renderBranch(branch, "top"))}
+          </div>
+          <div className="relative my-10 h-1 bg-blue-600">
+            <span className="absolute -left-3 -top-[9px] h-5 w-5 rotate-45 border-b-2 border-l-2 border-blue-600" />
+            <span className="absolute -right-1 -top-[7px] h-0 w-0 border-y-[8px] border-l-[14px] border-y-transparent border-l-blue-600" />
+            <div className="absolute -right-48 -top-10 flex min-h-20 w-44 items-center rounded-lg border-2 border-blue-600 bg-blue-50 px-3 py-2 text-sm font-bold leading-5 text-blue-950">
+              {visual.problem}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-5 pr-52">
+            {bottom.map((branch) => renderBranch(branch, "bottom"))}
+          </div>
+        </div>
+      </div>
+      <VisualEvidenceFooter visual={visual} />
+    </figure>
+  );
+}
+
+function ProcessBlock({ visual }: { visual: ProcessSpec }) {
+  return (
+    <figure className="my-5 overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <figcaption className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-950">
+        <BarChart3 className="h-4 w-4 text-blue-600" />
+        {visual.title}
+      </figcaption>
+      <div className="overflow-x-auto p-4">
+        <div className="flex min-w-max items-stretch">
+          {visual.steps.map((step, index) => (
+            <div key={`${step.title}-${index}`} className="flex items-center">
+              <div className="w-44 border-t-4 border-blue-600 bg-blue-50 px-3 py-3">
+                <p className="text-xs font-bold text-blue-600">
+                  步骤 {index + 1}
+                </p>
+                <p className="mt-1 text-sm font-bold text-gray-950">
+                  {step.title}
+                </p>
+                {step.description && (
+                  <p className="mt-1 text-xs leading-5 text-gray-600">
+                    {step.description}
+                  </p>
+                )}
+              </div>
+              {index < visual.steps.length - 1 && (
+                <div className="mx-2 text-xl font-bold text-blue-500">→</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <VisualEvidenceFooter visual={visual} />
+    </figure>
+  );
+}
+
+function TimelineBlock({ visual }: { visual: TimelineSpec }) {
+  return (
+    <figure className="my-5 overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <figcaption className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 text-sm font-semibold text-gray-950">
+        <BarChart3 className="h-4 w-4 text-blue-600" />
+        {visual.title}
+      </figcaption>
+      <div className="overflow-x-auto p-4">
+        <div className="flex min-w-max items-start">
+          {visual.events.map((event, index) => (
+            <div key={`${event.label}-${index}`} className="relative w-48 pr-5">
+              <div className="mb-3 flex items-center">
+                <span className="h-3 w-3 rounded-full bg-blue-600 ring-4 ring-blue-100" />
+                {index < visual.events.length - 1 && (
+                  <span className="h-0.5 flex-1 bg-blue-200" />
+                )}
+              </div>
+              <p className="text-xs font-bold text-blue-700">{event.label}</p>
+              <p className="mt-1 text-sm font-bold text-gray-950">
+                {event.title}
+              </p>
+              {event.description && (
+                <p className="mt-1 text-xs leading-5 text-gray-600">
+                  {event.description}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <VisualEvidenceFooter visual={visual} />
+    </figure>
+  );
+}
+
+function ScientificVisualBlock({ value }: { value: string }) {
+  const chart = parseChartSpec(value);
+  if (chart) return <ChartBlock value={value} />;
+
+  const visual = parseStructureVisualSpec(value);
+  if (!visual) return <CodeBlock language="visual">{value}</CodeBlock>;
+  if (visual.type === "fishbone") return <FishboneBlock visual={visual} />;
+  if (visual.type === "process") return <ProcessBlock visual={visual} />;
+  return <TimelineBlock visual={visual} />;
 }
 
 function splitSources(content: string): {
@@ -379,8 +729,8 @@ function AssistantMarkdown({ content }: { content: string }) {
             const value = String(children).replace(/\n$/, "");
             const isBlock = Boolean(className) || value.includes("\n");
 
-            if (language === "chart") {
-              return <ChartBlock value={value} />;
+            if (language === "chart" || language === "visual") {
+              return <ScientificVisualBlock value={value} />;
             }
 
             if (isBlock) {

@@ -11,32 +11,36 @@ export type ChatModelOption = {
   model: string;
   reasoningEffort: "none" | "low" | "medium";
   maxOutputTokens: number;
+  maxVisuals: number;
 };
 
 export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
   {
     tier: "economy",
     label: "经济",
-    description: "快速问答与日常处理",
+    description: "快速问答，按需最多 1 张程序图",
     model: "gpt-5.4-mini",
     reasoningEffort: "none",
     maxOutputTokens: 1800,
+    maxVisuals: 1,
   },
   {
     tier: "standard",
     label: "标准",
-    description: "科研讨论与论文解释",
+    description: "科研分析，按需生成 1–3 张专业图表",
     model: "gpt-5.5",
     reasoningEffort: "medium",
     maxOutputTokens: 4000,
+    maxVisuals: 3,
   },
   {
     tier: "advanced",
     label: "深度",
-    description: "复杂分析与高质量推理",
+    description: "全文证据分析，按需最多 6 张证据图表",
     model: "gpt-5.6",
     reasoningEffort: "medium",
     maxOutputTokens: 7000,
+    maxVisuals: 6,
   },
 ] as const;
 

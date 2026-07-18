@@ -6,6 +6,7 @@ export type ChatTaskKind =
   | "web_research"
   | "file_analysis"
   | "data_analysis"
+  | "visualization"
   | "artifact";
 
 export type ChatTaskRoute = {
@@ -20,6 +21,8 @@ const WEB_PATTERN =
   /(最新|今天|目前|近期|新闻|价格|政策|法规|标准|搜索|检索|查找|核实|来源|引用|链接|图片|照片|地图|火点|山火|天气|地震|卫星|latest|current|today|news|price|search|verify|source|citation|image|photo|map)/i;
 const DATA_PATTERN =
   /(数据分析|统计|计算|对比数据|趋势|相关性|回归|均值|中位数|标准差|柱状图|折线图|饼图|散点图|可视化|chart|plot|graph|calculate|statistics|regression|correlation)/i;
+const VISUAL_PATTERN =
+  /(鱼骨图|因果图|故障树|流程图|技术路线图|时间轴|演进图|分类图|框架图|机制图|示意图|对比图|证据图|思维导图|可视化|fishbone|ishikawa|flowchart|timeline|taxonomy|framework|diagram|visuali[sz]ation)/i;
 const ARTIFACT_PATTERN =
   /(生成|导出|制作|创建).{0,12}(word|docx|pdf|ppt|pptx|表格|图表|报告|文档|幻灯片)|(export|create|generate).{0,12}(document|pdf|ppt|slides|report)/i;
 const FILE_CONTEXT_PATTERN =
@@ -36,6 +39,26 @@ export function routeChatTask(messages: ChatMessage[]): ChatTaskRoute {
   const query = lastUserText(messages);
   const hasFileContext = FILE_CONTEXT_PATTERN.test(query);
   const hasTabularContext = TABULAR_CONTEXT_PATTERN.test(query);
+
+  if (VISUAL_PATTERN.test(query)) {
+    return {
+      kind: "visualization",
+      status: "已识别为科研图解任务，正在整理结构与证据",
+      autoWebSearch: false,
+      useCodeInterpreter: hasTabularContext || DATA_PATTERN.test(query),
+      systemInstruction: [
+        "This is a scientific-visualization task.",
+        "Select the supported visual type that best matches the user's scientific intent.",
+        hasFileContext
+          ? "Ground every visual claim in the supplied file context and distinguish extracted evidence from synthesis."
+          : "Distinguish provided facts from your own conceptual synthesis.",
+        "First organize the research question, evidence, variables, or causal factors; then emit a fenced `visual` JSON block.",
+        "For root-cause analysis use fishbone, for experimental sequences use process, and for chronological evidence use timeline.",
+        "Use bar or line only when verified numeric values are available.",
+        "Do not answer with ASCII art.",
+      ].join("\n"),
+    };
+  }
 
   if (hasTabularContext && (DATA_PATTERN.test(query) || hasFileContext)) {
     return {
