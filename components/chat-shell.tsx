@@ -385,6 +385,15 @@ export function ChatShell() {
     setToolPanelOpen(true);
   }, []);
 
+  const handleCreateSidebarFolder = useCallback(
+    async (name: string) => {
+      const folder = await createLiteratureFolder({ name });
+      setFolders((current) => [...current, folder]);
+      return folder;
+    },
+    [],
+  );
+
   const handleFolderDrop = useCallback((folderId: string) => {
     setSelectedFolderIds((current) =>
       current.includes(folderId) ? current : [...current, folderId],
@@ -983,6 +992,7 @@ export function ChatShell() {
         onDeleteConversation={handleDeleteConversation}
         onSelectFolder={handleSelectFolder}
         onOpenFolder={handleOpenFolder}
+        onCreateFolder={handleCreateSidebarFolder}
         onPaperDrop={(paperId, folderId) =>
           void handlePaperDrop(paperId, folderId)
         }

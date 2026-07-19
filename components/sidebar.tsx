@@ -47,6 +47,7 @@ type SidebarProps = {
   onDeleteConversation: (conversationId: string) => void;
   onSelectFolder: (folder: LiteratureFolder) => void;
   onOpenFolder: (folder: LiteratureFolder) => void;
+  onCreateFolder: (name: string) => Promise<LiteratureFolder>;
   onPaperDrop: (paperId: string, folderId: string) => void;
   onContinueProject: (project: ResearchProject) => void;
   onLogout: () => void;
@@ -77,6 +78,7 @@ export function Sidebar({
   onDeleteConversation,
   onSelectFolder,
   onOpenFolder,
+  onCreateFolder,
   onPaperDrop,
   onContinueProject,
   onLogout,
@@ -90,6 +92,12 @@ export function Sidebar({
   const [paperDropFolderId, setPaperDropFolderId] = useState<string | null>(
     null,
   );
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [createFolderError, setCreateFolderError] = useState<string | null>(
+    null,
+  );
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -137,6 +145,25 @@ export function Sidebar({
     if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
     clickTimerRef.current = null;
     onOpenFolder(folder);
+  };
+
+  const submitNewFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name || isCreatingFolder) return;
+
+    setIsCreatingFolder(true);
+    setCreateFolderError(null);
+    try {
+      await onCreateFolder(name);
+      setNewFolderName("");
+      setShowCreateFolder(false);
+    } catch (error) {
+      setCreateFolderError(
+        error instanceof Error ? error.message : "创建文件夹失败，请稍后重试。",
+      );
+    } finally {
+      setIsCreatingFolder(false);
+    }
   };
 
   const renderFolders = (
@@ -339,7 +366,78 @@ export function Sidebar({
             </ul>
           )}
 
-          <SectionTitle>文献资料</SectionTitle>
+          <div className="flex items-center justify-between px-2 pb-1.5 pt-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#7c8b91]">
+              文献资料
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreateFolder((current) => !current);
+                setCreateFolderError(null);
+              }}
+              className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-bold text-[#174866] hover:bg-white"
+              aria-expanded={showCreateFolder}
+              aria-label="新建文献文件夹"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              新建
+            </button>
+          </div>
+          {showCreateFolder && (
+            <div className="mx-1 mb-2 rounded-md border border-[#c9d7dc] bg-white p-2 shadow-sm">
+              <label htmlFor="sidebar-new-folder" className="sr-only">
+                文件夹名称
+              </label>
+              <input
+                id="sidebar-new-folder"
+                autoFocus
+                value={newFolderName}
+                disabled={isCreatingFolder}
+                onChange={(event) => setNewFolderName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void submitNewFolder();
+                  }
+                  if (event.key === "Escape") {
+                    setShowCreateFolder(false);
+                    setNewFolderName("");
+                    setCreateFolderError(null);
+                  }
+                }}
+                placeholder="输入文件夹名称"
+                className="research-focus h-9 w-full rounded-md border border-[#d4dfe2] px-2.5 text-xs"
+              />
+              <div className="mt-2 flex justify-end gap-1.5">
+                <button
+                  type="button"
+                  disabled={isCreatingFolder}
+                  onClick={() => {
+                    setShowCreateFolder(false);
+                    setNewFolderName("");
+                    setCreateFolderError(null);
+                  }}
+                  className="rounded-md px-2.5 py-1.5 text-[11px] font-bold text-[#607078] hover:bg-[#f0f4f5]"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={isCreatingFolder || !newFolderName.trim()}
+                  onClick={() => void submitNewFolder()}
+                  className="rounded-md bg-[#174866] px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-[#123a52] disabled:cursor-not-allowed disabled:bg-[#c8d4d8]"
+                >
+                  {isCreatingFolder ? "创建中..." : "创建"}
+                </button>
+              </div>
+              {createFolderError && (
+                <p className="mt-2 text-[11px] leading-4 text-red-600">
+                  {createFolderError}
+                </p>
+              )}
+            </div>
+          )}
           <div className="relative mb-2 px-1">
             <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-400" />
             <input
