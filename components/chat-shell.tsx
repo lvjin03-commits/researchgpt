@@ -30,6 +30,7 @@ import {
   loadWorkspace,
   saveWorkspace,
   shouldSuggestProject,
+  shouldSuggestTemporaryQuestion,
   type ResearchProject,
   type WorkspaceContextMode,
 } from "@/lib/chat/workspace";
@@ -113,6 +114,8 @@ export function ChatShell() {
   const [contextMode, setContextMode] =
     useState<WorkspaceContextMode>("auto");
   const [pendingProjectPayload, setPendingProjectPayload] =
+    useState<ChatSendPayload | null>(null);
+  const [pendingTemporaryPayload, setPendingTemporaryPayload] =
     useState<ChatSendPayload | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
@@ -228,6 +231,7 @@ export function ChatShell() {
     setSelectedFolderIds([]);
     setContextMode("auto");
     setPendingProjectPayload(null);
+    setPendingTemporaryPayload(null);
     startNewChat();
   }, [abortActiveStream, startNewChat]);
 
@@ -322,7 +326,8 @@ export function ChatShell() {
       contextModeOverride?: WorkspaceContextMode,
     ) => {
       abortControllerRef.current?.abort();
-      const project = projectOverride ?? activeProject;
+      const project =
+        projectOverride === undefined ? activeProject : projectOverride;
       const displayUserMessage = toDisplayUserMessage(payload);
       const nextMessages: DisplayChatMessage[] = [
         ...history,
@@ -494,6 +499,13 @@ export function ChatShell() {
   const handleSend = useCallback(
     (payload: ChatSendPayload) => {
       if (
+        activeProject &&
+        shouldSuggestTemporaryQuestion(payload.message, activeProject)
+      ) {
+        setPendingTemporaryPayload(payload);
+        return;
+      }
+      if (
         !activeProject &&
         shouldSuggestProject(payload.message, selectedFolderIds.length)
       ) {
@@ -504,6 +516,41 @@ export function ChatShell() {
     },
     [activeProject, selectedFolderIds.length, submitMessage],
   );
+
+  const answerOutsideProject = useCallback(() => {
+    if (!pendingTemporaryPayload) return;
+    const payload = pendingTemporaryPayload;
+    setPendingTemporaryPayload(null);
+    startNewChat();
+    setActiveProjectId(null);
+    setSelectedFolderIds([]);
+    setContextMode("temporary");
+    void submitMessage(payload, [], null, "temporary");
+  }, [pendingTemporaryPayload, startNewChat, submitMessage]);
+
+  const answerInsideProject = useCallback(() => {
+    if (!pendingTemporaryPayload) return;
+    const payload = pendingTemporaryPayload;
+    setPendingTemporaryPayload(null);
+    setContextMode("project");
+    void submitMessage(payload, activeMessages, activeProject, "project");
+  }, [
+    activeMessages,
+    activeProject,
+    pendingTemporaryPayload,
+    submitMessage,
+  ]);
+
+  useEffect(() => {
+    if (!pendingTemporaryPayload) return;
+    const timer = window.setTimeout(() => {
+      answerOutsideProject();
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [
+    answerOutsideProject,
+    pendingTemporaryPayload,
+  ]);
 
   const confirmCreateProject = useCallback(() => {
     if (!pendingProjectPayload) return;
@@ -564,7 +611,7 @@ export function ChatShell() {
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId,
   );
-  const chatTitle = activeConversation?.title ?? "新任务";
+  const chatTitle = activeConversation?.title ?? "新项目";
 
   if (!isHydrated) {
     return (
@@ -635,7 +682,7 @@ export function ChatShell() {
           {hasMessages ? (
             <div
               ref={messageScrollRef}
-              className="flex-1 overflow-y-auto pb-44 sm:pb-48"
+              className="flex-1 overflow-y-auto pb-52 sm:pb-56"
             >
               <ChatMessages
                 messages={activeMessages}
@@ -649,7 +696,7 @@ export function ChatShell() {
               />
             </div>
           ) : (
-            <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pb-48 pt-[10vh] sm:px-6">
+            <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pb-56 pt-[10vh] sm:px-6">
               <div className="w-full max-w-3xl">
                 <Sparkles className="h-7 w-7 text-blue-700" />
                 <h1 className="mt-4 text-3xl font-semibold text-gray-950">
@@ -712,7 +759,7 @@ export function ChatShell() {
           )}
 
           {pendingProjectPayload && (
-            <div className="absolute inset-x-4 bottom-44 z-30 mx-auto max-w-3xl border border-blue-200 bg-blue-50 p-4 shadow-lg sm:bottom-48">
+            <div className="absolute inset-x-4 bottom-52 z-30 mx-auto max-w-3xl border border-blue-200 bg-blue-50 p-4 shadow-lg sm:bottom-56">
               <p className="text-sm font-bold text-blue-950">
                 这项任务会持续使用所选文献，建议创建科研项目
               </p>
@@ -738,6 +785,29 @@ export function ChatShell() {
             </div>
           )}
 
+          {pendingTemporaryPayload && (
+            <div className="absolute inset-x-4 bottom-52 z-30 mx-auto max-w-3xl border border-amber-200 bg-amber-50 p-4 shadow-lg sm:bottom-56">
+              <p className="text-sm font-bold text-amber-950">
+                这个问题将作为临时问题回答
+              </p>
+              <p className="mt-1 text-xs leading-5 text-amber-800">
+                AI 判断它可能与“{activeProject?.name}”无关，因此默认不读取项目文献，也不会写入项目记录。
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={answerInsideProject}
+                  className="bg-amber-700 px-4 py-2 text-xs font-bold text-white hover:bg-amber-800"
+                >
+                  将此问题加入当前项目
+                </button>
+                <span className="self-center text-[11px] text-amber-700">
+                  不操作将自动继续
+                </span>
+              </div>
+            </div>
+          )}
+
           <ChatInput
             onSend={handleSend}
             onStop={() => abortControllerRef.current?.abort()}
@@ -750,9 +820,18 @@ export function ChatShell() {
             onUseLibraryChange={handleUseLibraryChange}
             memory={memory}
             onMemoryChange={handleMemoryChange}
+            projects={projects}
+            activeProjectId={activeProjectId}
+            onProjectChange={(projectId) => {
+              if (!projectId) {
+                handleNewChat();
+                return;
+              }
+              const project = projects.find((item) => item.id === projectId);
+              if (project) handleContinueProject(project);
+            }}
+            onNewProject={handleNewChat}
             selectedFolders={selectedFolders}
-            contextMode={contextMode}
-            onContextModeChange={setContextMode}
             onRemoveFolder={(folderId) =>
               setSelectedFolderIds((current) =>
                 current.filter((id) => id !== folderId),

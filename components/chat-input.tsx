@@ -23,7 +23,7 @@ import {
 } from "@/lib/ai/chat-models";
 import {
   FOLDER_DRAG_TYPE,
-  type WorkspaceContextMode,
+  type ResearchProject,
 } from "@/lib/chat/workspace";
 import type { LiteratureFolder } from "@/lib/literature/types";
 import {
@@ -60,9 +60,11 @@ type ChatInputProps = {
   onUseLibraryChange: (enabled: boolean) => void;
   memory: string;
   onMemoryChange: (memory: string) => void;
+  projects?: ResearchProject[];
+  activeProjectId?: string | null;
+  onProjectChange?: (projectId: string | null) => void;
+  onNewProject?: () => void;
   selectedFolders?: LiteratureFolder[];
-  contextMode?: WorkspaceContextMode;
-  onContextModeChange?: (mode: WorkspaceContextMode) => void;
   onRemoveFolder?: (folderId: string) => void;
   onFolderDrop?: (folderId: string) => void;
 };
@@ -80,9 +82,11 @@ export function ChatInput({
   onUseLibraryChange,
   memory,
   onMemoryChange,
+  projects = [],
+  activeProjectId = null,
+  onProjectChange,
+  onNewProject,
   selectedFolders = [],
-  contextMode = "auto",
-  onContextModeChange,
   onRemoveFolder,
   onFolderDrop,
 }: ChatInputProps) {
@@ -191,6 +195,39 @@ export function ChatInput({
           submit();
         }}
       >
+        <div className="mb-2 flex items-center gap-2">
+          <label
+            htmlFor="active-research-project"
+            className="text-xs font-bold text-gray-600"
+          >
+            当前项目
+          </label>
+          <select
+            id="active-research-project"
+            value={activeProjectId ?? ""}
+            onChange={(event) =>
+              onProjectChange?.(event.target.value || null)
+            }
+            disabled={inputLocked}
+            className="h-9 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm outline-none focus:border-blue-400 sm:max-w-72"
+          >
+            <option value="">未选择项目</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onNewProject}
+            disabled={inputLocked}
+            className="h-9 shrink-0 rounded-md bg-gray-900 px-3 text-xs font-bold text-white hover:bg-gray-800 disabled:opacity-50"
+          >
+            新项目
+          </button>
+        </div>
+
         <div
           onDragOver={(event) => {
             event.preventDefault();
@@ -213,7 +250,7 @@ export function ChatInput({
             </div>
           )}
 
-          {(selectedFolders.length > 0 || onContextModeChange) && (
+          {selectedFolders.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-2.5">
               {selectedFolders.map((folder) => (
                 <span
@@ -232,23 +269,6 @@ export function ChatInput({
                   </button>
                 </span>
               ))}
-              {onContextModeChange && (
-                <select
-                  value={contextMode}
-                  onChange={(event) =>
-                    onContextModeChange(
-                      event.target.value as WorkspaceContextMode,
-                    )
-                  }
-                  disabled={inputLocked}
-                  aria-label="上下文范围"
-                  className="ml-auto h-7 rounded-md border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-700 outline-none focus:border-blue-400"
-                >
-                  <option value="auto">自动判断上下文</option>
-                  <option value="project">使用当前项目</option>
-                  <option value="temporary">临时问题</option>
-                </select>
-              )}
             </div>
           )}
 

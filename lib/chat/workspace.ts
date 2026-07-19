@@ -100,3 +100,53 @@ export function shouldSuggestProject(
     message,
   );
 }
+
+function topicTokens(value: string): Set<string> {
+  const normalized = value
+    .toLowerCase()
+    .replace(
+      /(请|帮我|一下|这个|那个|进行|一个|如何|怎么|什么|please|help|with|the|and|for|this|that)/gi,
+      " ",
+    );
+  const tokens = new Set(
+    normalized
+      .split(/[^\p{L}\p{N}]+/u)
+      .map((item) => item.trim())
+      .filter((item) => item.length >= 3),
+  );
+  const chinese = normalized.replace(/[^\p{Script=Han}]/gu, "");
+  for (let index = 0; index < chinese.length - 1; index += 1) {
+    tokens.add(chinese.slice(index, index + 2));
+  }
+  return tokens;
+}
+
+export function shouldSuggestTemporaryQuestion(
+  message: string,
+  project: ResearchProject,
+): boolean {
+  const trimmed = message.trim();
+  if (!trimmed || trimmed.length < 4) return false;
+  if (
+    /(本项目|当前项目|这些|上述|前面|文件夹|文献|论文|数据|实验|继续|基于|this project|these papers|continue|based on)/i.test(
+      trimmed,
+    )
+  ) {
+    return false;
+  }
+
+  const projectTokens = topicTokens(`${project.name} ${project.lastTask}`);
+  const messageTokens = topicTokens(trimmed);
+  if (projectTokens.size === 0 || messageTokens.size === 0) return false;
+
+  for (const token of messageTokens) {
+    if (projectTokens.has(token)) return false;
+  }
+
+  return (
+    trimmed.length <= 120 ||
+    /[?？]|是什么|为什么|如何|怎么|哪里|谁|what|why|how|where|who/i.test(
+      trimmed,
+    )
+  );
+}

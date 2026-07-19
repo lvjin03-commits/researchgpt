@@ -228,7 +228,7 @@ export function Sidebar({
             className="flex w-full items-center gap-2 border border-gray-300 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 shadow-sm hover:bg-gray-100"
           >
             <Plus className="h-4 w-4" />
-            开始新任务
+            新项目
           </button>
         </div>
 
