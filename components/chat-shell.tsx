@@ -117,6 +117,8 @@ export function ChatShell() {
     useState<ChatSendPayload | null>(null);
   const [pendingTemporaryPayload, setPendingTemporaryPayload] =
     useState<ChatSendPayload | null>(null);
+  const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
 
@@ -234,6 +236,39 @@ export function ChatShell() {
     setPendingTemporaryPayload(null);
     startNewChat();
   }, [abortActiveStream, startNewChat]);
+
+  const openNewProjectDialog = useCallback(() => {
+    setNewProjectName("");
+    setNewProjectDialogOpen(true);
+  }, []);
+
+  const createBlankProject = useCallback(() => {
+    const name = newProjectName.trim();
+    if (!name) return;
+    abortActiveStream();
+    const inheritedFolderIds = activeProject ? [] : selectedFolderIds;
+    const project = createResearchProject(
+      name,
+      inheritedFolderIds,
+      "等待开始工作",
+    );
+    setProjects((current) => [project, ...current]);
+    setActiveProjectId(project.id);
+    setSelectedFolderIds(inheritedFolderIds);
+    setContextMode("project");
+    setPendingProjectPayload(null);
+    setPendingTemporaryPayload(null);
+    setError(null);
+    startNewChat();
+    setNewProjectDialogOpen(false);
+    setNewProjectName("");
+  }, [
+    abortActiveStream,
+    activeProject,
+    newProjectName,
+    selectedFolderIds,
+    startNewChat,
+  ]);
 
   const handleSelectConversation = useCallback(
     (conversationId: string) => {
@@ -633,7 +668,7 @@ export function ChatShell() {
         projects={projects}
         activeProjectId={activeProjectId}
         onClose={() => setSidebarOpen(false)}
-        onNewChat={handleNewChat}
+        onNewProject={openNewProjectDialog}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
         onSelectFolder={handleSelectFolder}
@@ -830,7 +865,7 @@ export function ChatShell() {
               const project = projects.find((item) => item.id === projectId);
               if (project) handleContinueProject(project);
             }}
-            onNewProject={handleNewChat}
+            onNewProject={openNewProjectDialog}
             selectedFolders={selectedFolders}
             onRemoveFolder={(folderId) =>
               setSelectedFolderIds((current) =>
@@ -855,6 +890,54 @@ export function ChatShell() {
         activity={activity}
         onClose={() => setToolPanelOpen(false)}
       />
+
+      {newProjectDialogOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 px-4">
+          <form
+            className="w-full max-w-md border border-gray-200 bg-white p-5 shadow-2xl"
+            onSubmit={(event) => {
+              event.preventDefault();
+              createBlankProject();
+            }}
+          >
+            <h2 className="text-lg font-bold text-gray-950">创建新项目</h2>
+            <p className="mt-1 text-sm leading-6 text-gray-500">
+              项目会保存对应的聊天、文献文件夹和后续任务，方便下次继续。
+            </p>
+            <label
+              htmlFor="new-project-name"
+              className="mt-4 block text-xs font-bold text-gray-700"
+            >
+              项目名称
+            </label>
+            <input
+              id="new-project-name"
+              autoFocus
+              value={newProjectName}
+              onChange={(event) => setNewProjectName(event.target.value)}
+              placeholder="例如：有机催化文献综述"
+              maxLength={80}
+              className="mt-2 h-11 w-full border border-gray-300 px-3 text-sm outline-none focus:border-blue-500"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setNewProjectDialogOpen(false)}
+                className="h-10 border border-gray-300 px-4 text-sm font-bold text-gray-700 hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                disabled={!newProjectName.trim()}
+                className="h-10 bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800 disabled:bg-gray-200 disabled:text-gray-400"
+              >
+                创建并进入
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

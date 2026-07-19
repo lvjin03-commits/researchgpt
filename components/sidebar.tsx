@@ -37,7 +37,7 @@ type SidebarProps = {
   projects: ResearchProject[];
   activeProjectId: string | null;
   onClose: () => void;
-  onNewChat: () => void;
+  onNewProject: () => void;
   onSelectConversation: (conversationId: string) => void;
   onDeleteConversation: (conversationId: string) => void;
   onSelectFolder: (folder: LiteratureFolder) => void;
@@ -66,7 +66,7 @@ export function Sidebar({
   projects,
   activeProjectId,
   onClose,
-  onNewChat,
+  onNewProject,
   onSelectConversation,
   onDeleteConversation,
   onSelectFolder,
@@ -222,7 +222,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={() => {
-              onNewChat();
+              onNewProject();
               onClose();
             }}
             className="flex w-full items-center gap-2 border border-gray-300 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 shadow-sm hover:bg-gray-100"
