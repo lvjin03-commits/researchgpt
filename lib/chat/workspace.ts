@@ -19,6 +19,7 @@ type WorkspaceStorage = {
 
 const STORAGE_KEY = "researchgpt-research-workspace-v1";
 export const FOLDER_DRAG_TYPE = "application/x-researchgpt-folder";
+export const PAPER_DRAG_TYPE = "application/x-researchgpt-paper";
 
 function isProject(value: unknown): value is ResearchProject {
   if (!value || typeof value !== "object") return false;

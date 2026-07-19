@@ -49,6 +49,7 @@ import {
   fetchLiteratureLibrary,
   setPaperFolders,
   updateLiteratureFolder,
+  uploadLocalPdfToLibrary,
 } from "@/lib/literature/client";
 import {
   planLibraryCommand,
@@ -153,6 +154,16 @@ export function ChatShell() {
   } | null>(null);
   const [isExecutingLibraryCommand, setIsExecutingLibraryCommand] =
     useState(false);
+  const [busyLibraryPaperId, setBusyLibraryPaperId] = useState<string | null>(
+    null,
+  );
+  const [isUploadingToFolder, setIsUploadingToFolder] = useState(false);
+  const [libraryOperationMessage, setLibraryOperationMessage] = useState<
+    string | null
+  >(null);
+  const [libraryOperationError, setLibraryOperationError] = useState<
+    string | null
+  >(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
 
@@ -380,6 +391,109 @@ export function ChatShell() {
     );
     setUseLibrary(true);
   }, []);
+
+  const handlePaperDrop = useCallback(
+    async (paperId: string, folderId: string) => {
+      const paper = libraryPapers.find((item) => item.id === paperId);
+      const targetFolder = folders.find((item) => item.id === folderId);
+      if (!paper || !targetFolder || busyLibraryPaperId) return;
+      if (
+        paper.folderIds?.length === 1 &&
+        paper.folderIds[0] === folderId
+      ) {
+        setLibraryOperationError(
+          `“${paper.title}”已经在“${targetFolder.name}”中。`,
+        );
+        return;
+      }
+
+      setBusyLibraryPaperId(paperId);
+      setLibraryOperationError(null);
+      setLibraryOperationMessage(null);
+      try {
+        await setPaperFolders(paperId, [folderId]);
+        await reloadLibrary();
+        setActiveToolFolderId(folderId);
+        setToolPanelOpen(true);
+        setLibraryOperationMessage(
+          `已将“${paper.title}”移动到“${targetFolder.name}”。`,
+        );
+      } catch (caught) {
+        setLibraryOperationError(
+          caught instanceof Error
+            ? `移动失败：${caught.message}`
+            : "移动失败，请重试。",
+        );
+      } finally {
+        setBusyLibraryPaperId(null);
+      }
+    },
+    [
+      busyLibraryPaperId,
+      folders,
+      libraryPapers,
+      reloadLibrary,
+    ],
+  );
+
+  const handleRemovePaperFromOpenFolder = useCallback(
+    async (paper: LiteraturePaper) => {
+      if (!activeToolFolderId || busyLibraryPaperId) return;
+      setBusyLibraryPaperId(paper.id);
+      setLibraryOperationError(null);
+      setLibraryOperationMessage(null);
+      try {
+        await setPaperFolders(
+          paper.id,
+          (paper.folderIds ?? []).filter((id) => id !== activeToolFolderId),
+        );
+        await reloadLibrary();
+        setLibraryOperationMessage(`已将“${paper.title}”移出当前文件夹。`);
+      } catch (caught) {
+        setLibraryOperationError(
+          caught instanceof Error
+            ? `移出失败：${caught.message}`
+            : "移出失败，请重试。",
+        );
+      } finally {
+        setBusyLibraryPaperId(null);
+      }
+    },
+    [activeToolFolderId, busyLibraryPaperId, reloadLibrary],
+  );
+
+  const handleUploadFilesToOpenFolder = useCallback(
+    async (files: File[]) => {
+      if (!activeToolFolderId || isUploadingToFolder || files.length === 0) {
+        return;
+      }
+      setIsUploadingToFolder(true);
+      setLibraryOperationError(null);
+      setLibraryOperationMessage(null);
+      let uploaded = 0;
+      try {
+        for (const file of files.slice(0, 10)) {
+          await uploadLocalPdfToLibrary([activeToolFolderId], file);
+          uploaded += 1;
+          setLibraryOperationMessage(
+            `正在上传 ${uploaded}/${Math.min(files.length, 10)}：${file.name}`,
+          );
+        }
+        await reloadLibrary();
+        setLibraryOperationMessage(`已上传 ${uploaded} 个 PDF 到当前文件夹。`);
+      } catch (caught) {
+        await reloadLibrary().catch(() => undefined);
+        setLibraryOperationError(
+          caught instanceof Error
+            ? `已完成 ${uploaded} 个，后续上传失败：${caught.message}`
+            : `已完成 ${uploaded} 个，后续上传失败。`,
+        );
+      } finally {
+        setIsUploadingToFolder(false);
+      }
+    },
+    [activeToolFolderId, isUploadingToFolder, reloadLibrary],
+  );
 
   const handleLogout = useCallback(async () => {
     abortActiveStream();
@@ -868,6 +982,9 @@ export function ChatShell() {
         onDeleteConversation={handleDeleteConversation}
         onSelectFolder={handleSelectFolder}
         onOpenFolder={handleOpenFolder}
+        onPaperDrop={(paperId, folderId) =>
+          void handlePaperDrop(paperId, folderId)
+        }
         onContinueProject={handleContinueProject}
         onLogout={handleLogout}
         isLoggingOut={isLoggingOut}
@@ -1159,6 +1276,12 @@ export function ChatShell() {
         papers={toolPapers}
         isStreaming={isStreaming}
         activity={activity}
+        busyPaperId={busyLibraryPaperId}
+        isUploading={isUploadingToFolder}
+        operationMessage={libraryOperationMessage}
+        operationError={libraryOperationError}
+        onRemovePaper={(paper) => void handleRemovePaperFromOpenFolder(paper)}
+        onUploadFiles={(files) => void handleUploadFilesToOpenFolder(files)}
         onClose={() => setToolPanelOpen(false)}
       />
 

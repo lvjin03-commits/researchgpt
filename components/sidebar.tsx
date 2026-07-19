@@ -24,6 +24,7 @@ import {
 import type { ChatConversation } from "@/lib/chat/history";
 import {
   FOLDER_DRAG_TYPE,
+  PAPER_DRAG_TYPE,
   type ResearchProject,
 } from "@/lib/chat/workspace";
 import type { LiteratureFolder } from "@/lib/literature/types";
@@ -43,6 +44,7 @@ type SidebarProps = {
   onDeleteConversation: (conversationId: string) => void;
   onSelectFolder: (folder: LiteratureFolder) => void;
   onOpenFolder: (folder: LiteratureFolder) => void;
+  onPaperDrop: (paperId: string, folderId: string) => void;
   onContinueProject: (project: ResearchProject) => void;
   onLogout: () => void;
   isLoggingOut?: boolean;
@@ -72,6 +74,7 @@ export function Sidebar({
   onDeleteConversation,
   onSelectFolder,
   onOpenFolder,
+  onPaperDrop,
   onContinueProject,
   onLogout,
   isLoggingOut = false,
@@ -80,6 +83,9 @@ export function Sidebar({
   const [folderSearch, setFolderSearch] = useState("");
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(
     () => new Set(),
+  );
+  const [paperDropFolderId, setPaperDropFolderId] = useState<string | null>(
+    null,
   );
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -151,8 +157,36 @@ export function Sidebar({
             }}
             onClick={() => selectAfterClickDelay(folder)}
             onDoubleClick={() => openOnDoubleClick(folder)}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes(PAPER_DRAG_TYPE)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setPaperDropFolderId(folder.id);
+            }}
+            onDragLeave={() => {
+              setPaperDropFolderId((current) =>
+                current === folder.id ? null : current,
+              );
+            }}
+            onDrop={(event) => {
+              const payload = event.dataTransfer.getData(PAPER_DRAG_TYPE);
+              if (!payload) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setPaperDropFolderId(null);
+              try {
+                const parsed = JSON.parse(payload) as { id?: unknown };
+                if (typeof parsed.id === "string") {
+                  onPaperDrop(parsed.id, folder.id);
+                }
+              } catch {
+                // Ignore malformed drag data.
+              }
+            }}
             className={`group flex cursor-pointer items-center gap-1 py-1.5 pr-2 text-sm ${
-              selected
+              paperDropFolderId === folder.id
+                ? "bg-blue-100 font-bold text-blue-900 ring-1 ring-inset ring-blue-400"
+                : selected
                 ? "bg-blue-50 font-semibold text-blue-800"
                 : "text-gray-700 hover:bg-gray-100"
             }`}
