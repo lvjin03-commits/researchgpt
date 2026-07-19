@@ -6,6 +6,7 @@ import type { AIProviderAdapter, ChatMessage, StreamChatOptions } from "@/lib/ai
 import { messagesIncludeImages } from "@/lib/ai/types";
 import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
 import { extractImagesFromSources } from "@/lib/chat/server/source-images";
+import { estimateModelCostUsd } from "@/lib/ai/cost";
 
 const DEFAULT_TEXT_MODEL = "gpt-4o-mini";
 const DEFAULT_VISION_MODEL = "gpt-4.1-mini";
@@ -27,6 +28,7 @@ export type ResponsesChatOptions = StreamChatOptions & {
   webSearch?: boolean;
   codeInterpreter?: boolean;
   maxOutputTokens?: number;
+  promptCacheKey?: string;
 };
 
 export async function* openResponsesChatStream({
@@ -37,6 +39,7 @@ export async function* openResponsesChatStream({
   webSearch = false,
   codeInterpreter = false,
   maxOutputTokens = 4000,
+  promptCacheKey,
 }: ResponsesChatOptions): AsyncGenerator<ChatStreamEvent> {
   const client = getClient();
   const model = requestedModel || getModelForMessages(messages);
@@ -70,6 +73,8 @@ export async function* openResponsesChatStream({
     }));
 
   try {
+    const webSearchCallIds = new Set<string>();
+    const codeInterpreterCallIds = new Set<string>();
     const tools: OpenAI.Responses.Tool[] = [];
     if (webSearch) {
       tools.push({ type: "web_search" });
@@ -89,6 +94,7 @@ export async function* openResponsesChatStream({
         stream: true,
         max_output_tokens: maxOutputTokens,
         reasoning: { effort: reasoningEffort ?? "none" },
+        ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
         ...(tools.length > 0 ? { tools } : {}),
       },
       { signal },
@@ -100,6 +106,7 @@ export async function* openResponsesChatStream({
       } else if (event.type === "response.web_search_call.searching") {
         yield { type: "status", message: "正在搜索网络并核对来源" };
       } else if (event.type === "response.web_search_call.completed") {
+        webSearchCallIds.add(event.item_id);
         yield { type: "status", message: "网络检索完成，正在组织回答" };
       } else if (
         event.type === "response.code_interpreter_call.in_progress" ||
@@ -107,6 +114,7 @@ export async function* openResponsesChatStream({
       ) {
         yield { type: "status", message: "正在执行数据计算并核对结果" };
       } else if (event.type === "response.code_interpreter_call.completed") {
+        codeInterpreterCallIds.add(event.item_id);
         yield { type: "status", message: "数据计算完成，正在生成结论和图表" };
       } else if (event.type === "response.completed") {
         const citedUrls = new Map<string, string>();
@@ -138,11 +146,27 @@ export async function* openResponsesChatStream({
         }
         const usage = event.response.usage;
         if (usage) {
+          const cachedInputTokens =
+            usage.input_tokens_details?.cached_tokens ?? 0;
+          const reasoningTokens =
+            usage.output_tokens_details?.reasoning_tokens ?? 0;
+          const estimatedCostUsd = estimateModelCostUsd(model, {
+            inputTokens: usage.input_tokens,
+            cachedInputTokens,
+            outputTokens: usage.output_tokens,
+            reasoningTokens,
+          });
           yield {
             type: "usage",
+            model,
             inputTokens: usage.input_tokens,
+            cachedInputTokens,
             outputTokens: usage.output_tokens,
+            reasoningTokens,
             totalTokens: usage.total_tokens,
+            webSearchCalls: webSearchCallIds.size,
+            codeInterpreterCalls: codeInterpreterCallIds.size,
+            estimatedCostUsd,
           };
         }
       }

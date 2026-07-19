@@ -336,23 +336,12 @@ async function createReviewCompletion(
     }
 
     const finishReason = completion.choices[0]?.finish_reason ?? "unknown";
-    const originalLimit = params.max_completion_tokens ?? 3000;
-    console.warn("[literature] empty review completion; retrying:", {
-      finishReason,
-      originalLimit,
-      reasoningEffort: params.reasoning_effort ?? "default",
-    });
-
-    return await client.chat.completions.create(
+    throw new AIProviderError(
+      `AI returned no usable review content (finish reason: ${finishReason}). Retry only after reducing the scope or changing the model.`,
       {
-        ...params,
-        reasoning_effort: "none",
-        max_completion_tokens: Math.min(
-          20_000,
-          Math.max(6000, originalLimit * 2),
-        ),
+        statusCode: 502,
+        provider: "openai",
       },
-      { signal },
     );
   } catch (error) {
     if (error instanceof AIProviderError) {

@@ -197,20 +197,16 @@ async function extractFullTextEvidenceDigest(
     },
   ];
 
-  let completion: OpenAI.Chat.Completions.ChatCompletion | null = null;
-  for (const maxCompletionTokens of [4000, 6500]) {
-    completion = await client.chat.completions.create(
-      {
-        model,
-        reasoning_effort: "none",
-        max_completion_tokens: maxCompletionTokens,
-        response_format: { type: "json_object" },
-        messages,
-      },
-      { signal },
-    );
-    if (completion.choices[0]?.finish_reason !== "length") break;
-  }
+  const completion = await client.chat.completions.create(
+    {
+      model,
+      reasoning_effort: "none",
+      max_completion_tokens: 6500,
+      response_format: { type: "json_object" },
+      messages,
+    },
+    { signal },
+  );
 
   const choice = completion?.choices[0];
   if (choice?.finish_reason === "length") {
@@ -491,23 +487,19 @@ export async function generatePaperWorkspaceAnalysis(
       },
     ];
 
-    let completion: OpenAI.Chat.Completions.ChatCompletion | null = null;
-    for (const maxCompletionTokens of [7000, 9000]) {
-      completion = await client.chat.completions.create(
-        {
-          model,
-          reasoning_effort: "none",
-          max_completion_tokens: maxCompletionTokens,
-          response_format: {
-            type: "json_schema",
-            json_schema: WORKSPACE_JSON_SCHEMA,
-          },
-          messages,
+    const completion = await client.chat.completions.create(
+      {
+        model,
+        reasoning_effort: "none",
+        max_completion_tokens: 9000,
+        response_format: {
+          type: "json_schema",
+          json_schema: WORKSPACE_JSON_SCHEMA,
         },
-        { signal },
-      );
-      if (completion.choices[0]?.finish_reason !== "length") break;
-    }
+        messages,
+      },
+      { signal },
+    );
 
     const choice = completion?.choices[0];
     if (choice?.finish_reason === "length") {

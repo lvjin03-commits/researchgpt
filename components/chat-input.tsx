@@ -102,7 +102,7 @@ export function ChatInput({
 
   const selectedModel =
     CHAT_MODEL_OPTIONS.find((option) => option.tier === modelTier) ??
-    CHAT_MODEL_OPTIONS[1];
+    CHAT_MODEL_OPTIONS[0];
   const inputLocked = disabled || isStreaming;
   const canSend =
     !inputLocked && (message.trim().length > 0 || attachments.length > 0);

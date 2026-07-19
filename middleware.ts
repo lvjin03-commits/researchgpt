@@ -16,6 +16,7 @@ export const config = {
     "/chat/:path*",
     "/translate",
     "/translate/:path*",
+    "/usage",
     "/literature",
     "/literature/:path*",
   ],

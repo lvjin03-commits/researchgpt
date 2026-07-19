@@ -18,6 +18,14 @@ import {
 } from "@/lib/chat/server/errors";
 import { buildLiteratureLibraryContext } from "@/lib/chat/server/library-context";
 import { encodeChatStreamEvent } from "@/lib/chat/stream-protocol";
+import {
+  applyChatContextBudget,
+  insertContextBeforeLastUser,
+} from "@/lib/chat/context-budget";
+import {
+  assertDailyAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage-ledger";
 import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 import { createClient } from "@/lib/supabase/server";
 
@@ -53,6 +61,8 @@ function sanitizeFolderIds(value: unknown): string[] {
 export async function POST(request: Request) {
   try {
     const user = await requireChatUser();
+    const supabase = await createClient();
+    await assertDailyAiBudgetAvailable(supabase, user.id);
     const body = (await request.json()) as ChatRequestBody;
     const modelTier = isChatModelTier(body.modelTier)
       ? body.modelTier
@@ -112,7 +122,6 @@ export async function POST(request: Request) {
 
     let libraryStatus = "";
     if (effectiveUseLibrary) {
-      const supabase = await createClient();
       const library = await buildLiteratureLibraryContext(
         supabase,
         user.id,
@@ -122,9 +131,8 @@ export async function POST(request: Request) {
       libraryStatus = selectedFolderIds.length
         ? `已从选中文件夹匹配 ${library.paperCount} 篇相关文献`
         : `已从文献库匹配 ${library.paperCount} 篇相关文献`;
-      messages = [
-        {
-          role: "system",
+      const libraryContextMessage: ChatMessage = {
+          role: "user",
           content: [
             projectName ? `当前科研项目：${projectName}` : "",
             selectedFolderIds.length
@@ -135,9 +143,8 @@ export async function POST(request: Request) {
           ]
             .filter(Boolean)
             .join("\n\n"),
-        },
-        ...messages,
-      ];
+        };
+      messages = insertContextBeforeLastUser(messages, libraryContextMessage);
     }
 
     if (contextMode === "temporary") {
@@ -160,6 +167,8 @@ export async function POST(request: Request) {
         ...messages,
       ];
     }
+
+    messages = applyChatContextBudget(messages, modelTier);
 
     console.log("[api/chat] request", {
       model: modelOption.model,
@@ -194,7 +203,18 @@ export async function POST(request: Request) {
             webSearch: effectiveWebSearch,
             codeInterpreter: taskRoute.useCodeInterpreter,
             maxOutputTokens: modelOption.maxOutputTokens,
+            promptCacheKey: `chat:${user.id}:${modelTier}`,
           })) {
+            if (event.type === "usage") {
+              await recordAiUsage(supabase, {
+                userId: user.id,
+                feature: "chat",
+                taskKind: taskRoute.kind,
+                projectName,
+                modelTier,
+                usage: event,
+              });
+            }
             controller.enqueue(encodeChatStreamEvent(event));
           }
           controller.close();

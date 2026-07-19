@@ -98,7 +98,16 @@ export function ChatShell() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activity, setActivity] = useState<string | null>(null);
-  const [usage, setUsage] = useState({ input: 0, output: 0, total: 0 });
+  const [usage, setUsage] = useState({
+    input: 0,
+    cachedInput: 0,
+    output: 0,
+    reasoning: 0,
+    total: 0,
+    costUsd: 0,
+    webSearchCalls: 0,
+    codeInterpreterCalls: 0,
+  });
   const [webSearch, setWebSearch] = useState(false);
   const [useLibrary, setUseLibrary] = useState(false);
   const [memory, setMemory] = useState("");
@@ -431,8 +440,17 @@ export function ChatShell() {
           onUsage: (nextUsage) =>
             setUsage((current) => ({
               input: current.input + nextUsage.inputTokens,
+              cachedInput:
+                current.cachedInput + nextUsage.cachedInputTokens,
               output: current.output + nextUsage.outputTokens,
+              reasoning: current.reasoning + nextUsage.reasoningTokens,
               total: current.total + nextUsage.totalTokens,
+              costUsd: current.costUsd + nextUsage.estimatedCostUsd,
+              webSearchCalls:
+                current.webSearchCalls + nextUsage.webSearchCalls,
+              codeInterpreterCalls:
+                current.codeInterpreterCalls +
+                nextUsage.codeInterpreterCalls,
             })),
           onSources: (sources) => {
             if (sources.length === 0) return;
@@ -875,8 +893,15 @@ export function ChatShell() {
             onFolderDrop={handleFolderDrop}
           />
           {usage.total > 0 && (
-            <div className="pointer-events-none absolute bottom-1 left-1/2 z-20 -translate-x-1/2 text-[10px] text-gray-400">
-              本次会话约 {usage.total.toLocaleString()} tokens
+            <div className="pointer-events-none absolute bottom-1 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap text-[10px] text-gray-500">
+              本次会话约 {usage.total.toLocaleString()} tokens · 模型成本约 $
+              {usage.costUsd.toFixed(4)}
+              {usage.cachedInput > 0
+                ? ` · 缓存 ${usage.cachedInput.toLocaleString()}`
+                : ""}
+              {usage.reasoning > 0
+                ? ` · 推理 ${usage.reasoning.toLocaleString()}`
+                : ""}
             </div>
           )}
         </main>

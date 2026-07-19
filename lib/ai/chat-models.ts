@@ -2,7 +2,7 @@ export const CHAT_MODEL_TIERS = ["economy", "standard", "advanced"] as const;
 
 export type ChatModelTier = (typeof CHAT_MODEL_TIERS)[number];
 
-export const DEFAULT_CHAT_MODEL_TIER: ChatModelTier = "standard";
+export const DEFAULT_CHAT_MODEL_TIER: ChatModelTier = "economy";
 
 export type ChatModelOption = {
   tier: ChatModelTier;
@@ -21,16 +21,16 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     description: "快速问答，按需最多 1 张程序图",
     model: "gpt-5.4-mini",
     reasoningEffort: "none",
-    maxOutputTokens: 1800,
+    maxOutputTokens: 1600,
     maxVisuals: 1,
   },
   {
     tier: "standard",
     label: "标准",
     description: "科研分析，按需生成 1–3 张专业图表",
-    model: "gpt-5.5",
-    reasoningEffort: "medium",
-    maxOutputTokens: 4000,
+    model: "gpt-5.6-terra",
+    reasoningEffort: "low",
+    maxOutputTokens: 3000,
     maxVisuals: 3,
   },
   {
@@ -39,7 +39,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     description: "全文证据分析，按需最多 6 张证据图表",
     model: "gpt-5.6",
     reasoningEffort: "medium",
-    maxOutputTokens: 7000,
+    maxOutputTokens: 5000,
     maxVisuals: 6,
   },
 ] as const;

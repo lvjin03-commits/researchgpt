@@ -3,8 +3,8 @@ import { listLiteratureFolderPapers } from "@/lib/literature/server/folder-paper
 import { listLiteraturePapers } from "@/lib/literature/server/repository";
 import type { LiteraturePaper } from "@/lib/literature/types";
 
-const MAX_PAPERS = 6;
-const MAX_EXCERPT = 3200;
+const MAX_PAPERS = 4;
+const MAX_EXCERPT = 2200;
 
 function termsFromQuery(query: string): string[] {
   return Array.from(

@@ -17,9 +17,15 @@ export type ChatStreamEvent =
   | { type: "error"; message: string; code?: string }
   | {
       type: "usage";
+      model: string;
       inputTokens: number;
+      cachedInputTokens: number;
       outputTokens: number;
+      reasoningTokens: number;
       totalTokens: number;
+      webSearchCalls: number;
+      codeInterpreterCalls: number;
+      estimatedCostUsd: number;
     };
 
 export function encodeChatStreamEvent(event: ChatStreamEvent): Uint8Array {

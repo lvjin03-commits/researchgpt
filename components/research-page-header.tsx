@@ -16,6 +16,7 @@ const PRIMARY_NAV = [
   { href: "/presentation", label: "成果制作", match: "/presentation" },
   { href: "/translate", label: "学术翻译", match: "/translate" },
   { href: "/chat", label: "AI 对话", match: "/chat" },
+  { href: "/usage", label: "AI 成本", match: "/usage" },
 ] as const;
 
 const LITERATURE_NAV = [

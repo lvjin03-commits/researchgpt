@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  CircleDollarSign,
   Folder,
   FolderOpen,
   LogOut,
@@ -342,6 +343,13 @@ export function Sidebar({
           >
             <BookOpen className="h-4 w-4" />
             管理完整文献库
+          </a>
+          <a
+            href="/usage"
+            className="mb-1 flex items-center gap-2 px-2 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+          >
+            <CircleDollarSign className="h-4 w-4" />
+            AI 用量与成本
           </a>
           <button
             type="button"
