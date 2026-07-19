@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderOpen, PanelRightOpen, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  FolderOpen,
+  LoaderCircle,
+  PanelRightOpen,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
 import { MenuIcon } from "@/components/icons";
@@ -34,7 +42,18 @@ import {
   type ResearchProject,
   type WorkspaceContextMode,
 } from "@/lib/chat/workspace";
-import { fetchLiteratureLibrary } from "@/lib/literature/client";
+import {
+  createLiteratureFolder,
+  deleteLiteratureFolder,
+  deleteLiteraturePaper,
+  fetchLiteratureLibrary,
+  setPaperFolders,
+  updateLiteratureFolder,
+} from "@/lib/literature/client";
+import {
+  planLibraryCommand,
+  type LibraryCommandPlan,
+} from "@/lib/chat/library-command";
 import type {
   LiteratureFolder,
   LiteraturePaper,
@@ -128,6 +147,12 @@ export function ChatShell() {
     useState<ChatSendPayload | null>(null);
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [pendingLibraryCommand, setPendingLibraryCommand] = useState<{
+    payload: ChatSendPayload;
+    plan: LibraryCommandPlan;
+  } | null>(null);
+  const [isExecutingLibraryCommand, setIsExecutingLibraryCommand] =
+    useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
 
@@ -144,6 +169,13 @@ export function ChatShell() {
     ensureActiveConversation,
     flushCloudSync,
   } = useChatHistory();
+
+  const reloadLibrary = useCallback(async () => {
+    const result = await fetchLiteratureLibrary(CHAT_LIBRARY_FILTERS);
+    setFolders(result.folders);
+    setLibraryPapers(result.papers);
+    return result;
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -243,6 +275,7 @@ export function ChatShell() {
     setContextMode("auto");
     setPendingProjectPayload(null);
     setPendingTemporaryPayload(null);
+    setPendingLibraryCommand(null);
     startNewChat();
   }, [abortActiveStream, startNewChat]);
 
@@ -549,8 +582,146 @@ export function ChatShell() {
     ],
   );
 
+  const persistLibraryExchange = useCallback(
+    async (payload: ChatSendPayload, result: string) => {
+      const nextMessages: DisplayChatMessage[] = [
+        ...activeMessages,
+        toDisplayUserMessage(payload),
+        { role: "assistant", content: result },
+      ];
+      const conversationId = await ensureActiveConversation(nextMessages);
+      persistConversation(conversationId, nextMessages);
+      if (activeProject) {
+        const now = new Date().toISOString();
+        setProjects((current) =>
+          current.map((project) =>
+            project.id === activeProject.id
+              ? {
+                  ...project,
+                  conversationId,
+                  lastTask: payload.message,
+                  updatedAt: now,
+                }
+              : project,
+          ),
+        );
+      }
+      await flushCloudSync();
+    },
+    [
+      activeMessages,
+      activeProject,
+      ensureActiveConversation,
+      flushCloudSync,
+      persistConversation,
+    ],
+  );
+
+  const executePendingLibraryCommand = useCallback(async () => {
+    if (!pendingLibraryCommand || isExecutingLibraryCommand) return;
+    const { payload, plan } = pendingLibraryCommand;
+    setIsExecutingLibraryCommand(true);
+    setError(null);
+
+    try {
+      let focusFolderId: string | null = null;
+      switch (plan.kind) {
+        case "create_folder": {
+          const folder = await createLiteratureFolder({
+            name: plan.folderName,
+          });
+          focusFolderId = folder.id;
+          break;
+        }
+        case "rename_folder":
+          await updateLiteratureFolder(plan.folderId, plan.nextName);
+          focusFolderId = plan.folderId;
+          break;
+        case "delete_folder":
+          await deleteLiteratureFolder(plan.folderId);
+          setSelectedFolderIds((current) =>
+            current.filter((id) => id !== plan.folderId),
+          );
+          setProjects((current) =>
+            current.map((project) => ({
+              ...project,
+              folderIds: project.folderIds.filter((id) => id !== plan.folderId),
+            })),
+          );
+          if (activeToolFolderId === plan.folderId) {
+            setActiveToolFolderId(null);
+            setToolPanelOpen(false);
+          }
+          break;
+        case "delete_paper":
+          await deleteLiteraturePaper(plan.paperId);
+          break;
+        case "move_paper":
+          await setPaperFolders(plan.paperId, [plan.folderId]);
+          focusFolderId = plan.folderId;
+          break;
+        case "add_paper_to_folder":
+          await setPaperFolders(plan.paperId, [
+            ...new Set([...plan.currentFolderIds, plan.folderId]),
+          ]);
+          focusFolderId = plan.folderId;
+          break;
+        case "remove_paper_from_folder":
+          await setPaperFolders(
+            plan.paperId,
+            plan.currentFolderIds.filter((id) => id !== plan.folderId),
+          );
+          focusFolderId = plan.folderId;
+          break;
+      }
+
+      await reloadLibrary();
+      if (focusFolderId) {
+        setActiveToolFolderId(focusFolderId);
+        setToolPanelOpen(true);
+      }
+      await persistLibraryExchange(
+        payload,
+        `已执行文献库操作：**${plan.summary}**。\n\n右侧文献工作台和文献库数据已同步刷新。`,
+      );
+      setPendingLibraryCommand(null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? `文献库操作失败：${caught.message}`
+          : "文献库操作失败，请重试。",
+      );
+    } finally {
+      setIsExecutingLibraryCommand(false);
+    }
+  }, [
+    activeToolFolderId,
+    isExecutingLibraryCommand,
+    pendingLibraryCommand,
+    persistLibraryExchange,
+    reloadLibrary,
+  ]);
+
   const handleSend = useCallback(
     (payload: ChatSendPayload) => {
+      if (!payload.files?.length) {
+        const command = planLibraryCommand(
+          payload.message,
+          folders,
+          libraryPapers,
+        );
+        if (command.type === "error") {
+          setError(command.message);
+          return;
+        }
+        if (command.type === "plan") {
+          setError(null);
+          setPendingProjectPayload(null);
+          setPendingTemporaryPayload(null);
+          setPendingLibraryCommand({ payload, plan: command.plan });
+          return;
+        }
+      }
       if (
         activeProject &&
         shouldSuggestTemporaryQuestion(payload.message, activeProject)
@@ -567,7 +738,13 @@ export function ChatShell() {
       }
       void submitMessage(payload);
     },
-    [activeProject, selectedFolderIds.length, submitMessage],
+    [
+      activeProject,
+      folders,
+      libraryPapers,
+      selectedFolderIds.length,
+      submitMessage,
+    ],
   );
 
   const answerOutsideProject = useCallback(() => {
@@ -811,7 +988,76 @@ export function ChatShell() {
             </div>
           )}
 
-          {pendingProjectPayload && (
+          {pendingLibraryCommand && (
+            <div
+              className={`absolute inset-x-4 bottom-52 z-40 mx-auto max-w-3xl border p-4 shadow-lg sm:bottom-56 ${
+                pendingLibraryCommand.plan.destructive
+                  ? "border-red-200 bg-red-50"
+                  : "border-blue-200 bg-blue-50"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                {pendingLibraryCommand.plan.destructive ? (
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-700" />
+                ) : (
+                  <Check className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={`text-sm font-bold ${
+                      pendingLibraryCommand.plan.destructive
+                        ? "text-red-950"
+                        : "text-blue-950"
+                    }`}
+                  >
+                    请确认文献库操作
+                  </p>
+                  <p
+                    className={`mt-1 text-sm leading-6 ${
+                      pendingLibraryCommand.plan.destructive
+                        ? "text-red-800"
+                        : "text-blue-800"
+                    }`}
+                  >
+                    {pendingLibraryCommand.plan.summary}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    系统已根据当前文献库匹配到具体对象，确认后才会修改真实数据。
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void executePendingLibraryCommand()}
+                      disabled={isExecutingLibraryCommand}
+                      className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white disabled:opacity-50 ${
+                        pendingLibraryCommand.plan.destructive
+                          ? "bg-red-700 hover:bg-red-800"
+                          : "bg-blue-700 hover:bg-blue-800"
+                      }`}
+                    >
+                      {isExecutingLibraryCommand ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Check className="h-3.5 w-3.5" />
+                      )}
+                      {isExecutingLibraryCommand ? "正在执行" : "确认执行"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingLibraryCommand(null)}
+                      disabled={isExecutingLibraryCommand}
+                      className="inline-flex items-center gap-2 border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pendingProjectPayload && !pendingLibraryCommand && (
             <div className="absolute inset-x-4 bottom-52 z-30 mx-auto max-w-3xl border border-blue-200 bg-blue-50 p-4 shadow-lg sm:bottom-56">
               <p className="text-sm font-bold text-blue-950">
                 这项任务会持续使用所选文献，建议创建科研项目
@@ -838,7 +1084,7 @@ export function ChatShell() {
             </div>
           )}
 
-          {pendingTemporaryPayload && (
+          {pendingTemporaryPayload && !pendingLibraryCommand && (
             <div className="absolute inset-x-4 bottom-52 z-30 mx-auto max-w-3xl border border-amber-200 bg-amber-50 p-4 shadow-lg sm:bottom-56">
               <p className="text-sm font-bold text-amber-950">
                 这个问题将作为临时问题回答

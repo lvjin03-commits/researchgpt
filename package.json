@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "qa": "npm run build"
   },
   "dependencies": {

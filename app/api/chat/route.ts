@@ -114,7 +114,13 @@ export async function POST(request: Request) {
 
     messages = withScientificVisualPolicy(
       [
-        { role: "system", content: taskRoute.systemInstruction },
+        {
+          role: "system",
+          content: [
+            taskRoute.systemInstruction,
+            "你不能声称已经新建、重命名、删除或移动文献库中的任何对象。文献库变更必须由界面的文献库操作工具实际执行并返回成功结果；如果用户的指令没有被工具识别，请要求用户明确文件夹和文献名称。",
+          ].join("\n\n"),
+        },
         ...messages,
       ],
       modelOption,
