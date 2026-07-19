@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FolderOpen, PanelRightOpen, Sparkles } from "lucide-react";
 import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
 import { MenuIcon } from "@/components/icons";
+import { ResearchToolPanel } from "@/components/research-tool-panel";
 import { Sidebar } from "@/components/sidebar";
 import type { ChatMessage } from "@/lib/ai/types";
 import {
@@ -12,53 +14,85 @@ import {
   isChatModelTier,
   type ChatModelTier,
 } from "@/lib/ai/chat-models";
-import { ChatClientError, isAbortError, streamChatResponse } from "@/lib/chat/client";
 import {
-  defaultContentForAttachments,
+  ChatClientError,
+  isAbortError,
+  streamChatResponse,
+} from "@/lib/chat/client";
+import {
   buildChatApiMessages,
+  defaultContentForAttachments,
 } from "@/lib/chat/message-normalize";
 import type { DisplayAttachment, DisplayChatMessage } from "@/lib/chat/types";
 import { useChatHistory } from "@/lib/chat/use-chat-history";
+import {
+  createResearchProject,
+  loadWorkspace,
+  saveWorkspace,
+  shouldSuggestProject,
+  type ResearchProject,
+  type WorkspaceContextMode,
+} from "@/lib/chat/workspace";
+import { fetchLiteratureLibrary } from "@/lib/literature/client";
+import type {
+  LiteratureFolder,
+  LiteraturePaper,
+} from "@/lib/literature/types";
 import { createClient } from "@/lib/supabase/client";
 import { getAttachmentKind } from "@/lib/uploads/constants";
 
-function toApiUserMessage(payload: ChatSendPayload): ChatMessage {
-  const trimmed = payload.message.trim();
-
-  if (trimmed) {
-    return { role: "user", content: trimmed };
-  }
-
-  if (payload.files && payload.files.length > 0) {
-    const attachments = toDisplayAttachments(payload.files);
-    return {
-      role: "user",
-      content: defaultContentForAttachments(attachments),
-    };
-  }
-
-  return { role: "user", content: trimmed };
-}
+const CHAT_LIBRARY_FILTERS = {
+  status: "all" as const,
+  q: "",
+  source: "",
+  discipline: "",
+  priority: "",
+  folderId: "",
+};
 
 function toDisplayAttachments(files: File[]): DisplayAttachment[] {
   return files.flatMap((file) => {
     const kind = getAttachmentKind(file.name);
-    if (!kind) return [];
-    return [{ name: file.name, kind }];
+    return kind ? [{ name: file.name, kind }] : [];
   });
+}
+
+function toApiUserMessage(payload: ChatSendPayload): ChatMessage {
+  const trimmed = payload.message.trim();
+  if (trimmed) return { role: "user", content: trimmed };
+  const attachments = toDisplayAttachments(payload.files ?? []);
+  return {
+    role: "user",
+    content: defaultContentForAttachments(attachments),
+  };
 }
 
 function toDisplayUserMessage(payload: ChatSendPayload): DisplayChatMessage {
   return {
     role: "user",
     content: payload.message.trim(),
-    attachments: payload.files ? toDisplayAttachments(payload.files) : undefined,
+    attachments: payload.files
+      ? toDisplayAttachments(payload.files)
+      : undefined,
   };
+}
+
+function projectNameFromTask(
+  message: string,
+  folders: LiteratureFolder[],
+): string {
+  if (folders.length === 1) return folders[0].name;
+  if (folders.length > 1) return `${folders[0].name} 等文献研究`;
+  return message.trim().slice(0, 28) || "新科研项目";
 }
 
 export function ChatShell() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [toolPanelOpen, setToolPanelOpen] = useState(false);
+  const [activeToolFolderId, setActiveToolFolderId] = useState<string | null>(
+    null,
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,42 +104,18 @@ export function ChatShell() {
   const [modelTier, setModelTier] = useState<ChatModelTier>(
     DEFAULT_CHAT_MODEL_TIER,
   );
+  const [folders, setFolders] = useState<LiteratureFolder[]>([]);
+  const [libraryPapers, setLibraryPapers] = useState<LiteraturePaper[]>([]);
+  const [projects, setProjects] = useState<ResearchProject[]>([]);
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
+  const [contextMode, setContextMode] =
+    useState<WorkspaceContextMode>("auto");
+  const [pendingProjectPayload, setPendingProjectPayload] =
+    useState<ChatSendPayload | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const savedTier = window.localStorage.getItem("researchgpt-chat-model-tier");
-      if (isChatModelTier(savedTier)) {
-        setModelTier(savedTier);
-      }
-      setWebSearch(window.localStorage.getItem("researchgpt-chat-web") === "true");
-      setUseLibrary(window.localStorage.getItem("researchgpt-chat-library") === "true");
-      setMemory(window.localStorage.getItem("researchgpt-chat-memory") ?? "");
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  const handleModelTierChange = useCallback((tier: ChatModelTier) => {
-    setModelTier(tier);
-    window.localStorage.setItem("researchgpt-chat-model-tier", tier);
-  }, []);
-
-  const handleWebSearchChange = useCallback((enabled: boolean) => {
-    setWebSearch(enabled);
-    window.localStorage.setItem("researchgpt-chat-web", String(enabled));
-  }, []);
-
-  const handleUseLibraryChange = useCallback((enabled: boolean) => {
-    setUseLibrary(enabled);
-    window.localStorage.setItem("researchgpt-chat-library", String(enabled));
-  }, []);
-
-  const handleMemoryChange = useCallback((value: string) => {
-    setMemory(value);
-    window.localStorage.setItem("researchgpt-chat-memory", value);
-  }, []);
 
   const {
     conversations,
@@ -121,14 +131,103 @@ export function ChatShell() {
     flushCloudSync,
   } = useChatHistory();
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const savedTier = window.localStorage.getItem(
+        "researchgpt-chat-model-tier",
+      );
+      if (isChatModelTier(savedTier)) setModelTier(savedTier);
+      setWebSearch(
+        window.localStorage.getItem("researchgpt-chat-web") === "true",
+      );
+      setUseLibrary(
+        window.localStorage.getItem("researchgpt-chat-library") === "true",
+      );
+      setMemory(window.localStorage.getItem("researchgpt-chat-memory") ?? "");
+
+      const workspace = loadWorkspace();
+      setProjects(workspace.projects);
+      setActiveProjectId(workspace.activeProjectId);
+      const restoredProject = workspace.projects.find(
+        (project) => project.id === workspace.activeProjectId,
+      );
+      if (restoredProject) {
+        setSelectedFolderIds(restoredProject.folderIds);
+        setContextMode("project");
+        setUseLibrary(restoredProject.folderIds.length > 0);
+      }
+      setWorkspaceHydrated(true);
+    }, 0);
+
+    void fetchLiteratureLibrary(CHAT_LIBRARY_FILTERS)
+      .then((result) => {
+        setFolders(result.folders);
+        setLibraryPapers(result.papers);
+      })
+      .catch(() => {
+        setError("文献文件夹加载失败，可刷新页面后重试。");
+      });
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceHydrated) return;
+    saveWorkspace({ projects, activeProjectId });
+  }, [projects, activeProjectId, workspaceHydrated]);
+
+  const selectedFolders = useMemo(
+    () => folders.filter((folder) => selectedFolderIds.includes(folder.id)),
+    [folders, selectedFolderIds],
+  );
+  const folderCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const paper of libraryPapers) {
+      for (const folderId of paper.folderIds ?? []) {
+        counts[folderId] = (counts[folderId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [libraryPapers]);
+  const activeProject =
+    projects.find((project) => project.id === activeProjectId) ?? null;
+  const activeToolFolder =
+    folders.find((folder) => folder.id === activeToolFolderId) ?? null;
+  const toolPapers = activeToolFolderId
+    ? libraryPapers.filter((paper) =>
+        (paper.folderIds ?? []).includes(activeToolFolderId),
+      )
+    : [];
+
   const abortActiveStream = useCallback(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
   }, []);
 
+  const handleModelTierChange = useCallback((tier: ChatModelTier) => {
+    setModelTier(tier);
+    window.localStorage.setItem("researchgpt-chat-model-tier", tier);
+  }, []);
+  const handleWebSearchChange = useCallback((enabled: boolean) => {
+    setWebSearch(enabled);
+    window.localStorage.setItem("researchgpt-chat-web", String(enabled));
+  }, []);
+  const handleUseLibraryChange = useCallback((enabled: boolean) => {
+    setUseLibrary(enabled);
+    window.localStorage.setItem("researchgpt-chat-library", String(enabled));
+  }, []);
+  const handleMemoryChange = useCallback((value: string) => {
+    setMemory(value);
+    window.localStorage.setItem("researchgpt-chat-memory", value);
+  }, []);
+
   const handleNewChat = useCallback(() => {
     abortActiveStream();
     setError(null);
+    setActiveProjectId(null);
+    setSelectedFolderIds([]);
+    setContextMode("auto");
+    setPendingProjectPayload(null);
     startNewChat();
   }, [abortActiveStream, startNewChat]);
 
@@ -137,26 +236,73 @@ export function ChatShell() {
       abortActiveStream();
       setError(null);
       setIsStreaming(false);
+      setActiveProjectId(
+        projects.find((project) => project.conversationId === conversationId)
+          ?.id ?? null,
+      );
+      const matchingProject = projects.find(
+        (project) => project.conversationId === conversationId,
+      );
+      setSelectedFolderIds(matchingProject?.folderIds ?? []);
+      setContextMode(matchingProject ? "project" : "auto");
       selectConversation(conversationId);
     },
-    [abortActiveStream, selectConversation],
+    [abortActiveStream, projects, selectConversation],
   );
 
   const handleDeleteConversation = useCallback(
     (conversationId: string) => {
       abortActiveStream();
-      setError(null);
-      setIsStreaming(false);
       deleteConversation(conversationId);
+      setProjects((current) =>
+        current.map((project) =>
+          project.conversationId === conversationId
+            ? { ...project, conversationId: null }
+            : project,
+        ),
+      );
     },
     [abortActiveStream, deleteConversation],
   );
 
+  const handleContinueProject = useCallback(
+    (project: ResearchProject) => {
+      setActiveProjectId(project.id);
+      setSelectedFolderIds(project.folderIds);
+      setContextMode("project");
+      setUseLibrary(project.folderIds.length > 0);
+      if (project.conversationId) selectConversation(project.conversationId);
+      else startNewChat();
+      if (project.folderIds[0]) {
+        setActiveToolFolderId(project.folderIds[0]);
+        setToolPanelOpen(true);
+      }
+    },
+    [selectConversation, startNewChat],
+  );
+
+  const handleSelectFolder = useCallback((folder: LiteratureFolder) => {
+    setSelectedFolderIds((current) =>
+      current.includes(folder.id) ? current : [...current, folder.id],
+    );
+    setUseLibrary(true);
+  }, []);
+
+  const handleOpenFolder = useCallback((folder: LiteratureFolder) => {
+    setActiveToolFolderId(folder.id);
+    setToolPanelOpen(true);
+  }, []);
+
+  const handleFolderDrop = useCallback((folderId: string) => {
+    setSelectedFolderIds((current) =>
+      current.includes(folderId) ? current : [...current, folderId],
+    );
+    setUseLibrary(true);
+  }, []);
+
   const handleLogout = useCallback(async () => {
     abortActiveStream();
     setIsLoggingOut(true);
-    setError(null);
-
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
@@ -168,42 +314,67 @@ export function ChatShell() {
     }
   }, [abortActiveStream, router]);
 
-  const handleStop = useCallback(() => {
-    abortControllerRef.current?.abort();
-  }, []);
-
   const submitMessage = useCallback(
-    async (payload: ChatSendPayload, history: DisplayChatMessage[] = activeMessages) => {
+    async (
+      payload: ChatSendPayload,
+      history: DisplayChatMessage[] = activeMessages,
+      projectOverride?: ResearchProject | null,
+      contextModeOverride?: WorkspaceContextMode,
+    ) => {
       abortControllerRef.current?.abort();
-
+      const project = projectOverride ?? activeProject;
       const displayUserMessage = toDisplayUserMessage(payload);
-      const assistantMessage: DisplayChatMessage = {
-        role: "assistant",
-        content: "",
-      };
-
       const nextMessages: DisplayChatMessage[] = [
         ...history,
         displayUserMessage,
-        assistantMessage,
+        { role: "assistant", content: "" },
       ];
-
       const conversationId = await ensureActiveConversation(nextMessages);
       persistConversation(conversationId, nextMessages);
+
+      if (project) {
+        const now = new Date().toISOString();
+        setProjects((current) => {
+          const without = current.filter((item) => item.id !== project.id);
+          return [
+            {
+              ...project,
+              conversationId,
+              folderIds: selectedFolderIds,
+              lastTask: payload.message,
+              updatedAt: now,
+            },
+            ...without,
+          ];
+        });
+        setActiveProjectId(project.id);
+      }
 
       const apiMessages = buildChatApiMessages(
         history,
         toApiUserMessage(payload),
       );
-
       setError(null);
       setActivity("正在准备回答");
       setIsStreaming(true);
+      if (selectedFolderIds.length > 0) {
+        setActiveToolFolderId((current) => current ?? selectedFolderIds[0]);
+        setToolPanelOpen(true);
+      }
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
-
       let streamingMessages = nextMessages;
+
+      const appendToAssistant = (content: string) => {
+        streamingMessages = streamingMessages.map((message, index) =>
+          index === streamingMessages.length - 1 &&
+          message.role === "assistant"
+            ? { ...message, content: message.content + content }
+            : message,
+        );
+        persistConversation(conversationId, streamingMessages);
+      };
 
       try {
         await streamChatResponse(apiMessages, {
@@ -213,6 +384,9 @@ export function ChatShell() {
           webSearch,
           useLibrary,
           memory,
+          selectedFolderIds,
+          contextMode: contextModeOverride ?? contextMode,
+          projectName: project?.name,
           onStatus: setActivity,
           onUsage: (nextUsage) =>
             setUsage((current) => ({
@@ -222,51 +396,31 @@ export function ChatShell() {
             })),
           onSources: (sources) => {
             if (sources.length === 0) return;
-            const sourceSection = [
-              "",
-              "",
-              "### 来源",
-              ...sources.map(
-                (source, index) =>
-                  `${index + 1}. [${source.title.replaceAll("[", "").replaceAll("]", "")}](${source.url})`,
-              ),
-            ].join("\n");
-
-            streamingMessages = streamingMessages.map((message, index) => {
-              if (
-                index !== streamingMessages.length - 1 ||
-                message.role !== "assistant" ||
-                message.content.includes("### 来源")
-              ) {
-                return message;
-              }
-              return { ...message, content: message.content + sourceSection };
-            });
-            persistConversation(conversationId, streamingMessages);
+            appendToAssistant(
+              [
+                "",
+                "",
+                "### 来源",
+                ...sources.map(
+                  (source, index) =>
+                    `${index + 1}. [${source.title.replaceAll("[", "").replaceAll("]", "")}](${source.url})`,
+                ),
+              ].join("\n"),
+            );
           },
           onImages: (images) => {
             if (images.length === 0) return;
-            const imageSection = [
-              "",
-              "",
-              "### 相关图片",
-              ...images.map(
-                (image, index) =>
-                  `${index + 1}. [![${image.title.replaceAll("[", "").replaceAll("]", "")}](${image.imageUrl})](${image.sourceUrl})`,
-              ),
-            ].join("\n");
-
-            streamingMessages = streamingMessages.map((message, index) => {
-              if (
-                index !== streamingMessages.length - 1 ||
-                message.role !== "assistant" ||
-                message.content.includes("### 相关图片")
-              ) {
-                return message;
-              }
-              return { ...message, content: message.content + imageSection };
-            });
-            persistConversation(conversationId, streamingMessages);
+            appendToAssistant(
+              [
+                "",
+                "",
+                "### 相关图片",
+                ...images.map(
+                  (image, index) =>
+                    `${index + 1}. [![${image.title.replaceAll("[", "").replaceAll("]", "")}](${image.imageUrl})](${image.sourceUrl})`,
+                ),
+              ].join("\n"),
+            );
           },
           onAttachmentsPrepared: (context) => {
             streamingMessages = streamingMessages.map((message, index) => {
@@ -275,10 +429,12 @@ export function ChatShell() {
               }
               return {
                 ...message,
-                attachments: message.attachments?.map((attachment, attachmentIndex) => ({
-                  ...attachment,
-                  context: attachmentIndex === 0 ? context : undefined,
-                })),
+                attachments: message.attachments?.map(
+                  (attachment, attachmentIndex) => ({
+                    ...attachment,
+                    context: attachmentIndex === 0 ? context : undefined,
+                  }),
+                ),
               };
             });
             persistConversation(conversationId, streamingMessages);
@@ -287,75 +443,96 @@ export function ChatShell() {
             const readyCount = results.filter(
               (result) => result.status === "ready",
             ).length;
-            const failed = results.filter(
-              (result) => result.status === "failed",
-            );
+            const failedCount = results.length - readyCount;
             setActivity(
-              failed.length > 0
-                ? `已读取 ${readyCount} 个文件，${failed.length} 个文件解析失败，将继续分析可用文件`
-                : `已成功读取 ${readyCount} 个文件，正在分析内容`,
+              failedCount
+                ? `已读取 ${readyCount} 个文件，${failedCount} 个解析失败`
+                : `已读取 ${readyCount} 个文件，正在分析内容`,
             );
           },
-          onChunk: (chunk) => {
-            streamingMessages = streamingMessages.map((message, index) => {
-              if (
-                index !== streamingMessages.length - 1 ||
-                message.role !== "assistant"
-              ) {
-                return message;
-              }
-
-              return {
-                ...message,
-                content: message.content + chunk,
-              };
-            });
-
-            persistConversation(conversationId, streamingMessages);
-          },
+          onChunk: appendToAssistant,
         });
-      } catch (err) {
-        if (isAbortError(err)) {
-          const lastMessage = streamingMessages.at(-1);
-          if (
-            lastMessage?.role === "assistant" &&
-            lastMessage.content.trim().length === 0
-          ) {
-            const trimmedMessages = streamingMessages.slice(0, -1);
-            persistConversation(conversationId, trimmedMessages);
+      } catch (caught) {
+        if (isAbortError(caught)) {
+          const last = streamingMessages.at(-1);
+          if (last?.role === "assistant" && !last.content.trim()) {
+            persistConversation(conversationId, streamingMessages.slice(0, -1));
           }
           return;
         }
-
-        const message =
-          err instanceof ChatClientError
-            ? err.message
-            : "出现错误，请重试。";
-
-        setError(message);
+        setError(
+          caught instanceof ChatClientError
+            ? caught.message
+            : "出现错误，请重试。",
+        );
       } finally {
         setIsStreaming(false);
         setActivity(null);
         abortControllerRef.current = null;
+        if (contextModeOverride === "temporary") {
+          setContextMode(project ? "project" : "auto");
+        }
         await flushCloudSync();
       }
     },
     [
+      abortControllerRef,
       activeMessages,
+      activeProject,
+      contextMode,
       ensureActiveConversation,
-      persistConversation,
       flushCloudSync,
-      modelTier,
-      webSearch,
-      useLibrary,
       memory,
+      modelTier,
+      persistConversation,
+      selectedFolderIds,
+      useLibrary,
+      webSearch,
     ],
   );
 
   const handleSend = useCallback(
-    (payload: ChatSendPayload) => submitMessage(payload),
-    [submitMessage],
+    (payload: ChatSendPayload) => {
+      if (
+        !activeProject &&
+        shouldSuggestProject(payload.message, selectedFolderIds.length)
+      ) {
+        setPendingProjectPayload(payload);
+        return;
+      }
+      void submitMessage(payload);
+    },
+    [activeProject, selectedFolderIds.length, submitMessage],
   );
+
+  const confirmCreateProject = useCallback(() => {
+    if (!pendingProjectPayload) return;
+    const project = createResearchProject(
+      projectNameFromTask(pendingProjectPayload.message, selectedFolders),
+      selectedFolderIds,
+      pendingProjectPayload.message,
+    );
+    setProjects((current) => [project, ...current]);
+    setActiveProjectId(project.id);
+    setContextMode("project");
+    const payload = pendingProjectPayload;
+    setPendingProjectPayload(null);
+    void submitMessage(payload, activeMessages, project);
+  }, [
+    activeMessages,
+    pendingProjectPayload,
+    selectedFolderIds,
+    selectedFolders,
+    submitMessage,
+  ]);
+
+  const sendAsTemporary = useCallback(() => {
+    if (!pendingProjectPayload) return;
+    const payload = pendingProjectPayload;
+    setPendingProjectPayload(null);
+    setContextMode("temporary");
+    void submitMessage(payload, activeMessages, null, "temporary");
+  }, [activeMessages, pendingProjectPayload, submitMessage]);
 
   const handleEditMessage = useCallback(
     (index: number) => {
@@ -363,7 +540,10 @@ export function ChatShell() {
       if (!message || message.role !== "user") return;
       const edited = window.prompt("编辑消息", message.content);
       if (!edited?.trim()) return;
-      void submitMessage({ message: edited.trim() }, activeMessages.slice(0, index));
+      void submitMessage(
+        { message: edited.trim() },
+        activeMessages.slice(0, index),
+      );
     },
     [activeMessages, submitMessage],
   );
@@ -384,12 +564,12 @@ export function ChatShell() {
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId,
   );
-  const chatTitle = activeConversation?.title ?? "新建对话";
+  const chatTitle = activeConversation?.title ?? "新任务";
 
   if (!isHydrated) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-white">
-        <p className="text-sm text-gray-400">正在加载对话…</p>
+      <div className="flex h-dvh items-center justify-center bg-white text-sm text-gray-500">
+        正在加载科研工作台…
       </div>
     );
   }
@@ -400,35 +580,62 @@ export function ChatShell() {
         isOpen={sidebarOpen}
         conversations={conversations}
         activeConversationId={activeConversationId}
+        folders={folders}
+        folderCounts={folderCounts}
+        selectedFolderIds={selectedFolderIds}
+        projects={projects}
+        activeProjectId={activeProjectId}
         onClose={() => setSidebarOpen(false)}
         onNewChat={handleNewChat}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
+        onSelectFolder={handleSelectFolder}
+        onOpenFolder={handleOpenFolder}
+        onContinueProject={handleContinueProject}
         onLogout={handleLogout}
         isLoggingOut={isLoggingOut}
         syncError={syncError}
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-4 py-3 md:hidden">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-100 px-4">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="rounded-lg p-2 text-gray-600 transition-colors hover:bg-gray-100"
+            className="p-2 text-gray-600 hover:bg-gray-100 md:hidden"
             aria-label="打开侧栏"
           >
             <MenuIcon className="h-5 w-5" />
           </button>
-          <span className="text-sm font-semibold text-gray-900">
-            ResearchGPT
-          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-gray-950">
+              {activeProject?.name || chatTitle}
+            </p>
+            <p className="truncate text-[11px] text-gray-500">
+              {contextMode === "temporary"
+                ? "临时问题，不使用项目上下文"
+                : selectedFolders.length > 0
+                  ? `已选择 ${selectedFolders.length} 个文献文件夹`
+                  : "未选择项目资料"}
+            </p>
+          </div>
+          {!toolPanelOpen && (
+            <button
+              type="button"
+              onClick={() => setToolPanelOpen(true)}
+              className="ml-auto inline-flex h-9 items-center gap-2 border border-gray-200 px-3 text-xs font-bold text-gray-700 hover:bg-gray-50"
+            >
+              <PanelRightOpen className="h-4 w-4" />
+              工作台
+            </button>
+          )}
         </header>
 
         <main className="relative flex flex-1 flex-col overflow-hidden">
           {hasMessages ? (
             <div
               ref={messageScrollRef}
-              className="flex-1 overflow-y-auto pb-36 sm:pb-40"
+              className="flex-1 overflow-y-auto pb-44 sm:pb-48"
             >
               <ChatMessages
                 messages={activeMessages}
@@ -442,24 +649,98 @@ export function ChatShell() {
               />
             </div>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center px-4 pb-36 sm:px-6 sm:pb-40">
-              <div className="max-w-2xl text-center">
-                <h1 className="text-3xl font-semibold tracking-tight text-gray-900 sm:text-4xl">
-                  ResearchGPT
+            <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pb-48 pt-[10vh] sm:px-6">
+              <div className="w-full max-w-3xl">
+                <Sparkles className="h-7 w-7 text-blue-700" />
+                <h1 className="mt-4 text-3xl font-semibold text-gray-950">
+                  今天想完成什么科研任务？
                 </h1>
-                <p className="mt-3 text-lg text-gray-500 sm:text-xl">
-                  今天想研究什么？
+                <p className="mt-2 text-sm leading-6 text-gray-500">
+                  直接描述任务。AI 会判断是否需要项目、文献或工具，并在执行前说明。
                 </p>
-                {error && (
-                  <p className="mt-4 text-sm text-red-600">{error}</p>
+
+                {projects.length > 0 && (
+                  <section className="mt-8">
+                    <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                      继续上次的项目
+                    </h2>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {projects.slice(0, 4).map((project) => (
+                        <button
+                          key={project.id}
+                          type="button"
+                          onClick={() => handleContinueProject(project)}
+                          className="border border-gray-200 p-4 text-left hover:border-blue-400 hover:bg-blue-50"
+                        >
+                          <span className="block text-sm font-bold text-gray-950">
+                            {project.name}
+                          </span>
+                          <span className="mt-1 line-clamp-2 block text-xs leading-5 text-gray-500">
+                            {project.lastTask || "继续项目工作"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 )}
+
+                {folders.length > 0 && (
+                  <section className="mt-6">
+                    <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                      常用文献文件夹
+                    </h2>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {folders.slice(0, 6).map((folder) => (
+                        <button
+                          key={folder.id}
+                          type="button"
+                          onClick={() => handleSelectFolder(folder)}
+                          onDoubleClick={() => handleOpenFolder(folder)}
+                          className="inline-flex items-center gap-2 border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-blue-400 hover:text-blue-800"
+                        >
+                          <FolderOpen className="h-4 w-4 text-amber-500" />
+                          {folder.name}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {error && <p className="mt-5 text-sm text-red-600">{error}</p>}
+              </div>
+            </div>
+          )}
+
+          {pendingProjectPayload && (
+            <div className="absolute inset-x-4 bottom-44 z-30 mx-auto max-w-3xl border border-blue-200 bg-blue-50 p-4 shadow-lg sm:bottom-48">
+              <p className="text-sm font-bold text-blue-950">
+                这项任务会持续使用所选文献，建议创建科研项目
+              </p>
+              <p className="mt-1 text-xs leading-5 text-blue-800">
+                创建后会保存项目与聊天关系，下一次可直接继续。临时任务不会绑定项目上下文。
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={confirmCreateProject}
+                  className="bg-blue-700 px-4 py-2 text-xs font-bold text-white hover:bg-blue-800"
+                >
+                  创建项目并开始
+                </button>
+                <button
+                  type="button"
+                  onClick={sendAsTemporary}
+                  className="border border-blue-300 bg-white px-4 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100"
+                >
+                  作为临时任务
+                </button>
               </div>
             </div>
           )}
 
           <ChatInput
             onSend={handleSend}
-            onStop={handleStop}
+            onStop={() => abortControllerRef.current?.abort()}
             isStreaming={isStreaming}
             modelTier={modelTier}
             onModelTierChange={handleModelTierChange}
@@ -469,6 +750,15 @@ export function ChatShell() {
             onUseLibraryChange={handleUseLibraryChange}
             memory={memory}
             onMemoryChange={handleMemoryChange}
+            selectedFolders={selectedFolders}
+            contextMode={contextMode}
+            onContextModeChange={setContextMode}
+            onRemoveFolder={(folderId) =>
+              setSelectedFolderIds((current) =>
+                current.filter((id) => id !== folderId),
+              )
+            }
+            onFolderDrop={handleFolderDrop}
           />
           {usage.total > 0 && (
             <div className="pointer-events-none absolute bottom-1 left-1/2 z-20 -translate-x-1/2 text-[10px] text-gray-400">
@@ -477,6 +767,15 @@ export function ChatShell() {
           )}
         </main>
       </div>
+
+      <ResearchToolPanel
+        open={toolPanelOpen}
+        folder={activeToolFolder}
+        papers={toolPapers}
+        isStreaming={isStreaming}
+        activity={activity}
+        onClose={() => setToolPanelOpen(false)}
+      />
     </div>
   );
 }

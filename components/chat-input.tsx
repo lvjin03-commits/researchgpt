@@ -1,6 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+} from "react";
 import { AttachmentPreview } from "@/components/attachment-preview";
 import {
   ChevronDownIcon,
@@ -8,6 +17,15 @@ import {
   SendIcon,
   StopIcon,
 } from "@/components/icons";
+import {
+  CHAT_MODEL_OPTIONS,
+  type ChatModelTier,
+} from "@/lib/ai/chat-models";
+import {
+  FOLDER_DRAG_TYPE,
+  type WorkspaceContextMode,
+} from "@/lib/chat/workspace";
+import type { LiteratureFolder } from "@/lib/literature/types";
 import {
   ACCEPTED_FILE_TYPES,
   MAX_IMAGE_UPLOAD_MB,
@@ -21,10 +39,6 @@ import {
   revokePendingAttachmentPreviews,
   type PendingAttachment,
 } from "@/lib/uploads/client-attachments";
-import {
-  CHAT_MODEL_OPTIONS,
-  type ChatModelTier,
-} from "@/lib/ai/chat-models";
 
 const MAX_TEXTAREA_HEIGHT = 200;
 
@@ -46,6 +60,11 @@ type ChatInputProps = {
   onUseLibraryChange: (enabled: boolean) => void;
   memory: string;
   onMemoryChange: (memory: string) => void;
+  selectedFolders?: LiteratureFolder[];
+  contextMode?: WorkspaceContextMode;
+  onContextModeChange?: (mode: WorkspaceContextMode) => void;
+  onRemoveFolder?: (folderId: string) => void;
+  onFolderDrop?: (folderId: string) => void;
 };
 
 export function ChatInput({
@@ -61,6 +80,11 @@ export function ChatInput({
   onUseLibraryChange,
   memory,
   onMemoryChange,
+  selectedFolders = [],
+  contextMode = "auto",
+  onContextModeChange,
+  onRemoveFolder,
+  onFolderDrop,
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
@@ -70,42 +94,35 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const attachmentsRef = useRef(attachments);
 
   const selectedModel =
     CHAT_MODEL_OPTIONS.find((option) => option.tier === modelTier) ??
     CHAT_MODEL_OPTIONS[1];
+  const inputLocked = disabled || isStreaming;
+  const canSend =
+    !inputLocked && (message.trim().length > 0 || attachments.length > 0);
 
   const adjustHeight = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = "auto";
+    textareaRef.current.style.height = `${Math.min(
+      textareaRef.current.scrollHeight,
+      MAX_TEXTAREA_HEIGHT,
+    )}px`;
   }, []);
 
-  const addFiles = useCallback((incoming: File[]) => {
-    if (incoming.length === 0 || disabled || isStreaming) return;
-
-    setAttachments((current) => {
-      const { attachments: next, error } = addPendingAttachments(
-        current,
-        incoming,
-      );
-
-      setFileError(error);
-      return next;
-    });
-  }, [disabled, isStreaming]);
-
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setAttachments((current) => removePendingAttachment(current, id));
-    setFileError(null);
-  }, []);
-
-  const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(event.target.value);
-    adjustHeight();
-  };
+  const addFiles = useCallback(
+    (incoming: File[]) => {
+      if (incoming.length === 0 || inputLocked) return;
+      setAttachments((current) => {
+        const result = addPendingAttachments(current, incoming);
+        setFileError(result.error);
+        return result.attachments;
+      });
+    },
+    [inputLocked],
+  );
 
   const clearAttachments = useCallback(() => {
     setAttachments((current) => {
@@ -113,103 +130,57 @@ export function ChatInput({
       return [];
     });
     setFileError(null);
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
-  const handleSubmit = () => {
-    if (isStreaming) return;
-
-    const trimmed = message.trim();
-    if ((!trimmed && attachments.length === 0) || disabled) return;
-
+  const submit = () => {
+    if (!canSend) return;
     onSend({
-      message: trimmed,
+      message: message.trim(),
       files: attachments.map((attachment) => attachment.file),
     });
-
     setMessage("");
     clearAttachments();
-
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      handleSubmit();
-    }
-  };
-
-  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (disabled || isStreaming) return;
-
-    const pastedFiles = filesFromClipboard(event.clipboardData);
-
-    if (pastedFiles.length === 0) {
-      return;
-    }
-
-    event.preventDefault();
-    addFiles(pastedFiles);
-  };
-
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (!disabled) {
-      setIsDragOver(true);
-    }
-  };
-
-  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
     setIsDragOver(false);
-  };
+    if (inputLocked) return;
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setIsDragOver(false);
-
-    if (disabled || isStreaming) return;
-
+    const folderPayload = event.dataTransfer.getData(FOLDER_DRAG_TYPE);
+    if (folderPayload) {
+      try {
+        const parsed = JSON.parse(folderPayload) as { id?: unknown };
+        if (typeof parsed.id === "string") {
+          onFolderDrop?.(parsed.id);
+          return;
+        }
+      } catch {
+        // Fall through to normal file handling.
+      }
+    }
     addFiles(filesFromDataTransfer(event.dataTransfer));
   };
-
-  const attachmentsRef = useRef(attachments);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
 
   useEffect(() => {
-    const closeModelMenu = (event: MouseEvent) => {
+    const closeMenu = (event: MouseEvent) => {
       if (!modelMenuRef.current?.contains(event.target as Node)) {
         setModelMenuOpen(false);
       }
     };
-
-    document.addEventListener("mousedown", closeModelMenu);
-
+    document.addEventListener("mousedown", closeMenu);
     return () => {
-      document.removeEventListener("mousedown", closeModelMenu);
+      document.removeEventListener("mousedown", closeMenu);
       revokePendingAttachmentPreviews(attachmentsRef.current);
     };
   }, []);
-
-  const canSend =
-    !isStreaming &&
-    (message.trim().length > 0 || attachments.length > 0) &&
-    !disabled;
-
-  const inputLocked = disabled || isStreaming;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-white via-white/95 to-transparent px-4 pb-4 pt-10 sm:px-6 sm:pb-6">
@@ -217,27 +188,79 @@ export function ChatInput({
         className="pointer-events-auto mx-auto w-full max-w-3xl"
         onSubmit={(event) => {
           event.preventDefault();
-          handleSubmit();
+          submit();
         }}
       >
         <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!inputLocked) setIsDragOver(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsDragOver(false);
+          }}
           onDrop={handleDrop}
-          className={`relative rounded-3xl border bg-white shadow-[0_2px_24px_rgba(0,0,0,0.06)] ring-1 ring-black/[0.03] transition-shadow focus-within:border-gray-300 focus-within:shadow-[0_4px_32px_rgba(0,0,0,0.08)] ${
-            isDragOver
-              ? "border-gray-400 ring-gray-200"
-              : "border-gray-200"
-          }`}
+          className={`relative rounded-2xl border bg-white shadow-[0_2px_24px_rgba(0,0,0,0.07)] transition ${
+            isDragOver ? "border-blue-400" : "border-gray-200"
+          } focus-within:border-gray-400`}
         >
           {isDragOver && (
-            <div className="pointer-events-none absolute inset-0 z-10 rounded-3xl border-2 border-dashed border-gray-300 bg-gray-50/80" />
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/95 text-sm font-bold text-blue-800">
+              松开以添加文件或文献文件夹
+            </div>
+          )}
+
+          {(selectedFolders.length > 0 || onContextModeChange) && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+              {selectedFolders.map((folder) => (
+                <span
+                  key={folder.id}
+                  className="inline-flex h-7 max-w-48 items-center gap-1.5 rounded-md bg-blue-50 px-2.5 text-xs font-bold text-blue-800"
+                >
+                  <span className="truncate">{folder.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveFolder?.(folder.id)}
+                    disabled={inputLocked}
+                    aria-label={`移除文件夹 ${folder.name}`}
+                    className="shrink-0 text-blue-500 hover:text-blue-900"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {onContextModeChange && (
+                <select
+                  value={contextMode}
+                  onChange={(event) =>
+                    onContextModeChange(
+                      event.target.value as WorkspaceContextMode,
+                    )
+                  }
+                  disabled={inputLocked}
+                  aria-label="上下文范围"
+                  className="ml-auto h-7 rounded-md border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-700 outline-none focus:border-blue-400"
+                >
+                  <option value="auto">自动判断上下文</option>
+                  <option value="project">使用当前项目</option>
+                  <option value="temporary">临时问题</option>
+                </select>
+              )}
+            </div>
           )}
 
           <AttachmentPreview
             attachments={attachments}
             disabled={inputLocked}
-            onRemove={handleRemoveAttachment}
+            onRemove={(id) => {
+              setAttachments((current) =>
+                removePendingAttachment(current, id),
+              );
+              setFileError(null);
+            }}
           />
 
           <div className="flex items-end">
@@ -249,7 +272,7 @@ export function ChatInput({
                 multiple
                 className="sr-only"
                 disabled={inputLocked}
-                onChange={(event) => {
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
                   addFiles(Array.from(event.target.files ?? []));
                   event.target.value = "";
                 }}
@@ -259,81 +282,66 @@ export function ChatInput({
                 onClick={() => fileInputRef.current?.click()}
                 disabled={inputLocked}
                 aria-label="附加文件"
-                className="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50"
               >
                 <PaperclipIcon className="h-5 w-5" />
               </button>
 
               <div ref={modelMenuRef} className="relative ml-1">
                 {modelMenuOpen && (
-                  <div className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.14)]">
+                  <div className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl">
                     <p className="px-3 pb-1.5 pt-1 text-xs font-semibold text-gray-500">
                       选择模型
                     </p>
-                    {CHAT_MODEL_OPTIONS.map((option) => {
-                      const selected = option.tier === modelTier;
-
-                      return (
-                        <button
-                          key={option.tier}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={selected}
-                          onClick={() => {
-                            onModelTierChange(option.tier);
-                            setModelMenuOpen(false);
-                          }}
-                          className={`flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                            selected ? "bg-gray-100" : "hover:bg-gray-50"
-                          }`}
-                        >
-                          <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-gray-900">
-                              {option.label}
-                            </span>
-                            <span className="mt-0.5 block text-xs leading-5 text-gray-500">
-                              {option.description}
-                            </span>
-                          </span>
-                          <span className="shrink-0 pt-0.5 text-[11px] font-medium text-gray-400">
-                            {option.model}
-                          </span>
-                        </button>
-                      );
-                    })}
+                    {CHAT_MODEL_OPTIONS.map((option) => (
+                      <button
+                        key={option.tier}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={option.tier === modelTier}
+                        onClick={() => {
+                          onModelTierChange(option.tier);
+                          setModelMenuOpen(false);
+                        }}
+                        className={`w-full rounded-lg px-3 py-2.5 text-left hover:bg-gray-50 ${
+                          option.tier === modelTier ? "bg-gray-100" : ""
+                        }`}
+                      >
+                        <span className="block text-sm font-bold text-gray-900">
+                          {option.label}
+                        </span>
+                        <span className="mt-0.5 block text-xs leading-5 text-gray-500">
+                          {option.description}
+                        </span>
+                      </button>
+                    ))}
                     <div className="mt-1 border-t border-gray-100 px-2 py-2">
-                      <label className="block text-xs font-semibold text-gray-600">
+                      <label className="block text-xs font-bold text-gray-600">
                         科研偏好记忆
                       </label>
                       <textarea
                         value={memory}
-                        onChange={(event) => onMemoryChange(event.target.value)}
+                        onChange={(event) =>
+                          onMemoryChange(event.target.value)
+                        }
                         maxLength={2000}
                         rows={3}
-                        placeholder="例如：材料化学；默认中文；使用 GB/T 7714 引用格式"
-                        className="mt-1.5 w-full resize-none rounded-lg border border-gray-200 px-2.5 py-2 text-xs leading-5 text-gray-800 outline-none focus:border-gray-400"
+                        placeholder="例如：材料化学；默认中文；使用 GB/T 7714"
+                        className="mt-1.5 w-full resize-none rounded-lg border border-gray-200 px-2.5 py-2 text-xs leading-5 outline-none focus:border-gray-400"
                       />
-                      <p className="mt-1 text-[11px] text-gray-400">
-                        仅保存你明确填写的偏好，不保存对话中的实验数据。
-                      </p>
                     </div>
                   </div>
                 )}
-
                 <button
                   type="button"
                   onClick={() => setModelMenuOpen((open) => !open)}
                   disabled={inputLocked}
                   aria-haspopup="menu"
                   aria-expanded={modelMenuOpen}
-                  className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-bold text-gray-700 hover:bg-gray-100"
                 >
                   {selectedModel.label}
-                  <ChevronDownIcon
-                    className={`h-3.5 w-3.5 transition-transform ${
-                      modelMenuOpen ? "rotate-180" : ""
-                    }`}
-                  />
+                  <ChevronDownIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
 
@@ -342,8 +350,8 @@ export function ChatInput({
                 aria-pressed={webSearch}
                 onClick={() => onWebSearchChange(!webSearch)}
                 disabled={inputLocked}
-                title="允许模型在需要最新信息时搜索网络"
-                className={`ml-1 h-9 rounded-lg px-2.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                title="允许 AI 在需要最新信息时搜索网络"
+                className={`ml-1 h-9 rounded-lg px-2.5 text-xs font-bold ${
                   webSearch
                     ? "bg-blue-50 text-blue-700"
                     : "text-gray-500 hover:bg-gray-100"
@@ -356,8 +364,8 @@ export function ChatInput({
                 aria-pressed={useLibrary}
                 onClick={() => onUseLibraryChange(!useLibrary)}
                 disabled={inputLocked}
-                title="从你的文献库标题、摘要和PDF全文中检索证据"
-                className={`ml-1 h-9 rounded-lg px-2.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                title="从文献库标题、摘要和 PDF 全文中检索证据"
+                className={`ml-1 h-9 rounded-lg px-2.5 text-xs font-bold ${
                   useLibrary
                     ? "bg-emerald-50 text-emerald-700"
                     : "text-gray-500 hover:bg-gray-100"
@@ -368,19 +376,34 @@ export function ChatInput({
             </div>
 
             <label htmlFor="chat-input" className="sr-only">
-              研究提示
+              输入科研任务
             </label>
             <textarea
               id="chat-input"
               ref={textareaRef}
               rows={1}
               value={message}
-              onChange={handleChange}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              placeholder="输入消息……"
+              onChange={(event) => {
+                setMessage(event.target.value);
+                adjustHeight();
+              }}
+              onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+              onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
+                if (inputLocked) return;
+                const pastedFiles = filesFromClipboard(event.clipboardData);
+                if (pastedFiles.length > 0) {
+                  event.preventDefault();
+                  addFiles(pastedFiles);
+                }
+              }}
+              placeholder="描述任务，或拖入文献文件夹…"
               disabled={disabled}
-              className="max-h-[200px] min-h-[52px] flex-1 resize-none bg-transparent py-4 pr-2 text-[15px] leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              className="max-h-[200px] min-h-[52px] flex-1 resize-none bg-transparent py-4 pr-2 text-[15px] leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none disabled:opacity-60"
             />
 
             <div className="flex shrink-0 items-center self-end p-2">
@@ -389,7 +412,7 @@ export function ChatInput({
                   type="button"
                   onClick={onStop}
                   aria-label="停止生成"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-white transition-all hover:bg-gray-800"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800"
                 >
                   <StopIcon className="h-4 w-4" />
                 </button>
@@ -398,7 +421,7 @@ export function ChatInput({
                   type="submit"
                   disabled={!canSend}
                   aria-label="发送消息"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400"
                 >
                   <SendIcon className="h-4 w-4" />
                 </button>
@@ -410,9 +433,8 @@ export function ChatInput({
         {fileError && (
           <p className="mt-2 text-center text-xs text-red-500">{fileError}</p>
         )}
-
         <p className="mt-2 text-center text-xs text-gray-400">
-          ResearchGPT 可能会出错，请核实重要信息。图片最大 {MAX_IMAGE_UPLOAD_MB}MB，文档最大{" "}
+          请核实重要科研信息。图片最大 {MAX_IMAGE_UPLOAD_MB}MB，文档最大{" "}
           {MAX_UPLOAD_MB}MB。
         </p>
       </form>

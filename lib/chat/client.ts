@@ -5,6 +5,7 @@ import type { ChatModelTier } from "@/lib/ai/chat-models";
 import { uploadChatAttachments } from "@/lib/uploads/storage-client";
 import type { AttachmentStorageMetadata } from "@/lib/uploads/types";
 import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
+import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 
 export class ChatClientError extends Error {
   readonly statusCode: number;
@@ -155,6 +156,9 @@ export async function streamChatResponse(
     webSearch: boolean;
     useLibrary: boolean;
     memory: string;
+    selectedFolderIds?: string[];
+    contextMode?: WorkspaceContextMode;
+    projectName?: string;
     onChunk: (chunk: string) => void;
     onStatus?: (message: string) => void;
     onUsage?: (usage: Extract<ChatStreamEvent, { type: "usage" }>) => void;
@@ -194,6 +198,9 @@ export async function streamChatResponse(
       webSearch: options.webSearch,
       useLibrary: options.useLibrary,
       memory: options.memory,
+      selectedFolderIds: options.selectedFolderIds ?? [],
+      contextMode: options.contextMode ?? "auto",
+      projectName: options.projectName ?? "",
     }),
     signal: options.signal,
   });

@@ -18,6 +18,7 @@ import {
 } from "@/lib/chat/server/errors";
 import { buildLiteratureLibraryContext } from "@/lib/chat/server/library-context";
 import { encodeChatStreamEvent } from "@/lib/chat/stream-protocol";
+import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -28,7 +29,26 @@ type ChatRequestBody = {
   webSearch?: unknown;
   useLibrary?: unknown;
   memory?: unknown;
+  selectedFolderIds?: unknown;
+  contextMode?: unknown;
+  projectName?: unknown;
 };
+
+function isContextMode(value: unknown): value is WorkspaceContextMode {
+  return value === "auto" || value === "project" || value === "temporary";
+}
+
+function sanitizeFolderIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, 20);
+}
 
 export async function POST(request: Request) {
   try {
@@ -40,6 +60,14 @@ export async function POST(request: Request) {
     const modelOption = getChatModelOption(modelTier);
     const webSearch = body.webSearch === true;
     const useLibrary = body.useLibrary === true;
+    const selectedFolderIds = sanitizeFolderIds(body.selectedFolderIds);
+    const contextMode = isContextMode(body.contextMode)
+      ? body.contextMode
+      : "auto";
+    const projectName =
+      typeof body.projectName === "string"
+        ? body.projectName.trim().slice(0, 120)
+        : "";
     const memory =
       typeof body.memory === "string" ? body.memory.trim().slice(0, 2000) : "";
     const sanitized = sanitizeIncomingChatMessages(body.messages);
@@ -62,7 +90,18 @@ export async function POST(request: Request) {
             .map((part) => part.text)
             .join("\n") ?? "";
     const taskRoute = routeChatTask(messages);
+    const projectReferencePattern =
+      /(这些|上述|本项目|当前项目|文件夹|文献|论文|数据|实验|分析|比较|矩阵|大纲|汇报|PPT|综述|this project|these papers|folder|literature|paper|dataset|analysis)/i;
+    const shouldUseProjectContext =
+      contextMode === "project" ||
+      (contextMode === "auto" &&
+        selectedFolderIds.length > 0 &&
+        projectReferencePattern.test(query));
+    const effectiveUseLibrary =
+      contextMode !== "temporary" &&
+      (useLibrary || shouldUseProjectContext);
     const effectiveWebSearch = webSearch || taskRoute.autoWebSearch;
+
     messages = withScientificVisualPolicy(
       [
         { role: "system", content: taskRoute.systemInstruction },
@@ -72,18 +111,41 @@ export async function POST(request: Request) {
     );
 
     let libraryStatus = "";
-    if (useLibrary) {
+    if (effectiveUseLibrary) {
       const supabase = await createClient();
-      const library = await buildLiteratureLibraryContext(supabase, user.id, query);
-      libraryStatus = `已从文献库匹配 ${library.paperCount} 篇相关文献`;
+      const library = await buildLiteratureLibraryContext(
+        supabase,
+        user.id,
+        query,
+        selectedFolderIds,
+      );
+      libraryStatus = selectedFolderIds.length
+        ? `已从选中文件夹匹配 ${library.paperCount} 篇相关文献`
+        : `已从文献库匹配 ${library.paperCount} 篇相关文献`;
       messages = [
         {
           role: "system",
           content: [
-            "回答时优先使用以下用户文献库证据。必须区分PDF全文与摘要证据。",
-            "引用文献库内容时使用格式：[文献题目，文献ID]。不要编造页码。",
+            projectName ? `当前科研项目：${projectName}` : "",
+            selectedFolderIds.length
+              ? "只使用用户本次选中文件夹内的文献证据，不要扩展到文献库其他文件夹。"
+              : "回答时优先使用以下用户文献库证据。",
+            "必须明确区分 PDF 全文证据与摘要证据。引用文献库内容时使用格式：[文献题目，文献 ID]，不要编造页码。",
             library.context || "没有匹配到相关文献。",
-          ].join("\n\n"),
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+        },
+        ...messages,
+      ];
+    }
+
+    if (contextMode === "temporary") {
+      messages = [
+        {
+          role: "system",
+          content:
+            "这是一个临时问题。不要引用或推断当前科研项目、已选文件夹或先前项目任务中的事实；只根据本条问题和用户本次明确上传的文件回答。",
         },
         ...messages,
       ];
@@ -103,14 +165,16 @@ export async function POST(request: Request) {
       model: modelOption.model,
       messageCount: messages.length,
       webSearch: effectiveWebSearch,
-      useLibrary,
+      useLibrary: effectiveUseLibrary,
+      contextMode,
+      selectedFolderCount: selectedFolderIds.length,
       task: taskRoute.kind,
     });
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
-          if (useLibrary) {
+          if (effectiveUseLibrary) {
             controller.enqueue(
               encodeChatStreamEvent({ type: "status", message: libraryStatus }),
             );
