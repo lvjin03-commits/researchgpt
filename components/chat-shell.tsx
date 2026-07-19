@@ -959,14 +959,15 @@ export function ChatShell() {
 
   if (!isHydrated) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-white text-sm text-gray-500">
-        正在加载科研工作台…
+      <div className="research-canvas flex h-dvh items-center justify-center text-sm text-[#607078]">
+        <LoaderCircle className="mr-2 h-4 w-4 animate-spin text-[#245d82]" />
+        正在准备科研工作台…
       </div>
     );
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-white">
+    <div className="flex h-dvh overflow-hidden bg-[#f4f7f8]">
       <Sidebar
         isOpen={sidebarOpen}
         conversations={conversations}
@@ -992,7 +993,7 @@ export function ChatShell() {
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-100 px-4">
+        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-[#dbe4e7] bg-white/95 px-4 backdrop-blur sm:px-5">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
@@ -1002,10 +1003,10 @@ export function ChatShell() {
             <MenuIcon className="h-5 w-5" />
           </button>
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-gray-950">
+            <p className="truncate text-sm font-bold text-[#172126]">
               {activeProject?.name || chatTitle}
             </p>
-            <p className="truncate text-[11px] text-gray-500">
+            <p className="truncate text-[11px] font-medium text-[#718087]">
               {contextMode === "temporary"
                 ? "临时问题，不使用项目上下文"
                 : selectedFolders.length > 0
@@ -1017,7 +1018,7 @@ export function ChatShell() {
             <button
               type="button"
               onClick={() => setToolPanelOpen(true)}
-              className="ml-auto inline-flex h-9 items-center gap-2 border border-gray-200 px-3 text-xs font-bold text-gray-700 hover:bg-gray-50"
+              className="ml-auto inline-flex h-9 items-center gap-2 rounded-md border border-[#cddadd] bg-white px-3 text-xs font-bold text-[#42545c] hover:border-[#8eabb8] hover:bg-[#f1f6f8]"
             >
               <PanelRightOpen className="h-4 w-4" />
               工作台
@@ -1025,7 +1026,7 @@ export function ChatShell() {
           )}
         </header>
 
-        <main className="relative flex flex-1 flex-col overflow-hidden">
+        <main className="research-canvas relative flex flex-1 flex-col overflow-hidden">
           {hasMessages ? (
             <div
               ref={messageScrollRef}
@@ -1043,33 +1044,44 @@ export function ChatShell() {
               />
             </div>
           ) : (
-            <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pb-56 pt-[10vh] sm:px-6">
-              <div className="w-full max-w-3xl">
-                <Sparkles className="h-7 w-7 text-blue-700" />
-                <h1 className="mt-4 text-3xl font-semibold text-gray-950">
+            <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pb-56 pt-10 sm:px-8 sm:pt-[9vh]">
+              <div className="w-full max-w-4xl">
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[#e5eff3] text-[#174866]">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <p className="research-eyebrow mt-5">Research command center</p>
+                <h1 className="mt-2 max-w-2xl text-3xl font-semibold leading-tight text-[#172126] sm:text-4xl">
                   今天想完成什么科研任务？
                 </h1>
-                <p className="mt-2 text-sm leading-6 text-gray-500">
-                  直接描述任务。AI 会判断是否需要项目、文献或工具，并在执行前说明。
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-[#607078]">
+                  直接描述目标，或选中文献资料。系统会识别任务、调用合适工具，并在修改数据前向你确认。
                 </p>
 
                 {projects.length > 0 && (
-                  <section className="mt-8">
-                    <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                  <section className="mt-9">
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <p className="research-eyebrow">Projects</p>
+                        <h2 className="mt-1 text-sm font-bold text-[#26353b]">
                       继续上次的项目
-                    </h2>
+                        </h2>
+                      </div>
+                      <button type="button" onClick={openNewProjectDialog} className="text-xs font-bold text-[#245d82] hover:text-[#174866]">
+                        新建项目
+                      </button>
+                    </div>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
                       {projects.slice(0, 4).map((project) => (
                         <button
                           key={project.id}
                           type="button"
                           onClick={() => handleContinueProject(project)}
-                          className="border border-gray-200 p-4 text-left hover:border-blue-400 hover:bg-blue-50"
+                          className="research-surface rounded-md p-4 text-left transition hover:border-[#8eabb8] hover:bg-[#f8fbfc]"
                         >
-                          <span className="block text-sm font-bold text-gray-950">
+                          <span className="block text-sm font-bold text-[#172126]">
                             {project.name}
                           </span>
-                          <span className="mt-1 line-clamp-2 block text-xs leading-5 text-gray-500">
+                          <span className="mt-1 line-clamp-2 block text-xs leading-5 text-[#718087]">
                             {project.lastTask || "继续项目工作"}
                           </span>
                         </button>
@@ -1079,8 +1091,9 @@ export function ChatShell() {
                 )}
 
                 {folders.length > 0 && (
-                  <section className="mt-6">
-                    <h2 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                  <section className="mt-7 border-t border-[#dbe4e7] pt-6">
+                    <p className="research-eyebrow">Literature context</p>
+                    <h2 className="mt-1 text-sm font-bold text-[#26353b]">
                       常用文献文件夹
                     </h2>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1090,10 +1103,13 @@ export function ChatShell() {
                           type="button"
                           onClick={() => handleSelectFolder(folder)}
                           onDoubleClick={() => handleOpenFolder(folder)}
-                          className="inline-flex items-center gap-2 border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-blue-400 hover:text-blue-800"
+                          className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[#d4dfe2] bg-white px-3 py-2 text-sm font-semibold text-[#42545c] shadow-[0_1px_1px_rgba(26,47,56,0.03)] hover:border-[#8eabb8] hover:text-[#174866]"
                         >
-                          <FolderOpen className="h-4 w-4 text-amber-500" />
-                          {folder.name}
+                          <FolderOpen className="h-4 w-4 text-[#a56518]" />
+                          <span>{folder.name}</span>
+                          <span className="border-l border-[#dbe4e7] pl-2 text-[11px] font-medium text-[#7c8b91]">
+                            {folderCounts[folder.id] ?? 0} 篇
+                          </span>
                         </button>
                       ))}
                     </div>

@@ -163,35 +163,40 @@ export function LiteraturePaperCard({
     publishedDateLabel !== null ||
     typeof paper.citationCount === "number" ||
     typeof paper.journalImpactFactor === "number";
+  const isLibrary = variant === "library";
 
   return (
     <>
-      <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <article
+        className={`border border-[#dbe4e7] bg-white transition-colors hover:border-[#b7c8ce] ${
+          isLibrary ? "rounded-md p-4" : "rounded-lg p-5"
+        }`}
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {paper.priority && (
                 <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${literaturePriorityClassName(paper.priority)}`}
+                  className={`rounded px-2 py-1 text-[11px] font-bold ${literaturePriorityClassName(paper.priority)}`}
                 >
                   {LITERATURE_PRIORITY_LABELS[paper.priority]}
                 </span>
               )}
-              <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+              <span className="rounded bg-[#eef3f4] px-2 py-1 text-[11px] font-bold text-[#607078]">
                 {getPaperStatusLabel(paper.status)}
               </span>
               {showProviderInternals &&
                 providerBadges.map((provider) => (
                   <span
                     key={provider}
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${providerBadgeClassName(provider)}`}
+                    className={`rounded px-2 py-1 text-[11px] font-bold ${providerBadgeClassName(provider)}`}
                   >
                     {LITERATURE_PROVIDER_BADGE_LABELS[provider]}
                   </span>
                 ))}
               {pdfStatusLabel && (
                 <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${pdfStatusClassName}`}
+                  className={`rounded px-2 py-1 text-[11px] font-bold ${pdfStatusClassName}`}
                   title={paper.pdfDownloadError ?? undefined}
                 >
                   {pdfStatusLabel}
@@ -206,7 +211,7 @@ export function LiteraturePaperCard({
                 return (
                   <span
                     key={folderId}
-                    className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
+                    className="rounded bg-[#f7eddf] px-2 py-1 text-[11px] font-bold text-[#895316]"
                   >
                     {name}
                   </span>
@@ -214,12 +219,12 @@ export function LiteraturePaperCard({
               })}
             </div>
 
-            <h3 className="text-base font-semibold">
+            <h3 className={`${isLibrary ? "text-[15px]" : "text-base"} font-semibold leading-6`}>
               <a
                 href={primaryPaperUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="text-blue-700 underline decoration-blue-300 underline-offset-2 transition-colors hover:text-blue-900 hover:decoration-blue-500"
+                className="text-[#174866] transition-colors hover:text-[#0f354c]"
               >
                 <LiteratureKeywordHighlight
                   text={paper.title}
@@ -227,12 +232,12 @@ export function LiteraturePaperCard({
                 />
               </a>
             </h3>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-[#718087]">
               {paper.authors.slice(0, 4).join(", ")}
               {paper.authors.length > 4 ? " 等" : ""}
             </p>
             {hasMetrics && (
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-[#607078]">
                 {paper.relevanceScore !== null && (
                   <span>相关度：{paper.relevanceScore}</span>
                 )}
@@ -249,16 +254,16 @@ export function LiteraturePaperCard({
             )}
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
             <Link
               href={`/literature/papers/${paper.id}/reading`}
-              className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-gray-800"
+              className="rounded-md bg-[#174866] px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#123a52]"
             >
               AI精读
             </Link>
             <Link
               href={`/literature/papers/${paper.id}`}
-              className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
+              className="rounded-md bg-[#e7f0f4] px-3 py-2 text-xs font-bold text-[#174866] transition-colors hover:bg-[#d9e8ee]"
             >
               查看详情
             </Link>
@@ -268,7 +273,7 @@ export function LiteraturePaperCard({
                   href={storedPdfViewUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
+                  className="rounded-md bg-[#147565] px-3 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#0f5e51]"
                 >
                   在线阅读
                 </a>
@@ -276,7 +281,7 @@ export function LiteraturePaperCard({
                   href={storedPdfDownloadUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900"
+                  className="rounded-md border border-[#bfd5dd] bg-white px-3 py-2 text-xs font-bold text-[#245d82] transition-colors hover:bg-[#eef5f7]"
                 >
                   下载PDF
                 </a>
@@ -286,7 +291,7 @@ export function LiteraturePaperCard({
                 href={paper.absUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                className="rounded-md px-2.5 py-2 text-xs font-semibold text-[#607078] transition-colors hover:bg-[#eef3f4] hover:text-[#172126]"
               >
                 {externalLabel}
               </a>
@@ -296,7 +301,7 @@ export function LiteraturePaperCard({
                 href={googleScholarUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                className="rounded-md px-2.5 py-2 text-xs font-semibold text-[#607078] transition-colors hover:bg-[#eef3f4] hover:text-[#172126]"
               >
                 Google Scholar
               </a>
@@ -304,7 +309,7 @@ export function LiteraturePaperCard({
           </div>
         </div>
 
-        <p className="mt-3 text-sm leading-relaxed text-gray-700">
+        <p className={`mt-3 text-sm leading-6 text-[#42545c] ${isLibrary ? "line-clamp-2" : ""}`}>
           <span className="font-medium text-gray-500">摘要：</span>
           <LiteratureKeywordHighlight
             text={abstractSnippet}
@@ -313,8 +318,8 @@ export function LiteraturePaperCard({
         </p>
 
         {paper.recommendationReason && (
-          <p className="mt-3 rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
-            <span className="font-medium text-gray-700">推荐理由：</span>
+          <p className={`mt-3 border-l-2 border-[#83a9ba] bg-[#f5f8f9] px-3 py-2 text-sm text-[#607078] ${isLibrary ? "line-clamp-2" : ""}`}>
+            <span className="font-medium text-[#42545c]">推荐理由：</span>
             {paper.recommendationReason}
           </p>
         )}
@@ -339,7 +344,7 @@ export function LiteraturePaperCard({
           </div>
         )}
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#edf1f2] pt-3">
           {variant === "tracker" ? (
             <>
               <button

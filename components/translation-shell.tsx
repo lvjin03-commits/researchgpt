@@ -103,21 +103,21 @@ export function TranslationShell() {
       : STAGE_LABELS[uiState.stage];
 
   return (
-    <div className="min-h-dvh bg-white">
+    <div className="research-canvas min-h-dvh">
       <ResearchPageHeader
         title="学术翻译"
         description="将中文 Word 文档翻译为专业英文，并保留原有文档结构。"
         maxWidth="4xl"
       />
 
-      <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6">
         <section className="border-b border-gray-200 pb-5">
           <h2 className="text-base font-semibold text-gray-900">中文 → 英文</h2>
           <p className="mt-1 text-sm leading-6 text-gray-600">
             专业术语、数字、单位、公式、引用编号和标准缩写将尽可能保持准确一致。
           </p>
         </section>
-        <div className="space-y-6 rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="research-surface space-y-6 rounded-md p-6">
           <div>
             <label
               htmlFor="docx-upload"

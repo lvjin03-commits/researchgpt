@@ -243,7 +243,7 @@ export function LiteratureLibraryShell() {
   );
 
   return (
-    <div className="min-h-dvh bg-white">
+    <div className="research-canvas min-h-dvh">
       <ResearchPageHeader
         title="文献库"
         description="集中管理 PDF、文献夹和阅读状态，为后续分析准备资料。"
@@ -252,17 +252,18 @@ export function LiteratureLibraryShell() {
           <button
             type="button"
             onClick={() => setShowUploadModal(true)}
-            className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+            className="rounded-md bg-[#174866] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#123a52]"
           >
             上传 PDF
           </button>
         }
       />
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 lg:flex-row lg:items-start lg:px-6">
-        <aside className="w-full shrink-0 space-y-6 lg:w-64">
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+      <main className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6 lg:flex-row lg:items-start lg:px-6">
+        <aside className="research-surface w-full shrink-0 rounded-md p-4 lg:sticky lg:top-4 lg:w-64">
+          <section className="border-b border-[#e2e9eb] pb-5">
+            <p className="research-eyebrow">Views</p>
+            <h2 className="mt-1 text-sm font-semibold text-[#26353b]">
               浏览
             </h2>
             <ul className="mt-3 space-y-1">
@@ -274,10 +275,10 @@ export function LiteratureLibraryShell() {
                     <button
                       type="button"
                       onClick={() => setStatusTab(tab.value)}
-                      className={`w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
+                      className={`w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
                         isActive
-                          ? "bg-gray-900 text-white"
-                          : "text-gray-700 hover:bg-gray-100"
+                          ? "bg-[#e4eef2] text-[#174866]"
+                          : "text-[#52636b] hover:bg-[#f2f6f7]"
                       }`}
                     >
                       {tab.label}
@@ -288,8 +289,9 @@ export function LiteratureLibraryShell() {
             </ul>
           </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          <section className="pt-5">
+            <p className="research-eyebrow">Collections</p>
+            <h2 className="mt-1 text-sm font-semibold text-[#26353b]">
               文献夹
             </h2>
 
@@ -335,10 +337,10 @@ export function LiteratureLibraryShell() {
                           <button
                             type="button"
                             onClick={() => selectFolder(folder.id)}
-                            className={`min-w-0 flex-1 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
+                            className={`min-w-0 flex-1 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
                               isActive
-                                ? "bg-amber-600 text-white"
-                                : "text-gray-700 hover:bg-gray-100"
+                                ? "bg-[#f3e8d8] text-[#7a4810]"
+                                : "text-[#52636b] hover:bg-[#f2f6f7]"
                             }`}
                           >
                             <span className="block truncate">{folder.name}</span>
@@ -375,7 +377,7 @@ export function LiteratureLibraryShell() {
                 value={newFolderName}
                 onChange={(event) => setNewFolderName(event.target.value)}
                 placeholder="新文献夹名称"
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2 text-sm text-[#172126]"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
@@ -389,7 +391,7 @@ export function LiteratureLibraryShell() {
                 onClick={() => {
                   void handleCreateFolder();
                 }}
-                className="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-md bg-[#174866] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[#123a52] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isCreatingFolder ? "正在创建…" : "新建文献夹"}
               </button>
@@ -403,8 +405,19 @@ export function LiteratureLibraryShell() {
           </section>
         </aside>
 
-        <div className="min-w-0 flex-1 space-y-6">
-          <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="min-w-0 flex-1 space-y-4">
+          <section className="research-surface space-y-4 rounded-md p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="research-eyebrow">Library index</p>
+                <h2 className="mt-1 text-base font-semibold text-[#172126]">
+                  文献索引
+                </h2>
+              </div>
+              <p className="text-xs font-medium text-[#718087]">
+                {papers.length} 篇
+              </p>
+            </div>
             <div>
               <label
                 htmlFor="library-search"
@@ -420,7 +433,7 @@ export function LiteratureLibraryShell() {
                   setFilters((current) => ({ ...current, q: event.target.value }))
                 }
                 placeholder="搜索标题、作者或摘要"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2.5 text-sm text-[#172126]"
               />
             </div>
 
@@ -438,7 +451,7 @@ export function LiteratureLibraryShell() {
                   onChange={(event) =>
                     setFilters((current) => ({ ...current, source: event.target.value }))
                   }
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                  className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2.5 text-sm text-[#172126]"
                 >
                   {LIBRARY_SOURCE_OPTIONS.map((option) => (
                     <option key={option.value || "all"} value={option.value}>
@@ -464,7 +477,7 @@ export function LiteratureLibraryShell() {
                       discipline: event.target.value,
                     }))
                   }
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                  className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2.5 text-sm text-[#172126]"
                 >
                   <option value="">全部学科</option>
                   {LITERATURE_DISCIPLINES.map((discipline) => (
@@ -491,7 +504,7 @@ export function LiteratureLibraryShell() {
                       priority: event.target.value,
                     }))
                   }
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                  className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2.5 text-sm text-[#172126]"
                 >
                   {LIBRARY_PRIORITY_OPTIONS.map((option) => (
                     <option key={option.value || "all"} value={option.value}>
@@ -510,18 +523,18 @@ export function LiteratureLibraryShell() {
           )}
 
           {isLoading ? (
-            <div className="rounded-2xl border border-gray-200 bg-white px-5 py-12 text-center text-sm text-gray-500">
+            <div className="research-surface rounded-md px-5 py-12 text-center text-sm text-[#607078]">
               正在加载文献库…
             </div>
           ) : papers.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
+            <div className="rounded-md border border-dashed border-[#c7d4d8] bg-white px-5 py-12 text-center">
               <p className="text-sm font-medium text-gray-900">未找到论文</p>
               <p className="mt-2 text-sm text-gray-500">
                 请尝试其他文献夹，或调整搜索与筛选条件。
               </p>
             </div>
           ) : (
-            <section className="space-y-4">
+            <section className="space-y-2">
               {papers.map((paper) => (
                 <LiteraturePaperCard
                   key={paper.id}

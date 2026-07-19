@@ -187,18 +187,18 @@ export function ChatInput({
   }, []);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-white via-white/95 to-transparent px-4 pb-4 pt-10 sm:px-6 sm:pb-6">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#f4f7f8] via-[#f4f7f8]/95 to-transparent px-3 pb-3 pt-10 sm:px-6 sm:pb-5">
       <form
-        className="pointer-events-auto mx-auto w-full max-w-3xl"
+        className="pointer-events-auto mx-auto w-full max-w-4xl"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
       >
-        <div className="mb-2 flex items-center gap-2">
+        <div className="mb-2 flex items-center gap-2 rounded-md border border-[#dbe4e7] bg-white/90 p-1.5 shadow-sm">
           <label
             htmlFor="active-research-project"
-            className="text-xs font-bold text-gray-600"
+            className="pl-1 text-xs font-bold text-[#607078]"
           >
             当前项目
           </label>
@@ -209,7 +209,7 @@ export function ChatInput({
               onProjectChange?.(event.target.value || null)
             }
             disabled={inputLocked}
-            className="h-9 min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm outline-none focus:border-blue-400 sm:max-w-72"
+            className="research-focus h-9 min-w-0 flex-1 rounded-md border border-[#d4dfe2] bg-white px-3 text-sm font-semibold text-[#26353b] sm:max-w-72"
           >
             <option value="">未选择项目</option>
             {projects.map((project) => (
@@ -222,7 +222,7 @@ export function ChatInput({
             type="button"
             onClick={onNewProject}
             disabled={inputLocked}
-            className="h-9 shrink-0 rounded-md bg-gray-900 px-3 text-xs font-bold text-white hover:bg-gray-800 disabled:opacity-50"
+            className="h-9 shrink-0 rounded-md bg-[#174866] px-3 text-xs font-bold text-white hover:bg-[#123a52] disabled:opacity-50"
           >
             新项目
           </button>
@@ -240,12 +240,12 @@ export function ChatInput({
             setIsDragOver(false);
           }}
           onDrop={handleDrop}
-          className={`relative rounded-2xl border bg-white shadow-[0_2px_24px_rgba(0,0,0,0.07)] transition ${
-            isDragOver ? "border-blue-400" : "border-gray-200"
-          } focus-within:border-gray-400`}
+          className={`relative rounded-lg border bg-white shadow-[0_8px_28px_rgba(26,47,56,0.10)] transition ${
+            isDragOver ? "border-[#4f86a4]" : "border-[#cad7db]"
+          } focus-within:border-[#4f86a4] focus-within:shadow-[0_8px_32px_rgba(36,93,130,0.14)]`}
         >
           {isDragOver && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/95 text-sm font-bold text-blue-800">
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-lg border-2 border-dashed border-[#4f86a4] bg-[#eaf3f6]/95 text-sm font-bold text-[#174866]">
               松开以添加文件或文献文件夹
             </div>
           )}
@@ -283,8 +283,8 @@ export function ChatInput({
             }}
           />
 
-          <div className="flex items-end">
-            <div className="flex shrink-0 items-center self-end p-2 pl-3">
+          <div className="flex flex-wrap items-end">
+            <div className="order-2 flex w-full shrink-0 items-center border-t border-[#e6ecee] px-2 py-1.5 sm:px-3">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -423,10 +423,10 @@ export function ChatInput({
               }}
               placeholder="描述任务，或拖入文献文件夹…"
               disabled={disabled}
-              className="max-h-[200px] min-h-[52px] flex-1 resize-none bg-transparent py-4 pr-2 text-[15px] leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none disabled:opacity-60"
+              className="order-1 max-h-[200px] min-h-[52px] min-w-0 flex-1 resize-none bg-transparent py-4 pl-4 pr-2 text-[15px] leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none disabled:opacity-60"
             />
 
-            <div className="flex shrink-0 items-center self-end p-2">
+            <div className="order-1 flex shrink-0 items-center self-end p-2">
               {isStreaming ? (
                 <button
                   type="button"

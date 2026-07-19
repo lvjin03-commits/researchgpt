@@ -779,7 +779,7 @@ export function LiteratureReviewShell() {
   };
 
   return (
-    <div className="min-h-dvh bg-white">
+    <div className="research-canvas min-h-dvh">
       <ResearchPageHeader
         title="文献分析"
         description="从文献夹生成文献矩阵、主题归类、证据大纲和学术汇报。"
@@ -795,7 +795,7 @@ export function LiteratureReviewShell() {
         }
       />
 
-      <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6">
         <ol className="grid grid-cols-3 border-b border-gray-200" aria-label="文献分析进度">
           {[
             { label: "准备资料", active: literatureMatrix.length === 0 },

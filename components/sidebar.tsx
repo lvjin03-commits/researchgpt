@@ -2,13 +2,16 @@
 
 import {
   BookOpen,
+  ChartNoAxesCombined,
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Folder,
   FolderOpen,
+  Languages,
   LogOut,
   MessageSquare,
+  Microscope,
   Plus,
   Search,
   Trash2,
@@ -53,7 +56,7 @@ type SidebarProps = {
 
 function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <p className="px-2 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wide text-gray-400">
+    <p className="px-2 pb-1.5 pt-5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#7c8b91]">
       {children}
     </p>
   );
@@ -185,10 +188,10 @@ export function Sidebar({
             }}
             className={`group flex cursor-pointer items-center gap-1 py-1.5 pr-2 text-sm ${
               paperDropFolderId === folder.id
-                ? "bg-blue-100 font-bold text-blue-900 ring-1 ring-inset ring-blue-400"
+                ? "bg-[#dce9ee] font-bold text-[#174866] ring-1 ring-inset ring-[#6e9db7]"
                 : selected
-                ? "bg-blue-50 font-semibold text-blue-800"
-                : "text-gray-700 hover:bg-gray-100"
+                  ? "bg-white font-semibold text-[#174866]"
+                  : "text-[#52636b] hover:bg-white"
             }`}
             style={{ paddingLeft: `${8 + depth * 14}px` }}
             title="单击加入聊天，双击打开文件夹，也可拖入聊天框"
@@ -211,9 +214,9 @@ export function Sidebar({
               ) : null}
             </button>
             {expanded ? (
-              <FolderOpen className="h-4 w-4 shrink-0 text-amber-500" />
+              <FolderOpen className="h-4 w-4 shrink-0 text-[#a56518]" />
             ) : (
-              <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+              <Folder className="h-4 w-4 shrink-0 text-[#a56518]" />
             )}
             <span className="min-w-0 flex-1 truncate">{folder.name}</span>
             <span className="shrink-0 text-[11px] text-gray-400">
@@ -236,13 +239,21 @@ export function Sidebar({
         aria-hidden="true"
       />
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-gray-200 bg-gray-50 transition-transform md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[292px] flex-col border-r border-[#dbe4e7] bg-[#eef3f4] transition-transform md:static md:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         aria-label="科研项目与资料"
       >
-        <div className="flex h-14 items-center justify-between px-4">
-          <span className="text-sm font-bold text-gray-950">ResearchAI</span>
+        <div className="flex h-16 items-center justify-between px-4">
+          <a href="/chat" className="flex items-center gap-2.5">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#174866] text-white shadow-sm">
+              <Microscope className="h-4 w-4" />
+            </span>
+            <span>
+              <span className="block text-sm font-bold text-[#172126]">ResearchAI</span>
+              <span className="block text-[10px] font-medium text-[#718087]">科研工作台</span>
+            </span>
+          </a>
           <button
             type="button"
             onClick={onClose}
@@ -253,19 +264,34 @@ export function Sidebar({
           </button>
         </div>
 
-        <div className="px-3 pb-2">
+        <div className="px-3 pb-3">
           <button
             type="button"
             onClick={() => {
               onNewProject();
               onClose();
             }}
-            className="flex w-full items-center gap-2 border border-gray-300 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 shadow-sm hover:bg-gray-100"
+            className="flex h-10 w-full items-center gap-2 rounded-md bg-[#174866] px-3 text-sm font-bold text-white shadow-sm hover:bg-[#123a52]"
           >
             <Plus className="h-4 w-4" />
             新项目
           </button>
         </div>
+
+        <nav className="grid grid-cols-2 gap-1 px-3 pb-2" aria-label="快捷功能">
+          <a href="/literature" className="flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold text-[#52636b] hover:bg-white hover:text-[#174866]">
+            <Search className="h-3.5 w-3.5" /> 文献搜索
+          </a>
+          <a href="/literature/library" className="flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold text-[#52636b] hover:bg-white hover:text-[#174866]">
+            <BookOpen className="h-3.5 w-3.5" /> 文献库
+          </a>
+          <a href="/presentation" className="flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold text-[#52636b] hover:bg-white hover:text-[#174866]">
+            <ChartNoAxesCombined className="h-3.5 w-3.5" /> 成果制作
+          </a>
+          <a href="/translate" className="flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold text-[#52636b] hover:bg-white hover:text-[#174866]">
+            <Languages className="h-3.5 w-3.5" /> 学术翻译
+          </a>
+        </nav>
 
         <div className="flex-1 overflow-y-auto px-2 pb-4">
           {syncError && (
@@ -291,8 +317,8 @@ export function Sidebar({
                     }}
                     className={`w-full px-2 py-2 text-left ${
                       project.id === activeProjectId
-                        ? "bg-gray-900 text-white"
-                        : "text-gray-700 hover:bg-gray-100"
+                        ? "rounded-md bg-[#dce9ee] text-[#174866]"
+                        : "rounded-md text-[#52636b] hover:bg-white"
                     }`}
                   >
                     <span className="block truncate text-sm font-bold">
@@ -320,7 +346,7 @@ export function Sidebar({
               value={folderSearch}
               onChange={(event) => setFolderSearch(event.target.value)}
               placeholder="搜索文件夹"
-              className="h-9 w-full border border-gray-200 bg-white pl-8 pr-2 text-xs outline-none focus:border-gray-400"
+              className="research-focus h-9 w-full rounded-md border border-[#d4dfe2] bg-white pl-8 pr-2 text-xs"
             />
           </div>
           {matchingFolders.length === 0 ? (
@@ -370,7 +396,7 @@ export function Sidebar({
           )}
         </div>
 
-        <div className="border-t border-gray-200 p-3">
+        <div className="border-t border-[#dbe4e7] p-3">
           <a
             href="/literature/library"
             className="mb-1 flex items-center gap-2 px-2 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"

@@ -302,7 +302,7 @@ export function LiteratureShell() {
   }, [settings.keywords, settings.researchDirection]);
 
   return (
-    <div className="min-h-dvh bg-white">
+    <div className="research-canvas min-h-dvh">
       <ResearchPageHeader
         title="搜索与追踪"
         description="检索、筛选并追踪与你研究方向相关的文献。"
@@ -311,16 +311,21 @@ export function LiteratureShell() {
             href={googleScholarUrl}
             target="_blank"
             rel="noreferrer"
-            className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
+            className="rounded-md bg-[#174866] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#123a52]"
           >
             在 Google Scholar 搜索
           </a>
         }
       />
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <section className="space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
+          <section className="research-surface space-y-4 rounded-md p-4">
+            <div className="border-b border-[#e4eaec] pb-3">
+              <p className="research-eyebrow">Search setup</p>
+              <h2 className="mt-1 text-base font-bold text-[#172126]">检索条件</h2>
+            </div>
             <div>
               <label
                 htmlFor="research-direction"
@@ -340,7 +345,7 @@ export function LiteratureShell() {
                   }))
                 }
                 placeholder="例如：基于扩散模型的蛋白质结构预测"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2.5 text-sm text-gray-900 outline-none"
               />
             </div>
 
@@ -363,7 +368,7 @@ export function LiteratureShell() {
                   }))
                 }
                 placeholder="扩散模型, 蛋白质折叠, 结构预测"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2.5 text-sm text-gray-900 outline-none"
               />
             </div>
 
@@ -386,7 +391,7 @@ export function LiteratureShell() {
                   }))
                 }
                 placeholder="综述, 评论"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none"
+                className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2.5 text-sm text-gray-900 outline-none"
               />
             </div>
 
@@ -407,7 +412,7 @@ export function LiteratureShell() {
                     dateRangeDays: Number(event.target.value),
                   }))
                 }
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-gray-300 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-50"
+                className="research-focus w-full rounded-md border border-[#d4dfe2] px-3 py-2.5 text-sm text-gray-900 outline-none disabled:cursor-not-allowed disabled:bg-gray-50"
               >
                 {LITERATURE_DATE_RANGE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -423,7 +428,7 @@ export function LiteratureShell() {
               onClick={() => {
                 void handleUpdatePapers();
               }}
-              className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+              className="w-full rounded-md bg-[#172126] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#26343a] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
             >
               {isUpdating ? "正在更新文献…" : "更新文献"}
             </button>
@@ -431,14 +436,24 @@ export function LiteratureShell() {
               href={googleScholarUrl}
               target="_blank"
               rel="noreferrer"
-              className="block rounded-xl bg-blue-900 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800"
+              className="block rounded-md bg-[#174866] px-4 py-3 text-center text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#123a52]"
             >
               在 Google Scholar 搜索
             </a>
-            <ScholarExtensionEntry />
           </section>
+            <ScholarExtensionEntry />
+          </aside>
 
           <section className="space-y-4">
+            <div className="research-surface flex flex-wrap items-end justify-between gap-3 rounded-md px-4 py-3">
+              <div>
+                <p className="research-eyebrow">Discovery results</p>
+                <h2 className="mt-1 text-base font-bold text-[#172126]">文献结果</h2>
+              </div>
+              <p className="text-xs font-medium text-[#607078]">
+                标题与摘要命中词将高亮显示
+              </p>
+            </div>
             {error && (
               <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
@@ -458,11 +473,11 @@ export function LiteratureShell() {
             )}
 
             {isLoading ? (
-              <div className="rounded-2xl border border-gray-200 bg-white px-5 py-12 text-center text-sm text-gray-500">
+              <div className="research-surface rounded-md px-5 py-12 text-center text-sm text-gray-500">
                 正在加载文献追踪…
               </div>
             ) : visiblePapers.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-12 text-center">
+              <div className="rounded-md border border-dashed border-[#c6d3d8] bg-white px-5 py-12 text-center">
                 <p className="text-sm font-medium text-gray-900">暂无论文</p>
                 <p className="mt-2 text-sm text-gray-500">
                   输入关键词后点击「更新文献」，系统将自动检索并分析相关论文。
@@ -477,7 +492,7 @@ export function LiteratureShell() {
                   />
                 )}
 
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+                <div className="research-surface flex flex-wrap items-center justify-between gap-3 rounded-md px-4 py-3">
                   <p className="text-sm text-gray-600">
                     共 {sortedVisiblePapers.length} 篇论文
                   </p>

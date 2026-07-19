@@ -1,8 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f7f8;
+  --foreground: #172126;
+  --research-canvas: #f4f7f8;
+  --research-surface: #ffffff;
+  --research-surface-muted: #eef3f4;
+  --research-border: #dbe4e7;
+  --research-border-strong: #c7d4d8;
+  --research-ink: #172126;
+  --research-muted: #607078;
+  --research-blue: #245d82;
+  --research-blue-strong: #174866;
+  --research-teal: #147565;
+  --research-amber: #a56518;
+  --research-danger: #b7443e;
 }
 
 @theme inline {
@@ -15,7 +27,62 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-geist-sans), "Noto Sans SC", "Microsoft YaHei",
+    system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: #cce4ee;
+  color: #12384d;
+}
+
+.research-canvas {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent 220px),
+    var(--research-canvas);
+}
+
+.research-surface {
+  border: 1px solid var(--research-border);
+  background: var(--research-surface);
+  box-shadow: 0 1px 2px rgba(26, 47, 56, 0.04);
+}
+
+.research-eyebrow {
+  color: var(--research-blue);
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.research-focus {
+  outline: none;
+}
+
+.research-focus:focus {
+  border-color: var(--research-blue);
+  box-shadow: 0 0 0 3px rgba(36, 93, 130, 0.12);
+}
+
+.research-grid {
+  background-image:
+    linear-gradient(rgba(36, 93, 130, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(36, 93, 130, 0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 
 * {
