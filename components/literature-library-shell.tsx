@@ -260,13 +260,13 @@ export function LiteratureLibraryShell() {
       />
 
       <main className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6 lg:flex-row lg:items-start lg:px-6">
-        <aside className="research-surface w-full shrink-0 rounded-md p-4 lg:sticky lg:top-4 lg:w-64">
+        <aside className="research-surface max-h-[300px] w-full shrink-0 overflow-y-auto rounded-md p-4 lg:sticky lg:top-4 lg:max-h-none lg:w-64 lg:overflow-visible">
           <section className="border-b border-[#e2e9eb] pb-5">
             <p className="research-eyebrow">Views</p>
             <h2 className="mt-1 text-sm font-semibold text-[#26353b]">
               浏览
             </h2>
-            <ul className="mt-3 space-y-1">
+            <ul className="mt-3 grid grid-cols-2 gap-1 lg:block lg:space-y-1">
               {LIBRARY_STATUS_TABS.map((tab) => {
                 const isActive = !filters.folderId && filters.status === tab.value;
 

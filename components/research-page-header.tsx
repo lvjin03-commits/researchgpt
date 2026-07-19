@@ -69,7 +69,7 @@ export function ResearchPageHeader({
           </Link>
           <nav
             aria-label="主要功能"
-            className="flex min-w-0 items-center gap-1 overflow-x-auto"
+            className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {PRIMARY_NAV.map((item) => {
               const active = pathname.startsWith(item.match);
@@ -98,7 +98,7 @@ export function ResearchPageHeader({
         <div className="border-b border-[#e8eef0] bg-[#f8fafb] px-4 sm:px-6">
           <nav
             aria-label="文献工作台"
-            className={`mx-auto flex ${MAX_WIDTH_CLASS[maxWidth]} gap-1 overflow-x-auto`}
+            className={`mx-auto flex ${MAX_WIDTH_CLASS[maxWidth]} gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
           >
             {LITERATURE_NAV.map((item) => {
               const Icon = item.icon;
