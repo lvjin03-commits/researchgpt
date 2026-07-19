@@ -1,3 +1,4 @@
+import type { ArtifactTemplateId } from "@/lib/export/artifact-planner";
 import { buildArtifactSpec } from "@/lib/export/artifact-spec";
 
 function escapeXml(value: string): string {
@@ -25,11 +26,41 @@ function wrap(value: string, maximum = 24): string[] {
   return lines.slice(0, 3);
 }
 
+function getPalette(templateId: ArtifactTemplateId) {
+  if (templateId === "modern") {
+    return {
+      accent: "#0f766e",
+      background: "#f1f5f4",
+      card: "#ffffff",
+      label: "MODERN RESEARCH",
+      bars: ["#0f766e", "#0891b2", "#2563eb", "#7c3aed", "#d97706", "#dc2626"],
+    };
+  }
+  if (templateId === "minimal") {
+    return {
+      accent: "#475569",
+      background: "#ffffff",
+      card: "#f8fafc",
+      label: "CONCISE REPORT",
+      bars: ["#475569", "#64748b", "#334155", "#94a3b8", "#1e293b", "#64748b"],
+    };
+  }
+  return {
+    accent: "#1768e5",
+    background: "#f8fafc",
+    card: "#ffffff",
+    label: "SCIENTIFIC ARTIFACT",
+    bars: ["#2563eb", "#0f766e", "#d97706", "#7c3aed", "#0891b2", "#dc2626"],
+  };
+}
+
 export function generateArtifactSvg(
   title: string,
   content: string,
+  templateId: ArtifactTemplateId = "academic",
 ): string {
   const artifact = buildArtifactSpec(title, content);
+  const palette = getPalette(templateId);
   const cards = [
     ...artifact.sections.map((section) => ({
       title: section.title,
@@ -70,8 +101,8 @@ export function generateArtifactSvg(
 
       return `
         <g>
-          <rect x="${x}" y="${y}" width="${cardWidth}" height="${cardHeight}" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-          <rect x="${x}" y="${y}" width="8" height="${cardHeight}" rx="4" fill="${["#2563eb", "#0f766e", "#d97706", "#7c3aed", "#0891b2", "#dc2626"][index]}"/>
+          <rect x="${x}" y="${y}" width="${cardWidth}" height="${cardHeight}" rx="10" fill="${palette.card}" stroke="#cbd5e1" stroke-width="2"/>
+          <rect x="${x}" y="${y}" width="8" height="${cardHeight}" rx="4" fill="${palette.bars[index]}"/>
           <text x="${x + 28}" y="${y + 42}" class="card-title">${escapeXml(compact(card.title, 28))}</text>
           ${lines
             .map(
@@ -88,15 +119,15 @@ export function generateArtifactSvg(
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <style>
     text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", Arial, sans-serif; }
-    .eyebrow { font-size: 22px; font-weight: 700; fill: #2563eb; }
+    .eyebrow { font-size: 22px; font-weight: 700; fill: ${palette.accent}; }
     .title { font-size: 46px; font-weight: 800; fill: #0f172a; }
     .summary { font-size: 23px; font-weight: 500; fill: #475569; }
-    .card-title { font-size: 23px; font-weight: 750; fill: #0f172a; }
-    .body { font-size: 18px; font-weight: 450; fill: #334155; }
+    .card-title { font-size: 23px; font-weight: 700; fill: #0f172a; }
+    .body { font-size: 18px; font-weight: 400; fill: #334155; }
   </style>
-  <rect width="1600" height="900" fill="#f8fafc"/>
-  <rect x="0" y="0" width="1600" height="16" fill="#2563eb"/>
-  <text x="92" y="78" class="eyebrow">RESEARCHAI · SCIENTIFIC ARTIFACT</text>
+  <rect width="${width}" height="${height}" fill="${palette.background}"/>
+  <rect x="0" y="0" width="${width}" height="16" fill="${palette.accent}"/>
+  <text x="92" y="78" class="eyebrow">RESEARCHAI · ${palette.label}</text>
   <text x="92" y="148" class="title">${escapeXml(compact(artifact.title, 44))}</text>
   ${summaryLines
     .map(
@@ -112,6 +143,7 @@ export function generateArtifactSvg(
 export function generateArtifactSvgBuffer(
   title: string,
   content: string,
+  templateId: ArtifactTemplateId = "academic",
 ): Buffer {
-  return Buffer.from(generateArtifactSvg(title, content), "utf8");
+  return Buffer.from(generateArtifactSvg(title, content, templateId), "utf8");
 }

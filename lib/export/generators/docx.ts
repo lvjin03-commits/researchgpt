@@ -21,6 +21,7 @@ import {
   parseMarkdownBlocks,
   type InlineSpan,
 } from "@/lib/export/markdown-blocks";
+import type { ArtifactTemplateId } from "@/lib/export/artifact-planner";
 
 function inlineSpansToTextRuns(inlines: InlineSpan[]): TextRun[] {
   return inlines.map(
@@ -44,7 +45,16 @@ function plainText(inlines: InlineSpan[]): string {
   return inlines.map((span) => span.text).join("");
 }
 
-function buildCoverParagraphs(title: string): Paragraph[] {
+function buildCoverParagraphs(
+  title: string,
+  templateId: ArtifactTemplateId,
+): Paragraph[] {
+  const palette =
+    templateId === "modern"
+      ? { accent: "0F766E", label: "RESEARCHAI · MODERN RESEARCH" }
+      : templateId === "minimal"
+        ? { accent: "475569", label: "RESEARCHAI · CONCISE REPORT" }
+        : { accent: "1768E5", label: "RESEARCHAI · ACADEMIC REPORT" };
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -55,6 +65,7 @@ function buildCoverParagraphs(title: string): Paragraph[] {
           bold: true,
           size: 40,
           font: "Microsoft YaHei",
+          color: palette.accent,
         }),
       ],
     }),
@@ -63,7 +74,7 @@ function buildCoverParagraphs(title: string): Paragraph[] {
       spacing: { after: 720 },
       children: [
         new TextRun({
-          text: "ResearchAI 智能成果文档",
+          text: palette.label,
           color: "4B5563",
           size: 22,
           font: "Microsoft YaHei",
@@ -260,9 +271,12 @@ function buildMarkdownTable(
 function blocksToDocxChildren(
   title: string,
   content: string,
+  templateId: ArtifactTemplateId,
 ): Array<Paragraph | Table> {
   const blocks = parseMarkdownBlocks(content);
-  const children: Array<Paragraph | Table> = [...buildCoverParagraphs(title)];
+  const children: Array<Paragraph | Table> = [
+    ...buildCoverParagraphs(title, templateId),
+  ];
 
   for (const block of blocks) {
     switch (block.type) {
@@ -368,6 +382,7 @@ function blocksToDocxChildren(
 export async function generateDocxBuffer(
   title: string,
   content: string,
+  templateId: ArtifactTemplateId = "academic",
 ): Promise<Buffer> {
   const document = new Document({
     styles: {
@@ -395,7 +410,7 @@ export async function generateDocxBuffer(
             },
           },
         },
-        children: blocksToDocxChildren(title, content),
+        children: blocksToDocxChildren(title, content, templateId),
       },
     ],
   });
