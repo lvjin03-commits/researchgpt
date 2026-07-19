@@ -1,9 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
+import { buildExportFilename } from "@/lib/export/filename";
 import { ExportError } from "@/lib/export/errors";
-import { createExport, parseExportRequest } from "@/lib/export/service";
+import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
+import { parseExportRequest } from "@/lib/export/service";
+import { EXPORT_MIME_TYPES } from "@/lib/export/types";
 import type { ExportErrorResponse } from "@/lib/export/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 function logExportError(error: unknown): void {
   if (error instanceof Error) {
@@ -52,11 +56,26 @@ export async function POST(request: Request) {
     console.log("[export] message count:", 1);
     console.log("[export] content length:", exportRequest.content.length);
 
-    const result = await createExport(exportRequest, user.id);
+    const filename = buildExportFilename(
+      exportRequest.title,
+      exportRequest.format,
+    );
+    const buffer = await generateExportBuffer(exportRequest.format, {
+      title: exportRequest.title,
+      content: exportRequest.content,
+      metadata: exportRequest.metadata ?? {},
+    });
 
-    console.log("[export] created:", result.filename);
+    console.log("[export] created:", filename);
 
-    return Response.json(result);
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": EXPORT_MIME_TYPES[exportRequest.format],
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "X-Export-Filename": encodeURIComponent(filename),
+        "Cache-Control": "no-store",
+      },
+    });
   } catch (error) {
     if (error instanceof ExportError) {
       logExportError(error);

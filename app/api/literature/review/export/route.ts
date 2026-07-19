@@ -1,5 +1,4 @@
 import { buildExportFilename } from "@/lib/export/filename";
-import { saveExport } from "@/lib/export/store";
 import { LiteratureError } from "@/lib/literature/errors";
 import { requireLiteratureUser } from "@/lib/literature/server/auth";
 import { generateReviewPptxBuffer } from "@/lib/literature/server/review-pptx";
@@ -9,6 +8,7 @@ import { isPresentationTemplateId } from "@/lib/presentation/templates";
 import type { PresentationTemplateId } from "@/lib/literature/review/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 type ReviewExportRequest = {
   format?: unknown;
@@ -19,7 +19,7 @@ type ReviewExportRequest = {
 
 export async function POST(request: Request) {
   try {
-    const { user } = await requireLiteratureUser();
+    await requireLiteratureUser();
     const body = (await request.json()) as ReviewExportRequest;
     const format = typeof body.format === "string" ? body.format.trim() : "";
     const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -30,7 +30,14 @@ export async function POST(request: Request) {
       ? body.templateId
       : "research-modern";
 
-    if (format !== "pptx" && format !== "docx" && format !== "xlsx") {
+    if (
+      format !== "pptx" &&
+      format !== "docx" &&
+      format !== "xlsx" &&
+      format !== "pdf" &&
+      format !== "svg" &&
+      format !== "png"
+    ) {
       throw new LiteratureError("不支持该导出格式。", 400);
     }
 
@@ -47,7 +54,7 @@ export async function POST(request: Request) {
         ? await generateReviewPptxBuffer(title, content, templateId)
         : format === "xlsx"
           ? generateLiteratureMatrixXlsxBuffer(content)
-          : await generateExportBuffer("docx", {
+          : await generateExportBuffer(format, {
               title,
               content,
               metadata: { artifactType: "literature-outline" },
@@ -59,19 +66,21 @@ export async function POST(request: Request) {
         ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         : format === "xlsx"
           ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+          : format === "docx"
+            ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            : format === "pdf"
+              ? "application/pdf"
+              : format === "png"
+                ? "image/png"
+                : "image/svg+xml; charset=utf-8";
 
-    const record = await saveExport({
-      filename,
-      mimeType,
-      userId: user.id,
-      buffer,
-    });
-
-    return Response.json({
-      success: true,
-      filename: record.filename,
-      downloadUrl: `/api/download/${record.id}`,
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": mimeType,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "X-Export-Filename": encodeURIComponent(filename),
+        "Cache-Control": "no-store",
+      },
     });
   } catch (error) {
     if (error instanceof LiteratureError) {

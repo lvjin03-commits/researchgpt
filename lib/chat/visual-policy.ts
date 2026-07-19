@@ -6,7 +6,7 @@ const VISUAL_POLICY_MARKER = "scientific visual evidence contract";
 const VISUAL_SCHEMAS = [
   "Use a fenced `visual` JSON block for every rendered visual.",
   'Quantitative schema: {"type":"bar|line","title":"...","labels":["..."],"series":[{"name":"...","values":[1,2]}],"xAxis":"...","yAxis":"...","unit":"...","caption":"...","source":"...","evidenceType":"user_data|literature|ai_structure"}.',
-  'Fishbone schema: {"type":"fishbone","title":"...","problem":"...","branches":[{"name":"人员","causes":["..."]}],"caption":"...","source":"...","evidenceType":"ai_structure"}.',
+  'Fishbone schema: {"type":"fishbone","title":"...","problem":"...","branches":[{"name":"人员","causes":["..."]}],"caption":"...","source":"...","evidenceType":"ai_structure"}. Use 4-6 distinct cause categories, 3-5 concise causes per category, and a short problem statement that fits inside the fish head. Causes must be noun phrases rather than paragraphs.',
   'Process schema: {"type":"process","title":"...","steps":[{"title":"...","description":"..."}],"caption":"...","source":"...","evidenceType":"ai_structure"}.',
   'Timeline schema: {"type":"timeline","title":"...","events":[{"label":"2024","title":"...","description":"..."}],"caption":"...","source":"...","evidenceType":"literature|ai_structure"}.',
 ].join("\n");

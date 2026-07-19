@@ -44,14 +44,14 @@ function plainText(inlines: InlineSpan[]): string {
   return inlines.map((span) => span.text).join("");
 }
 
-function buildCoverParagraphs(): Paragraph[] {
+function buildCoverParagraphs(title: string): Paragraph[] {
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 720, after: 240 },
       children: [
         new TextRun({
-          text: "ResearchAI 文献综述成果稿",
+          text: title,
           bold: true,
           size: 40,
           font: "Microsoft YaHei",
@@ -63,7 +63,7 @@ function buildCoverParagraphs(): Paragraph[] {
       spacing: { after: 720 },
       children: [
         new TextRun({
-          text: "含专业综述、证据图表、研究空白与未来方向",
+          text: "ResearchAI 智能成果文档",
           color: "4B5563",
           size: 22,
           font: "Microsoft YaHei",
@@ -257,9 +257,12 @@ function buildMarkdownTable(
   });
 }
 
-function blocksToDocxChildren(content: string): Array<Paragraph | Table> {
+function blocksToDocxChildren(
+  title: string,
+  content: string,
+): Array<Paragraph | Table> {
   const blocks = parseMarkdownBlocks(content);
-  const children: Array<Paragraph | Table> = [...buildCoverParagraphs()];
+  const children: Array<Paragraph | Table> = [...buildCoverParagraphs(title)];
 
   for (const block of blocks) {
     switch (block.type) {
@@ -362,7 +365,10 @@ function blocksToDocxChildren(content: string): Array<Paragraph | Table> {
   return children;
 }
 
-export async function generateDocxBuffer(content: string): Promise<Buffer> {
+export async function generateDocxBuffer(
+  title: string,
+  content: string,
+): Promise<Buffer> {
   const document = new Document({
     styles: {
       default: {
@@ -389,7 +395,7 @@ export async function generateDocxBuffer(content: string): Promise<Buffer> {
             },
           },
         },
-        children: blocksToDocxChildren(content),
+        children: blocksToDocxChildren(title, content),
       },
     ],
   });

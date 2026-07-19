@@ -24,7 +24,7 @@ const DATA_PATTERN =
 const VISUAL_PATTERN =
   /(鱼骨图|因果图|故障树|流程图|技术路线图|时间轴|演进图|分类图|框架图|机制图|示意图|对比图|证据图|思维导图|可视化|fishbone|ishikawa|flowchart|timeline|taxonomy|framework|diagram|visuali[sz]ation)/i;
 const ARTIFACT_PATTERN =
-  /(生成|导出|制作|创建).{0,12}(word|docx|pdf|ppt|pptx|表格|图表|报告|文档|幻灯片)|(export|create|generate).{0,12}(document|pdf|ppt|slides|report)/i;
+  /(生成|导出|制作|创建).{0,12}(word|docx|excel|xlsx|pdf|ppt|pptx|png|svg|图片|图像|表格|图表|报告|文档|幻灯片)|(export|create|generate).{0,12}(document|word|excel|spreadsheet|pdf|ppt|slides|image|report)/i;
 const FILE_CONTEXT_PATTERN =
   /(?:Attached document|Document context|附件|文件名|originalLength|truncated)/i;
 const TABULAR_CONTEXT_PATTERN =
@@ -101,8 +101,10 @@ export function routeChatTask(messages: ChatMessage[]): ChatTaskRoute {
       systemInstruction: [
         "This is an artifact-creation task.",
         "Produce a complete reusable deliverable rather than generic advice.",
-        "Use clear hierarchy, compact sections, and tables or charts when useful.",
-        "Do not claim a downloadable file exists unless a tool actually created one.",
+        "Use explicit headings, concise section conclusions, compact paragraphs, and valid Markdown tables where useful so the content can be rendered into multiple professional file formats.",
+        "For presentations, make each level-2 heading a potential slide and give it one takeaway plus no more than four concise bullets.",
+        "For spreadsheets, organize comparable information into valid Markdown tables with stable column names.",
+        "Do not claim a downloadable file already exists. Direct the user to Generate file below the finished answer.",
       ].join("\n"),
     };
   }

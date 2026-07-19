@@ -1,4 +1,13 @@
-export type ExportFormat = "md" | "docx" | "pdf" | "txt" | "json";
+export type ExportFormat =
+  | "md"
+  | "docx"
+  | "pdf"
+  | "pptx"
+  | "xlsx"
+  | "svg"
+  | "png"
+  | "txt"
+  | "json";
 
 export type ExportRequest = {
   format: ExportFormat;
@@ -35,6 +44,10 @@ export const EXPORT_MIME_TYPES: Record<ExportFormat, string> = {
   json: "application/json; charset=utf-8",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   pdf: "application/pdf",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  svg: "image/svg+xml; charset=utf-8",
+  png: "image/png",
 };
 
 export const MAX_EXPORT_CONTENT_CHARS = 500_000;

@@ -736,23 +736,22 @@ export async function exportLiteratureReview(
     body: JSON.stringify(request),
   });
 
-  const payload = await parseJson<{
-    success: boolean;
-    filename?: string;
-    downloadUrl?: string;
-    error?: string;
-  }>(response);
-
-  if (!response.ok || !payload.success || !payload.downloadUrl || !payload.filename) {
-    throw new LiteratureError(payload.error ?? "导出失败。", response.status);
+  if (!response.ok) {
+    let message = "导出失败。";
+    try {
+      const payload = (await response.json()) as { error?: string };
+      message = payload.error ?? message;
+    } catch {
+      // Preserve the fallback for non-JSON platform errors.
+    }
+    throw new LiteratureError(message, response.status);
   }
 
-  const downloadResponse = await fetch(payload.downloadUrl);
-  if (!downloadResponse.ok) {
-    throw new LiteratureError("下载导出文件失败。", 502);
-  }
-
-  const blob = await downloadResponse.blob();
-  downloadBlob(blob, payload.filename);
-  return { filename: payload.filename };
+  const encodedFilename = response.headers.get("X-Export-Filename");
+  const filename = encodedFilename
+    ? decodeURIComponent(encodedFilename)
+    : `researchgpt-export.${request.format}`;
+  const blob = await response.blob();
+  downloadBlob(blob, filename);
+  return { filename };
 }

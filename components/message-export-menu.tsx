@@ -11,11 +11,15 @@ type MessageExportMenuProps = {
 };
 
 const EXPORT_OPTIONS: { format: ExportFormat; label: string }[] = [
-  { format: "docx", label: "导出为 Word" },
-  { format: "pdf", label: "导出为 PDF" },
-  { format: "md", label: "导出为 Markdown" },
-  { format: "txt", label: "导出为纯文本" },
-  { format: "json", label: "导出为 JSON" },
+  { format: "docx", label: "生成 Word 文档" },
+  { format: "pptx", label: "生成 PowerPoint" },
+  { format: "xlsx", label: "生成 Excel 工作簿" },
+  { format: "pdf", label: "生成 PDF 报告" },
+  { format: "png", label: "生成 PNG 成果图" },
+  { format: "svg", label: "生成可编辑 SVG" },
+  { format: "md", label: "生成 Markdown" },
+  { format: "txt", label: "生成纯文本" },
+  { format: "json", label: "生成 JSON" },
 ];
 
 export function MessageExportMenu({
@@ -90,19 +94,19 @@ export function MessageExportMenu({
           setOpen((current) => !current);
           setError(null);
         }}
-        aria-label="导出回复"
+        aria-label="生成成果文件"
         aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-white hover:text-gray-700"
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-gray-600 transition-colors hover:bg-white hover:text-gray-950"
       >
         <ExportIcon className="h-3.5 w-3.5" />
-        导出
+        生成文件
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+          className="absolute left-0 top-full z-20 mt-1 max-h-[360px] min-w-[220px] overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
         >
           {EXPORT_OPTIONS.map((option) => (
             <button

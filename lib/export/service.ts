@@ -12,7 +12,17 @@ import {
   type ExportSuccessResponse,
 } from "@/lib/export/types";
 
-const EXPORT_FORMATS = new Set<ExportFormat>(["md", "docx", "pdf", "txt", "json"]);
+const EXPORT_FORMATS = new Set<ExportFormat>([
+  "md",
+  "docx",
+  "pdf",
+  "pptx",
+  "xlsx",
+  "svg",
+  "png",
+  "txt",
+  "json",
+]);
 
 export function parseExportRequest(body: unknown): ExportRequest {
   if (typeof body !== "object" || body === null) {
@@ -27,7 +37,7 @@ export function parseExportRequest(body: unknown): ExportRequest {
 
   if (typeof format !== "string" || !EXPORT_FORMATS.has(format as ExportFormat)) {
     throw new ExportError(
-      'format must be one of: "docx", "pdf", "md", "txt", "json".',
+      'format must be one of: "docx", "pdf", "pptx", "xlsx", "svg", "png", "md", "txt", "json".',
       400,
     );
   }

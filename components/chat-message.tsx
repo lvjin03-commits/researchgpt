@@ -321,7 +321,7 @@ function parseStructureVisualSpec(value: string): StructureVisualSpec | null {
           }
           const causes = record.causes
             .filter((cause): cause is string => typeof cause === "string")
-            .slice(0, 6);
+            .slice(0, 5);
           return causes.length > 0
             ? [{ name: record.name, causes }]
             : [];
@@ -425,30 +425,76 @@ function VisualEvidenceFooter({ visual }: { visual: VisualEvidence }) {
 function FishboneBlock({ visual }: { visual: FishboneSpec }) {
   const top = visual.branches.filter((_, index) => index % 2 === 0);
   const bottom = visual.branches.filter((_, index) => index % 2 === 1);
+  const boneXs = [300, 510, 720];
 
-  const renderBranch = (
+  const renderBone = (
     branch: FishboneSpec["branches"][number],
+    index: number,
     position: "top" | "bottom",
-  ) => (
-    <div
-      key={`${position}-${branch.name}`}
-      className="relative rounded border border-blue-200 bg-white px-3 py-2 shadow-sm"
-    >
-      <p className="mb-1 text-sm font-bold text-blue-900">{branch.name}</p>
-      <ul className="space-y-0.5 text-xs leading-5 text-gray-700">
-        {branch.causes.map((cause) => (
-          <li key={cause}>• {cause}</li>
-        ))}
-      </ul>
-      <span
-        className={`absolute left-1/2 h-10 w-px bg-blue-400 ${
-          position === "top"
-            ? "top-full origin-top -rotate-[32deg]"
-            : "bottom-full origin-bottom rotate-[32deg]"
-        }`}
-      />
-    </div>
-  );
+  ) => {
+    const baseX = boneXs[index] ?? boneXs[boneXs.length - 1];
+    const isTop = position === "top";
+    const tipX = baseX - 92;
+    const tipY = isTop ? 100 : 460;
+    const labelY = isTop ? 42 : 478;
+    const causesY = isTop ? 88 : 318;
+
+    return (
+      <g key={`${position}-${branch.name}-${index}`}>
+        <line
+          x1={baseX}
+          y1="280"
+          x2={tipX}
+          y2={tipY}
+          stroke="#2563eb"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        <circle cx={baseX} cy="280" r="5" fill="#1d4ed8" />
+        <rect
+          x={tipX - 55}
+          y={labelY}
+          width="110"
+          height="34"
+          rx="6"
+          fill="#eff6ff"
+          stroke="#2563eb"
+          strokeWidth="1.5"
+        />
+        <foreignObject
+          x={tipX - 50}
+          y={labelY + 3}
+          width="100"
+          height="28"
+        >
+          <div className="flex h-full items-center justify-center text-center text-[13px] font-bold leading-4 text-blue-950">
+            {branch.name}
+          </div>
+        </foreignObject>
+        <foreignObject
+          x={tipX - 152}
+          y={causesY}
+          width="150"
+          height="150"
+        >
+          <div
+            className={`h-full text-[11px] leading-[17px] text-gray-700 ${
+              isTop ? "flex flex-col justify-end" : ""
+            }`}
+          >
+            {branch.causes.map((cause) => (
+              <div
+                key={cause}
+                className="border-b border-dashed border-blue-100 py-0.5"
+              >
+                {cause}
+              </div>
+            ))}
+          </div>
+        </foreignObject>
+      </g>
+    );
+  };
 
   return (
     <figure className="my-5 overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -456,22 +502,62 @@ function FishboneBlock({ visual }: { visual: FishboneSpec }) {
         <BarChart3 className="h-4 w-4 text-blue-600" />
         {visual.title}
       </figcaption>
-      <div className="overflow-x-auto p-4">
-        <div className="relative min-w-[780px] py-3">
-          <div className="grid grid-cols-3 gap-5 pr-52">
-            {top.map((branch) => renderBranch(branch, "top"))}
-          </div>
-          <div className="relative my-10 h-1 bg-blue-600">
-            <span className="absolute -left-3 -top-[9px] h-5 w-5 rotate-45 border-b-2 border-l-2 border-blue-600" />
-            <span className="absolute -right-1 -top-[7px] h-0 w-0 border-y-[8px] border-l-[14px] border-y-transparent border-l-blue-600" />
-            <div className="absolute -right-48 -top-10 flex min-h-20 w-44 items-center rounded-lg border-2 border-blue-600 bg-blue-50 px-3 py-2 text-sm font-bold leading-5 text-blue-950">
+      <div className="overflow-x-auto bg-gradient-to-b from-white to-blue-50/30 p-3 sm:p-4">
+        <svg
+          viewBox="0 0 1000 560"
+          role="img"
+          aria-label={`${visual.title}：${visual.problem}`}
+          className="mx-auto block h-auto min-w-[720px] max-w-[1100px]"
+        >
+          <defs>
+            <marker
+              id="fishbone-arrow"
+              markerWidth="10"
+              markerHeight="10"
+              refX="8"
+              refY="3"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              <path d="M0,0 L0,6 L9,3 z" fill="#1d4ed8" />
+            </marker>
+          </defs>
+
+          <path
+            d="M38 280 L100 235 L88 280 L100 325 Z"
+            fill="#eff6ff"
+            stroke="#2563eb"
+            strokeWidth="3"
+            strokeLinejoin="round"
+          />
+          <line
+            x1="90"
+            y1="280"
+            x2="824"
+            y2="280"
+            stroke="#1d4ed8"
+            strokeWidth="5"
+            strokeLinecap="round"
+            markerEnd="url(#fishbone-arrow)"
+          />
+
+          {top.map((branch, index) => renderBone(branch, index, "top"))}
+          {bottom.map((branch, index) => renderBone(branch, index, "bottom"))}
+
+          <path
+            d="M820 205 Q930 208 972 280 Q930 352 820 355 Q850 280 820 205 Z"
+            fill="#eff6ff"
+            stroke="#1d4ed8"
+            strokeWidth="3"
+            strokeLinejoin="round"
+          />
+          <circle cx="920" cy="245" r="6" fill="#1d4ed8" />
+          <foreignObject x="850" y="252" width="103" height="82">
+            <div className="flex h-full items-center justify-center text-center text-[12px] font-bold leading-[17px] text-blue-950">
               {visual.problem}
             </div>
-          </div>
-          <div className="grid grid-cols-3 gap-5 pr-52">
-            {bottom.map((branch) => renderBranch(branch, "bottom"))}
-          </div>
-        </div>
+          </foreignObject>
+        </svg>
       </div>
       <VisualEvidenceFooter visual={visual} />
     </figure>
