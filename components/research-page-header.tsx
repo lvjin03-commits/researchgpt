@@ -65,7 +65,7 @@ export function ResearchPageHeader({
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#174866] text-white shadow-sm">
               <Microscope className="h-4 w-4" />
             </span>
-            <span className="hidden sm:block">ResearchAI</span>
+            <span className="hidden sm:block">ResearchGPT</span>
           </Link>
           <nav
             aria-label="主要功能"

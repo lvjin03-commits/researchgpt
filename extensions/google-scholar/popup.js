@@ -165,7 +165,7 @@ async function connectAccount() {
       return;
     }
 
-    throw new Error(payload.error || `ResearchAI returned ${response.status}`);
+    throw new Error(payload.error || `ResearchGPT returned ${response.status}`);
   } catch (error) {
     setStatus(
       `Could not connect. Sign in at ${baseUrl} first. ${error.message || ""}`,
@@ -194,7 +194,7 @@ async function loadFolders() {
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(payload.error || `ResearchAI returned ${response.status}`);
+      throw new Error(payload.error || `ResearchGPT returned ${response.status}`);
     }
 
     renderFolders(payload.folders || [], settings[STORAGE_KEYS.folderIds] || []);

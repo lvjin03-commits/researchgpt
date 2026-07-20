@@ -19,6 +19,7 @@ import { Sidebar } from "@/components/sidebar";
 import type { ChatMessage } from "@/lib/ai/types";
 import {
   DEFAULT_CHAT_MODEL_TIER,
+  getChatModelOption,
   isChatModelTier,
   type ChatModelTier,
 } from "@/lib/ai/chat-models";
@@ -262,9 +263,20 @@ export function ChatShell() {
   }, []);
 
   const handleModelTierChange = useCallback((tier: ChatModelTier) => {
+    if (tier === modelTier) return;
+    const option = getChatModelOption(tier);
+    if (
+      option.expensive &&
+      !window.confirm(
+        option.costWarning ??
+          "该模型成本较高。确认继续使用这个模型吗？",
+      )
+    ) {
+      return;
+    }
     setModelTier(tier);
     window.localStorage.setItem("researchgpt-chat-model-tier", tier);
-  }, []);
+  }, [modelTier]);
   const handleWebSearchChange = useCallback((enabled: boolean) => {
     setWebSearch(enabled);
     window.localStorage.setItem("researchgpt-chat-web", String(enabled));

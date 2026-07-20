@@ -29,7 +29,7 @@ export type StreamChatOptions = {
   reasoningEffort?: "none" | "low" | "medium";
 };
 
-export type AIProviderName = "openai" | "openrouter";
+export type AIProviderName = "openai" | "openrouter" | "deepseek";
 
 export interface AIProviderAdapter {
   readonly name: AIProviderName;

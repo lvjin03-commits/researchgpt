@@ -24,7 +24,7 @@ function responseErrorMessage(response, payload) {
     return RECONNECT_MESSAGE;
   }
 
-  return payload?.error || `ResearchAI returned ${response.status}`;
+  return payload?.error || `ResearchGPT returned ${response.status}`;
 }
 
 function normalizeBaseUrl(value) {
@@ -100,7 +100,7 @@ async function refreshAuthToken(baseUrl) {
     throw new Error(
       response.status === 401
         ? RECONNECT_MESSAGE
-        : payload.error || `ResearchAI returned ${response.status}`,
+        : payload.error || `ResearchGPT returned ${response.status}`,
     );
   }
 

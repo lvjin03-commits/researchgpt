@@ -7,11 +7,12 @@ import { messagesIncludeImages } from "@/lib/ai/types";
 import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
 import { extractImagesFromSources } from "@/lib/chat/server/source-images";
 import { estimateModelCostUsd } from "@/lib/ai/cost";
+import type { ChatModelProvider } from "@/lib/ai/chat-models";
 
 const DEFAULT_TEXT_MODEL = "gpt-4o-mini";
 const DEFAULT_VISION_MODEL = "gpt-4.1-mini";
 
-function getClient(): OpenAI {
+function getOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -24,7 +25,24 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
+function getDeepSeekClient(): OpenAI {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+
+  if (!apiKey) {
+    throw new AIProviderError("DEEPSEEK_API_KEY is not configured", {
+      statusCode: 500,
+      provider: "deepseek",
+    });
+  }
+
+  return new OpenAI({
+    apiKey,
+    baseURL: process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com",
+  });
+}
+
 export type ResponsesChatOptions = StreamChatOptions & {
+  provider?: ChatModelProvider;
   webSearch?: boolean;
   codeInterpreter?: boolean;
   maxOutputTokens?: number;
@@ -35,14 +53,25 @@ export async function* openResponsesChatStream({
   messages,
   signal,
   model: requestedModel,
+  provider = "openai",
   reasoningEffort,
   webSearch = false,
   codeInterpreter = false,
   maxOutputTokens = 4000,
   promptCacheKey,
 }: ResponsesChatOptions): AsyncGenerator<ChatStreamEvent> {
-  const client = getClient();
   const model = requestedModel || getModelForMessages(messages);
+  if (provider === "deepseek") {
+    yield* openDeepSeekChatStream({
+      messages,
+      signal,
+      model,
+      maxOutputTokens,
+    });
+    return;
+  }
+
+  const client = getOpenAIClient();
   const instructions = messages
     .filter((message) => message.role === "system")
     .map((message) =>
@@ -172,7 +201,89 @@ export async function* openResponsesChatStream({
       }
     }
   } catch (error) {
-    throw toProviderError(error);
+    throw toProviderError(error, "openai");
+  }
+}
+
+async function* openDeepSeekChatStream({
+  messages,
+  signal,
+  model,
+  maxOutputTokens,
+}: {
+  messages: ChatMessage[];
+  signal?: AbortSignal;
+  model: string;
+  maxOutputTokens: number;
+}): AsyncGenerator<ChatStreamEvent> {
+  if (messagesIncludeImages(messages)) {
+    throw new AIProviderError(
+      "经济型和标准型暂不支持图片输入，请切换到专业或旗舰模型。",
+      {
+        statusCode: 400,
+        provider: "deepseek",
+      },
+    );
+  }
+
+  const client = getDeepSeekClient();
+  const openaiMessages = toOpenAIMessages(messages);
+  let usage:
+    | {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+      }
+    | null = null;
+
+  try {
+    const stream = await client.chat.completions.create(
+      {
+        model,
+        messages: openaiMessages,
+        stream: true,
+        max_tokens: maxOutputTokens,
+        stream_options: { include_usage: true },
+      },
+      { signal },
+    );
+
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content;
+      if (text) {
+        yield { type: "text", delta: text };
+      }
+
+      if (chunk.usage) {
+        usage = {
+          inputTokens: chunk.usage.prompt_tokens ?? 0,
+          outputTokens: chunk.usage.completion_tokens ?? 0,
+          totalTokens: chunk.usage.total_tokens ?? 0,
+        };
+      }
+    }
+
+    if (usage) {
+      yield {
+        type: "usage",
+        model,
+        inputTokens: usage.inputTokens,
+        cachedInputTokens: 0,
+        outputTokens: usage.outputTokens,
+        reasoningTokens: 0,
+        totalTokens: usage.totalTokens,
+        webSearchCalls: 0,
+        codeInterpreterCalls: 0,
+        estimatedCostUsd: estimateModelCostUsd(model, {
+          inputTokens: usage.inputTokens,
+          cachedInputTokens: 0,
+          outputTokens: usage.outputTokens,
+          reasoningTokens: 0,
+        }),
+      };
+    }
+  } catch (error) {
+    throw toProviderError(error, "deepseek");
   }
 }
 
@@ -236,7 +347,7 @@ export async function openChatCompletionStream({
 }: StreamChatOptions): Promise<
   AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>
 > {
-  const client = getClient();
+  const client = getOpenAIClient();
   const model = requestedModel || getModelForMessages(messages);
   const openaiMessages = toOpenAIMessages(messages);
 
@@ -288,7 +399,7 @@ export async function openChatCompletionStream({
 
     return logStreamResponseModel(stream);
   } catch (error) {
-    throw toProviderError(error);
+    throw toProviderError(error, "openai");
   }
 }
 
@@ -319,7 +430,7 @@ export const openaiProvider: AIProviderAdapter = {
     try {
       stream = await openChatCompletionStream(options);
     } catch (error) {
-      throw toProviderError(error);
+      throw toProviderError(error, "openai");
     }
 
     try {
@@ -330,12 +441,15 @@ export const openaiProvider: AIProviderAdapter = {
         }
       }
     } catch (error) {
-      throw toProviderError(error);
+      throw toProviderError(error, "openai");
     }
   },
 };
 
-function toProviderError(error: unknown): AIProviderError {
+function toProviderError(
+  error: unknown,
+  provider: "openai" | "deepseek" = "openai",
+): AIProviderError {
   if (error instanceof AIProviderError) {
     return error;
   }
@@ -343,7 +457,7 @@ function toProviderError(error: unknown): AIProviderError {
   if (error instanceof OpenAI.APIError) {
     return new AIProviderError(error.message, {
       statusCode: error.status ?? 502,
-      provider: "openai",
+      provider,
       cause: error,
     });
   }
@@ -351,14 +465,14 @@ function toProviderError(error: unknown): AIProviderError {
   if (error instanceof Error && error.name === "AbortError") {
     return new AIProviderError("Request cancelled", {
       statusCode: 499,
-      provider: "openai",
+      provider,
       cause: error,
     });
   }
 
-  return new AIProviderError("OpenAI request failed", {
+  return new AIProviderError(`${provider} request failed`, {
     statusCode: 502,
-    provider: "openai",
+    provider,
     cause: error,
   });
 }

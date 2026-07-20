@@ -29,9 +29,17 @@ function tierInstruction(option: ChatModelOption): string {
     ].join(" ");
   }
 
+  if (option.tier === "professional") {
+    return [
+      `Professional visual budget: render up to ${option.maxVisuals} visuals when they each support a distinct scientific claim; never fill the quota mechanically.`,
+      "Build an evidence-led visual sequence such as research question, method/process, key result, comparison, mechanism, and limitation.",
+      "Prefer verified literature or user data and clearly mark conceptual synthesis.",
+    ].join(" ");
+  }
+
   return [
-    `Advanced visual budget: render up to ${option.maxVisuals} visuals when they each support a distinct scientific claim; never fill the quota mechanically.`,
-    "Build an evidence-led visual sequence such as research question, method/process, key result, comparison, mechanism, and limitation.",
+    `Flagship visual budget: render up to ${option.maxVisuals} visuals for complex scientific synthesis, but only when each visual carries a clear analytical role.`,
+    "Use a stronger visual narrative: problem definition, causal mechanism, evidence comparison, timeline or taxonomy, and actionable conclusion.",
     "Prefer verified literature or user data and clearly mark conceptual synthesis.",
   ].join(" ");
 }

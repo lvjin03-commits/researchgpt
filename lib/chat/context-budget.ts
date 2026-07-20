@@ -5,13 +5,15 @@ import type { ChatModelTier } from "@/lib/ai/chat-models";
 const TOTAL_CHARACTER_BUDGET: Record<ChatModelTier, number> = {
   economy: 28_000,
   standard: 52_000,
-  advanced: 84_000,
+  professional: 84_000,
+  flagship: 120_000,
 };
 
 const MESSAGE_CHARACTER_BUDGET: Record<ChatModelTier, number> = {
   economy: 7_000,
   standard: 12_000,
-  advanced: 18_000,
+  professional: 18_000,
+  flagship: 24_000,
 };
 
 function truncateContent(content: MessageContent, limit: number): MessageContent {

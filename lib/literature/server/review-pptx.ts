@@ -913,8 +913,8 @@ export async function generateReviewPptxBuffer(
   const slides = parseSlidesFromContent(outlineMarkdown);
   const pptx = new pptxgen();
   pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "ResearchAI";
-  pptx.company = "ResearchAI";
+  pptx.author = "ResearchGPT";
+  pptx.company = "ResearchGPT";
   pptx.subject = title;
   pptx.title = title;
   pptx.theme = { headFontFace: FONT_CN, bodyFontFace: FONT_CN };

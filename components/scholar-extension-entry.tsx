@@ -24,7 +24,7 @@ const INSTRUCTIONS = [
       "点击“加载已解压的扩展程序”，选择刚才解压且能直接看到 manifest.json 的文件夹。",
   },
   {
-    title: "连接 ResearchAI 账户",
+    title: "连接 ResearchGPT 账户",
     description:
       "先登录本网站，再打开插件，依次点击 Connect account（连接账户）和 Load folders（加载文件夹）。",
   },

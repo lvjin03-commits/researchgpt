@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ResearchAI Scholar Saver",
+  "name": "ResearchGPT Scholar Saver",
   "description": "Download Google Scholar PDFs in Chrome and save them to selected ResearchGPT folders.",
   "version": "0.2.8",
   "permissions": ["storage", "tabs"],
@@ -14,7 +14,7 @@
     ]
   },
   "action": {
-    "default_title": "ResearchAI Scholar Saver",
+    "default_title": "ResearchGPT Scholar Saver",
     "default_popup": "popup.html"
   },
   "background": {

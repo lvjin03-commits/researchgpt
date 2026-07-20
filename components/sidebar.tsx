@@ -277,7 +277,7 @@ export function Sidebar({
               <Microscope className="h-4 w-4" />
             </span>
             <span>
-              <span className="block text-sm font-bold text-[#172126]">ResearchAI</span>
+              <span className="block text-sm font-bold text-[#172126]">ResearchGPT</span>
               <span className="block text-[10px] font-medium text-[#718087]">科研工作台</span>
             </span>
           </a>

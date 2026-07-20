@@ -26,6 +26,18 @@ const PROVIDER_REGISTRY: Record<AIProviderName, AIProviderAdapter> = {
       });
     },
   },
+  deepseek: {
+    name: "deepseek",
+    streamChat: async function* () {
+      throw new AIProviderError(
+        "DeepSeek provider is only available through the ResearchGPT model tier route.",
+        {
+          statusCode: 501,
+          provider: "deepseek",
+        },
+      );
+    },
+  },
 };
 
 function parseProviderName(value: string | undefined): AIProviderName {
@@ -37,6 +49,10 @@ function parseProviderName(value: string | undefined): AIProviderName {
 
   if (normalized === "openrouter") {
     return "openrouter";
+  }
+
+  if (normalized === "deepseek") {
+    return "deepseek";
   }
 
   throw new AIProviderError(`Unknown AI provider: ${value}`, {

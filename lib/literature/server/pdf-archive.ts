@@ -55,7 +55,7 @@ async function downloadPdf(url: string): Promise<Buffer> {
     headers: {
       Accept: "application/pdf,*/*;q=0.8",
       "User-Agent":
-        "ResearchAI/1.0 (+https://researchgpt.local; literature PDF archive)",
+        "ResearchGPT/1.0 (+https://researchgpt.local; literature PDF archive)",
     },
     signal: createTimeoutSignal(),
   });

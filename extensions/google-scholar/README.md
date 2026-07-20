@@ -1,6 +1,6 @@
-# ResearchAI Scholar Saver
+# ResearchGPT Scholar Saver
 
-Chrome MV3 extension for saving visible Google Scholar results with direct PDF links into ResearchAI.
+Chrome MV3 extension for saving visible Google Scholar results with direct PDF links into ResearchGPT.
 
 See also: [`docs/EXTENSION.md`](../../docs/EXTENSION.md)
 
@@ -22,7 +22,7 @@ See also: [`docs/EXTENSION.md`](../../docs/EXTENSION.md)
 ## Configure
 
 1. Open the extension popup
-2. Set your ResearchAI URL
+2. Set your ResearchGPT URL
 3. Paste your Supabase access token (see `docs/EXTENSION.md`)
 4. Save settings and load folders
 

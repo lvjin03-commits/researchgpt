@@ -205,9 +205,14 @@ export async function POST(request: Request) {
             messages,
             signal: request.signal,
             model: modelOption.model,
+            provider: modelOption.provider,
             reasoningEffort: modelOption.reasoningEffort,
-            webSearch: effectiveWebSearch,
-            codeInterpreter: taskRoute.useCodeInterpreter,
+            webSearch:
+              modelOption.provider === "openai" ? effectiveWebSearch : false,
+            codeInterpreter:
+              modelOption.provider === "openai"
+                ? taskRoute.useCodeInterpreter
+                : false,
             maxOutputTokens: modelOption.maxOutputTokens,
             promptCacheKey: `chat:${user.id}:${modelTier}`,
           })) {

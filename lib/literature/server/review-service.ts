@@ -401,7 +401,7 @@ export async function generateReviewOutline(
         {
           role: "system",
           content: [
-            "你是 ResearchAI 的高级科研写作与学术汇报策划助手。",
+            "你是 ResearchGPT 的高级科研写作与学术汇报策划助手。",
             buildEvidenceRules(),
             buildDeliverableRules(),
             "请生成可编辑的 Markdown 研究汇报大纲。",
@@ -574,7 +574,7 @@ export async function generateReviewPptDeck(
         {
           role: "system",
           content: [
-            "你是 ResearchAI 的学术汇报策划与 PPT 导演。",
+            "你是 ResearchGPT 的学术汇报策划与 PPT 导演。",
             buildEvidenceRules(),
             "请把用户确认的研究大纲转成结构化学术汇报方案，不要输出 Markdown。",
             "PPT 原则：少字、多图、强故事线；每页只讲一个结论，标题必须是结论型标题。",
