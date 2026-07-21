@@ -11,6 +11,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { AttachmentPreview } from "@/components/attachment-preview";
+import { DesktopFolderBindButton } from "@/components/desktop-folder-bind-button";
 import {
   ChevronDownIcon,
   PaperclipIcon,
@@ -25,6 +26,7 @@ import {
   FOLDER_DRAG_TYPE,
   type ResearchProject,
 } from "@/lib/chat/workspace";
+import type { LocalFolderBinding } from "@/lib/desktop/connection";
 import type { LiteratureFolder } from "@/lib/literature/types";
 import {
   ACCEPTED_FILE_TYPES,
@@ -64,6 +66,7 @@ type ChatInputProps = {
   activeProjectId?: string | null;
   onProjectChange?: (projectId: string | null) => void;
   onNewProject?: () => void;
+  onBindLocalFolder?: (folder: LocalFolderBinding) => void;
   selectedFolders?: LiteratureFolder[];
   onRemoveFolder?: (folderId: string) => void;
   onFolderDrop?: (folderId: string) => void;
@@ -86,6 +89,7 @@ export function ChatInput({
   activeProjectId = null,
   onProjectChange,
   onNewProject,
+  onBindLocalFolder,
   selectedFolders = [],
   onRemoveFolder,
   onFolderDrop,
@@ -195,7 +199,7 @@ export function ChatInput({
           submit();
         }}
       >
-        <div className="mb-2 flex items-center gap-2 rounded-md border border-[#dbe4e7] bg-white/90 p-1.5 shadow-sm">
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-[#dbe4e7] bg-white/90 p-1.5 shadow-sm">
           <label
             htmlFor="active-research-project"
             className="pl-1 text-xs font-bold text-[#607078]"
@@ -218,6 +222,12 @@ export function ChatInput({
               </option>
             ))}
           </select>
+          {onBindLocalFolder && (
+            <DesktopFolderBindButton
+              disabled={inputLocked}
+              onBound={onBindLocalFolder}
+            />
+          )}
           <button
             type="button"
             onClick={onNewProject}

@@ -17,7 +17,6 @@ import {
 import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
 import { DesktopConnectionStatus } from "@/components/desktop-connection-status";
-import { DesktopFolderBindButton } from "@/components/desktop-folder-bind-button";
 import { MenuIcon } from "@/components/icons";
 import { ResearchToolPanel } from "@/components/research-tool-panel";
 import { Sidebar } from "@/components/sidebar";
@@ -1320,10 +1319,7 @@ export function ChatShell() {
                   : "可直接绑定本地文件夹或选择项目资料"}
             </p>
           </div>
-          <div className="ml-auto hidden sm:block">
-            <DesktopFolderBindButton onBound={handleBindLocalFolder} />
-          </div>
-          <div>
+          <div className="ml-auto">
             <DesktopConnectionStatus compact />
           </div>
           {!toolPanelOpen && (
@@ -1669,6 +1665,7 @@ export function ChatShell() {
               if (project) handleContinueProject(project);
             }}
             onNewProject={openNewProjectDialog}
+            onBindLocalFolder={handleBindLocalFolder}
             selectedFolders={selectedFolders}
             onRemoveFolder={(folderId) =>
               setSelectedFolderIds((current) =>
