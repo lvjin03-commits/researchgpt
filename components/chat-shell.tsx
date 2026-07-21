@@ -411,7 +411,23 @@ export function ChatShell() {
   const handleBindLocalFolder = useCallback(
     (folder: LocalFolderBinding) => {
       if (!activeProjectId) {
-        setError("请先选择或新建项目，再绑定本地文献文件夹。");
+        const project = createResearchProject(
+          folder.name || "本地文献项目",
+          selectedFolderIds,
+          `已绑定本地文献文件夹：${folder.name}（${folder.pdfCount} 个 PDF）`,
+        );
+        const projectWithLocalFolder = {
+          ...project,
+          localFolders: [folder],
+        };
+        setProjects((current) => [projectWithLocalFolder, ...current]);
+        setActiveProjectId(projectWithLocalFolder.id);
+        setContextMode("project");
+        setError(null);
+        setLocalPdfStatus(
+          `已创建项目并绑定本地文件夹：${folder.name}（${folder.pdfCount} 个 PDF）`,
+        );
+        startNewChat();
         return;
       }
 
@@ -433,7 +449,7 @@ export function ChatShell() {
       setContextMode("project");
       setError(null);
     },
-    [activeProjectId],
+    [activeProjectId, selectedFolderIds, startNewChat],
   );
 
   const handleOpenLocalPdf = useCallback(async (file: LocalPdfFile) => {
@@ -1124,14 +1140,11 @@ export function ChatShell() {
                   ? `本地文件夹 ${activeProject?.localFolders.length ?? 0} 个 · PDF ${activeProjectLocalPdfCount} 个`
                 : selectedFolders.length > 0
                   ? `已选择 ${selectedFolders.length} 个文献文件夹`
-                  : "未选择项目资料"}
+                  : "可直接绑定本地文件夹或选择项目资料"}
             </p>
           </div>
           <div className="ml-auto hidden sm:block">
-            <DesktopFolderBindButton
-              disabled={!activeProject}
-              onBound={handleBindLocalFolder}
-            />
+            <DesktopFolderBindButton onBound={handleBindLocalFolder} />
           </div>
           <div>
             <DesktopConnectionStatus compact />
