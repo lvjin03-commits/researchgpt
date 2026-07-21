@@ -128,11 +128,11 @@ function buildLocalPdfManifest(project: ResearchProject): string {
 async function buildLocalPdfContextForProject(
   project: ResearchProject,
   onProgress: (message: string) => void,
-): Promise<string> {
+): Promise<ChatMessage[]> {
   const files = project.localFolders.flatMap((folder) =>
     folder.files.map((file) => ({ folderName: folder.name, file })),
   );
-  if (files.length === 0) return "";
+  if (files.length === 0) return [];
 
   const maxFiles = 30;
   const filesToRead = files.slice(0, maxFiles);
@@ -142,7 +142,7 @@ async function buildLocalPdfContextForProject(
     Math.min(18000, Math.floor(maxCharsTotal / Math.max(filesToRead.length, 1))),
   );
   let usedChars = 0;
-  const readable: string[] = [];
+  const evidenceMessages: ChatMessage[] = [];
   const failed: string[] = [];
   const skipped = files.slice(maxFiles).map(({ folderName, file }) => ({
     folderName,
@@ -162,9 +162,10 @@ async function buildLocalPdfContextForProject(
       }
       const text = result.text.slice(0, Math.min(maxCharsPerFile, remaining));
       usedChars += text.length;
-      readable.push(
-        [
-          `## 本地全文证据 ${readable.length + 1}`,
+      evidenceMessages.push({
+        role: "user",
+        content: [
+          `【本地 PDF 证据包 ${evidenceMessages.length + 1}/${filesToRead.length}】`,
           `文件夹：${item.folderName}`,
           `文件名：${result.name}`,
           `页数：${result.pageCount}`,
@@ -173,7 +174,7 @@ async function buildLocalPdfContextForProject(
           "正文内容/摘录：",
           text,
         ].join("\n"),
-      );
+      });
     } catch (error) {
       failed.push(
         `${item.folderName} / ${item.file.name}：${
@@ -183,15 +184,15 @@ async function buildLocalPdfContextForProject(
     }
   }
 
-  return [
+  const summary = [
     "【当前项目本地 PDF 上下文】",
-    "用户已经授权 ResearchGPT Desktop 读取当前项目绑定的本地文件夹。以下内容来自该本地文件夹内的 PDF。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
+    "用户已经授权 ResearchGPT Desktop 读取当前项目绑定的本地文件夹。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
     "如果用户问“是否必须上传文件”或“你能不能读取本地文件夹”，必须说明：在桌面端在线且用户已绑定/授权本地文件夹时，可以读取本地文件夹里的 PDF；只有网页端单独运行、桌面端离线、文件未授权或读取失败时，才需要用户上传或重新授权。",
+    "如果用户要求分析“当前项目所有文件”，必须先按下方清单识别当前项目文件范围，不要回答成文献库、旧项目或其他文件夹中的文献。",
     buildLocalPdfManifest(project),
-    readable.length > 0
-      ? `已成功从授权本地文件夹读取 ${readable.length} 个 PDF 的全文/摘录。本次总计送入模型约 ${usedChars} 个字符，覆盖 ${readable.length}/${files.length} 个 PDF：`
+    evidenceMessages.length > 0
+      ? `已成功从授权本地文件夹读取 ${evidenceMessages.length} 个 PDF 的全文/摘录。本次总计送入模型约 ${usedChars} 个字符，覆盖 ${evidenceMessages.length}/${files.length} 个 PDF。后续证据包均来自这个项目。`
       : "没有成功读取到本地 PDF 正文。",
-    ...readable,
     failed.length > 0
       ? `以下 PDF 读取失败，不能作为已读全文证据：\n${failed
           .map((item, index) => `${index + 1}. ${item}`)
@@ -205,6 +206,14 @@ async function buildLocalPdfContextForProject(
   ]
     .filter(Boolean)
     .join("\n\n");
+
+  return [
+    {
+      role: "system",
+      content: summary,
+    },
+    ...evidenceMessages,
+  ];
 }
 
 function projectNameFromTask(
@@ -825,8 +834,10 @@ export function ChatShell() {
         setActiveProjectId(project.id);
       }
 
+      const shouldReadLocalProject = projectUsesLocalPdfs;
+      const historyForApi = shouldReadLocalProject ? history.slice(-4) : history;
       let apiMessages = buildChatApiMessages(
-        history,
+        historyForApi,
         toApiUserMessage(payload),
       );
       setError(null);
@@ -840,8 +851,6 @@ export function ChatShell() {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
       let streamingMessages = nextMessages;
-      const shouldReadLocalProject =
-        projectUsesLocalPdfs;
 
       const appendToAssistant = (content: string) => {
         streamingMessages = streamingMessages.map((message, index) =>
@@ -855,14 +864,14 @@ export function ChatShell() {
 
       try {
         if (shouldReadLocalProject) {
-          const localPdfContext = await buildLocalPdfContextForProject(
+          const localPdfContextMessages = await buildLocalPdfContextForProject(
             project,
             setActivity,
           );
-          if (localPdfContext) {
+          if (localPdfContextMessages.length > 0) {
             apiMessages = [
               ...apiMessages.slice(0, -1),
-              { role: "user", content: localPdfContext },
+              ...localPdfContextMessages,
               apiMessages[apiMessages.length - 1],
             ];
           }
