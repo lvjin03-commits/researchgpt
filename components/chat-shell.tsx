@@ -134,9 +134,13 @@ async function buildLocalPdfContextForProject(
   );
   if (files.length === 0) return "";
 
-  const maxFiles = 8;
-  const maxCharsTotal = 120000;
-  const maxCharsPerFile = 18000;
+  const maxFiles = 30;
+  const filesToRead = files.slice(0, maxFiles);
+  const maxCharsTotal = 150000;
+  const maxCharsPerFile = Math.max(
+    4500,
+    Math.min(18000, Math.floor(maxCharsTotal / Math.max(filesToRead.length, 1))),
+  );
   let usedChars = 0;
   const readable: string[] = [];
   const failed: string[] = [];
@@ -145,9 +149,9 @@ async function buildLocalPdfContextForProject(
     name: file.name,
   }));
 
-  for (const [index, item] of files.slice(0, maxFiles).entries()) {
+  for (const [index, item] of filesToRead.entries()) {
     onProgress(
-      `正在读取当前项目本地 PDF：${index + 1}/${Math.min(files.length, maxFiles)} ${item.file.name}`,
+      `正在读取当前项目本地 PDF：${index + 1}/${filesToRead.length} ${item.file.name}`,
     );
     try {
       const result = await readDesktopLocalPdf(item.file);
@@ -164,8 +168,9 @@ async function buildLocalPdfContextForProject(
           `文件夹：${item.folderName}`,
           `文件名：${result.name}`,
           `页数：${result.pageCount}`,
-          `字符数：${result.charCount}${result.truncated ? "（桌面端已截取）" : ""}`,
-          "正文摘录：",
+          `原始可读字符数：${result.charCount}${result.truncated ? "（桌面端已截取）" : ""}`,
+          `本次送入模型字符数：${text.length}${text.length < result.text.length ? "（为控制成本已截取）" : ""}`,
+          "正文内容/摘录：",
           text,
         ].join("\n"),
       );
@@ -180,10 +185,11 @@ async function buildLocalPdfContextForProject(
 
   return [
     "【当前项目本地 PDF 上下文】",
-    "以下内容来自用户当前项目绑定的本地 PDF。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
+    "用户已经授权 ResearchGPT Desktop 读取当前项目绑定的本地文件夹。以下内容来自该本地文件夹内的 PDF。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
+    "如果用户问“是否必须上传文件”或“你能不能读取本地文件夹”，必须说明：在桌面端在线且用户已绑定/授权本地文件夹时，可以读取本地文件夹里的 PDF；只有网页端单独运行、桌面端离线、文件未授权或读取失败时，才需要用户上传或重新授权。",
     buildLocalPdfManifest(project),
     readable.length > 0
-      ? `已成功读取 ${readable.length} 个 PDF 的全文/摘录：`
+      ? `已成功从授权本地文件夹读取 ${readable.length} 个 PDF 的全文/摘录。本次总计送入模型约 ${usedChars} 个字符，覆盖 ${readable.length}/${files.length} 个 PDF：`
       : "没有成功读取到本地 PDF 正文。",
     ...readable,
     failed.length > 0
@@ -192,7 +198,7 @@ async function buildLocalPdfContextForProject(
           .join("\n")}`
       : "",
     skipped.length > 0
-      ? `为控制单次分析成本，本次未读取以下 PDF。若用户要求“全部文献”，请明确说明本次只读了前 ${maxFiles} 个，并建议分批分析：\n${skipped
+      ? `为控制单次分析成本，本次未读取以下 PDF。若用户要求“全部文献”，请明确说明本次最多读取前 ${maxFiles} 个，并建议分批分析：\n${skipped
           .map((item, index) => `${index + 1}. ${item.folderName} / ${item.name}`)
           .join("\n")}`
       : "",
