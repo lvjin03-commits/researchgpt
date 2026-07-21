@@ -46,6 +46,43 @@ Minimum response:
 }
 ```
 
+## Local Folder Binding
+
+The desktop app also exposes a user-triggered folder picker:
+
+```text
+POST http://127.0.0.1:48732/local-folders/select
+```
+
+This endpoint opens the native folder picker, scans the selected folder for
+PDF files, and returns file metadata to the web workspace. It does not upload,
+parse, or analyze the PDFs yet.
+
+Minimum response:
+
+```json
+{
+  "canceled": false,
+  "folder": {
+    "id": "local-folder-id",
+    "name": "Organic catalysis",
+    "path": "C:\\Users\\name\\Papers\\Organic catalysis",
+    "boundAt": "2026-07-20T12:00:00.000Z",
+    "pdfCount": 12,
+    "truncated": false,
+    "files": [
+      {
+        "id": "local-file-id",
+        "name": "paper.pdf",
+        "path": "C:\\Users\\name\\Papers\\Organic catalysis\\paper.pdf",
+        "size": 1234567,
+        "modifiedAt": "2026-07-20T12:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
 ## Required Behavior
 
 - Every visible desktop capability must be real and actionable.
@@ -61,4 +98,10 @@ Minimum response:
 4. ResearchGPT Desktop starts.
 5. The desktop app exposes `/status`.
 6. The web app changes to "本机能力已连接".
+## Second Milestone Acceptance
 
+1. Open or create a research project in the chat workspace.
+2. Click "绑定本地文件夹".
+3. ResearchGPT Desktop opens the system folder picker.
+4. The selected folder is saved to the current project.
+5. The chat header shows the bound local folder count and PDF count.

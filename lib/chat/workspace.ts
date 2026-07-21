@@ -2,11 +2,30 @@
 
 export type WorkspaceContextMode = "auto" | "project" | "temporary";
 
+export type LocalWorkspaceFile = {
+  id: string;
+  name: string;
+  path: string;
+  size: number;
+  modifiedAt: string;
+};
+
+export type LocalWorkspaceFolder = {
+  id: string;
+  name: string;
+  path: string;
+  boundAt: string;
+  pdfCount: number;
+  truncated?: boolean;
+  files: LocalWorkspaceFile[];
+};
+
 export type ResearchProject = {
   id: string;
   name: string;
   conversationId: string | null;
   folderIds: string[];
+  localFolders: LocalWorkspaceFolder[];
   lastTask: string;
   createdAt: string;
   updatedAt: string;
@@ -21,6 +40,34 @@ const STORAGE_KEY = "researchgpt-research-workspace-v1";
 export const FOLDER_DRAG_TYPE = "application/x-researchgpt-folder";
 export const PAPER_DRAG_TYPE = "application/x-researchgpt-paper";
 
+function isLocalFile(value: unknown): value is LocalWorkspaceFile {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.name === "string" &&
+    typeof record.path === "string" &&
+    typeof record.size === "number" &&
+    typeof record.modifiedAt === "string"
+  );
+}
+
+function isLocalFolder(value: unknown): value is LocalWorkspaceFolder {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.name === "string" &&
+    typeof record.path === "string" &&
+    typeof record.boundAt === "string" &&
+    typeof record.pdfCount === "number" &&
+    (typeof record.truncated === "undefined" ||
+      typeof record.truncated === "boolean") &&
+    Array.isArray(record.files) &&
+    record.files.every(isLocalFile)
+  );
+}
+
 function isProject(value: unknown): value is ResearchProject {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
@@ -31,6 +78,9 @@ function isProject(value: unknown): value is ResearchProject {
       record.conversationId === null) &&
     Array.isArray(record.folderIds) &&
     record.folderIds.every((item) => typeof item === "string") &&
+    (typeof record.localFolders === "undefined" ||
+      (Array.isArray(record.localFolders) &&
+        record.localFolders.every(isLocalFolder))) &&
     typeof record.lastTask === "string" &&
     typeof record.createdAt === "string" &&
     typeof record.updatedAt === "string"
@@ -47,7 +97,10 @@ export function loadWorkspace(): WorkspaceStorage {
       window.localStorage.getItem(STORAGE_KEY) ?? "{}",
     ) as Record<string, unknown>;
     const projects = Array.isArray(parsed.projects)
-      ? parsed.projects.filter(isProject)
+      ? parsed.projects.filter(isProject).map((project) => ({
+          ...project,
+          localFolders: project.localFolders ?? [],
+        }))
       : [];
     const activeProjectId =
       typeof parsed.activeProjectId === "string" &&
@@ -86,6 +139,7 @@ export function createResearchProject(
     name: name.trim() || "未命名科研项目",
     conversationId: null,
     folderIds: [...new Set(folderIds)],
+    localFolders: [],
     lastTask: lastTask.trim(),
     createdAt: now,
     updatedAt: now,

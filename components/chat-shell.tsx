@@ -14,6 +14,7 @@ import {
 import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
 import { DesktopConnectionStatus } from "@/components/desktop-connection-status";
+import { DesktopFolderBindButton } from "@/components/desktop-folder-bind-button";
 import { MenuIcon } from "@/components/icons";
 import { ResearchToolPanel } from "@/components/research-tool-panel";
 import { Sidebar } from "@/components/sidebar";
@@ -44,6 +45,7 @@ import {
   type ResearchProject,
   type WorkspaceContextMode,
 } from "@/lib/chat/workspace";
+import type { LocalFolderBinding } from "@/lib/desktop/connection";
 import {
   createLiteratureFolder,
   deleteLiteratureFolder,
@@ -250,6 +252,14 @@ export function ChatShell() {
   }, [libraryPapers]);
   const activeProject =
     projects.find((project) => project.id === activeProjectId) ?? null;
+  const activeProjectLocalPdfCount = useMemo(
+    () =>
+      activeProject?.localFolders.reduce(
+        (total, folder) => total + folder.pdfCount,
+        0,
+      ) ?? 0,
+    [activeProject],
+  );
   const activeToolFolder =
     folders.find((folder) => folder.id === activeToolFolderId) ?? null;
   const toolPapers = activeToolFolderId
@@ -384,6 +394,34 @@ export function ChatShell() {
       }
     },
     [selectConversation, startNewChat],
+  );
+
+  const handleBindLocalFolder = useCallback(
+    (folder: LocalFolderBinding) => {
+      if (!activeProjectId) {
+        setError("请先选择或新建项目，再绑定本地文献文件夹。");
+        return;
+      }
+
+      const now = new Date().toISOString();
+      setProjects((current) =>
+        current.map((project) => {
+          if (project.id !== activeProjectId) return project;
+          const existing = project.localFolders.filter(
+            (item) => item.id !== folder.id,
+          );
+          return {
+            ...project,
+            localFolders: [folder, ...existing].slice(0, 12),
+            lastTask: `已绑定本地文献文件夹：${folder.name}（${folder.pdfCount} 个 PDF）`,
+            updatedAt: now,
+          };
+        }),
+      );
+      setContextMode("project");
+      setError(null);
+    },
+    [activeProjectId],
   );
 
   const handleSelectFolder = useCallback((folder: LiteratureFolder) => {
@@ -1032,12 +1070,20 @@ export function ChatShell() {
             <p className="truncate text-[11px] font-medium text-[#718087]">
               {contextMode === "temporary"
                 ? "临时问题，不使用项目上下文"
+                : activeProjectLocalPdfCount > 0
+                  ? `本地文件夹 ${activeProject?.localFolders.length ?? 0} 个 · PDF ${activeProjectLocalPdfCount} 个`
                 : selectedFolders.length > 0
                   ? `已选择 ${selectedFolders.length} 个文献文件夹`
                   : "未选择项目资料"}
             </p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto hidden sm:block">
+            <DesktopFolderBindButton
+              disabled={!activeProject}
+              onBound={handleBindLocalFolder}
+            />
+          </div>
+          <div>
             <DesktopConnectionStatus compact />
           </div>
           {!toolPanelOpen && (
@@ -1111,6 +1157,35 @@ export function ChatShell() {
                             {project.lastTask || "继续项目工作"}
                           </span>
                         </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {activeProject && activeProject.localFolders.length > 0 && (
+                  <section className="mt-7 border-t border-[#dbe4e7] pt-6">
+                    <p className="research-eyebrow">Local literature</p>
+                    <h2 className="mt-1 text-sm font-bold text-[#26353b]">
+                      当前项目绑定的本地文献
+                    </h2>
+                    <div className="mt-3 grid gap-2">
+                      {activeProject.localFolders.map((folder) => (
+                        <div
+                          key={folder.id}
+                          className="flex items-center justify-between gap-3 rounded-md border border-[#d4dfe2] bg-white px-3 py-2 text-sm shadow-[0_1px_1px_rgba(26,47,56,0.03)]"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-bold text-[#26353b]">
+                              {folder.name}
+                            </p>
+                            <p className="truncate text-xs text-[#718087]">
+                              {folder.path}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-md bg-[#e8f2f6] px-2 py-1 text-xs font-bold text-[#245d82]">
+                            {folder.pdfCount} PDF
+                          </span>
+                        </div>
                       ))}
                     </div>
                   </section>
