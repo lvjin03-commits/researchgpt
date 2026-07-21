@@ -50,6 +50,7 @@ type SidebarProps = {
   onCreateFolder: (name: string) => Promise<LiteratureFolder>;
   onPaperDrop: (paperId: string, folderId: string) => void;
   onContinueProject: (project: ResearchProject) => void;
+  onDeleteProject: (project: ResearchProject) => void;
   onLogout: () => void;
   isLoggingOut?: boolean;
   syncError?: string | null;
@@ -81,6 +82,7 @@ export function Sidebar({
   onCreateFolder,
   onPaperDrop,
   onContinueProject,
+  onDeleteProject,
   onLogout,
   isLoggingOut = false,
   syncError = null,
@@ -335,18 +337,21 @@ export function Sidebar({
           ) : (
             <ul className="space-y-1">
               {projects.slice(0, 8).map((project) => (
-                <li key={project.id}>
+                <li
+                  key={project.id}
+                  className={`group flex items-start rounded-md ${
+                    project.id === activeProjectId
+                      ? "bg-[#dce9ee] text-[#174866]"
+                      : "text-[#52636b] hover:bg-white"
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => {
                       onContinueProject(project);
                       onClose();
                     }}
-                    className={`w-full px-2 py-2 text-left ${
-                      project.id === activeProjectId
-                        ? "rounded-md bg-[#dce9ee] text-[#174866]"
-                        : "rounded-md text-[#52636b] hover:bg-white"
-                    }`}
+                    className="min-w-0 flex-1 px-2 py-2 text-left"
                   >
                     <span className="block truncate text-sm font-bold">
                       {project.name}
@@ -360,6 +365,18 @@ export function Sidebar({
                     >
                       {project.lastTask || "等待继续工作"}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDeleteProject(project);
+                    }}
+                    aria-label={`删除项目 ${project.name}`}
+                    title="删除项目"
+                    className="mr-1 mt-1.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#7c8b91] opacity-0 hover:bg-red-50 hover:text-red-700 group-hover:opacity-100 focus:opacity-100"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </li>
               ))}

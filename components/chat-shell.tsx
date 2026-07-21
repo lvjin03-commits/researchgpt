@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   PanelRightOpen,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
@@ -570,6 +571,31 @@ export function ChatShell() {
       );
     },
     [abortActiveStream, deleteConversation],
+  );
+
+  const handleDeleteProject = useCallback(
+    (project: ResearchProject) => {
+      const message = [
+        `确定删除项目“${project.name}”吗？`,
+        "这只会删除项目记录和资料绑定，不会删除聊天记录、文献库 PDF 或本地文件。",
+      ].join("\n");
+      if (!window.confirm(message)) return;
+
+      abortActiveStream();
+      setProjects((current) => current.filter((item) => item.id !== project.id));
+      if (activeProjectId === project.id) {
+        setActiveProjectId(null);
+        setSelectedFolderIds([]);
+        setSelectedLocalFileIds([]);
+        setContextMode("auto");
+        setActiveToolFolderId(null);
+        setToolPanelOpen(false);
+      }
+      setPendingProjectPayload(null);
+      setPendingTemporaryPayload(null);
+      setError(null);
+    },
+    [abortActiveStream, activeProjectId],
   );
 
   const handleContinueProject = useCallback(
@@ -1415,6 +1441,7 @@ export function ChatShell() {
           void handlePaperDrop(paperId, folderId)
         }
         onContinueProject={handleContinueProject}
+        onDeleteProject={handleDeleteProject}
         onLogout={handleLogout}
         isLoggingOut={isLoggingOut}
         syncError={syncError}
@@ -1505,11 +1532,14 @@ export function ChatShell() {
                     </div>
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
                       {projects.slice(0, 4).map((project) => (
-                        <button
+                        <div
                           key={project.id}
+                          className="research-surface group relative rounded-md p-4 pr-12 transition hover:border-[#8eabb8] hover:bg-[#f8fbfc]"
+                        >
+                        <button
                           type="button"
                           onClick={() => handleContinueProject(project)}
-                          className="research-surface rounded-md p-4 text-left transition hover:border-[#8eabb8] hover:bg-[#f8fbfc]"
+                          className="block w-full text-left"
                         >
                           <span className="block text-sm font-bold text-[#172126]">
                             {project.name}
@@ -1518,6 +1548,16 @@ export function ChatShell() {
                             {project.lastTask || "继续项目工作"}
                           </span>
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProject(project)}
+                          aria-label={`删除项目 ${project.name}`}
+                          title="删除项目"
+                          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-[#7c8b91] opacity-0 hover:bg-red-50 hover:text-red-700 group-hover:opacity-100 focus:opacity-100"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                       ))}
                     </div>
                   </section>
