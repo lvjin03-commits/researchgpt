@@ -127,10 +127,19 @@ function buildLocalPdfManifest(project: ResearchProject): string {
 async function buildLocalPdfContextForProject(
   project: ResearchProject,
   onProgress: (message: string) => void,
+  options: {
+    selectedFileIds?: string[];
+    scopeLabel?: string;
+  } = {},
 ): Promise<ChatMessage[]> {
-  const files = project.localFolders.flatMap((folder) =>
+  const selectedFileIds = new Set(options.selectedFileIds ?? []);
+  const allFiles = project.localFolders.flatMap((folder) =>
     folder.files.map((file) => ({ folderName: folder.name, file })),
   );
+  const files =
+    selectedFileIds.size > 0
+      ? allFiles.filter((item) => selectedFileIds.has(item.file.id))
+      : allFiles;
   if (files.length === 0) return [];
 
   const maxFiles = 30;
@@ -186,6 +195,11 @@ async function buildLocalPdfContextForProject(
   const summary = [
     "【当前项目本地 PDF 上下文】",
     "用户已经授权 ResearchGPT Desktop 读取当前项目绑定的本地文件夹。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
+    options.scopeLabel ? `本次资料范围：${options.scopeLabel}` : "",
+    selectedFileIds.size > 0
+      ? "用户已经在项目资料树中选中了部分 PDF。本次回答默认只分析这些选中的 PDF；除非用户明确要求全部文件，否则不要扩展到项目内其他 PDF。"
+      : "用户没有选中特定 PDF。本次回答默认分析当前项目绑定的全部本地 PDF。",
+    "用户的表达不需要是固定口令。只要含义是精读、拆解、分析、比较、整理、生成矩阵、生成 PPT、大纲规划等，都要映射到当前项目资料范围执行。",
     "如果用户问“是否必须上传文件”或“你能不能读取本地文件夹”，必须说明：在桌面端在线且用户已绑定/授权本地文件夹时，可以读取本地文件夹里的 PDF；只有网页端单独运行、桌面端离线、文件未授权或读取失败时，才需要用户上传或重新授权。",
     "如果用户要求分析“当前项目所有文件”，必须先按下方清单识别当前项目文件范围，不要回答成文献库、旧项目或其他文件夹中的文献。",
     buildLocalPdfManifest(project),
@@ -224,6 +238,12 @@ function projectNameFromTask(
   return message.trim().slice(0, 28) || "新科研项目";
 }
 
+function shouldAnalyzeAllProjectFiles(message: string): boolean {
+  return /(全部|所有|整个项目|整個項目|全项目|全項目|所有文件|所有文献|全部文献|全部论文|all|every|entire project|whole project)/i.test(
+    message,
+  );
+}
+
 export function ChatShell() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -257,6 +277,9 @@ export function ChatShell() {
   const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
+  const [selectedLocalFileIds, setSelectedLocalFileIds] = useState<string[]>(
+    [],
+  );
   const [contextMode, setContextMode] =
     useState<WorkspaceContextMode>("auto");
   const [pendingProjectPayload, setPendingProjectPayload] =
@@ -472,6 +495,7 @@ export function ChatShell() {
     setError(null);
     setActiveProjectId(null);
     setSelectedFolderIds([]);
+    setSelectedLocalFileIds([]);
     setContextMode("auto");
     setPendingProjectPayload(null);
     setPendingTemporaryPayload(null);
@@ -497,6 +521,7 @@ export function ChatShell() {
     setProjects((current) => [project, ...current]);
     setActiveProjectId(project.id);
     setSelectedFolderIds(inheritedFolderIds);
+    setSelectedLocalFileIds([]);
     setContextMode("project");
     setPendingProjectPayload(null);
     setPendingTemporaryPayload(null);
@@ -525,6 +550,7 @@ export function ChatShell() {
         (project) => project.conversationId === conversationId,
       );
       setSelectedFolderIds(matchingProject?.folderIds ?? []);
+      setSelectedLocalFileIds([]);
       setContextMode(matchingProject ? "project" : "auto");
       selectConversation(conversationId);
     },
@@ -550,12 +576,16 @@ export function ChatShell() {
     (project: ResearchProject) => {
       setActiveProjectId(project.id);
       setSelectedFolderIds(project.folderIds);
+      setSelectedLocalFileIds([]);
       setContextMode("project");
       setUseLibrary(project.folderIds.length > 0);
       if (project.conversationId) selectConversation(project.conversationId);
       else startNewChat();
       if (project.folderIds[0]) {
         setActiveToolFolderId(project.folderIds[0]);
+        setToolPanelOpen(true);
+      } else {
+        setActiveToolFolderId(null);
         setToolPanelOpen(true);
       }
     },
@@ -577,11 +607,14 @@ export function ChatShell() {
         setProjects((current) => [projectWithLocalFolder, ...current]);
         setActiveProjectId(projectWithLocalFolder.id);
         setSelectedFolderIds([]);
+        setSelectedLocalFileIds([]);
         setContextMode("project");
         setError(null);
         setLocalPdfStatus(
           `已创建项目并绑定本地文件夹：${folder.name}（${folder.pdfCount} 个 PDF）`,
         );
+        setActiveToolFolderId(null);
+        setToolPanelOpen(true);
         startNewChat();
         return;
       }
@@ -603,6 +636,8 @@ export function ChatShell() {
       );
       setContextMode("project");
       setError(null);
+      setActiveToolFolderId(null);
+      setToolPanelOpen(true);
     },
     [activeProjectId, selectedFolderIds, startNewChat],
   );
@@ -643,6 +678,34 @@ export function ChatShell() {
     } finally {
       setActiveLocalPdfAction(null);
     }
+  }, []);
+
+  const handleToggleLocalFile = useCallback((fileId: string) => {
+    setSelectedLocalFileIds((current) =>
+      current.includes(fileId)
+        ? current.filter((id) => id !== fileId)
+        : [...current, fileId],
+    );
+  }, []);
+
+  const handleToggleLocalFolder = useCallback(
+    (folder: LocalFolderBinding) => {
+      const folderFileIds = folder.files.map((file) => file.id);
+      setSelectedLocalFileIds((current) => {
+        const currentSet = new Set(current);
+        const allSelected = folderFileIds.every((id) => currentSet.has(id));
+        if (allSelected) {
+          return current.filter((id) => !folderFileIds.includes(id));
+        }
+        for (const id of folderFileIds) currentSet.add(id);
+        return [...currentSet];
+      });
+    },
+    [],
+  );
+
+  const handleClearLocalFileSelection = useCallback(() => {
+    setSelectedLocalFileIds([]);
   }, []);
 
   const handleSelectFolder = useCallback((folder: LiteratureFolder) => {
@@ -834,6 +897,12 @@ export function ChatShell() {
       }
 
       const shouldReadLocalProject = projectUsesLocalPdfs;
+      const selectedLocalIdsForThisRequest =
+        shouldReadLocalProject &&
+        selectedLocalFileIds.length > 0 &&
+        !shouldAnalyzeAllProjectFiles(payload.message)
+          ? selectedLocalFileIds
+          : [];
       const historyForApi = shouldReadLocalProject ? history.slice(-4) : history;
       let apiMessages = buildChatApiMessages(
         historyForApi,
@@ -863,9 +932,17 @@ export function ChatShell() {
 
       try {
         if (shouldReadLocalProject) {
+          const scopeLabel =
+            selectedLocalIdsForThisRequest.length > 0
+              ? `当前项目“${project.name}”中已选 ${selectedLocalIdsForThisRequest.length} 个 PDF`
+              : `当前项目“${project.name}”绑定的全部本地 PDF`;
           const localPdfContextMessages = await buildLocalPdfContextForProject(
             project,
             setActivity,
+            {
+              selectedFileIds: selectedLocalIdsForThisRequest,
+              scopeLabel,
+            },
           );
           if (localPdfContextMessages.length > 0) {
             apiMessages = [
@@ -993,6 +1070,7 @@ export function ChatShell() {
       modelTier,
       persistConversation,
       selectedFolderIds,
+      selectedLocalFileIds,
       useLibrary,
       webSearch,
     ],
@@ -1692,13 +1770,28 @@ export function ChatShell() {
       <ResearchToolPanel
         open={toolPanelOpen}
         folder={activeToolFolder}
+        project={activeToolFolder ? null : activeProject}
+        cloudFolders={
+          activeProject
+            ? folders.filter((folder) => activeProject.folderIds.includes(folder.id))
+            : []
+        }
         papers={toolPapers}
+        selectedLocalFileIds={selectedLocalFileIds}
         isStreaming={isStreaming}
         activity={activity}
         busyPaperId={busyLibraryPaperId}
         isUploading={isUploadingToFolder}
         operationMessage={libraryOperationMessage}
         operationError={libraryOperationError}
+        localPdfStatus={localPdfStatus}
+        activeLocalPdfAction={activeLocalPdfAction}
+        onOpenLocalPdf={(file) => void handleOpenLocalPdf(file)}
+        onReadLocalPdf={(file) => void handleReadLocalPdf(file)}
+        onToggleLocalFile={handleToggleLocalFile}
+        onToggleLocalFolder={handleToggleLocalFolder}
+        onClearLocalSelection={handleClearLocalFileSelection}
+        onOpenCloudFolder={handleOpenFolder}
         onRemovePaper={(paper) => void handleRemovePaperFromOpenFolder(paper)}
         onUploadFiles={(files) => void handleUploadFilesToOpenFolder(files)}
         onClose={() => setToolPanelOpen(false)}

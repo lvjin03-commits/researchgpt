@@ -2,15 +2,28 @@
 
 import {
   BookOpen,
+  CheckSquare,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
   FileUp,
+  FolderOpen,
   GripVertical,
   LoaderCircle,
   PanelRightClose,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
 import { useRef, useState } from "react";
-import { PAPER_DRAG_TYPE } from "@/lib/chat/workspace";
+import {
+  PAPER_DRAG_TYPE,
+  type ResearchProject,
+} from "@/lib/chat/workspace";
+import type {
+  LocalFolderBinding,
+  LocalPdfFile,
+} from "@/lib/desktop/connection";
 import type {
   LiteratureFolder,
   LiteraturePaper,
@@ -19,13 +32,24 @@ import type {
 type ResearchToolPanelProps = {
   open: boolean;
   folder: LiteratureFolder | null;
+  project?: ResearchProject | null;
+  cloudFolders?: LiteratureFolder[];
   papers: LiteraturePaper[];
+  selectedLocalFileIds?: string[];
   isStreaming: boolean;
   activity: string | null;
   busyPaperId?: string | null;
   isUploading?: boolean;
   operationMessage?: string | null;
   operationError?: string | null;
+  localPdfStatus?: string | null;
+  activeLocalPdfAction?: string | null;
+  onOpenLocalPdf?: (file: LocalPdfFile) => void;
+  onReadLocalPdf?: (file: LocalPdfFile) => void;
+  onToggleLocalFile?: (fileId: string) => void;
+  onToggleLocalFolder?: (folder: LocalFolderBinding) => void;
+  onClearLocalSelection?: () => void;
+  onOpenCloudFolder?: (folder: LiteratureFolder) => void;
   onRemovePaper: (paper: LiteraturePaper) => void;
   onUploadFiles: (files: File[]) => void;
   onClose: () => void;
@@ -37,32 +61,64 @@ function pdfState(paper: LiteraturePaper): string {
   return "待补全文";
 }
 
+function isPdfFile(file: File): boolean {
+  return (
+    file.type === "application/pdf" ||
+    file.name.toLocaleLowerCase().endsWith(".pdf")
+  );
+}
+
 export function ResearchToolPanel({
   open,
   folder,
+  project = null,
+  cloudFolders = [],
   papers,
+  selectedLocalFileIds = [],
   isStreaming,
   activity,
   busyPaperId = null,
   isUploading = false,
   operationMessage = null,
   operationError = null,
+  localPdfStatus = null,
+  activeLocalPdfAction = null,
+  onOpenLocalPdf,
+  onReadLocalPdf,
+  onToggleLocalFile,
+  onToggleLocalFolder,
+  onClearLocalSelection,
+  onOpenCloudFolder,
   onRemovePaper,
   onUploadFiles,
   onClose,
 }: ResearchToolPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [expandedLocalFolderIds, setExpandedLocalFolderIds] = useState<
+    Set<string>
+  >(() => new Set());
 
   if (!open) return null;
 
   const acceptFiles = (files: FileList | File[]) => {
-    const pdfs = Array.from(files).filter(
-      (file) =>
-        file.type === "application/pdf" ||
-        file.name.toLocaleLowerCase().endsWith(".pdf"),
-    );
+    const pdfs = Array.from(files).filter(isPdfFile);
     if (pdfs.length > 0) onUploadFiles(pdfs);
+  };
+
+  const selectedLocalFileSet = new Set(selectedLocalFileIds);
+  const projectPdfCount =
+    project?.localFolders.reduce((total, item) => total + item.pdfCount, 0) ??
+    0;
+  const showProjectMaterials = !folder && project;
+
+  const toggleExpandedLocalFolder = (folderId: string) => {
+    setExpandedLocalFolderIds((current) => {
+      const next = new Set(current);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
   };
 
   return (
@@ -72,10 +128,14 @@ export function ResearchToolPanel({
           <BookOpen className="h-4 w-4 shrink-0 text-blue-700" />
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-gray-950">
-              {folder ? folder.name : "当前任务"}
+              {folder ? folder.name : project ? "项目资料" : "当前任务"}
             </p>
             <p className="text-xs text-gray-500">
-              {folder ? `${papers.length} 篇文献` : "执行过程与工具状态"}
+              {folder
+                ? `${papers.length} 篇文献`
+                : project
+                  ? `${project.localFolders.length} 个本地文件夹 · ${projectPdfCount} 个 PDF`
+                  : "执行过程与工具状态"}
             </p>
           </div>
         </div>
@@ -183,6 +243,11 @@ export function ResearchToolPanel({
             {operationError}
           </p>
         )}
+        {localPdfStatus && (
+          <p className="border-b border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800">
+            {localPdfStatus}
+          </p>
+        )}
 
         {folder ? (
           <section className="p-4">
@@ -257,6 +322,212 @@ export function ResearchToolPanel({
                   </li>
                 ))}
               </ul>
+            )}
+          </section>
+        ) : showProjectMaterials ? (
+          <section className="space-y-4 p-4">
+            <div className="rounded-lg border border-[#dbe4e7] bg-[#f8fbfc] p-3">
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#607078]">
+                当前项目
+              </p>
+              <h2 className="mt-1 text-base font-bold text-[#172126]">
+                {project.name}
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-[#607078]">
+                默认只读取本项目绑定的资料。勾选 PDF 后，下一次分析会优先只读取已选文件。
+              </p>
+              {selectedLocalFileIds.length > 0 && (
+                <div className="mt-3 flex items-center justify-between rounded-md bg-white px-3 py-2 text-xs font-bold text-[#174866]">
+                  <span>本次已选 {selectedLocalFileIds.length} 个 PDF</span>
+                  <button
+                    type="button"
+                    onClick={onClearLocalSelection}
+                    className="text-[#607078] hover:text-[#172126]"
+                  >
+                    清空选择
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {project.localFolders.length > 0 && (
+              <div>
+                <h3 className="mb-2 text-sm font-bold text-gray-950">
+                  本地文件夹
+                </h3>
+                <div className="space-y-2">
+                  {project.localFolders.map((localFolder) => {
+                    const expanded = expandedLocalFolderIds.has(localFolder.id);
+                    const folderFileIds = localFolder.files.map((file) => file.id);
+                    const selectedCount = folderFileIds.filter((id) =>
+                      selectedLocalFileSet.has(id),
+                    ).length;
+                    const allSelected =
+                      folderFileIds.length > 0 &&
+                      selectedCount === folderFileIds.length;
+
+                    return (
+                      <div
+                        key={localFolder.id}
+                        className="rounded-lg border border-[#dbe4e7] bg-white"
+                      >
+                        <div className="flex items-center gap-2 px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleExpandedLocalFolder(localFolder.id)
+                            }
+                            className="inline-flex h-7 w-7 items-center justify-center text-[#607078] hover:bg-[#eef3f4]"
+                            aria-label={expanded ? "收起文件夹" : "展开文件夹"}
+                          >
+                            {expanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </button>
+                          <FolderOpen className="h-4 w-4 shrink-0 text-[#a56518]" />
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandedLocalFolder(localFolder.id)}
+                            onDoubleClick={() =>
+                              toggleExpandedLocalFolder(localFolder.id)
+                            }
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <span className="block truncate text-sm font-bold text-[#26353b]">
+                              {localFolder.name}
+                            </span>
+                            <span className="block truncate text-[11px] text-[#7c8b91]">
+                              {localFolder.path}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onToggleLocalFolder?.(localFolder)}
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-[#d4dfe2] px-2 text-[11px] font-bold text-[#174866] hover:bg-[#eef6f9]"
+                          >
+                            {allSelected ? (
+                              <CheckSquare className="h-3.5 w-3.5" />
+                            ) : (
+                              <Square className="h-3.5 w-3.5" />
+                            )}
+                            {selectedCount > 0
+                              ? `${selectedCount}/${localFolder.files.length}`
+                              : "选择"}
+                          </button>
+                        </div>
+
+                        {expanded && (
+                          <ul className="divide-y divide-gray-100 border-t border-[#edf2f4]">
+                            {localFolder.files.map((file) => {
+                              const selected = selectedLocalFileSet.has(file.id);
+                              return (
+                                <li
+                                  key={file.id}
+                                  className={`flex items-center gap-2 px-3 py-2 ${
+                                    selected ? "bg-[#eef6f9]" : ""
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => onToggleLocalFile?.(file.id)}
+                                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-[#174866]"
+                                    aria-label={
+                                      selected ? "取消选择 PDF" : "选择 PDF"
+                                    }
+                                  >
+                                    {selected ? (
+                                      <CheckSquare className="h-4 w-4" />
+                                    ) : (
+                                      <Square className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onToggleLocalFile?.(file.id)}
+                                    onDoubleClick={() => onOpenLocalPdf?.(file)}
+                                    className="min-w-0 flex-1 text-left"
+                                    title={file.path}
+                                  >
+                                    <span className="block truncate text-sm font-semibold text-[#26353b]">
+                                      {file.name}
+                                    </span>
+                                    <span className="block truncate text-[11px] text-[#7c8b91]">
+                                      双击打开 · {(file.size / 1024 / 1024).toFixed(1)} MB
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenLocalPdf?.(file)}
+                                    disabled={activeLocalPdfAction === `open:${file.id}`}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#d4dfe2] text-[#174866] hover:bg-[#eef6f9] disabled:opacity-50"
+                                    title="打开 PDF"
+                                    aria-label={`打开 ${file.name}`}
+                                  >
+                                    {activeLocalPdfAction === `open:${file.id}` ? (
+                                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <ExternalLink className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onReadLocalPdf?.(file)}
+                                    disabled={activeLocalPdfAction === `read:${file.id}`}
+                                    className="inline-flex h-8 shrink-0 items-center rounded-md bg-[#174866] px-2 text-[11px] font-bold text-white hover:bg-[#123a52] disabled:opacity-50"
+                                  >
+                                    {activeLocalPdfAction === `read:${file.id}`
+                                      ? "读取中"
+                                      : "测试全文"}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {cloudFolders.length > 0 && (
+              <div>
+                <h3 className="mb-2 text-sm font-bold text-gray-950">
+                  云端文献夹
+                </h3>
+                <div className="space-y-2">
+                  {cloudFolders.map((cloudFolder) => (
+                    <button
+                      key={cloudFolder.id}
+                      type="button"
+                      onClick={() => onOpenCloudFolder?.(cloudFolder)}
+                      className="flex w-full items-center gap-2 rounded-lg border border-[#dbe4e7] bg-white px-3 py-2 text-left hover:bg-[#f8fbfc]"
+                    >
+                      <BookOpen className="h-4 w-4 text-blue-700" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-bold text-[#26353b]">
+                        {cloudFolder.name}
+                      </span>
+                      <span className="text-[11px] font-semibold text-[#7c8b91]">
+                        打开
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {project.localFolders.length === 0 && cloudFolders.length === 0 && (
+              <div className="border border-dashed border-gray-300 px-4 py-8 text-center">
+                <p className="text-sm font-semibold text-gray-700">
+                  当前项目还没有绑定资料
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  请在聊天框上方点击“绑定本地文件夹”，或从左侧文献资料拖入云端文件夹。
+                </p>
+              </div>
             )}
           </section>
         ) : (
