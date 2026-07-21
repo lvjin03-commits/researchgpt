@@ -1,6 +1,8 @@
 export const DESKTOP_STATUS_URL = "http://127.0.0.1:48732/status";
 export const DESKTOP_SELECT_FOLDER_URL =
   "http://127.0.0.1:48732/local-folders/select";
+export const DESKTOP_OPEN_FILE_URL = "http://127.0.0.1:48732/local-files/open";
+export const DESKTOP_READ_FILE_URL = "http://127.0.0.1:48732/local-files/read";
 export const DESKTOP_CONNECT_URL = "researchgpt://connect";
 
 export type DesktopConnectionState =
@@ -37,6 +39,15 @@ export type LocalFolderBinding = {
   files: LocalPdfFile[];
 };
 
+export type LocalPdfTextResult = {
+  filePath: string;
+  name: string;
+  pageCount: number;
+  text: string;
+  charCount: number;
+  truncated: boolean;
+};
+
 export type SelectLocalFolderResult =
   | { canceled: true }
   | { canceled: false; folder: LocalFolderBinding };
@@ -46,6 +57,35 @@ type SelectLocalFolderResponse = {
   folder?: Partial<LocalFolderBinding> & { files?: unknown[] };
   error?: unknown;
 };
+
+type LocalPdfTextResponse = Partial<LocalPdfTextResult> & {
+  error?: unknown;
+};
+
+function errorFromResponse(data: { error?: unknown }, fallback: string): Error {
+  return new Error(typeof data.error === "string" ? data.error : fallback);
+}
+
+async function postJson<T>(
+  url: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    mode: "cors",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  const data = (await response.json()) as T & { error?: unknown };
+  if (!response.ok) {
+    throw errorFromResponse(data, "Desktop request failed.");
+  }
+  return data;
+}
 
 export async function fetchDesktopStatus(
   signal?: AbortSignal,
@@ -81,20 +121,11 @@ export async function fetchDesktopStatus(
 export async function selectDesktopLocalFolder(
   signal?: AbortSignal,
 ): Promise<SelectLocalFolderResult> {
-  const response = await fetch(DESKTOP_SELECT_FOLDER_URL, {
-    method: "POST",
-    mode: "cors",
-    cache: "no-store",
+  const data = await postJson<SelectLocalFolderResponse>(
+    DESKTOP_SELECT_FOLDER_URL,
+    {},
     signal,
-  });
-
-  const data = (await response.json()) as SelectLocalFolderResponse;
-
-  if (!response.ok) {
-    throw new Error(
-      typeof data.error === "string" ? data.error : "本地文件夹绑定失败",
-    );
-  }
+  );
 
   if (data.canceled === true) {
     return { canceled: true };
@@ -108,7 +139,7 @@ export async function selectDesktopLocalFolder(
     typeof folder.path !== "string" ||
     !Array.isArray(folder.files)
   ) {
-    throw new Error("本机返回的文件夹信息无效");
+    throw new Error("Desktop returned invalid folder data.");
   }
 
   return {
@@ -137,6 +168,48 @@ export async function selectDesktopLocalFolder(
           typeof (file as LocalPdfFile).modifiedAt === "string",
       ),
     },
+  };
+}
+
+export async function openDesktopLocalPdf(
+  file: LocalPdfFile,
+  signal?: AbortSignal,
+): Promise<void> {
+  await postJson<{ opened?: boolean }>(
+    DESKTOP_OPEN_FILE_URL,
+    { path: file.path },
+    signal,
+  );
+}
+
+export async function readDesktopLocalPdf(
+  file: LocalPdfFile,
+  signal?: AbortSignal,
+): Promise<LocalPdfTextResult> {
+  const data = await postJson<LocalPdfTextResponse>(
+    DESKTOP_READ_FILE_URL,
+    { path: file.path, limit: 160000 },
+    signal,
+  );
+
+  if (
+    typeof data.filePath !== "string" ||
+    typeof data.name !== "string" ||
+    typeof data.pageCount !== "number" ||
+    typeof data.text !== "string" ||
+    typeof data.charCount !== "number" ||
+    typeof data.truncated !== "boolean"
+  ) {
+    throw new Error("Desktop returned invalid PDF text data.");
+  }
+
+  return {
+    filePath: data.filePath,
+    name: data.name,
+    pageCount: data.pageCount,
+    text: data.text,
+    charCount: data.charCount,
+    truncated: data.truncated,
   };
 }
 

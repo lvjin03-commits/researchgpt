@@ -9,6 +9,9 @@ const STATUS_PORT = Number(process.env.RESEARCHGPT_DESKTOP_PORT || 48732);
 const WORKSPACE_URL =
   process.env.RESEARCHGPT_DESKTOP_URL ||
   "https://researchgpt-ivory.vercel.app/chat";
+const MAX_SCAN_FILES = 500;
+const MAX_READ_BYTES = 80 * 1024 * 1024;
+const DEFAULT_TEXT_LIMIT = 160000;
 
 let mainWindow = null;
 let statusServer = null;
@@ -18,12 +21,30 @@ function writeJson(response, statusCode, data) {
   response.end(JSON.stringify(data));
 }
 
+async function readJsonBody(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.from(chunk));
+  }
+  if (chunks.length === 0) return {};
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function assertPdfPath(filePath) {
+  if (typeof filePath !== "string" || filePath.trim().length === 0) {
+    throw new Error("Missing PDF path.");
+  }
+  if (!filePath.toLowerCase().endsWith(".pdf")) {
+    throw new Error("Only PDF files can be opened or read.");
+  }
+  return filePath;
+}
+
 async function scanPdfFiles(folderPath) {
   const files = [];
   const queue = [folderPath];
-  const maxFiles = 500;
 
-  while (queue.length > 0 && files.length < maxFiles) {
+  while (queue.length > 0 && files.length < MAX_SCAN_FILES) {
     const currentPath = queue.shift();
     let entries = [];
 
@@ -58,17 +79,17 @@ async function scanPdfFiles(folderPath) {
         console.warn("[desktop] cannot stat file:", entryPath, error);
       }
 
-      if (files.length >= maxFiles) break;
+      if (files.length >= MAX_SCAN_FILES) break;
     }
   }
 
-  return { files, truncated: files.length >= maxFiles };
+  return { files, truncated: files.length >= MAX_SCAN_FILES };
 }
 
 async function selectLocalFolder() {
   const window = createMainWindow();
   const result = await dialog.showOpenDialog(window, {
-    title: "选择 ResearchGPT 本地文献文件夹",
+    title: "Select ResearchGPT local literature folder",
     properties: ["openDirectory"],
   });
 
@@ -90,6 +111,44 @@ async function selectLocalFolder() {
       truncated: scan.truncated,
       files: scan.files,
     },
+  };
+}
+
+async function openLocalPdf(filePath) {
+  const normalizedPath = assertPdfPath(filePath);
+  const stats = await fs.stat(normalizedPath);
+  if (!stats.isFile()) throw new Error("PDF path is not a file.");
+
+  const errorMessage = await shell.openPath(normalizedPath);
+  if (errorMessage) throw new Error(errorMessage);
+  return { opened: true };
+}
+
+async function readLocalPdfText(filePath, limit = DEFAULT_TEXT_LIMIT) {
+  const normalizedPath = assertPdfPath(filePath);
+  const stats = await fs.stat(normalizedPath);
+  if (!stats.isFile()) throw new Error("PDF path is not a file.");
+  if (stats.size > MAX_READ_BYTES) {
+    throw new Error("PDF is too large for this preview reader.");
+  }
+
+  const buffer = await fs.readFile(normalizedPath);
+  const { extractText, getDocumentProxy } = await import("unpdf");
+  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const extracted = await extractText(pdf, { mergePages: true });
+  const text = typeof extracted.text === "string" ? extracted.text : "";
+  const textLimit =
+    typeof limit === "number" && Number.isFinite(limit) && limit > 0
+      ? Math.min(Math.floor(limit), DEFAULT_TEXT_LIMIT)
+      : DEFAULT_TEXT_LIMIT;
+
+  return {
+    filePath: normalizedPath,
+    name: path.basename(normalizedPath),
+    pageCount: pdf.numPages,
+    text: text.slice(0, textLimit),
+    charCount: text.length,
+    truncated: text.length > textLimit,
   };
 }
 
@@ -116,7 +175,12 @@ function createStatusServer() {
         app: APP_NAME,
         version: app.getVersion(),
         deviceName: os.hostname(),
-        capabilities: ["local_files", "open_pdf", "local_export"],
+        capabilities: [
+          "local_files",
+          "open_pdf",
+          "read_pdf_text",
+          "local_export",
+        ],
       });
       return;
     }
@@ -130,7 +194,35 @@ function createStatusServer() {
             error:
               error instanceof Error
                 ? error.message
-                : "Failed to select local folder",
+                : "Failed to select local folder.",
+          });
+        });
+      return;
+    }
+
+    if (request.method === "POST" && pathname === "/local-files/open") {
+      void readJsonBody(request)
+        .then((body) => openLocalPdf(body.path))
+        .then((result) => writeJson(response, 200, result))
+        .catch((error) => {
+          console.error("[desktop] local PDF open failed:", error);
+          writeJson(response, 500, {
+            error:
+              error instanceof Error ? error.message : "Failed to open PDF.",
+          });
+        });
+      return;
+    }
+
+    if (request.method === "POST" && pathname === "/local-files/read") {
+      void readJsonBody(request)
+        .then((body) => readLocalPdfText(body.path, body.limit))
+        .then((result) => writeJson(response, 200, result))
+        .catch((error) => {
+          console.error("[desktop] local PDF read failed:", error);
+          writeJson(response, 500, {
+            error:
+              error instanceof Error ? error.message : "Failed to read PDF.",
           });
         });
       return;

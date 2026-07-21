@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Check,
+  BookOpenText,
+  ExternalLink,
+  FileText,
   FolderOpen,
   LoaderCircle,
   PanelRightOpen,
@@ -45,7 +48,12 @@ import {
   type ResearchProject,
   type WorkspaceContextMode,
 } from "@/lib/chat/workspace";
-import type { LocalFolderBinding } from "@/lib/desktop/connection";
+import {
+  openDesktopLocalPdf,
+  readDesktopLocalPdf,
+  type LocalFolderBinding,
+  type LocalPdfFile,
+} from "@/lib/desktop/connection";
 import {
   createLiteratureFolder,
   deleteLiteratureFolder,
@@ -166,6 +174,10 @@ export function ChatShell() {
     string | null
   >(null);
   const [libraryOperationError, setLibraryOperationError] = useState<
+    string | null
+  >(null);
+  const [localPdfStatus, setLocalPdfStatus] = useState<string | null>(null);
+  const [activeLocalPdfAction, setActiveLocalPdfAction] = useState<
     string | null
   >(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -423,6 +435,44 @@ export function ChatShell() {
     },
     [activeProjectId],
   );
+
+  const handleOpenLocalPdf = useCallback(async (file: LocalPdfFile) => {
+    setActiveLocalPdfAction(`open:${file.id}`);
+    setLocalPdfStatus(null);
+    try {
+      await openDesktopLocalPdf(file);
+      setLocalPdfStatus(`已通过本机打开：${file.name}`);
+    } catch (error) {
+      setLocalPdfStatus(
+        error instanceof Error
+          ? `打开失败：${error.message}。请先启动 ResearchGPT Desktop。`
+          : "打开失败，请先启动 ResearchGPT Desktop。",
+      );
+    } finally {
+      setActiveLocalPdfAction(null);
+    }
+  }, []);
+
+  const handleReadLocalPdf = useCallback(async (file: LocalPdfFile) => {
+    setActiveLocalPdfAction(`read:${file.id}`);
+    setLocalPdfStatus(null);
+    try {
+      const result = await readDesktopLocalPdf(file);
+      setLocalPdfStatus(
+        `已读取《${result.name}》：${result.pageCount} 页，${result.charCount} 字符${
+          result.truncated ? "，已截取预览文本" : ""
+        }。`,
+      );
+    } catch (error) {
+      setLocalPdfStatus(
+        error instanceof Error
+          ? `读取失败：${error.message}。请确认文件没有损坏，并先启动 ResearchGPT Desktop。`
+          : "读取失败，请确认文件没有损坏，并先启动 ResearchGPT Desktop。",
+      );
+    } finally {
+      setActiveLocalPdfAction(null);
+    }
+  }, []);
 
   const handleSelectFolder = useCallback((folder: LiteratureFolder) => {
     setSelectedFolderIds((current) =>
@@ -1168,23 +1218,88 @@ export function ChatShell() {
                     <h2 className="mt-1 text-sm font-bold text-[#26353b]">
                       当前项目绑定的本地文献
                     </h2>
-                    <div className="mt-3 grid gap-2">
+                    {localPdfStatus && (
+                      <p className="mt-3 rounded-md border border-[#cfe0e7] bg-[#f6fbfd] px-3 py-2 text-xs font-semibold text-[#245d82]">
+                        {localPdfStatus}
+                      </p>
+                    )}
+                    <div className="mt-3 grid gap-3">
                       {activeProject.localFolders.map((folder) => (
                         <div
                           key={folder.id}
-                          className="flex items-center justify-between gap-3 rounded-md border border-[#d4dfe2] bg-white px-3 py-2 text-sm shadow-[0_1px_1px_rgba(26,47,56,0.03)]"
+                          className="rounded-md border border-[#d4dfe2] bg-white px-3 py-3 text-sm shadow-[0_1px_1px_rgba(26,47,56,0.03)]"
                         >
-                          <div className="min-w-0">
-                            <p className="truncate font-bold text-[#26353b]">
-                              {folder.name}
-                            </p>
-                            <p className="truncate text-xs text-[#718087]">
-                              {folder.path}
-                            </p>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-bold text-[#26353b]">
+                                {folder.name}
+                              </p>
+                              <p className="truncate text-xs text-[#718087]">
+                                {folder.path}
+                              </p>
+                            </div>
+                            <span className="shrink-0 rounded-md bg-[#e8f2f6] px-2 py-1 text-xs font-bold text-[#245d82]">
+                              {folder.pdfCount} PDF
+                            </span>
                           </div>
-                          <span className="shrink-0 rounded-md bg-[#e8f2f6] px-2 py-1 text-xs font-bold text-[#245d82]">
-                            {folder.pdfCount} PDF
-                          </span>
+                          {folder.files.length > 0 ? (
+                            <div className="mt-3 divide-y divide-[#e4ecef] rounded-md border border-[#e4ecef]">
+                              {folder.files.slice(0, 8).map((file) => (
+                                <div
+                                  key={file.id}
+                                  className="flex items-center gap-3 px-3 py-2"
+                                >
+                                  <FileText className="h-4 w-4 shrink-0 text-[#245d82]" />
+                                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#26353b]">
+                                    {file.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleOpenLocalPdf(file)}
+                                    disabled={
+                                      activeLocalPdfAction ===
+                                      `open:${file.id}`
+                                    }
+                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#cddadd] px-2 text-xs font-bold text-[#42545c] hover:bg-[#f1f6f8] disabled:opacity-50"
+                                  >
+                                    {activeLocalPdfAction ===
+                                    `open:${file.id}` ? (
+                                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <ExternalLink className="h-3.5 w-3.5" />
+                                    )}
+                                    打开
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleReadLocalPdf(file)}
+                                    disabled={
+                                      activeLocalPdfAction ===
+                                      `read:${file.id}`
+                                    }
+                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-[#12314a] px-2 text-xs font-bold text-white hover:bg-[#0b2235] disabled:opacity-50"
+                                  >
+                                    {activeLocalPdfAction ===
+                                    `read:${file.id}` ? (
+                                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <BookOpenText className="h-3.5 w-3.5" />
+                                    )}
+                                    读取测试
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-3 rounded-md bg-[#f8fbfc] px-3 py-2 text-xs font-semibold text-[#718087]">
+                              这个文件夹中暂未扫描到 PDF。
+                            </p>
+                          )}
+                          {folder.files.length > 8 && (
+                            <p className="mt-2 text-xs font-medium text-[#718087]">
+                              仅显示前 8 个 PDF，后续会加入完整文件列表和搜索。
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>

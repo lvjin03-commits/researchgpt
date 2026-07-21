@@ -83,6 +83,39 @@ Minimum response:
 }
 ```
 
+## Local PDF Actions
+
+The desktop app exposes two file-level actions for PDFs that were discovered
+through a bound local folder:
+
+```text
+POST http://127.0.0.1:48732/local-files/open
+POST http://127.0.0.1:48732/local-files/read
+```
+
+Request body:
+
+```json
+{
+  "path": "C:\\Users\\name\\Papers\\Organic catalysis\\paper.pdf"
+}
+```
+
+`/local-files/open` opens the file with the user's default PDF reader.
+
+`/local-files/read` extracts text locally and returns a bounded preview:
+
+```json
+{
+  "filePath": "C:\\Users\\name\\Papers\\Organic catalysis\\paper.pdf",
+  "name": "paper.pdf",
+  "pageCount": 12,
+  "text": "extracted text...",
+  "charCount": 42000,
+  "truncated": false
+}
+```
+
 ## Required Behavior
 
 - Every visible desktop capability must be real and actionable.
