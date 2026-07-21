@@ -4,11 +4,13 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const { app, BrowserWindow, dialog, shell } = require("electron");
 
-const APP_NAME = "ResearchGPT Desktop";
+const APP_NAME = "ResearchGPT 本机连接器";
 const STATUS_PORT = Number(process.env.RESEARCHGPT_DESKTOP_PORT || 48732);
 const WORKSPACE_URL =
   process.env.RESEARCHGPT_DESKTOP_URL ||
   "https://researchgpt-ivory.vercel.app/chat";
+const SHOW_CONNECTOR_WINDOW =
+  process.env.RESEARCHGPT_SHOW_CONNECTOR_WINDOW === "true";
 const MAX_SCAN_FILES = 500;
 const MAX_READ_BYTES = 80 * 1024 * 1024;
 const DEFAULT_TEXT_LIMIT = 160000;
@@ -87,9 +89,8 @@ async function scanPdfFiles(folderPath) {
 }
 
 async function selectLocalFolder() {
-  const window = createMainWindow();
-  const result = await dialog.showOpenDialog(window, {
-    title: "Select ResearchGPT local literature folder",
+  const result = await dialog.showOpenDialog({
+    title: "选择 ResearchGPT 本地文献文件夹",
     properties: ["openDirectory"],
   });
 
@@ -175,9 +176,12 @@ function createStatusServer() {
         app: APP_NAME,
         version: app.getVersion(),
         deviceName: os.hostname(),
+        authorized: true,
+        state: "connected",
         capabilities: [
           "local_files",
           "open_pdf",
+          "read_pdf",
           "read_pdf_text",
           "local_export",
         ],
@@ -301,8 +305,10 @@ function createMainWindow() {
 function handleDeepLink(url) {
   console.log("[desktop] protocol:", url);
   createStatusServer();
-  createMainWindow();
-  focusMainWindow();
+  if (SHOW_CONNECTOR_WINDOW) {
+    createMainWindow();
+    focusMainWindow();
+  }
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -313,7 +319,8 @@ if (!gotLock) {
   app.on("second-instance", (_event, argv) => {
     const deepLink = argv.find((arg) => arg.startsWith("researchgpt://"));
     if (deepLink) handleDeepLink(deepLink);
-    else focusMainWindow();
+    else if (SHOW_CONNECTOR_WINDOW) focusMainWindow();
+    else createStatusServer();
   });
 
   app.on("open-url", (event, url) => {
@@ -324,16 +331,20 @@ if (!gotLock) {
   app.whenReady().then(() => {
     registerProtocol();
     createStatusServer();
-    createMainWindow();
+    if (SHOW_CONNECTOR_WINDOW) createMainWindow();
   });
 
   app.on("activate", () => {
+    if (!SHOW_CONNECTOR_WINDOW) {
+      createStatusServer();
+      return;
+    }
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
     else focusMainWindow();
   });
 
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
+    if (SHOW_CONNECTOR_WINDOW && process.platform !== "darwin") {
       statusServer?.close();
       app.quit();
     }
