@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PAPER_DRAG_TYPE,
   type ResearchProject,
@@ -49,6 +49,10 @@ type ResearchToolPanelProps = {
   onToggleLocalFile?: (fileId: string) => void;
   onToggleLocalFolder?: (folder: LocalFolderBinding) => void;
   onClearLocalSelection?: () => void;
+  onRunLocalFileTask?: (
+    action: "single_read" | "analysis" | "matrix",
+    files: LocalPdfFile[],
+  ) => void;
   onOpenCloudFolder?: (folder: LiteratureFolder) => void;
   onRemovePaper: (paper: LiteraturePaper) => void;
   onUploadFiles: (files: File[]) => void;
@@ -88,6 +92,7 @@ export function ResearchToolPanel({
   onToggleLocalFile,
   onToggleLocalFolder,
   onClearLocalSelection,
+  onRunLocalFileTask,
   onOpenCloudFolder,
   onRemovePaper,
   onUploadFiles,
@@ -95,6 +100,22 @@ export function ResearchToolPanel({
 }: ResearchToolPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    | {
+        x: number;
+        y: number;
+        kind: "file";
+        file: LocalPdfFile;
+      }
+    | {
+        x: number;
+        y: number;
+        kind: "folder";
+        folder: LocalFolderBinding;
+      }
+    | null
+  >(null);
   const [expandedLocalFolderIds, setExpandedLocalFolderIds] = useState<
     Set<string>
   >(() => new Set());
@@ -107,6 +128,10 @@ export function ResearchToolPanel({
   };
 
   const selectedLocalFileSet = new Set(selectedLocalFileIds);
+  const selectedLocalFiles =
+    project?.localFolders
+      .flatMap((localFolder) => localFolder.files)
+      .filter((file) => selectedLocalFileSet.has(file.id)) ?? [];
   const projectPdfCount =
     project?.localFolders.reduce((total, item) => total + item.pdfCount, 0) ??
     0;
@@ -119,6 +144,38 @@ export function ResearchToolPanel({
       else next.add(folderId);
       return next;
     });
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    document.addEventListener("click", close);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("click", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [contextMenu]);
+
+  const runTask = (
+    action: "single_read" | "analysis" | "matrix",
+    files: LocalPdfFile[],
+  ) => {
+    setContextMenu(null);
+    if (action === "single_read" && files.length !== 1) {
+      setActionError("单篇精读必须且只能选择 1 篇 PDF。");
+      return;
+    }
+    if (action === "analysis" && files.length < 1) {
+      setActionError("文献分析至少需要选择 1 篇 PDF。");
+      return;
+    }
+    if (action === "matrix" && files.length < 2) {
+      setActionError("文献矩阵至少需要选择 2 篇 PDF。");
+      return;
+    }
+    setActionError(null);
+    onRunLocalFileTask?.(action, files);
   };
 
   return (
@@ -248,6 +305,11 @@ export function ResearchToolPanel({
             {localPdfStatus}
           </p>
         )}
+        {actionError && (
+          <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800">
+            {actionError}
+          </p>
+        )}
 
         {folder ? (
           <section className="p-4">
@@ -337,15 +399,42 @@ export function ResearchToolPanel({
                 默认只读取本项目绑定的资料。勾选 PDF 后，下一次分析会优先只读取已选文件。
               </p>
               {selectedLocalFileIds.length > 0 && (
-                <div className="mt-3 flex items-center justify-between rounded-md bg-white px-3 py-2 text-xs font-bold text-[#174866]">
-                  <span>本次已选 {selectedLocalFileIds.length} 个 PDF</span>
-                  <button
-                    type="button"
-                    onClick={onClearLocalSelection}
-                    className="text-[#607078] hover:text-[#172126]"
-                  >
-                    清空选择
-                  </button>
+                <div className="mt-3 rounded-md bg-white px-3 py-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-[#174866]">
+                    <span>本次已选 {selectedLocalFileIds.length} 个 PDF</span>
+                    <button
+                      type="button"
+                      onClick={onClearLocalSelection}
+                      className="text-[#607078] hover:text-[#172126]"
+                    >
+                      清空选择
+                    </button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => runTask("single_read", selectedLocalFiles)}
+                      disabled={selectedLocalFiles.length !== 1}
+                      className="rounded-md border border-[#d4dfe2] px-2 py-1.5 text-[11px] font-bold text-[#174866] hover:bg-[#eef6f9] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      单篇精读
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runTask("analysis", selectedLocalFiles)}
+                      className="rounded-md border border-[#d4dfe2] px-2 py-1.5 text-[11px] font-bold text-[#174866] hover:bg-[#eef6f9]"
+                    >
+                      文献分析
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runTask("matrix", selectedLocalFiles)}
+                      disabled={selectedLocalFiles.length < 2}
+                      className="rounded-md bg-[#174866] px-2 py-1.5 text-[11px] font-bold text-white hover:bg-[#123a52] disabled:cursor-not-allowed disabled:bg-[#b6c9d1]"
+                    >
+                      文献矩阵
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -370,6 +459,15 @@ export function ResearchToolPanel({
                       <div
                         key={localFolder.id}
                         className="rounded-lg border border-[#dbe4e7] bg-white"
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          setContextMenu({
+                            x: event.clientX,
+                            y: event.clientY,
+                            kind: "folder",
+                            folder: localFolder,
+                          });
+                        }}
                       >
                         <div className="flex items-center gap-2 px-3 py-2">
                           <button
@@ -428,6 +526,16 @@ export function ResearchToolPanel({
                                   className={`flex items-center gap-2 px-3 py-2 ${
                                     selected ? "bg-[#eef6f9]" : ""
                                   }`}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    setContextMenu({
+                                      x: event.clientX,
+                                      y: event.clientY,
+                                      kind: "file",
+                                      file,
+                                    });
+                                  }}
                                 >
                                   <button
                                     type="button"
@@ -527,6 +635,88 @@ export function ResearchToolPanel({
                 <p className="mt-1 text-xs text-gray-500">
                   请在聊天框上方点击“绑定本地文件夹”，或从左侧文献资料拖入云端文件夹。
                 </p>
+              </div>
+            )}
+
+            {contextMenu && (
+              <div
+                className="fixed z-[90] w-44 rounded-lg border border-gray-200 bg-white p-1 text-sm shadow-2xl"
+                style={{
+                  left: Math.min(contextMenu.x, window.innerWidth - 190),
+                  top: Math.min(contextMenu.y, window.innerHeight - 230),
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {contextMenu.kind === "file" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => runTask("single_read", [contextMenu.file])}
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      单篇精读
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContextMenu(null);
+                        onToggleLocalFile?.(contextMenu.file.id);
+                      }}
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      {selectedLocalFileSet.has(contextMenu.file.id)
+                        ? "取消本次分析"
+                        : "加入本次分析"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContextMenu(null);
+                        onOpenLocalPdf?.(contextMenu.file);
+                      }}
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      打开 PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContextMenu(null);
+                        onReadLocalPdf?.(contextMenu.file);
+                      }}
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      测试全文读取
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => runTask("analysis", contextMenu.folder.files)}
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      分析该文件夹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runTask("matrix", contextMenu.folder.files)}
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      生成文献矩阵
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContextMenu(null);
+                        onToggleLocalFolder?.(contextMenu.folder);
+                      }}
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      全选/取消该文件夹
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </section>

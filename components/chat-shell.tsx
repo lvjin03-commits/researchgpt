@@ -859,6 +859,7 @@ export function ChatShell() {
       history: DisplayChatMessage[] = activeMessages,
       projectOverride?: ResearchProject | null,
       contextModeOverride?: WorkspaceContextMode,
+      localFileIdsOverride?: string[],
     ) => {
       abortControllerRef.current?.abort();
       const project =
@@ -899,9 +900,9 @@ export function ChatShell() {
       const shouldReadLocalProject = projectUsesLocalPdfs;
       const selectedLocalIdsForThisRequest =
         shouldReadLocalProject &&
-        selectedLocalFileIds.length > 0 &&
+        (localFileIdsOverride ?? selectedLocalFileIds).length > 0 &&
         !shouldAnalyzeAllProjectFiles(payload.message)
-          ? selectedLocalFileIds
+          ? (localFileIdsOverride ?? selectedLocalFileIds)
           : [];
       const historyForApi = shouldReadLocalProject ? history.slice(-4) : history;
       let apiMessages = buildChatApiMessages(
@@ -1074,6 +1075,52 @@ export function ChatShell() {
       useLibrary,
       webSearch,
     ],
+  );
+
+  const handleRunLocalFileTask = useCallback(
+    (
+      action: "single_read" | "analysis" | "matrix",
+      files: LocalPdfFile[],
+    ) => {
+      if (!activeProject || files.length === 0) return;
+
+      if (action === "single_read" && files.length !== 1) {
+        setError("单篇精读必须且只能选择 1 篇 PDF。");
+        return;
+      }
+      if (action === "matrix" && files.length < 2) {
+        setError("文献矩阵至少需要选择 2 篇 PDF。");
+        return;
+      }
+
+      const fileIds = files.map((file) => file.id);
+      setSelectedLocalFileIds(fileIds);
+      setActiveToolFolderId(null);
+      setToolPanelOpen(true);
+      setContextMode("project");
+      setError(null);
+
+      const fileList = files
+        .slice(0, 12)
+        .map((file, index) => `${index + 1}. ${file.name}`)
+        .join("\n");
+      const extra = files.length > 12 ? `\n...共 ${files.length} 篇 PDF` : "";
+      const taskMessage =
+        action === "single_read"
+          ? `单篇精读这篇 PDF：\n${fileList}\n\n请按研究问题、技术路线、关键实验、结果证据、创新性、局限性、可引用观点来分析。`
+          : action === "matrix"
+            ? `基于当前选中的 ${files.length} 篇 PDF 生成中文文献矩阵。\n\n文献范围：\n${fileList}${extra}\n\n矩阵至少包含：文献名称、研究主题、研究问题、研究对象、研究方法、关键结果、主要结论、核心贡献、局限性、与当前项目的关系。`
+            : `分析当前选中的 ${files.length} 篇 PDF。\n\n文献范围：\n${fileList}${extra}\n\n请输出主题归类、研究共识、研究分歧、研究空白，以及后续可展开的文献矩阵建议。`;
+
+      void submitMessage(
+        { message: taskMessage },
+        activeMessages,
+        activeProject,
+        "project",
+        fileIds,
+      );
+    },
+    [activeMessages, activeProject, submitMessage],
   );
 
   const persistLibraryExchange = useCallback(
@@ -1791,6 +1838,7 @@ export function ChatShell() {
         onToggleLocalFile={handleToggleLocalFile}
         onToggleLocalFolder={handleToggleLocalFolder}
         onClearLocalSelection={handleClearLocalFileSelection}
+        onRunLocalFileTask={handleRunLocalFileTask}
         onOpenCloudFolder={handleOpenFolder}
         onRemovePaper={(paper) => void handleRemovePaperFromOpenFolder(paper)}
         onUploadFiles={(files) => void handleUploadFilesToOpenFolder(files)}
