@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "desktop": "electron desktop/main.cjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -37,6 +38,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^43.1.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
