@@ -120,8 +120,6 @@ export function ResearchToolPanel({
     Set<string>
   >(() => new Set());
 
-  if (!open) return null;
-
   const acceptFiles = (files: FileList | File[]) => {
     const pdfs = Array.from(files).filter(isPdfFile);
     if (pdfs.length > 0) onUploadFiles(pdfs);
@@ -156,6 +154,8 @@ export function ResearchToolPanel({
       window.removeEventListener("blur", close);
     };
   }, [contextMenu]);
+
+  if (!open) return null;
 
   const runTask = (
     action: "single_read" | "analysis" | "matrix",
