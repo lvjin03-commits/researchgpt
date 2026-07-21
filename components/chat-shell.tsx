@@ -1232,7 +1232,7 @@ export function ChatShell() {
               />
             </div>
           ) : (
-            <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pb-56 pt-10 sm:px-8 sm:pt-[9vh]">
+            <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 pb-72 pt-10 sm:px-8 sm:pb-80 sm:pt-[9vh]">
               <div className="w-full max-w-4xl">
                 <div className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[#e5eff3] text-[#174866]">
                   <Sparkles className="h-5 w-5" />
@@ -1300,7 +1300,7 @@ export function ChatShell() {
                               <p className="truncate font-bold text-[#26353b]">
                                 {folder.name}
                               </p>
-                              <p className="truncate text-xs text-[#718087]">
+                              <p className="truncate text-xs font-medium text-[#52636b]">
                                 {folder.path}
                               </p>
                             </div>
@@ -1316,7 +1316,7 @@ export function ChatShell() {
                                   className="flex items-center gap-3 px-3 py-2"
                                 >
                                   <FileText className="h-4 w-4 shrink-0 text-[#245d82]" />
-                                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#26353b]">
+                                  <span className="min-w-0 flex-1 truncate text-xs font-bold text-[#172126]">
                                     {file.name}
                                   </span>
                                   <button
@@ -1326,7 +1326,7 @@ export function ChatShell() {
                                       activeLocalPdfAction ===
                                       `open:${file.id}`
                                     }
-                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#cddadd] px-2 text-xs font-bold text-[#42545c] hover:bg-[#f1f6f8] disabled:opacity-50"
+                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-[#9fb7c2] bg-white px-2 text-xs font-bold text-[#26353b] hover:bg-[#f1f6f8] disabled:opacity-60"
                                   >
                                     {activeLocalPdfAction ===
                                     `open:${file.id}` ? (
@@ -1343,7 +1343,7 @@ export function ChatShell() {
                                       activeLocalPdfAction ===
                                       `read:${file.id}`
                                     }
-                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-[#12314a] px-2 text-xs font-bold text-white hover:bg-[#0b2235] disabled:opacity-50"
+                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-[#12314a] px-2 text-xs font-bold text-white hover:bg-[#0b2235] disabled:opacity-70"
                                   >
                                     {activeLocalPdfAction ===
                                     `read:${file.id}` ? (

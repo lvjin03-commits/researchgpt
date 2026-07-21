@@ -354,8 +354,8 @@ export function Sidebar({
                     <span
                       className={`mt-0.5 block truncate text-xs ${
                         project.id === activeProjectId
-                          ? "text-gray-300"
-                          : "text-gray-500"
+                          ? "font-semibold text-[#52636b]"
+                          : "font-medium text-[#607078]"
                       }`}
                     >
                       {project.lastTask || "等待继续工作"}

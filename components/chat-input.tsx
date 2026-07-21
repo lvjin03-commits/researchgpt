@@ -187,9 +187,9 @@ export function ChatInput({
   }, []);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#f4f7f8] via-[#f4f7f8]/95 to-transparent px-3 pb-3 pt-10 sm:px-6 sm:pb-5">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#f4f7f8] via-[#f4f7f8]/90 to-transparent px-3 pb-3 pt-6 sm:px-6 sm:pb-5">
       <form
-        className="pointer-events-auto mx-auto w-full max-w-4xl"
+        className="pointer-events-auto mx-auto w-full max-w-4xl rounded-lg bg-[#f4f7f8]/80"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
