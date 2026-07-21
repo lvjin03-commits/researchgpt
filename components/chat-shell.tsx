@@ -114,6 +114,93 @@ function toDisplayUserMessage(payload: ChatSendPayload): DisplayChatMessage {
   };
 }
 
+function buildLocalPdfManifest(project: ResearchProject): string {
+  const files = project.localFolders.flatMap((folder) =>
+    folder.files.map((file) => `${folder.name} / ${file.name}`),
+  );
+  if (files.length === 0) return "";
+  return [
+    `当前项目“${project.name}”绑定的本地 PDF 文件如下：`,
+    ...files.map((file, index) => `${index + 1}. ${file}`),
+  ].join("\n");
+}
+
+async function buildLocalPdfContextForProject(
+  project: ResearchProject,
+  onProgress: (message: string) => void,
+): Promise<string> {
+  const files = project.localFolders.flatMap((folder) =>
+    folder.files.map((file) => ({ folderName: folder.name, file })),
+  );
+  if (files.length === 0) return "";
+
+  const maxFiles = 8;
+  const maxCharsTotal = 120000;
+  const maxCharsPerFile = 18000;
+  let usedChars = 0;
+  const readable: string[] = [];
+  const failed: string[] = [];
+  const skipped = files.slice(maxFiles).map(({ folderName, file }) => ({
+    folderName,
+    name: file.name,
+  }));
+
+  for (const [index, item] of files.slice(0, maxFiles).entries()) {
+    onProgress(
+      `正在读取当前项目本地 PDF：${index + 1}/${Math.min(files.length, maxFiles)} ${item.file.name}`,
+    );
+    try {
+      const result = await readDesktopLocalPdf(item.file);
+      const remaining = maxCharsTotal - usedChars;
+      if (remaining <= 0) {
+        skipped.push({ folderName: item.folderName, name: item.file.name });
+        continue;
+      }
+      const text = result.text.slice(0, Math.min(maxCharsPerFile, remaining));
+      usedChars += text.length;
+      readable.push(
+        [
+          `## 本地全文证据 ${readable.length + 1}`,
+          `文件夹：${item.folderName}`,
+          `文件名：${result.name}`,
+          `页数：${result.pageCount}`,
+          `字符数：${result.charCount}${result.truncated ? "（桌面端已截取）" : ""}`,
+          "正文摘录：",
+          text,
+        ].join("\n"),
+      );
+    } catch (error) {
+      failed.push(
+        `${item.folderName} / ${item.file.name}：${
+          error instanceof Error ? error.message : "读取失败"
+        }`,
+      );
+    }
+  }
+
+  return [
+    "【当前项目本地 PDF 上下文】",
+    "以下内容来自用户当前项目绑定的本地 PDF。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
+    buildLocalPdfManifest(project),
+    readable.length > 0
+      ? `已成功读取 ${readable.length} 个 PDF 的全文/摘录：`
+      : "没有成功读取到本地 PDF 正文。",
+    ...readable,
+    failed.length > 0
+      ? `以下 PDF 读取失败，不能作为已读全文证据：\n${failed
+          .map((item, index) => `${index + 1}. ${item}`)
+          .join("\n")}`
+      : "",
+    skipped.length > 0
+      ? `为控制单次分析成本，本次未读取以下 PDF。若用户要求“全部文献”，请明确说明本次只读了前 ${maxFiles} 个，并建议分批分析：\n${skipped
+          .map((item, index) => `${index + 1}. ${item.folderName} / ${item.name}`)
+          .join("\n")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function projectNameFromTask(
   message: string,
   folders: LiteratureFolder[],
@@ -466,7 +553,7 @@ export function ChatShell() {
       if (!activeProjectId) {
         const project = createResearchProject(
           folder.name || "本地文献项目",
-          selectedFolderIds,
+          [],
           `已绑定本地文献文件夹：${folder.name}（${folder.pdfCount} 个 PDF）`,
         );
         const projectWithLocalFolder = {
@@ -475,6 +562,7 @@ export function ChatShell() {
         };
         setProjects((current) => [projectWithLocalFolder, ...current]);
         setActiveProjectId(projectWithLocalFolder.id);
+        setSelectedFolderIds([]);
         setContextMode("project");
         setError(null);
         setLocalPdfStatus(
@@ -698,6 +786,10 @@ export function ChatShell() {
       abortControllerRef.current?.abort();
       const project =
         projectOverride === undefined ? activeProject : projectOverride;
+      const projectUsesLocalPdfs =
+        project &&
+        project.localFolders.length > 0 &&
+        (contextModeOverride ?? contextMode) !== "temporary";
       const displayUserMessage = toDisplayUserMessage(payload);
       const nextMessages: DisplayChatMessage[] = [
         ...history,
@@ -715,7 +807,9 @@ export function ChatShell() {
             {
               ...project,
               conversationId,
-              folderIds: selectedFolderIds,
+              folderIds: projectUsesLocalPdfs
+                ? project.folderIds
+                : selectedFolderIds,
               lastTask: payload.message,
               updatedAt: now,
             },
@@ -725,7 +819,7 @@ export function ChatShell() {
         setActiveProjectId(project.id);
       }
 
-      const apiMessages = buildChatApiMessages(
+      let apiMessages = buildChatApiMessages(
         history,
         toApiUserMessage(payload),
       );
@@ -740,6 +834,8 @@ export function ChatShell() {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
       let streamingMessages = nextMessages;
+      const shouldReadLocalProject =
+        projectUsesLocalPdfs;
 
       const appendToAssistant = (content: string) => {
         streamingMessages = streamingMessages.map((message, index) =>
@@ -752,14 +848,27 @@ export function ChatShell() {
       };
 
       try {
+        if (shouldReadLocalProject) {
+          const localPdfContext = await buildLocalPdfContextForProject(
+            project,
+            setActivity,
+          );
+          if (localPdfContext) {
+            apiMessages = [
+              ...apiMessages.slice(0, -1),
+              { role: "user", content: localPdfContext },
+              apiMessages[apiMessages.length - 1],
+            ];
+          }
+        }
         await streamChatResponse(apiMessages, {
           files: payload.files,
           signal: abortController.signal,
           modelTier,
           webSearch,
-          useLibrary,
+          useLibrary: shouldReadLocalProject ? false : useLibrary,
           memory,
-          selectedFolderIds,
+          selectedFolderIds: shouldReadLocalProject ? [] : selectedFolderIds,
           contextMode: contextModeOverride ?? contextMode,
           projectName: project?.name,
           onStatus: setActivity,
