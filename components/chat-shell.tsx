@@ -49,6 +49,10 @@ import {
   type WorkspaceContextMode,
 } from "@/lib/chat/workspace";
 import {
+  fetchCloudWorkspace,
+  upsertCloudWorkspace,
+} from "@/lib/chat/workspace-cloud-sync";
+import {
   openDesktopLocalPdf,
   readDesktopLocalPdf,
   type LocalFolderBinding,
@@ -182,6 +186,8 @@ export function ChatShell() {
   >(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
+  const workspaceCloudEnabledRef = useRef(true);
+  const workspaceSyncTimerRef = useRef<number | null>(null);
 
   const {
     conversations,
@@ -205,20 +211,44 @@ export function ChatShell() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const savedTier = window.localStorage.getItem(
-        "researchgpt-chat-model-tier",
-      );
-      if (isChatModelTier(savedTier)) setModelTier(savedTier);
-      setWebSearch(
-        window.localStorage.getItem("researchgpt-chat-web") === "true",
-      );
-      setUseLibrary(
-        window.localStorage.getItem("researchgpt-chat-library") === "true",
-      );
-      setMemory(window.localStorage.getItem("researchgpt-chat-memory") ?? "");
+    let cancelled = false;
 
-      const workspace = loadWorkspace();
+    const savedTier = window.localStorage.getItem(
+      "researchgpt-chat-model-tier",
+    );
+    if (isChatModelTier(savedTier)) setModelTier(savedTier);
+    setWebSearch(
+      window.localStorage.getItem("researchgpt-chat-web") === "true",
+    );
+    setUseLibrary(
+      window.localStorage.getItem("researchgpt-chat-library") === "true",
+    );
+    setMemory(window.localStorage.getItem("researchgpt-chat-memory") ?? "");
+
+    async function hydrateWorkspace() {
+      const localWorkspace = loadWorkspace();
+      let workspace = localWorkspace;
+
+      try {
+        const cloudWorkspace = await fetchCloudWorkspace();
+        if (cancelled) return;
+
+        if (cloudWorkspace) {
+          workspace = cloudWorkspace;
+        } else if (localWorkspace.projects.length > 0) {
+          await upsertCloudWorkspace(localWorkspace);
+          workspace = localWorkspace;
+        }
+
+        workspaceCloudEnabledRef.current = true;
+      } catch (error) {
+        console.error("[workspace] Cloud sync unavailable:", error);
+        workspaceCloudEnabledRef.current = false;
+        workspace = localWorkspace;
+      }
+
+      if (cancelled) return;
+
       setProjects(workspace.projects);
       setActiveProjectId(workspace.activeProjectId);
       const restoredProject = workspace.projects.find(
@@ -229,8 +259,11 @@ export function ChatShell() {
         setContextMode("project");
         setUseLibrary(restoredProject.folderIds.length > 0);
       }
+      saveWorkspace(workspace);
       setWorkspaceHydrated(true);
-    }, 0);
+    }
+
+    void hydrateWorkspace();
 
     void fetchLiteratureLibrary(CHAT_LIBRARY_FILTERS)
       .then((result) => {
@@ -241,12 +274,32 @@ export function ChatShell() {
         setError("文献文件夹加载失败，可刷新页面后重试。");
       });
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      if (workspaceSyncTimerRef.current) {
+        window.clearTimeout(workspaceSyncTimerRef.current);
+        workspaceSyncTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
     if (!workspaceHydrated) return;
-    saveWorkspace({ projects, activeProjectId });
+    const workspace = { projects, activeProjectId };
+    saveWorkspace(workspace);
+
+    if (!workspaceCloudEnabledRef.current) return;
+
+    if (workspaceSyncTimerRef.current) {
+      window.clearTimeout(workspaceSyncTimerRef.current);
+    }
+
+    workspaceSyncTimerRef.current = window.setTimeout(() => {
+      void upsertCloudWorkspace(workspace).catch((error) => {
+        console.error("[workspace] Cloud sync failed:", error);
+        workspaceCloudEnabledRef.current = false;
+      });
+    }, 800);
   }, [projects, activeProjectId, workspaceHydrated]);
 
   const selectedFolders = useMemo(

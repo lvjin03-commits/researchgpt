@@ -31,7 +31,7 @@ export type ResearchProject = {
   updatedAt: string;
 };
 
-type WorkspaceStorage = {
+export type WorkspaceStorage = {
   projects: ResearchProject[];
   activeProjectId: string | null;
 };
@@ -39,6 +39,31 @@ type WorkspaceStorage = {
 const STORAGE_KEY = "researchgpt-research-workspace-v1";
 export const FOLDER_DRAG_TYPE = "application/x-researchgpt-folder";
 export const PAPER_DRAG_TYPE = "application/x-researchgpt-paper";
+
+export function normalizeWorkspaceStorage(value: unknown): WorkspaceStorage {
+  const record =
+    value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const projects = Array.isArray(record.projects)
+    ? record.projects.filter(isProject).map((project) => ({
+        ...project,
+        localFolders: project.localFolders ?? [],
+      }))
+    : [];
+  const activeProjectId =
+    typeof record.activeProjectId === "string" &&
+    projects.some((project) => project.id === record.activeProjectId)
+      ? record.activeProjectId
+      : null;
+
+  return {
+    projects: [...projects].sort(
+      (left, right) =>
+        new Date(right.updatedAt).getTime() -
+        new Date(left.updatedAt).getTime(),
+    ),
+    activeProjectId,
+  };
+}
 
 function isLocalFile(value: unknown): value is LocalWorkspaceFile {
   if (!value || typeof value !== "object") return false;
@@ -93,28 +118,9 @@ export function loadWorkspace(): WorkspaceStorage {
   }
 
   try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEY) ?? "{}",
-    ) as Record<string, unknown>;
-    const projects = Array.isArray(parsed.projects)
-      ? parsed.projects.filter(isProject).map((project) => ({
-          ...project,
-          localFolders: project.localFolders ?? [],
-        }))
-      : [];
-    const activeProjectId =
-      typeof parsed.activeProjectId === "string" &&
-      projects.some((project) => project.id === parsed.activeProjectId)
-        ? parsed.activeProjectId
-        : null;
-    return {
-      projects: [...projects].sort(
-        (left, right) =>
-          new Date(right.updatedAt).getTime() -
-          new Date(left.updatedAt).getTime(),
-      ),
-      activeProjectId,
-    };
+    return normalizeWorkspaceStorage(
+      JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}"),
+    );
   } catch {
     return { projects: [], activeProjectId: null };
   }
