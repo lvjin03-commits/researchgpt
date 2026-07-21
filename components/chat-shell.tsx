@@ -11,6 +11,7 @@ import {
   FolderOpen,
   LoaderCircle,
   PanelRightOpen,
+  Pencil,
   Sparkles,
   Trash2,
   X,
@@ -597,6 +598,24 @@ export function ChatShell() {
     },
     [abortActiveStream, activeProjectId],
   );
+
+  const handleRenameProject = useCallback((project: ResearchProject) => {
+    const nextName = window.prompt("请输入新的项目名称", project.name)?.trim();
+    if (!nextName || nextName === project.name) return;
+
+    const now = new Date().toISOString();
+    setProjects((current) =>
+      current.map((item) =>
+        item.id === project.id
+          ? {
+              ...item,
+              name: nextName.slice(0, 80),
+              updatedAt: now,
+            }
+          : item,
+      ),
+    );
+  }, []);
 
   const handleContinueProject = useCallback(
     (project: ResearchProject) => {
@@ -1441,6 +1460,7 @@ export function ChatShell() {
           void handlePaperDrop(paperId, folderId)
         }
         onContinueProject={handleContinueProject}
+        onRenameProject={handleRenameProject}
         onDeleteProject={handleDeleteProject}
         onLogout={handleLogout}
         isLoggingOut={isLoggingOut}
@@ -1534,7 +1554,7 @@ export function ChatShell() {
                       {projects.slice(0, 4).map((project) => (
                         <div
                           key={project.id}
-                          className="research-surface group relative rounded-md p-4 pr-12 transition hover:border-[#8eabb8] hover:bg-[#f8fbfc]"
+                          className="research-surface group relative rounded-md p-4 pr-20 transition hover:border-[#8eabb8] hover:bg-[#f8fbfc]"
                         >
                         <button
                           type="button"
@@ -1547,6 +1567,15 @@ export function ChatShell() {
                           <span className="mt-1 line-clamp-2 block text-xs leading-5 text-[#718087]">
                             {project.lastTask || "继续项目工作"}
                           </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRenameProject(project)}
+                          aria-label={`重命名项目 ${project.name}`}
+                          title="重命名项目"
+                          className="absolute right-12 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md text-[#7c8b91] opacity-0 hover:bg-[#e8f2f6] hover:text-[#174866] group-hover:opacity-100 focus:opacity-100"
+                        >
+                          <Pencil className="h-4 w-4" />
                         </button>
                         <button
                           type="button"

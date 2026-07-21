@@ -12,6 +12,7 @@ import {
   LogOut,
   MessageSquare,
   Microscope,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -50,6 +51,7 @@ type SidebarProps = {
   onCreateFolder: (name: string) => Promise<LiteratureFolder>;
   onPaperDrop: (paperId: string, folderId: string) => void;
   onContinueProject: (project: ResearchProject) => void;
+  onRenameProject: (project: ResearchProject) => void;
   onDeleteProject: (project: ResearchProject) => void;
   onLogout: () => void;
   isLoggingOut?: boolean;
@@ -82,6 +84,7 @@ export function Sidebar({
   onCreateFolder,
   onPaperDrop,
   onContinueProject,
+  onRenameProject,
   onDeleteProject,
   onLogout,
   isLoggingOut = false,
@@ -365,6 +368,18 @@ export function Sidebar({
                     >
                       {project.lastTask || "等待继续工作"}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRenameProject(project);
+                    }}
+                    aria-label={`重命名项目 ${project.name}`}
+                    title="重命名项目"
+                    className="mt-1.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#7c8b91] opacity-0 hover:bg-[#e8f2f6] hover:text-[#174866] group-hover:opacity-100 focus:opacity-100"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
                   </button>
                   <button
                     type="button"
