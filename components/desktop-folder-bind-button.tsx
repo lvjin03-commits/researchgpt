@@ -1,7 +1,7 @@
 "use client";
 
-import { FolderPlus, LoaderCircle } from "lucide-react";
-import { useCallback, useState } from "react";
+import { FolderPlus, LoaderCircle, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import {
   launchDesktopConnect,
   selectDesktopLocalFolder,
@@ -19,6 +19,16 @@ export function DesktopFolderBindButton({
 }: DesktopFolderBindButtonProps) {
   const [isBinding, setIsBinding] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageKind, setMessageKind] = useState<"info" | "error">("info");
+
+  useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(
+      () => setMessage(null),
+      messageKind === "error" ? 6000 : 3000,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [message, messageKind]);
 
   const bindFolder = useCallback(async () => {
     if (disabled || isBinding) return;
@@ -28,13 +38,16 @@ export function DesktopFolderBindButton({
     try {
       const result = await selectDesktopLocalFolder();
       if (result.canceled) {
+        setMessageKind("info");
         setMessage("已取消选择");
         return;
       }
       onBound(result.folder);
+      setMessageKind("info");
       setMessage(`已绑定 ${result.folder.pdfCount} 个 PDF`);
     } catch (error) {
       launchDesktopConnect();
+      setMessageKind("error");
       setMessage(
         error instanceof Error
           ? `本机未连接或选择失败：${error.message}`
@@ -61,8 +74,22 @@ export function DesktopFolderBindButton({
         绑定本地文件夹
       </button>
       {message && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-xl">
-          {message}
+        <div
+          className={`absolute right-0 top-full z-50 mt-2 flex w-72 items-start gap-2 rounded-md border px-3 py-2 text-xs font-semibold shadow-xl ${
+            messageKind === "error"
+              ? "border-amber-200 bg-amber-50 text-amber-800"
+              : "border-emerald-200 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          <span className="min-w-0 flex-1 leading-5">{message}</span>
+          <button
+            type="button"
+            onClick={() => setMessage(null)}
+            className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-current opacity-70 hover:bg-black/5 hover:opacity-100"
+            aria-label="关闭提示"
+          >
+            <X className="h-3 w-3" />
+          </button>
         </div>
       )}
     </div>
