@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
+import { DesktopConnectionStatus } from "@/components/desktop-connection-status";
 import { MenuIcon } from "@/components/icons";
 import { ResearchToolPanel } from "@/components/research-tool-panel";
 import { Sidebar } from "@/components/sidebar";
@@ -1036,11 +1037,14 @@ export function ChatShell() {
                   : "未选择项目资料"}
             </p>
           </div>
+          <div className="ml-auto">
+            <DesktopConnectionStatus compact />
+          </div>
           {!toolPanelOpen && (
             <button
               type="button"
               onClick={() => setToolPanelOpen(true)}
-              className="ml-auto inline-flex h-9 items-center gap-2 rounded-md border border-[#cddadd] bg-white px-3 text-xs font-bold text-[#42545c] hover:border-[#8eabb8] hover:bg-[#f1f6f8]"
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cddadd] bg-white px-3 text-xs font-bold text-[#42545c] hover:border-[#8eabb8] hover:bg-[#f1f6f8]"
             >
               <PanelRightOpen className="h-4 w-4" />
               工作台
