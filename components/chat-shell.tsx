@@ -179,7 +179,7 @@ async function buildLocalPdfContextForProject(
           `文件夹：${item.folderName}`,
           `文件名：${result.name}`,
           `页数：${result.pageCount}`,
-          `原始可读字符数：${result.charCount}${result.truncated ? "（桌面端已截取）" : ""}`,
+          `原始可读字符数：${result.charCount}${result.truncated ? "（本机连接器已截取）" : ""}`,
           `本次送入模型字符数：${text.length}${text.length < result.text.length ? "（为控制成本已截取）" : ""}`,
           "正文内容/摘录：",
           text,
@@ -196,13 +196,13 @@ async function buildLocalPdfContextForProject(
 
   const summary = [
     "【当前项目本地 PDF 上下文】",
-    "用户已经授权 ResearchGPT Desktop 读取当前项目绑定的本地文件夹。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
+        "用户已经授权 ResearchGPT 本机连接器读取当前项目绑定的本地文件夹。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
     options.scopeLabel ? `本次资料范围：${options.scopeLabel}` : "",
     selectedFileIds.size > 0
       ? "用户已经在项目资料树中选中了部分 PDF。本次回答默认只分析这些选中的 PDF；除非用户明确要求全部文件，否则不要扩展到项目内其他 PDF。"
       : "用户没有选中特定 PDF。本次回答默认分析当前项目绑定的全部本地 PDF。",
     "用户的表达不需要是固定口令。只要含义是精读、拆解、分析、比较、整理、生成矩阵、生成 PPT、大纲规划等，都要映射到当前项目资料范围执行。",
-    "如果用户问“是否必须上传文件”或“你能不能读取本地文件夹”，必须说明：在桌面端在线且用户已绑定/授权本地文件夹时，可以读取本地文件夹里的 PDF；只有网页端单独运行、桌面端离线、文件未授权或读取失败时，才需要用户上传或重新授权。",
+    "如果用户问“是否必须上传文件”或“你能不能读取本地文件夹”，必须说明：在本机连接器在线且用户已绑定/授权本地文件夹时，可以读取本地文件夹里的 PDF；只有网页端单独运行、本机连接器离线、文件未授权或读取失败时，才需要用户上传或重新授权。",
     "如果用户要求分析“当前项目所有文件”，必须先按下方清单识别当前项目文件范围，不要回答成文献库、旧项目或其他文件夹中的文献。",
     buildLocalPdfManifest(project),
     evidenceMessages.length > 0
@@ -696,8 +696,8 @@ export function ChatShell() {
     } catch (error) {
       setLocalPdfStatus(
         error instanceof Error
-          ? `打开失败：${error.message}。请先启动 ResearchGPT Desktop。`
-          : "打开失败，请先启动 ResearchGPT Desktop。",
+          ? `打开失败：${error.message}。请先启用 ResearchGPT 本机连接器。`
+          : "打开失败，请先启用 ResearchGPT 本机连接器。",
       );
     } finally {
       setActiveLocalPdfAction(null);
@@ -717,8 +717,8 @@ export function ChatShell() {
     } catch (error) {
       setLocalPdfStatus(
         error instanceof Error
-          ? `读取失败：${error.message}。请确认文件没有损坏，并先启动 ResearchGPT Desktop。`
-          : "读取失败，请确认文件没有损坏，并先启动 ResearchGPT Desktop。",
+          ? `读取失败：${error.message}。请确认文件没有损坏，并先启用 ResearchGPT 本机连接器。`
+          : "读取失败，请确认文件没有损坏，并先启用 ResearchGPT 本机连接器。",
       );
     } finally {
       setActiveLocalPdfAction(null);

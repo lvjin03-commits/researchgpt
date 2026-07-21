@@ -1,11 +1,22 @@
-# ResearchGPT Desktop Connection Contract
+# ResearchGPT Local Connector Contract
 
-This document defines the first desktop/web bridge. The goal is one
-ResearchGPT workspace across web and desktop, not two separate products.
+This document defines the local connector bridge. The product experience should
+feel like one ResearchGPT workspace: the web app is the main UI, and the local
+connector runs quietly in the background to provide local-file capabilities.
+
+## Product Rules
+
+- Do not present the connector as a separate desktop product.
+- User-facing copy should call it `ResearchGPT 本机连接器`.
+- The web workspace remains the primary operation surface.
+- The connector is only responsible for local permissions, folder selection,
+  local PDF reading, local file opening, and future local export actions.
+- If a capability cannot run, the UI must explain whether the connector is not
+  installed, installed but unauthorized, outdated, or temporarily unavailable.
 
 ## Protocol
 
-The desktop app should register this protocol:
+The local connector should register:
 
 ```text
 researchgpt://connect
@@ -13,19 +24,19 @@ researchgpt://task/{taskId}
 researchgpt://project/{projectId}
 ```
 
-The first milestone only requires:
+The current milestone only requires:
 
 ```text
 researchgpt://connect
 ```
 
-When the web app opens this URL, the desktop app should start or focus itself,
-restore the signed-in ResearchGPT account, and start its local capability
-server.
+When the web app opens this URL, the connector should start in the background,
+restore the signed-in ResearchGPT account when possible, and start its local
+capability server.
 
-## Local Status Endpoint
+## Status Endpoint
 
-The desktop app should expose:
+The connector should expose:
 
 ```text
 GET http://127.0.0.1:48732/status
@@ -33,30 +44,49 @@ GET http://127.0.0.1:48732/status
 
 The endpoint must support CORS for the ResearchGPT web origin.
 
-Minimum response:
+Minimum connected response:
 
 ```json
 {
   "online": true,
-  "app": "ResearchGPT Desktop",
+  "app": "ResearchGPT 本机连接器",
   "version": "0.1.0",
   "userId": "user-id",
   "deviceName": "Lab Workstation",
-  "capabilities": ["local_files", "open_pdf", "local_export"]
+  "authorized": true,
+  "state": "connected",
+  "capabilities": ["local_files", "open_pdf", "read_pdf", "local_export"]
 }
 ```
 
+Recommended unavailable responses:
+
+```json
+{ "online": false, "state": "disconnected", "message": "Connector is offline." }
+```
+
+```json
+{ "online": true, "authorized": false, "state": "permission_required" }
+```
+
+```json
+{ "online": true, "state": "version_mismatch" }
+```
+
+If the connector is not installed, the browser fetch will fail. The web app
+maps that to `not_installed` after attempting to wake the connector.
+
 ## Local Folder Binding
 
-The desktop app also exposes a user-triggered folder picker:
+The connector exposes a user-triggered folder picker:
 
 ```text
 POST http://127.0.0.1:48732/local-folders/select
 ```
 
-This endpoint opens the native folder picker, scans the selected folder for
-PDF files, and returns file metadata to the web workspace. It does not upload,
-parse, or analyze the PDFs yet.
+This endpoint opens the native folder picker, scans the selected folder for PDF
+files, and returns file metadata to the web workspace. It does not upload,
+parse, or analyze the PDFs.
 
 Minimum response:
 
@@ -85,8 +115,8 @@ Minimum response:
 
 ## Local PDF Actions
 
-The desktop app exposes two file-level actions for PDFs that were discovered
-through a bound local folder:
+The connector exposes file-level actions for PDFs discovered through bound
+local folders:
 
 ```text
 POST http://127.0.0.1:48732/local-files/open
@@ -116,25 +146,15 @@ Request body:
 }
 ```
 
-## Required Behavior
-
-- Every visible desktop capability must be real and actionable.
-- If a capability cannot run, the desktop app must return a clear reason.
-- Web and desktop should show the same projects, tasks, files, and artifacts.
-- The execution location can differ, but the workspace must feel unified.
-
-## First Milestone Acceptance
+## Acceptance
 
 1. Open the web app.
-2. Click "连接本机能力".
-3. The browser opens `researchgpt://connect`.
-4. ResearchGPT Desktop starts.
-5. The desktop app exposes `/status`.
-6. The web app changes to "本机能力已连接".
-## Second Milestone Acceptance
-
-1. Open or create a research project in the chat workspace.
-2. Click "绑定本地文件夹".
-3. ResearchGPT Desktop opens the system folder picker.
-4. The selected folder is saved to the current project.
-5. The chat header shows the bound local folder count and PDF count.
+2. If the connector is installed and authorized, the web UI shows
+   `本机连接器已连接`.
+3. If the connector is installed but unauthorized, the web UI shows an
+   authorization prompt.
+4. If the connector is not installed, the web UI shows an installation guide
+   link instead of a generic failure.
+5. After authorization, binding a local folder opens the native folder picker.
+6. The selected folder is attached to the current project without changing the
+   file's original path on the user's computer.

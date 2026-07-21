@@ -4,13 +4,23 @@ export const DESKTOP_SELECT_FOLDER_URL =
 export const DESKTOP_OPEN_FILE_URL = "http://127.0.0.1:48732/local-files/open";
 export const DESKTOP_READ_FILE_URL = "http://127.0.0.1:48732/local-files/read";
 export const DESKTOP_CONNECT_URL = "researchgpt://connect";
+export const DESKTOP_CONNECTOR_INSTALL_URL = "/local-connector";
 
 export type DesktopConnectionState =
   | "checking"
   | "connected"
+  | "permission_required"
   | "disconnected"
   | "connecting"
-  | "failed";
+  | "failed"
+  | "not_installed"
+  | "version_mismatch";
+
+export type DesktopConnectorCheck = {
+  state: DesktopConnectionState;
+  status: DesktopStatus | null;
+  message?: string;
+};
 
 export type DesktopStatus = {
   online: boolean;
@@ -19,6 +29,9 @@ export type DesktopStatus = {
   userId?: string;
   deviceName?: string;
   capabilities?: string[];
+  authorized?: boolean;
+  state?: string;
+  message?: string;
 };
 
 export type LocalPdfFile = {
@@ -62,6 +75,24 @@ type LocalPdfTextResponse = Partial<LocalPdfTextResult> & {
   error?: unknown;
 };
 
+function normalizeConnectorState(value: unknown): DesktopConnectionState | null {
+  if (typeof value !== "string") return null;
+  if (
+    value === "connected" ||
+    value === "permission_required" ||
+    value === "disconnected" ||
+    value === "connecting" ||
+    value === "failed" ||
+    value === "not_installed" ||
+    value === "version_mismatch"
+  ) {
+    return value;
+  }
+  if (value === "unauthorized") return "permission_required";
+  if (value === "offline" || value === "starting") return "disconnected";
+  return null;
+}
+
 function errorFromResponse(data: { error?: unknown }, fallback: string): Error {
   return new Error(typeof data.error === "string" ? data.error : fallback);
 }
@@ -82,7 +113,7 @@ async function postJson<T>(
 
   const data = (await response.json()) as T & { error?: unknown };
   if (!response.ok) {
-    throw errorFromResponse(data, "Desktop request failed.");
+    throw errorFromResponse(data, "本机连接器请求失败。");
   }
   return data;
 }
@@ -104,11 +135,15 @@ export async function fetchDesktopStatus(
 
   return {
     online: true,
-    app: typeof data.app === "string" ? data.app : "ResearchGPT Desktop",
+    app: typeof data.app === "string" ? data.app : "ResearchGPT 本机连接器",
     version: typeof data.version === "string" ? data.version : undefined,
     userId: typeof data.userId === "string" ? data.userId : undefined,
     deviceName:
       typeof data.deviceName === "string" ? data.deviceName : undefined,
+    authorized:
+      typeof data.authorized === "boolean" ? data.authorized : undefined,
+    state: typeof data.state === "string" ? data.state : undefined,
+    message: typeof data.message === "string" ? data.message : undefined,
     capabilities: Array.isArray(data.capabilities)
       ? data.capabilities.filter(
           (capability): capability is string =>
@@ -116,6 +151,121 @@ export async function fetchDesktopStatus(
         )
       : [],
   };
+}
+
+export async function inspectDesktopConnector(
+  signal?: AbortSignal,
+): Promise<DesktopConnectorCheck> {
+  try {
+    const response = await fetch(DESKTOP_STATUS_URL, {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store",
+      signal,
+    });
+
+    let data: Partial<DesktopStatus> & { error?: unknown } = {};
+    try {
+      data = (await response.json()) as Partial<DesktopStatus> & {
+        error?: unknown;
+      };
+    } catch {
+      data = {};
+    }
+
+    const explicitState = normalizeConnectorState(data.state);
+    const message =
+      typeof data.message === "string"
+        ? data.message
+        : typeof data.error === "string"
+          ? data.error
+          : undefined;
+
+    if (response.status === 401 || response.status === 403) {
+      return { state: "permission_required", status: null, message };
+    }
+
+    if (!response.ok) {
+      return {
+        state: explicitState ?? "failed",
+        status: null,
+        message,
+      };
+    }
+
+    if (explicitState && explicitState !== "connected") {
+      return {
+        state: explicitState,
+        status: null,
+        message,
+      };
+    }
+
+    if (data.authorized === false) {
+      return {
+        state: "permission_required",
+        status: null,
+        message,
+      };
+    }
+
+    if (data.online !== true) {
+      return {
+        state: explicitState ?? "disconnected",
+        status: null,
+        message,
+      };
+    }
+
+    const status: DesktopStatus = {
+      online: true,
+      app: typeof data.app === "string" ? data.app : "ResearchGPT 本机连接器",
+      version: typeof data.version === "string" ? data.version : undefined,
+      userId: typeof data.userId === "string" ? data.userId : undefined,
+      deviceName:
+        typeof data.deviceName === "string" ? data.deviceName : undefined,
+      authorized:
+        typeof data.authorized === "boolean" ? data.authorized : undefined,
+      state: typeof data.state === "string" ? data.state : undefined,
+      message,
+      capabilities: Array.isArray(data.capabilities)
+        ? data.capabilities.filter(
+            (capability): capability is string =>
+              typeof capability === "string" && capability.trim().length > 0,
+          )
+        : [],
+    };
+
+    return { state: "connected", status, message };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+    return { state: "disconnected", status: null };
+  }
+}
+
+export async function waitForDesktopConnector(
+  delays = [900, 2200, 4200],
+): Promise<DesktopConnectorCheck> {
+  let latest: DesktopConnectorCheck = {
+    state: "disconnected",
+    status: null,
+  };
+
+  for (const delay of delays) {
+    await new Promise((resolve) => window.setTimeout(resolve, delay));
+    latest = await inspectDesktopConnector();
+    if (
+      latest.state === "connected" ||
+      latest.state === "permission_required" ||
+      latest.state === "version_mismatch"
+    ) {
+      return latest;
+    }
+  }
+
+  return { ...latest, state: latest.state === "connected" ? "connected" : "not_installed" };
 }
 
 export async function selectDesktopLocalFolder(
@@ -139,7 +289,7 @@ export async function selectDesktopLocalFolder(
     typeof folder.path !== "string" ||
     !Array.isArray(folder.files)
   ) {
-    throw new Error("Desktop returned invalid folder data.");
+    throw new Error("本机连接器返回的文件夹数据无效。");
   }
 
   return {
@@ -200,7 +350,7 @@ export async function readDesktopLocalPdf(
     typeof data.charCount !== "number" ||
     typeof data.truncated !== "boolean"
   ) {
-    throw new Error("Desktop returned invalid PDF text data.");
+    throw new Error("本机连接器返回的 PDF 文本数据无效。");
   }
 
   return {
