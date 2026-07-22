@@ -1124,7 +1124,12 @@ export function ChatShell() {
 
   const handleRunLocalFileTask = useCallback(
     (
-      action: "single_read" | "analysis" | "matrix",
+      action:
+        | "single_read"
+        | "analysis"
+        | "matrix"
+        | "translate_en"
+        | "translate_bilingual",
       files: LocalPdfFile[],
     ) => {
       if (!activeProject || files.length === 0) return;
@@ -1135,6 +1140,13 @@ export function ChatShell() {
       }
       if (action === "matrix" && files.length < 2) {
         setError("文献矩阵至少需要选择 2 篇 PDF。");
+        return;
+      }
+      if (
+        (action === "translate_en" || action === "translate_bilingual") &&
+        files.length < 1
+      ) {
+        setError("文件翻译至少需要选择 1 篇 PDF。");
         return;
       }
 
@@ -1155,6 +1167,10 @@ export function ChatShell() {
           ? `单篇精读这篇 PDF：\n${fileList}\n\n请按研究问题、技术路线、关键实验、结果证据、创新性、局限性、可引用观点来分析。`
           : action === "matrix"
             ? `基于当前选中的 ${files.length} 篇 PDF 生成中文文献矩阵。\n\n文献范围：\n${fileList}${extra}\n\n矩阵至少包含：文献名称、研究主题、研究问题、研究对象、研究方法、关键结果、主要结论、核心贡献、局限性、与当前项目的关系。`
+            : action === "translate_en"
+              ? `请把当前选中的 ${files.length} 篇 PDF 翻译成专业、准确、自然的英文。\n\n文件范围：\n${fileList}${extra}\n\n输出要求：\n1. 只输出英文译文，不输出中文原文。\n2. 保留原文的章节层级、标题、编号、公式编号、图表编号和关键术语。\n3. 对无法可靠翻译的公式、单位、材料名、基因名、菌株名、设备型号保持原样。\n4. 如果全文较长，先按章节翻译最关键的正文内容，并在末尾说明哪些部分因长度限制未完整展开。`
+              : action === "translate_bilingual"
+                ? `请把当前选中的 ${files.length} 篇 PDF 做成中英双语对照翻译。\n\n文件范围：\n${fileList}${extra}\n\n输出格式：\n- 每一段先放中文原文，下一段放英文翻译。\n- 用“原文：”和“译文：”标注。\n- 保留原文的章节层级、标题、编号、公式编号、图表编号和关键术语。\n- 对无法可靠翻译的公式、单位、材料名、基因名、菌株名、设备型号保持原样。\n- 如果全文较长，先按章节翻译最关键的正文内容，并在末尾说明哪些部分因长度限制未完整展开。`
             : `分析当前选中的 ${files.length} 篇 PDF。\n\n文献范围：\n${fileList}${extra}\n\n请输出主题归类、研究共识、研究分歧、研究空白，以及后续可展开的文献矩阵建议。`;
 
       void submitMessage(

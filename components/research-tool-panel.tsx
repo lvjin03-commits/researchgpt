@@ -9,6 +9,7 @@ import {
   FileUp,
   FolderOpen,
   GripVertical,
+  Languages,
   LoaderCircle,
   PanelRightClose,
   Square,
@@ -50,7 +51,12 @@ type ResearchToolPanelProps = {
   onToggleLocalFolder?: (folder: LocalFolderBinding) => void;
   onClearLocalSelection?: () => void;
   onRunLocalFileTask?: (
-    action: "single_read" | "analysis" | "matrix",
+    action:
+      | "single_read"
+      | "analysis"
+      | "matrix"
+      | "translate_en"
+      | "translate_bilingual",
     files: LocalPdfFile[],
   ) => void;
   onOpenCloudFolder?: (folder: LiteratureFolder) => void;
@@ -158,7 +164,12 @@ export function ResearchToolPanel({
   if (!open) return null;
 
   const runTask = (
-    action: "single_read" | "analysis" | "matrix",
+    action:
+      | "single_read"
+      | "analysis"
+      | "matrix"
+      | "translate_en"
+      | "translate_bilingual",
     files: LocalPdfFile[],
   ) => {
     setContextMenu(null);
@@ -172,6 +183,13 @@ export function ResearchToolPanel({
     }
     if (action === "matrix" && files.length < 2) {
       setActionError("文献矩阵至少需要选择 2 篇 PDF。");
+      return;
+    }
+    if (
+      (action === "translate_en" || action === "translate_bilingual") &&
+      files.length < 1
+    ) {
+      setActionError("文件翻译至少需要选择 1 篇 PDF。");
       return;
     }
     setActionError(null);
@@ -434,6 +452,25 @@ export function ResearchToolPanel({
                     >
                       文献矩阵
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => runTask("translate_en", selectedLocalFiles)}
+                      className="rounded-md border border-[#d4dfe2] px-2 py-1.5 text-[11px] font-bold text-[#174866] hover:bg-[#eef6f9]"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <Languages className="h-3 w-3" />
+                        译为英文
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runTask("translate_bilingual", selectedLocalFiles)
+                      }
+                      className="rounded-md border border-[#d4dfe2] px-2 py-1.5 text-[11px] font-bold text-[#174866] hover:bg-[#eef6f9]"
+                    >
+                      中英双语
+                    </button>
                   </div>
                 </div>
               )}
@@ -643,7 +680,7 @@ export function ResearchToolPanel({
                 className="fixed z-[90] w-44 rounded-lg border border-gray-200 bg-white p-1 text-sm shadow-2xl"
                 style={{
                   left: Math.min(contextMenu.x, window.innerWidth - 190),
-                  top: Math.min(contextMenu.y, window.innerHeight - 230),
+                  top: Math.min(contextMenu.y, window.innerHeight - 360),
                 }}
                 onClick={(event) => event.stopPropagation()}
               >
@@ -655,6 +692,22 @@ export function ResearchToolPanel({
                       className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
                     >
                       单篇精读
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runTask("translate_en", [contextMenu.file])}
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      翻译为英文
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runTask("translate_bilingual", [contextMenu.file])
+                      }
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      中英双语翻译
                     </button>
                     <button
                       type="button"
@@ -704,6 +757,24 @@ export function ResearchToolPanel({
                       className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
                     >
                       生成文献矩阵
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runTask("translate_en", contextMenu.folder.files)
+                      }
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      全部译为英文
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        runTask("translate_bilingual", contextMenu.folder.files)
+                      }
+                      className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                    >
+                      全部中英双语
                     </button>
                     <button
                       type="button"
