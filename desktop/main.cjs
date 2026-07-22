@@ -2,6 +2,7 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const { execFile } = require("node:child_process");
 const { app, BrowserWindow, dialog, shell } = require("electron");
 
 const APP_NAME = "ResearchGPT 本机连接器";
@@ -78,9 +79,11 @@ function kindForExtension(extension) {
 function canExtractText(extension) {
   return (
     extension === ".pdf" ||
+    extension === ".doc" ||
     extension === ".docx" ||
     extension === ".xlsx" ||
     extension === ".xls" ||
+    extension === ".ppt" ||
     extension === ".pptx" ||
     TEXT_EXTENSIONS.has(extension)
   );
@@ -209,6 +212,113 @@ function stripXmlText(xml) {
     .trim();
 }
 
+function encodePowerShellScript(script) {
+  return Buffer.from(script, "utf16le").toString("base64");
+}
+
+function encodeUtf8(value) {
+  return Buffer.from(value, "utf8").toString("base64");
+}
+
+function runPowerShellScript(script, timeoutMs = 60000) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-EncodedCommand",
+        encodePowerShellScript(script),
+      ],
+      {
+        windowsHide: true,
+        timeout: timeoutMs,
+        maxBuffer: 20 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const detail = String(stderr || stdout || error.message || "").trim();
+          reject(new Error(detail || "Office text extraction failed."));
+          return;
+        }
+        resolve(String(stdout || ""));
+      },
+    );
+  });
+}
+
+async function readDocWithWordCom(filePath) {
+  const pathBase64 = encodeUtf8(filePath);
+  const script = `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$path = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${pathBase64}'))
+$word = $null
+$doc = $null
+try {
+  $word = New-Object -ComObject Word.Application
+  $word.Visible = $false
+  $doc = $word.Documents.Open($path, $false, $true)
+  [Console]::Write($doc.Content.Text)
+} finally {
+  if ($doc -ne $null) { $doc.Close($false) | Out-Null }
+  if ($word -ne $null) { $word.Quit() | Out-Null }
+}
+`;
+
+  try {
+    const text = await runPowerShellScript(script);
+    if (text.trim()) return text;
+    throw new Error("No text extracted from the Word file.");
+  } catch (error) {
+    throw new Error(
+      "旧版 .doc 文件需要本机安装 Microsoft Word 才能读取。请用 Word 或 WPS 另存为 .docx 后重试。",
+    );
+  }
+}
+
+async function readPptWithPowerPointCom(filePath) {
+  const pathBase64 = encodeUtf8(filePath);
+  const script = `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$path = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${pathBase64}'))
+$powerPoint = $null
+$presentation = $null
+$parts = New-Object System.Collections.Generic.List[string]
+try {
+  $powerPoint = New-Object -ComObject PowerPoint.Application
+  $presentation = $powerPoint.Presentations.Open($path, $true, $true, $false)
+  foreach ($slide in $presentation.Slides) {
+    $parts.Add("# Slide " + $slide.SlideIndex)
+    foreach ($shape in $slide.Shapes) {
+      try {
+        if ($shape.HasTextFrame -and $shape.TextFrame.HasText) {
+          $parts.Add($shape.TextFrame.TextRange.Text)
+        }
+      } catch {}
+    }
+  }
+  [Console]::Write(($parts -join [Environment]::NewLine))
+} finally {
+  if ($presentation -ne $null) { $presentation.Close() | Out-Null }
+  if ($powerPoint -ne $null) { $powerPoint.Quit() | Out-Null }
+}
+`;
+
+  try {
+    const text = await runPowerShellScript(script);
+    if (text.trim()) return text;
+    throw new Error("No text extracted from the PowerPoint file.");
+  } catch (error) {
+    throw new Error(
+      "旧版 .ppt 文件需要本机安装 Microsoft PowerPoint 才能读取。请用 PowerPoint 或 WPS 另存为 .pptx 后重试。",
+    );
+  }
+}
+
 async function readLocalFileText(filePath, limit = DEFAULT_TEXT_LIMIT) {
   const normalizedPath = assertLocalFilePath(filePath);
   const stats = await fs.stat(normalizedPath);
@@ -233,6 +343,8 @@ async function readLocalFileText(filePath, limit = DEFAULT_TEXT_LIMIT) {
     const mammoth = require("mammoth");
     const result = await mammoth.extractRawText({ buffer });
     text = typeof result.value === "string" ? result.value : "";
+  } else if (extension === ".doc") {
+    text = await readDocWithWordCom(normalizedPath);
   } else if (extension === ".xlsx" || extension === ".xls") {
     const XLSX = require("xlsx");
     const workbook = XLSX.read(buffer, { type: "buffer" });
@@ -260,6 +372,8 @@ async function readLocalFileText(filePath, limit = DEFAULT_TEXT_LIMIT) {
     }
     text = slides.join("\n\n");
     pageCount = slideNames.length || 1;
+  } else if (extension === ".ppt") {
+    text = await readPptWithPowerPointCom(normalizedPath);
   } else if (TEXT_EXTENSIONS.has(extension)) {
     text = buffer.toString("utf8");
   } else if (IMAGE_EXTENSIONS.has(extension)) {
