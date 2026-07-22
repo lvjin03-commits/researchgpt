@@ -2,7 +2,15 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs/promises");
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  Tray,
+  dialog,
+  nativeImage,
+  shell,
+} = require("electron");
 
 const APP_NAME = "ResearchGPT 本机连接器";
 const STATUS_PORT = Number(process.env.RESEARCHGPT_DESKTOP_PORT || 48732);
@@ -46,6 +54,8 @@ const IMAGE_EXTENSIONS = new Set([
 
 let mainWindow = null;
 let statusServer = null;
+let tray = null;
+let isQuitting = false;
 
 function writeJson(response, statusCode, data) {
   response.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -482,6 +492,53 @@ function registerProtocol() {
   app.setAsDefaultProtocolClient("researchgpt");
 }
 
+function enableAutoLaunch() {
+  if (!app.isPackaged) return;
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      openAsHidden: true,
+      path: process.execPath,
+    });
+  } catch (error) {
+    console.warn("[desktop] failed to enable auto launch:", error);
+  }
+}
+
+function createTray() {
+  if (tray) return tray;
+
+  const iconPath = path.join(app.getAppPath(), "app", "favicon.ico");
+  const icon = nativeImage.createFromPath(iconPath);
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+  tray.setToolTip(APP_NAME);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "打开 ResearchGPT 网页",
+        click: () => shell.openExternal(WORKSPACE_URL),
+      },
+      {
+        label: "显示连接器状态",
+        click: () => {
+          createMainWindow();
+          focusMainWindow();
+        },
+      },
+      { type: "separator" },
+      {
+        label: "退出本机连接器",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+  tray.on("click", () => shell.openExternal(WORKSPACE_URL));
+  return tray;
+}
+
 function focusMainWindow() {
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -628,6 +685,12 @@ function createMainWindow() {
     return { action: "allow" };
   });
 
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow?.hide();
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -638,6 +701,7 @@ function createMainWindow() {
 function handleDeepLink(url) {
   console.log("[desktop] protocol:", url);
   createStatusServer();
+  createTray();
   if (SHOW_CONNECTOR_WINDOW) {
     createMainWindow();
     focusMainWindow();
@@ -654,8 +718,11 @@ if (!gotLock) {
     if (deepLink) handleDeepLink(deepLink);
     else {
       createStatusServer();
-      createMainWindow();
-      focusMainWindow();
+      createTray();
+      if (SHOW_CONNECTOR_WINDOW) {
+        createMainWindow();
+        focusMainWindow();
+      }
     }
   });
 
@@ -666,16 +733,28 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     registerProtocol();
+    enableAutoLaunch();
     createStatusServer();
+    createTray();
     const launchedByProtocol = process.argv.some((arg) =>
       arg.startsWith("researchgpt://"),
     );
-    if (SHOW_CONNECTOR_WINDOW || !launchedByProtocol) createMainWindow();
+    if (SHOW_CONNECTOR_WINDOW && !launchedByProtocol) createMainWindow();
+  });
+
+  app.on("before-quit", () => {
+    isQuitting = true;
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform === "darwin" || !isQuitting) return;
+    app.quit();
   });
 
   app.on("activate", () => {
     if (!SHOW_CONNECTOR_WINDOW) {
       createStatusServer();
+      createTray();
       return;
     }
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

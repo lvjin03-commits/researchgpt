@@ -3,6 +3,7 @@
 import { MonitorUp, PlugZap, RefreshCw, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  DESKTOP_CONNECTOR_INSTALL_URL,
   inspectDesktopConnector,
   launchDesktopConnect,
   type DesktopConnectionState,
@@ -222,6 +223,16 @@ export function DesktopConnectionStatus({
           />
           打开网页时自动启用本机连接器
         </label>
+        {(state === "not_installed" || state === "version_mismatch") && (
+          <a
+            href={DESKTOP_CONNECTOR_INSTALL_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="pointer-events-auto mt-3 inline-flex h-8 items-center justify-center rounded-md bg-[#174866] px-3 text-[11px] font-bold text-white hover:bg-[#123a52]"
+          >
+            下载安装本机连接器
+          </a>
+        )}
         {lastCheckedAt && (
           <p className="mt-2 text-[11px] text-gray-400">
             最近检测：{lastCheckedAt.toLocaleTimeString()}

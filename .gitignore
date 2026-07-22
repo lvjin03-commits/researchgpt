@@ -22,6 +22,7 @@
 /release
 /release-local
 /release-local-v2
+/release-installer
 
 # misc
 .DS_Store
@@ -37,6 +38,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+
+# generated desktop installers
+/public/downloads/*.exe
+/public/downloads/*.blockmap
 
 # vercel
 .vercel

@@ -10,7 +10,8 @@
     "desktop": "electron desktop/main.cjs",
     "desktop:dir": "electron-builder --config electron-builder.local.json",
     "desktop:portable": "electron-builder --win portable --x64",
-    "desktop:installer": "electron-builder --win --x64",
+    "desktop:installer": "electron-builder --win nsis --x64",
+    "desktop:publish-installer": "npm run desktop:installer && powershell -NoProfile -ExecutionPolicy Bypass -Command \"New-Item -ItemType Directory -Force public/downloads | Out-Null; Copy-Item -Force release-installer/ResearchGPT-Local-Connector-Setup.exe public/downloads/ResearchGPT-Local-Connector-Setup.exe\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -20,12 +21,13 @@
   "build": {
     "appId": "com.researchgpt.localconnector",
     "productName": "ResearchGPT Local Connector",
-    "artifactName": "ResearchGPT-Local-Connector-${version}-${arch}.${ext}",
+    "artifactName": "ResearchGPT-Local-Connector-Setup.${ext}",
     "directories": {
-      "output": "release"
+      "output": "release-installer"
     },
     "files": [
       "desktop/**/*",
+      "app/favicon.ico",
       "package.json",
       "node_modules/**/*"
     ],
@@ -51,7 +53,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ResearchGPT 本机连接器"
+      "shortcutName": "ResearchGPT 本机连接器",
+      "runAfterFinish": true
     }
   },
   "dependencies": {
