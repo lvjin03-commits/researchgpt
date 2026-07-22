@@ -143,8 +143,9 @@ function localFileTypeLabel(file: LocalPdfFile): string {
 }
 
 function localFileExtension(file: LocalPdfFile): string {
-  const extension = file.extension || `.${file.name.split(".").pop() ?? ""}`;
-  return extension.toLowerCase();
+  const rawExtension = file.extension || file.name.split(".").pop() || "";
+  const extension = rawExtension.toLowerCase().trim();
+  return extension.startsWith(".") ? extension : `.${extension}`;
 }
 
 function localFileReadBlockReason(file: LocalPdfFile): string | null {
@@ -1745,11 +1746,11 @@ export function ChatShell() {
                                       activeLocalPdfAction ===
                                       `read:${file.id}`
                                     }
-                                    title={readBlockReason ?? "读取文件正文"}
+                                    title={readBlockReason ?? "可以读取正文，点击测试读取"}
                                     className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-[#12314a] px-2 text-xs font-bold text-white hover:bg-[#0b2235] disabled:bg-[#dce5e8] disabled:text-[#63757d] disabled:opacity-100"
                                   >
                                     {readBlockReason ? (
-                                      "需转格式"
+                                      "不可读取"
                                     ) : activeLocalPdfAction ===
                                       `read:${file.id}` ? (
                                       <>
@@ -1759,7 +1760,7 @@ export function ChatShell() {
                                     ) : (
                                       <>
                                         <BookOpenText className="h-3.5 w-3.5" />
-                                        读取测试
+                                        可读取
                                       </>
                                     )}
                                   </button>
