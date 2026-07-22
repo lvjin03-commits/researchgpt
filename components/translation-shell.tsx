@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ResearchPageHeader } from "@/components/research-page-header";
 import {
+  CHAT_MODEL_OPTIONS,
+  DEFAULT_CHAT_MODEL_TIER,
+  getChatModelOption,
+  type ChatModelTier,
+} from "@/lib/ai/chat-models";
+import {
   MAX_DOCX_TRANSLATION_MB,
   OUTPUT_MODE_OPTIONS,
 } from "@/lib/translation/constants";
@@ -26,6 +32,9 @@ const STAGE_LABELS: Record<NonNullable<TranslationUiState["stage"]>, string> = {
 export function TranslationShell() {
   const [file, setFile] = useState<File | null>(null);
   const [outputMode, setOutputMode] = useState<OutputMode>("replace");
+  const [modelTier, setModelTier] = useState<ChatModelTier>(
+    DEFAULT_CHAT_MODEL_TIER,
+  );
   const [glossary, setGlossary] = useState("");
   const [uiState, setUiState] = useState<TranslationUiState>({ stage: "idle" });
   const [downloadLink, setDownloadLink] = useState<{
@@ -50,6 +59,15 @@ export function TranslationShell() {
       return null;
     });
     event.target.value = "";
+  };
+
+  const handleModelTierChange = (tier: ChatModelTier) => {
+    const option = getChatModelOption(tier);
+    if (option.expensive && option.costWarning && tier !== modelTier) {
+      const confirmed = window.confirm(option.costWarning);
+      if (!confirmed) return;
+    }
+    setModelTier(tier);
   };
 
   const handleTranslate = useCallback(async () => {
@@ -80,6 +98,7 @@ export function TranslationShell() {
       targetLanguage: "english",
       outputMode,
       style: "academic",
+      modelTier,
       glossary: glossary.trim() || undefined,
     };
 
@@ -108,7 +127,7 @@ export function TranslationShell() {
       setIsTranslating(false);
       abortControllerRef.current = null;
     }
-  }, [file, glossary, isTranslating, outputMode]);
+  }, [file, glossary, isTranslating, modelTier, outputMode]);
 
   const handleStop = () => {
     abortControllerRef.current?.abort();
@@ -191,6 +210,42 @@ export function TranslationShell() {
                     checked={outputMode === option.value}
                     disabled={isTranslating}
                     onChange={() => setOutputMode(option.value)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block font-medium text-gray-900">
+                      {option.label}
+                    </span>
+                    <span className="block text-gray-500">
+                      {option.description}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <span className="mb-2 block text-sm font-medium text-gray-700">
+              选择翻译模型
+            </span>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {CHAT_MODEL_OPTIONS.map((option) => (
+                <label
+                  key={option.tier}
+                  className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-4 text-sm transition-colors ${
+                    modelTier === option.tier
+                      ? "border-blue-600 bg-blue-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="translation-model-tier"
+                    value={option.tier}
+                    checked={modelTier === option.tier}
+                    disabled={isTranslating}
+                    onChange={() => handleModelTierChange(option.tier)}
                     className="mt-1"
                   />
                   <span>

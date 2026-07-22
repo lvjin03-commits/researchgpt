@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, X } from "lucide-react";
 import {
+  CHAT_MODEL_OPTIONS,
+  DEFAULT_CHAT_MODEL_TIER,
+  getChatModelOption,
+  type ChatModelTier,
+} from "@/lib/ai/chat-models";
+import {
   fetchDesktopLocalFileBlob,
   type LocalPdfFile,
 } from "@/lib/desktop/connection";
@@ -60,6 +66,9 @@ export function ProjectTranslationDialog({
     useState<TargetLanguage>("english");
   const [outputMode, setOutputMode] = useState<OutputMode>(initialOutputMode);
   const [style, setStyle] = useState<TranslationStyle>("academic");
+  const [modelTier, setModelTier] = useState<ChatModelTier>(
+    DEFAULT_CHAT_MODEL_TIER,
+  );
   const [glossary, setGlossary] = useState("");
   const [uiState, setUiState] = useState<TranslationUiState>({ stage: "idle" });
   const [currentFileName, setCurrentFileName] = useState("");
@@ -86,6 +95,15 @@ export function ProjectTranslationDialog({
       ? `${STAGE_LABELS.translating} 第 ${uiState.batch}/${uiState.totalBatches} 批`
       : STAGE_LABELS[uiState.stage];
 
+  const handleModelTierChange = (tier: ChatModelTier) => {
+    const option = getChatModelOption(tier);
+    if (option.expensive && option.costWarning && tier !== modelTier) {
+      const confirmed = window.confirm(option.costWarning);
+      if (!confirmed) return;
+    }
+    setModelTier(tier);
+  };
+
   const runTranslation = async () => {
     if (isTranslating || files.length === 0) return;
 
@@ -109,6 +127,7 @@ export function ProjectTranslationDialog({
           targetLanguage,
           outputMode,
           style,
+          modelTier,
           glossary: glossary.trim() || undefined,
         };
 
@@ -267,6 +286,42 @@ export function ProjectTranslationDialog({
                 </label>
               ))}
             </div>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <span className="block text-sm font-medium text-gray-700">
+            翻译模型
+          </span>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {CHAT_MODEL_OPTIONS.map((option) => (
+              <label
+                key={option.tier}
+                className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-3 text-sm ${
+                  modelTier === option.tier
+                    ? "border-blue-600 bg-blue-50"
+                    : "border-gray-200"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="project-translation-model"
+                  value={option.tier}
+                  checked={modelTier === option.tier}
+                  disabled={isTranslating}
+                  onChange={() => handleModelTierChange(option.tier)}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block font-semibold text-gray-900">
+                    {option.label}
+                  </span>
+                  <span className="block text-xs leading-5 text-gray-500">
+                    {option.description}
+                  </span>
+                </span>
+              </label>
+            ))}
           </div>
         </div>
 

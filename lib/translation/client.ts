@@ -1,6 +1,7 @@
 // Client-only module. Do not import from API routes.
 
 import type { TranslationProgressEvent } from "@/lib/translation/types";
+import type { ChatModelTier } from "@/lib/ai/chat-models";
 import type {
   OutputMode,
   SourceLanguage,
@@ -21,6 +22,7 @@ export type TranslationFormValues = {
   targetLanguage: TargetLanguage;
   outputMode: OutputMode;
   style: TranslationStyle;
+  modelTier: ChatModelTier;
   glossary?: string;
 };
 
@@ -73,6 +75,7 @@ export async function translateDocxFile(
   formData.append("targetLanguage", values.targetLanguage);
   formData.append("outputMode", values.outputMode);
   formData.append("style", values.style);
+  formData.append("modelTier", values.modelTier);
   formData.append("glossary", values.glossary ?? "");
 
   options.onProgress({ stage: "uploaded" });

@@ -1,3 +1,5 @@
+import type { ChatModelTier } from "@/lib/ai/chat-models";
+
 export type SourceLanguage = "auto" | "chinese" | "english";
 
 export type TargetLanguage = "chinese" | "english";
@@ -43,6 +45,7 @@ export type TranslationRequestOptions = {
   targetLanguage: TargetLanguage;
   outputMode: OutputMode;
   style: TranslationStyle;
+  modelTier: ChatModelTier;
   glossary?: string;
 };
 

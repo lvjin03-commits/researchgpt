@@ -52,6 +52,7 @@ export async function runDocxTranslationPipeline(
       sourceLanguage: options.sourceLanguage,
       targetLanguage: options.targetLanguage,
       style: options.style,
+      modelTier: options.modelTier,
       glossary: options.glossary,
       signal,
     });

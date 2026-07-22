@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { getChatModelOption, type ChatModelProvider } from "@/lib/ai/chat-models";
 import { AIProviderError } from "@/lib/ai/errors";
 import {
   buildTranslationSystemPrompt,
@@ -12,7 +13,7 @@ import type {
   TranslationStyle,
 } from "@/lib/translation/types";
 
-function getClient(): OpenAI {
+function getOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -25,8 +26,24 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-function getTextModel(): string {
-  return process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+function getDeepSeekClient(): OpenAI {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+
+  if (!apiKey) {
+    throw new AIProviderError("DEEPSEEK_API_KEY is not configured", {
+      statusCode: 500,
+      provider: "deepseek",
+    });
+  }
+
+  return new OpenAI({
+    apiKey,
+    baseURL: process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com",
+  });
+}
+
+function getTranslationClient(provider: ChatModelProvider): OpenAI {
+  return provider === "deepseek" ? getDeepSeekClient() : getOpenAIClient();
 }
 
 type TranslationResponseItem = {
@@ -87,6 +104,7 @@ export async function translateBatch(
     sourceLanguage: SourceLanguage;
     targetLanguage: TargetLanguage;
     style: TranslationStyle;
+    modelTier: Parameters<typeof getChatModelOption>[0];
     glossary?: string;
     signal?: AbortSignal;
   },
@@ -95,11 +113,16 @@ export async function translateBatch(
     return new Map();
   }
 
-  const client = getClient();
-  const model = getTextModel();
+  const modelOption = getChatModelOption(options.modelTier);
+  const client = getTranslationClient(modelOption.provider);
+  const model = modelOption.model;
 
   try {
-    console.log("[translate] OpenAI chat.completions.create model:", model);
+    console.log(
+      "[translate] chat.completions.create provider/model:",
+      modelOption.provider,
+      model,
+    );
 
     const completion = await client.chat.completions.create(
       {
@@ -119,10 +142,7 @@ export async function translateBatch(
       { signal: options.signal },
     );
 
-    console.log(
-      "[translate] OpenAI chat.completions.create response.model:",
-      completion.model,
-    );
+    console.log("[translate] chat.completions.create response.model:", completion.model);
 
     const content = completion.choices[0]?.message?.content;
 

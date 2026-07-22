@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { isChatModelTier } from "@/lib/ai/chat-models";
 import {
   runDocxTranslationPipeline,
   toTranslationError,
@@ -19,7 +20,7 @@ function isSourceLanguage(value: string): value is SourceLanguage {
 }
 
 function isTargetLanguage(value: string): value is TargetLanguage {
-  return value === "english";
+  return value === "chinese" || value === "english";
 }
 
 function isOutputMode(value: string): value is OutputMode {
@@ -78,6 +79,7 @@ export async function POST(request: Request) {
         const targetLanguage = String(formData.get("targetLanguage") ?? "english");
         const outputMode = String(formData.get("outputMode") ?? "replace");
         const style = String(formData.get("style") ?? "academic");
+        const modelTier = String(formData.get("modelTier") ?? "economy");
         const glossary = String(formData.get("glossary") ?? "").trim();
 
         if (!(file instanceof File)) {
@@ -110,6 +112,12 @@ export async function POST(request: Request) {
           return;
         }
 
+        if (!isChatModelTier(modelTier)) {
+          emit({ type: "error", message: "Invalid translation model." });
+          controller.close();
+          return;
+        }
+
         if (glossary.length > 10_000) {
           emit({ type: "error", message: "术语表不能超过 10,000 个字符。" });
           controller.close();
@@ -125,6 +133,7 @@ export async function POST(request: Request) {
             targetLanguage,
             outputMode,
             style,
+            modelTier,
             glossary: glossary || undefined,
           },
           emit,
