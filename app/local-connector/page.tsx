@@ -3,14 +3,25 @@ import Link from "next/link";
 const startCommand = `cd C:\\Users\\j.lyu\\researchgpt
 npm run desktop`;
 
+const installerCommand = `cd C:\\Users\\j.lyu\\researchgpt
+npm run desktop:installer`;
+
+const packagedCommand = `cd C:\\Users\\j.lyu\\researchgpt
+npm run desktop:dir`;
+
+const installerOutput =
+  "C:\\Users\\j.lyu\\researchgpt\\release\\ResearchGPT Local Connector Setup 0.1.0.exe";
+const packagedOutput =
+  "C:\\Users\\j.lyu\\researchgpt\\release\\win-unpacked\\ResearchGPT Local Connector.exe";
+
 const steps = [
   {
-    title: "1. 启动本机连接器",
-    body: "内测阶段还没有正式安装包，先用开发版启动命令运行本机连接器。启动后它会在后台为网页提供本地文件读取能力。",
+    title: "1. 安装本机连接器",
+    body: "内测阶段可以先在本机生成 Windows 安装包。安装后它会像普通软件一样存在电脑里，后续网页可以自动检测和唤起。",
   },
   {
-    title: "2. 回到网页授权",
-    body: "连接器启动后，回到 ResearchGPT 网页点击“绑定本地文件夹”。网页只会读取你主动选择的文件夹。",
+    title: "2. 启用并授权",
+    body: "安装后回到 ResearchGPT 网页点击“启用本机连接器”或“绑定本地文件夹”。网页只会读取你主动选择的文件夹。",
   },
   {
     title: "3. 绑定项目资料",
@@ -49,11 +60,44 @@ export default function LocalConnectorPage() {
 
         <div className="mt-8 border-t border-[#e4ecef] pt-6">
           <h2 className="text-lg font-black text-[#17384a]">
-            内测版启动方式
+            内测实体版
           </h2>
           <p className="mt-2 text-sm leading-6 text-[#52666f]">
-            目前还没有可一键安装的正式安装包。请先在 Cursor 终端运行下面命令，
-            启动后再回网页绑定本地文件夹。
+            现在已经加入实体程序打包能力。优先生成内测实体版，生成后直接双击运行；
+            连接器会像本机能力插件一样在后台提供本地文件读取能力。
+          </p>
+          <pre className="mt-4 overflow-x-auto rounded-md border border-[#cbd9dd] bg-[#10212c] p-4 text-sm font-bold leading-7 text-white">
+            <code>{packagedCommand}</code>
+          </pre>
+          <div className="mt-4 rounded-md border border-[#cbd9dd] bg-[#f7fafb] p-4 text-sm leading-6 text-[#334950]">
+            <p className="font-black text-[#17384a]">实体程序位置</p>
+            <p className="mt-1 break-all font-mono text-xs">{packagedOutput}</p>
+            <p className="mt-2">
+              这就是当前内测阶段推荐使用的“本机连接器实体”。后续稳定后再发布单文件安装向导版。
+            </p>
+          </div>
+          <details className="mt-4 rounded-md border border-[#dbe5e8] bg-white p-4 text-sm leading-6 text-[#52666f]">
+            <summary className="cursor-pointer font-black text-[#17384a]">
+              生成安装向导版
+            </summary>
+            <p className="mt-3">
+              如果需要安装到开始菜单和桌面快捷方式，可以运行下面命令生成安装向导版。
+            </p>
+            <pre className="mt-3 overflow-x-auto rounded-md border border-[#cbd9dd] bg-[#10212c] p-4 text-sm font-bold leading-7 text-white">
+              <code>{installerCommand}</code>
+            </pre>
+            <p className="mt-3 break-all font-mono text-xs text-[#334950]">
+              {installerOutput}
+            </p>
+          </details>
+        </div>
+
+        <div className="mt-8 border-t border-[#e4ecef] pt-6">
+          <h2 className="text-lg font-black text-[#17384a]">
+            开发调试启动方式
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[#52666f]">
+            如果暂时不想安装，也可以用开发命令启动。本方式只适合你自己测试，不适合发给普通用户。
           </p>
           <pre className="mt-4 overflow-x-auto rounded-md border border-[#cbd9dd] bg-[#10212c] p-4 text-sm font-bold leading-7 text-white">
             <code>{startCommand}</code>
@@ -76,9 +120,9 @@ export default function LocalConnectorPage() {
         </div>
 
         <div className="mt-6 border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-          如果点击“我已启动”没有反应，说明本机连接器没有运行，或者浏览器没有获得唤醒权限。
-          先在 Cursor 终端运行上面的命令；看到 ResearchGPT 本机连接器启动后，再刷新网页重试。
-          后续正式版会补上真正的安装包下载按钮。
+          如果点击“我已启动”没有反应，通常说明本机连接器没有运行、尚未安装，或者浏览器没有获得唤醒权限。
+          先安装或启动本机连接器；看到系统已允许 ResearchGPT 本机连接器运行后，再刷新网页重试。
+          等内测安装包稳定后，可以把安装包上传到网站下载区，用户就不需要接触 Cursor 命令。
         </div>
       </section>
     </main>

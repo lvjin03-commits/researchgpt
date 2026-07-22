@@ -22,6 +22,20 @@ Run:
 npm run desktop
 ```
 
+Build a Windows installer:
+
+```bash
+npm run desktop:installer
+```
+
+The installer and portable executable are written to `release/`.
+
+For a quick unpacked Windows build:
+
+```bash
+npm run desktop:dir
+```
+
 For local web development:
 
 ```bash

@@ -1,15 +1,58 @@
 {
   "name": "researchgpt",
   "version": "0.1.0",
+  "description": "ResearchGPT web workspace and local connector.",
+  "author": "ResearchGPT",
   "private": true,
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "next dev",
     "desktop": "electron desktop/main.cjs",
+    "desktop:dir": "electron-builder --win --x64 --dir",
+    "desktop:portable": "electron-builder --win portable --x64",
+    "desktop:installer": "electron-builder --win --x64",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "qa": "npm run build"
+  },
+  "build": {
+    "appId": "com.researchgpt.localconnector",
+    "productName": "ResearchGPT Local Connector",
+    "artifactName": "ResearchGPT-Local-Connector-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "executableName": "ResearchGPT Local Connector",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ResearchGPT 本机连接器"
+    }
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
@@ -39,6 +82,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
