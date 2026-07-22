@@ -36,6 +36,12 @@ For a quick unpacked Windows build:
 npm run desktop:dir
 ```
 
+The current internal connector entity is written to:
+
+```text
+release-local/win-unpacked/ResearchGPT Local Connector.exe
+```
+
 For local web development:
 
 ```bash

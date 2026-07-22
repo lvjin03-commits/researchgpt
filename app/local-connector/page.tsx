@@ -12,7 +12,7 @@ npm run desktop:dir`;
 const installerOutput =
   "C:\\Users\\j.lyu\\researchgpt\\release\\ResearchGPT Local Connector Setup 0.1.0.exe";
 const packagedOutput =
-  "C:\\Users\\j.lyu\\researchgpt\\release\\win-unpacked\\ResearchGPT Local Connector.exe";
+  "C:\\Users\\j.lyu\\researchgpt\\release-local\\win-unpacked\\ResearchGPT Local Connector.exe";
 
 const steps = [
   {

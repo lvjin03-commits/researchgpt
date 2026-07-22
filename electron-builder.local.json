@@ -1,0 +1,24 @@
+{
+  "appId": "com.researchgpt.localconnector",
+  "productName": "ResearchGPT Local Connector",
+  "artifactName": "ResearchGPT-Local-Connector-${version}-${arch}.${ext}",
+  "directories": {
+    "output": "release-local"
+  },
+  "files": [
+    "desktop/**/*",
+    "package.json",
+    "node_modules/**/*"
+  ],
+  "win": {
+    "executableName": "ResearchGPT Local Connector",
+    "target": [
+      {
+        "target": "dir",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  }
+}

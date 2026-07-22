@@ -20,6 +20,7 @@
 # production
 /build
 /release
+/release-local
 
 # misc
 .DS_Store
