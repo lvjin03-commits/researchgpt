@@ -1,6 +1,5 @@
 // Client-only module. Do not import from API routes.
 
-import { downloadBlob } from "@/lib/export/download";
 import type { TranslationProgressEvent } from "@/lib/translation/types";
 import type {
   OutputMode,
@@ -42,6 +41,14 @@ export type TranslationUiState = {
   qualityWarnings?: string[];
 };
 
+export type TranslationResult = {
+  blob: Blob;
+  filename: string;
+  translatedCount: number;
+  skippedCount: number;
+  qualityWarnings: string[];
+};
+
 function base64ToBlob(base64: string, mimeType: string): Blob {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -59,7 +66,7 @@ export async function translateDocxFile(
     signal?: AbortSignal;
     onProgress: (state: TranslationUiState) => void;
   },
-): Promise<void> {
+): Promise<TranslationResult> {
   const formData = new FormData();
   formData.append("file", values.file);
   formData.append("sourceLanguage", values.sourceLanguage);
@@ -138,14 +145,16 @@ export async function translateDocxFile(
           qualityWarnings: event.qualityWarnings,
         });
 
-        downloadBlob(
-          base64ToBlob(
+        return {
+          blob: base64ToBlob(
             event.fileBase64,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           ),
-          event.filename,
-        );
-        return;
+          filename: event.filename,
+          translatedCount: event.translatedCount,
+          skippedCount: event.skippedCount,
+          qualityWarnings: event.qualityWarnings,
+        };
       }
     }
   }

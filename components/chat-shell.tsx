@@ -20,6 +20,7 @@ import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
 import { DesktopConnectionStatus } from "@/components/desktop-connection-status";
 import { MenuIcon } from "@/components/icons";
+import { ProjectTranslationDialog } from "@/components/project-translation-dialog";
 import { ResearchToolPanel } from "@/components/research-tool-panel";
 import { Sidebar } from "@/components/sidebar";
 import type { ChatMessage } from "@/lib/ai/types";
@@ -54,13 +55,12 @@ import {
   upsertCloudWorkspace,
 } from "@/lib/chat/workspace-cloud-sync";
 import {
-  fetchDesktopLocalFileBlob,
   openDesktopLocalPdf,
   readDesktopLocalPdf,
   type LocalFolderBinding,
   type LocalPdfFile,
 } from "@/lib/desktop/connection";
-import { translateDocxFile } from "@/lib/translation/client";
+import type { OutputMode } from "@/lib/translation/types";
 import {
   createLiteratureFolder,
   deleteLiteratureFolder,
@@ -365,6 +365,10 @@ export function ChatShell() {
   const [pendingLibraryCommand, setPendingLibraryCommand] = useState<{
     payload: ChatSendPayload;
     plan: LibraryCommandPlan;
+  } | null>(null);
+  const [pendingProjectTranslation, setPendingProjectTranslation] = useState<{
+    files: LocalPdfFile[];
+    outputMode: OutputMode;
   } | null>(null);
   const [isExecutingLibraryCommand, setIsExecutingLibraryCommand] =
     useState(false);
@@ -1238,63 +1242,14 @@ export function ChatShell() {
         setToolPanelOpen(true);
         setContextMode("project");
         setError(null);
-        setIsStreaming(true);
-        setActivity("正在生成翻译文档");
         setLocalPdfStatus(
-          `准备翻译 ${files.length} 个 Word 文档，完成后会自动下载。`,
+          `准备翻译 ${files.length} 个 Word 文档，请确认翻译设置。完成后会提供下载链接。`,
         );
-
-        void (async () => {
-          try {
-            for (const [index, file] of files.entries()) {
-              setActiveLocalPdfAction(`read:${file.id}`);
-              const localFile = await fetchDesktopLocalFileBlob(file);
-              await translateDocxFile(
-                {
-                  file: localFile,
-                  sourceLanguage: "auto",
-                  targetLanguage: "english",
-                  outputMode:
-                    action === "translate_bilingual" ? "bilingual" : "replace",
-                  style: "academic",
-                },
-                {
-                  onProgress: (state) => {
-                    const prefix = `正在翻译 ${index + 1}/${files.length}：${file.name}`;
-                    if (
-                      state.stage === "translating" &&
-                      state.batch &&
-                      state.totalBatches
-                    ) {
-                      setLocalPdfStatus(
-                        `${prefix}，第 ${state.batch}/${state.totalBatches} 批。`,
-                      );
-                    } else if (state.stage === "completed") {
-                      setLocalPdfStatus(
-                        `已生成翻译文档：${state.filename ?? file.name}`,
-                      );
-                    } else {
-                      setLocalPdfStatus(prefix);
-                    }
-                  },
-                },
-              );
-            }
-            setLocalPdfStatus(
-              `翻译完成，已生成并下载 ${files.length} 个 Word 文档。`,
-            );
-          } catch (error) {
-            setLocalPdfStatus(
-              error instanceof Error
-                ? `翻译失败：${error.message}`
-                : "翻译失败，请稍后重试。",
-            );
-          } finally {
-            setActiveLocalPdfAction(null);
-            setIsStreaming(false);
-            setActivity(null);
-          }
-        })();
+        setPendingProjectTranslation({
+          files,
+          outputMode:
+            action === "translate_bilingual" ? "bilingual" : "replace",
+        });
         return;
       }
 
@@ -2092,6 +2047,14 @@ export function ChatShell() {
         onUploadFiles={(files) => void handleUploadFilesToOpenFolder(files)}
         onClose={() => setToolPanelOpen(false)}
       />
+
+      {pendingProjectTranslation && (
+        <ProjectTranslationDialog
+          files={pendingProjectTranslation.files}
+          initialOutputMode={pendingProjectTranslation.outputMode}
+          onClose={() => setPendingProjectTranslation(null)}
+        />
+      )}
 
       {newProjectDialogOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 px-4">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ResearchPageHeader } from "@/components/research-page-header";
 import {
   MAX_DOCX_TRANSLATION_MB,
@@ -28,13 +28,27 @@ export function TranslationShell() {
   const [outputMode, setOutputMode] = useState<OutputMode>("replace");
   const [glossary, setGlossary] = useState("");
   const [uiState, setUiState] = useState<TranslationUiState>({ stage: "idle" });
+  const [downloadLink, setDownloadLink] = useState<{
+    url: string;
+    filename: string;
+  } | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (downloadLink) URL.revokeObjectURL(downloadLink.url);
+    };
+  }, [downloadLink]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0] ?? null;
     setFile(selected);
     setUiState({ stage: "idle" });
+    setDownloadLink((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
     event.target.value = "";
   };
 
@@ -55,6 +69,10 @@ export function TranslationShell() {
 
     setIsTranslating(true);
     setUiState({ stage: "uploaded" });
+    setDownloadLink((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
 
     const values: TranslationFormValues = {
       file,
@@ -66,9 +84,13 @@ export function TranslationShell() {
     };
 
     try {
-      await translateDocxFile(values, {
+      const result = await translateDocxFile(values, {
         signal: abortController.signal,
         onProgress: setUiState,
+      });
+      setDownloadLink({
+        url: URL.createObjectURL(result.blob),
+        filename: result.filename,
       });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -206,9 +228,18 @@ export function TranslationShell() {
             <p className="text-sm font-medium text-gray-900">{progressLabel}</p>
             {uiState.stage === "completed" && uiState.filename && (
               <p className="mt-1 text-sm text-gray-600">
-                已下载 {uiState.filename}。已翻译 {uiState.translatedCount} 段，跳过{" "}
+                已生成 {uiState.filename}。已翻译 {uiState.translatedCount} 段，跳过{" "}
                 {uiState.skippedCount} 段。
               </p>
+            )}
+            {downloadLink && (
+              <a
+                href={downloadLink.url}
+                download={downloadLink.filename}
+                className="mt-3 inline-flex rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+              >
+                下载翻译文档
+              </a>
             )}
             {uiState.stage === "completed" &&
               (uiState.qualityWarnings?.length ?? 0) === 0 && (
