@@ -15,7 +15,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 function isSourceLanguage(value: string): value is SourceLanguage {
-  return value === "chinese";
+  return value === "auto" || value === "chinese" || value === "english";
 }
 
 function isTargetLanguage(value: string): value is TargetLanguage {

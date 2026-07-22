@@ -182,6 +182,25 @@ async function openLocalFile(filePath) {
   return { opened: true };
 }
 
+async function readLocalFileBinary(filePath) {
+  const normalizedPath = assertLocalFilePath(filePath);
+  const stats = await fs.stat(normalizedPath);
+  if (!stats.isFile()) throw new Error("Path is not a file.");
+  if (stats.size > MAX_READ_BYTES) {
+    throw new Error("File is too large for local document processing.");
+  }
+
+  const buffer = await fs.readFile(normalizedPath);
+  return {
+    filePath: normalizedPath,
+    name: path.basename(normalizedPath),
+    extension: extensionFor(normalizedPath),
+    kind: kindForExtension(extensionFor(normalizedPath)),
+    size: stats.size,
+    fileBase64: buffer.toString("base64"),
+  };
+}
+
 function applyTextLimit(text, limit) {
   const textLimit =
     typeof limit === "number" && Number.isFinite(limit) && limit > 0
@@ -323,6 +342,7 @@ function createStatusServer() {
           "local_files",
           "open_file",
           "read_file_text",
+          "read_file_binary",
           "open_pdf",
           "read_pdf",
           "read_pdf_text",
@@ -367,6 +387,20 @@ function createStatusServer() {
         .then((result) => writeJson(response, 200, result))
         .catch((error) => {
           console.error("[desktop] local file read failed:", error);
+          writeJson(response, 500, {
+            error:
+              error instanceof Error ? error.message : "Failed to read file.",
+          });
+        });
+      return;
+    }
+
+    if (request.method === "POST" && pathname === "/local-files/binary") {
+      void readJsonBody(request)
+        .then((body) => readLocalFileBinary(body.path))
+        .then((result) => writeJson(response, 200, result))
+        .catch((error) => {
+          console.error("[desktop] local file binary read failed:", error);
           writeJson(response, 500, {
             error:
               error instanceof Error ? error.message : "Failed to read file.",

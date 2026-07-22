@@ -54,11 +54,13 @@ import {
   upsertCloudWorkspace,
 } from "@/lib/chat/workspace-cloud-sync";
 import {
+  fetchDesktopLocalFileBlob,
   openDesktopLocalPdf,
   readDesktopLocalPdf,
   type LocalFolderBinding,
   type LocalPdfFile,
 } from "@/lib/desktop/connection";
+import { translateDocxFile } from "@/lib/translation/client";
 import {
   createLiteratureFolder,
   deleteLiteratureFolder,
@@ -160,6 +162,10 @@ function localFileReadBlockReason(file: LocalPdfFile): string | null {
     return "当前文件类型暂不支持全文读取，可以先打开文件查看。";
   }
   return null;
+}
+
+function isLocalDocxFile(file: LocalPdfFile): boolean {
+  return localFileExtension(file) === ".docx";
 }
 
 function formatLocalFileReadError(file: LocalPdfFile, error: unknown): string {
@@ -1213,6 +1219,85 @@ export function ChatShell() {
         return;
       }
 
+      if (action === "translate_en" || action === "translate_bilingual") {
+        const unsupportedFiles = files.filter((file) => !isLocalDocxFile(file));
+        if (unsupportedFiles.length > 0) {
+          setLocalPdfStatus(
+            `翻译功能会输出与原格式一致的 Word 文档。当前仅支持 .docx，请先将以下文件另存为 .docx：${unsupportedFiles
+              .slice(0, 3)
+              .map((file) => file.name)
+              .join("、")}${unsupportedFiles.length > 3 ? " 等" : ""}`,
+          );
+          setError(null);
+          return;
+        }
+
+        const fileIds = files.map((file) => file.id);
+        setSelectedLocalFileIds(fileIds);
+        setActiveToolFolderId(null);
+        setToolPanelOpen(true);
+        setContextMode("project");
+        setError(null);
+        setIsStreaming(true);
+        setActivity("正在生成翻译文档");
+        setLocalPdfStatus(
+          `准备翻译 ${files.length} 个 Word 文档，完成后会自动下载。`,
+        );
+
+        void (async () => {
+          try {
+            for (const [index, file] of files.entries()) {
+              setActiveLocalPdfAction(`read:${file.id}`);
+              const localFile = await fetchDesktopLocalFileBlob(file);
+              await translateDocxFile(
+                {
+                  file: localFile,
+                  sourceLanguage: "auto",
+                  targetLanguage: "english",
+                  outputMode:
+                    action === "translate_bilingual" ? "bilingual" : "replace",
+                  style: "academic",
+                },
+                {
+                  onProgress: (state) => {
+                    const prefix = `正在翻译 ${index + 1}/${files.length}：${file.name}`;
+                    if (
+                      state.stage === "translating" &&
+                      state.batch &&
+                      state.totalBatches
+                    ) {
+                      setLocalPdfStatus(
+                        `${prefix}，第 ${state.batch}/${state.totalBatches} 批。`,
+                      );
+                    } else if (state.stage === "completed") {
+                      setLocalPdfStatus(
+                        `已生成翻译文档：${state.filename ?? file.name}`,
+                      );
+                    } else {
+                      setLocalPdfStatus(prefix);
+                    }
+                  },
+                },
+              );
+            }
+            setLocalPdfStatus(
+              `翻译完成，已生成并下载 ${files.length} 个 Word 文档。`,
+            );
+          } catch (error) {
+            setLocalPdfStatus(
+              error instanceof Error
+                ? `翻译失败：${error.message}`
+                : "翻译失败，请稍后重试。",
+            );
+          } finally {
+            setActiveLocalPdfAction(null);
+            setIsStreaming(false);
+            setActivity(null);
+          }
+        })();
+        return;
+      }
+
       const fileIds = files.map((file) => file.id);
       setSelectedLocalFileIds(fileIds);
       setActiveToolFolderId(null);
@@ -1233,10 +1318,6 @@ export function ChatShell() {
           ? `单篇精读这个文件：\n${fileList}\n\n请按研究问题、技术路线、关键实验、结果证据、创新性、局限性、可引用观点来分析。`
           : action === "matrix"
             ? `基于当前选中的 ${files.length} 个文件生成中文文献矩阵。\n\n文献范围：\n${fileList}${extra}\n\n矩阵至少包含：文献名称、研究主题、研究问题、研究对象、研究方法、关键结果、主要结论、核心贡献、局限性、与当前项目的关系。`
-            : action === "translate_en"
-              ? `请把当前选中的 ${files.length} 个文件翻译成专业、准确、自然的英文。\n\n文件范围：\n${fileList}${extra}\n\n输出要求：\n1. 只输出英文译文，不输出中文原文。\n2. 保留原文的章节层级、标题、编号、公式编号、图表编号和关键术语。\n3. 对无法可靠翻译的公式、单位、材料名、基因名、菌株名、设备型号保持原样。\n4. 如果全文较长，先按章节翻译最关键的正文内容，并在末尾说明哪些部分因长度限制未完整展开。`
-              : action === "translate_bilingual"
-                ? `请把当前选中的 ${files.length} 个文件做成中英双语对照翻译。\n\n文件范围：\n${fileList}${extra}\n\n输出格式：\n- 每一段先放中文原文，下一段放英文翻译。\n- 用“原文：”和“译文：”标注。\n- 保留原文的章节层级、标题、编号、公式编号、图表编号和关键术语。\n- 对无法可靠翻译的公式、单位、材料名、基因名、菌株名、设备型号保持原样。\n- 如果全文较长，先按章节翻译最关键的正文内容，并在末尾说明哪些部分因长度限制未完整展开。`
             : `分析当前选中的 ${files.length} 个文件。\n\n文献范围：\n${fileList}${extra}\n\n请输出主题归类、研究共识、研究分歧、研究空白，以及后续可展开的文献矩阵建议。`;
 
       void submitMessage(

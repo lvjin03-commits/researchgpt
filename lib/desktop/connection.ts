@@ -3,6 +3,8 @@ export const DESKTOP_SELECT_FOLDER_URL =
   "http://127.0.0.1:48732/local-folders/select";
 export const DESKTOP_OPEN_FILE_URL = "http://127.0.0.1:48732/local-files/open";
 export const DESKTOP_READ_FILE_URL = "http://127.0.0.1:48732/local-files/read";
+export const DESKTOP_BINARY_FILE_URL =
+  "http://127.0.0.1:48732/local-files/binary";
 export const DESKTOP_CONNECT_URL = "researchgpt://connect";
 export const DESKTOP_CONNECTOR_INSTALL_URL = "/local-connector";
 
@@ -34,7 +36,11 @@ export type DesktopStatus = {
   message?: string;
 };
 
-const REQUIRED_FILE_CAPABILITIES = ["open_file", "read_file_text"];
+const REQUIRED_FILE_CAPABILITIES = [
+  "open_file",
+  "read_file_text",
+  "read_file_binary",
+];
 
 export type LocalPdfFile = {
   id: string;
@@ -80,6 +86,16 @@ type SelectLocalFolderResponse = {
 };
 
 type LocalPdfTextResponse = Partial<LocalPdfTextResult> & {
+  error?: unknown;
+};
+
+type LocalFileBinaryResponse = {
+  filePath?: unknown;
+  name?: unknown;
+  extension?: unknown;
+  kind?: unknown;
+  size?: unknown;
+  fileBase64?: unknown;
   error?: unknown;
 };
 
@@ -416,6 +432,43 @@ export async function readDesktopLocalPdf(
     charCount: data.charCount,
     truncated: data.truncated,
   };
+}
+
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
+export async function fetchDesktopLocalFileBlob(
+  file: LocalPdfFile,
+  signal?: AbortSignal,
+): Promise<File> {
+  const data = await postJson<LocalFileBinaryResponse>(
+    DESKTOP_BINARY_FILE_URL,
+    { path: file.path },
+    signal,
+  );
+
+  if (typeof data.name !== "string" || typeof data.fileBase64 !== "string") {
+    throw new Error("本机连接器返回的文件数据无效。");
+  }
+
+  return new File(
+    [
+      base64ToBlob(
+        data.fileBase64,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    ],
+    data.name,
+    {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    },
+  );
 }
 
 export function launchDesktopConnect(): void {
