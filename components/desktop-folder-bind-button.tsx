@@ -90,7 +90,7 @@ export function DesktopFolderBindButton({
     onBound(result.folder);
     setNotice({
       kind: "info",
-      message: `已绑定 ${result.folder.pdfCount} 个 PDF`,
+      message: `已绑定 ${result.folder.fileCount ?? result.folder.files.length} 个文件`,
     });
   }, [onBound]);
 

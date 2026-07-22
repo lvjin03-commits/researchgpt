@@ -34,6 +34,8 @@ export type DesktopStatus = {
   message?: string;
 };
 
+const REQUIRED_FILE_CAPABILITIES = ["open_file", "read_file_text"];
+
 export type LocalPdfFile = {
   id: string;
   name: string;
@@ -101,6 +103,15 @@ function normalizeConnectorState(value: unknown): DesktopConnectionState | null 
 
 function errorFromResponse(data: { error?: unknown }, fallback: string): Error {
   return new Error(typeof data.error === "string" ? data.error : fallback);
+}
+
+function hasRequiredFileCapabilities(status: {
+  capabilities?: string[];
+}): boolean {
+  const capabilities = new Set(status.capabilities ?? []);
+  return REQUIRED_FILE_CAPABILITIES.every((capability) =>
+    capabilities.has(capability),
+  );
 }
 
 async function postJson<T>(
@@ -241,6 +252,14 @@ export async function inspectDesktopConnector(
           )
         : [],
     };
+
+    if (!hasRequiredFileCapabilities(status)) {
+      return {
+        state: "version_mismatch",
+        status,
+        message: "本机连接器需要更新或重启，才能读取 Word、Excel、PPT 和图片等文件。",
+      };
+    }
 
     return { state: "connected", status, message };
   } catch (error) {
