@@ -39,7 +39,7 @@ npm run desktop:dir
 The current internal connector entity is written to:
 
 ```text
-release-local/win-unpacked/ResearchGPT Local Connector.exe
+release-local-v2/win-unpacked/ResearchGPT Local Connector.exe
 ```
 
 For local web development:

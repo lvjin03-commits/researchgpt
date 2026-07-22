@@ -441,6 +441,112 @@ function focusMainWindow() {
   mainWindow.focus();
 }
 
+function connectorStatusHtml() {
+  return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${APP_NAME}</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f5f8f8;
+        color: #172a33;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      main {
+        box-sizing: border-box;
+        min-height: 100vh;
+        padding: 28px;
+      }
+      .card {
+        border: 1px solid #d9e5e8;
+        background: #ffffff;
+        box-shadow: 0 10px 30px rgba(22, 38, 45, 0.08);
+        padding: 24px;
+      }
+      .eyebrow {
+        color: #1b5b7a;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 10px 0 0;
+        font-size: 24px;
+        line-height: 1.25;
+      }
+      p {
+        color: #52666f;
+        font-size: 14px;
+        line-height: 1.8;
+      }
+      .status {
+        margin-top: 18px;
+        border: 1px solid #b8efcc;
+        background: #ecfff3;
+        color: #0b6b3a;
+        padding: 12px 14px;
+        font-weight: 800;
+      }
+      .meta {
+        margin-top: 14px;
+        border: 1px solid #e2eaed;
+        background: #f8fbfc;
+        padding: 12px 14px;
+        color: #52666f;
+        font-size: 13px;
+        line-height: 1.8;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      button {
+        height: 42px;
+        border-radius: 8px;
+        border: 1px solid #cbd9dd;
+        background: white;
+        color: #174866;
+        cursor: pointer;
+        font-weight: 800;
+        padding: 0 16px;
+      }
+      button.primary {
+        background: #174866;
+        border-color: #174866;
+        color: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="card">
+        <div class="eyebrow">ResearchGPT Local Connector</div>
+        <h1>本机连接器正在运行</h1>
+        <p>
+          它会在后台为 ResearchGPT 网页提供本地文件夹读取、打开文件和文件翻译等能力。
+          网页只会读取你主动授权和绑定的本地资料。
+        </p>
+        <div class="status">已连接：127.0.0.1:${STATUS_PORT}</div>
+        <div class="meta">
+          设备：${os.hostname()}<br />
+          版本：${app.getVersion()}<br />
+          关闭这个窗口不会影响后台连接器运行。
+        </div>
+        <div class="actions">
+          <button class="primary" onclick="location.href='${WORKSPACE_URL}'">打开 ResearchGPT</button>
+          <button onclick="window.close()">隐藏到后台</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>`;
+}
+
 function createMainWindow() {
   if (mainWindow) {
     focusMainWindow();
@@ -448,10 +554,10 @@ function createMainWindow() {
   }
 
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 1040,
-    minHeight: 720,
+    width: 560,
+    height: 520,
+    minWidth: 480,
+    minHeight: 420,
     title: APP_NAME,
     backgroundColor: "#f4f7f8",
     autoHideMenuBar: true,
@@ -462,7 +568,9 @@ function createMainWindow() {
     },
   });
 
-  mainWindow.loadURL(WORKSPACE_URL);
+  mainWindow.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(connectorStatusHtml())}`,
+  );
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -496,8 +604,11 @@ if (!gotLock) {
   app.on("second-instance", (_event, argv) => {
     const deepLink = argv.find((arg) => arg.startsWith("researchgpt://"));
     if (deepLink) handleDeepLink(deepLink);
-    else if (SHOW_CONNECTOR_WINDOW) focusMainWindow();
-    else createStatusServer();
+    else {
+      createStatusServer();
+      createMainWindow();
+      focusMainWindow();
+    }
   });
 
   app.on("open-url", (event, url) => {
@@ -508,7 +619,10 @@ if (!gotLock) {
   app.whenReady().then(() => {
     registerProtocol();
     createStatusServer();
-    if (SHOW_CONNECTOR_WINDOW) createMainWindow();
+    const launchedByProtocol = process.argv.some((arg) =>
+      arg.startsWith("researchgpt://"),
+    );
+    if (SHOW_CONNECTOR_WINDOW || !launchedByProtocol) createMainWindow();
   });
 
   app.on("activate", () => {

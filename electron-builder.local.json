@@ -3,7 +3,7 @@
   "productName": "ResearchGPT Local Connector",
   "artifactName": "ResearchGPT-Local-Connector-${version}-${arch}.${ext}",
   "directories": {
-    "output": "release-local"
+    "output": "release-local-v2"
   },
   "files": [
     "desktop/**/*",

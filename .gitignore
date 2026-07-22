@@ -21,6 +21,7 @@
 /build
 /release
 /release-local
+/release-local-v2
 
 # misc
 .DS_Store
