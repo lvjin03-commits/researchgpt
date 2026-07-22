@@ -105,6 +105,25 @@ function localFileTypeLabel(file: LocalPdfFile): string {
   return labels[localFileKind(file)] ?? "文件";
 }
 
+function localFileExtension(file: LocalPdfFile): string {
+  const extension = file.extension || `.${file.name.split(".").pop() ?? ""}`;
+  return extension.toLowerCase();
+}
+
+function localFileReadBlockReason(file: LocalPdfFile): string | null {
+  const extension = localFileExtension(file);
+  if (extension === ".doc") {
+    return "旧版 .doc 文件无法稳定识别，请用 Word 或 WPS 另存为 .docx 后再读取。";
+  }
+  if (extension === ".ppt") {
+    return "旧版 .ppt 文件无法稳定识别，请用 PowerPoint 或 WPS 另存为 .pptx 后再读取。";
+  }
+  if (file.readable === false) {
+    return "当前文件类型暂不支持全文读取，可以先打开文件查看。";
+  }
+  return null;
+}
+
 export function ResearchToolPanel({
   open,
   folder,
@@ -586,6 +605,8 @@ export function ResearchToolPanel({
                           <ul className="divide-y divide-gray-100 border-t border-[#edf2f4]">
                             {localFolder.files.map((file) => {
                               const selected = selectedLocalFileSet.has(file.id);
+                              const readBlockReason =
+                                localFileReadBlockReason(file);
                               return (
                                 <li
                                   key={file.id}
@@ -648,12 +669,18 @@ export function ResearchToolPanel({
                                   <button
                                     type="button"
                                     onClick={() => onReadLocalPdf?.(file)}
-                                    disabled={activeLocalPdfAction === `read:${file.id}`}
-                                    className="inline-flex h-8 shrink-0 items-center rounded-md bg-[#174866] px-2 text-[11px] font-bold text-white hover:bg-[#123a52] disabled:opacity-50"
+                                    disabled={
+                                      Boolean(readBlockReason) ||
+                                      activeLocalPdfAction === `read:${file.id}`
+                                    }
+                                    title={readBlockReason ?? "读取文件正文"}
+                                    className="inline-flex h-8 shrink-0 items-center rounded-md bg-[#174866] px-2 text-[11px] font-bold text-white hover:bg-[#123a52] disabled:bg-[#dce5e8] disabled:text-[#63757d] disabled:opacity-100"
                                   >
-                                    {activeLocalPdfAction === `read:${file.id}`
-                                      ? "读取中"
-                                      : "读取测试"}
+                                    {readBlockReason
+                                      ? "需转格式"
+                                      : activeLocalPdfAction === `read:${file.id}`
+                                        ? "读取中"
+                                        : "读取测试"}
                                   </button>
                                 </li>
                               );

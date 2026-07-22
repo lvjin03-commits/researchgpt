@@ -142,6 +142,42 @@ function localFileTypeLabel(file: LocalPdfFile): string {
   return labels[localFileKind(file)] ?? "文件";
 }
 
+function localFileExtension(file: LocalPdfFile): string {
+  const extension = file.extension || `.${file.name.split(".").pop() ?? ""}`;
+  return extension.toLowerCase();
+}
+
+function localFileReadBlockReason(file: LocalPdfFile): string | null {
+  const extension = localFileExtension(file);
+  if (extension === ".doc") {
+    return "旧版 .doc 文件无法稳定识别，请用 Word 或 WPS 另存为 .docx 后再读取。";
+  }
+  if (extension === ".ppt") {
+    return "旧版 .ppt 文件无法稳定识别，请用 PowerPoint 或 WPS 另存为 .pptx 后再读取。";
+  }
+  if (file.readable === false) {
+    return "当前文件类型暂不支持全文读取，可以先打开文件查看。";
+  }
+  return null;
+}
+
+function formatLocalFileReadError(file: LocalPdfFile, error: unknown): string {
+  const blockedReason = localFileReadBlockReason(file);
+  if (blockedReason) return `读取失败：${blockedReason}`;
+
+  const message = error instanceof Error ? error.message : "";
+  if (
+    message.includes("This file type is not readable yet") ||
+    message.toLowerCase().includes("legacy .doc")
+  ) {
+    return "读取失败：旧版 Office 文件无法稳定识别，请先另存为 .docx 或 .pptx 后再读取。";
+  }
+
+  return error instanceof Error
+    ? `读取失败：${error.message}。请确认文件没有损坏，并先启用 ResearchGPT 本机连接器。`
+    : "读取失败，请确认文件没有损坏，并先启用 ResearchGPT 本机连接器。";
+}
+
 function buildLocalPdfManifest(project: ResearchProject): string {
   const files = project.localFolders.flatMap((folder) =>
     folder.files.map(
@@ -745,11 +781,7 @@ export function ChatShell() {
         }。`,
       );
     } catch (error) {
-      setLocalPdfStatus(
-        error instanceof Error
-          ? `读取失败：${error.message}。请确认文件没有损坏，并先启用 ResearchGPT 本机连接器。`
-          : "读取失败，请确认文件没有损坏，并先启用 ResearchGPT 本机连接器。",
-      );
+      setLocalPdfStatus(formatLocalFileReadError(file, error));
     } finally {
       setActiveLocalPdfAction(null);
     }
@@ -1673,7 +1705,10 @@ export function ChatShell() {
                           </div>
                           {folder.files.length > 0 ? (
                             <div className="mt-3 divide-y divide-[#e4ecef] rounded-md border border-[#e4ecef]">
-                              {folder.files.slice(0, 8).map((file) => (
+                              {folder.files.slice(0, 8).map((file) => {
+                                const readBlockReason =
+                                  localFileReadBlockReason(file);
+                                return (
                                 <div
                                   key={file.id}
                                   className="flex items-center gap-3 px-3 py-2"
@@ -1706,21 +1741,31 @@ export function ChatShell() {
                                     type="button"
                                     onClick={() => void handleReadLocalPdf(file)}
                                     disabled={
+                                      Boolean(readBlockReason) ||
                                       activeLocalPdfAction ===
                                       `read:${file.id}`
                                     }
-                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-[#12314a] px-2 text-xs font-bold text-white hover:bg-[#0b2235] disabled:opacity-70"
+                                    title={readBlockReason ?? "读取文件正文"}
+                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-[#12314a] px-2 text-xs font-bold text-white hover:bg-[#0b2235] disabled:bg-[#dce5e8] disabled:text-[#63757d] disabled:opacity-100"
                                   >
-                                    {activeLocalPdfAction ===
-                                    `read:${file.id}` ? (
-                                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                    {readBlockReason ? (
+                                      "需转格式"
+                                    ) : activeLocalPdfAction ===
+                                      `read:${file.id}` ? (
+                                      <>
+                                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                                        读取中
+                                      </>
                                     ) : (
-                                      <BookOpenText className="h-3.5 w-3.5" />
+                                      <>
+                                        <BookOpenText className="h-3.5 w-3.5" />
+                                        读取测试
+                                      </>
                                     )}
-                                    读取测试
                                   </button>
                                 </div>
-                              ))}
+                              );
+                              })}
                             </div>
                           ) : (
                             <p className="mt-3 rounded-md bg-[#f8fbfc] px-3 py-2 text-xs font-semibold text-[#718087]">
