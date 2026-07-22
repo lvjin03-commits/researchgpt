@@ -12,6 +12,7 @@ import {
   Languages,
   LoaderCircle,
   PanelRightClose,
+  RefreshCw,
   Square,
   Trash2,
   X,
@@ -45,8 +46,10 @@ type ResearchToolPanelProps = {
   operationError?: string | null;
   localPdfStatus?: string | null;
   activeLocalPdfAction?: string | null;
+  refreshingLocalFolderId?: string | null;
   onOpenLocalPdf?: (file: LocalPdfFile) => void;
   onReadLocalPdf?: (file: LocalPdfFile) => void;
+  onRefreshLocalFolder?: (folder: LocalFolderBinding) => void;
   onToggleLocalFile?: (fileId: string) => void;
   onToggleLocalFolder?: (folder: LocalFolderBinding) => void;
   onClearLocalSelection?: () => void;
@@ -140,8 +143,10 @@ export function ResearchToolPanel({
   operationError = null,
   localPdfStatus = null,
   activeLocalPdfAction = null,
+  refreshingLocalFolderId = null,
   onOpenLocalPdf,
   onReadLocalPdf,
+  onRefreshLocalFolder,
   onToggleLocalFile,
   onToggleLocalFolder,
   onClearLocalSelection,
@@ -600,6 +605,25 @@ export function ResearchToolPanel({
                               ? `${selectedCount}/${localFolder.files.length}`
                               : "选择"}
                           </button>
+                          {onRefreshLocalFolder && (
+                            <button
+                              type="button"
+                              onClick={() => onRefreshLocalFolder(localFolder)}
+                              disabled={refreshingLocalFolderId !== null}
+                              className="inline-flex h-8 items-center gap-1 rounded-md border border-[#d4dfe2] px-2 text-[11px] font-bold text-[#174866] hover:bg-[#eef6f9] disabled:cursor-not-allowed disabled:opacity-50"
+                              title="同步本地文件夹"
+                              aria-label={`Sync ${localFolder.name}`}
+                            >
+                              <RefreshCw
+                                className={`h-3.5 w-3.5 ${
+                                  refreshingLocalFolderId === localFolder.id
+                                    ? "animate-spin"
+                                    : ""
+                                }`}
+                              />
+                              同步
+                            </button>
+                          )}
                         </div>
 
                         {expanded && (
@@ -801,6 +825,19 @@ export function ResearchToolPanel({
                   </>
                 ) : (
                   <>
+                    {onRefreshLocalFolder && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const folderToRefresh = contextMenu.folder;
+                          setContextMenu(null);
+                          onRefreshLocalFolder(folderToRefresh);
+                        }}
+                        className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
+                      >
+                        同步本地文件夹
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => runTask("analysis", contextMenu.folder.files)}

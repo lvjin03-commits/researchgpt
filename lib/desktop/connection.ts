@@ -1,6 +1,8 @@
 export const DESKTOP_STATUS_URL = "http://127.0.0.1:48732/status";
 export const DESKTOP_SELECT_FOLDER_URL =
   "http://127.0.0.1:48732/local-folders/select";
+export const DESKTOP_REFRESH_FOLDER_URL =
+  "http://127.0.0.1:48732/local-folders/refresh";
 export const DESKTOP_OPEN_FILE_URL = "http://127.0.0.1:48732/local-files/open";
 export const DESKTOP_READ_FILE_URL = "http://127.0.0.1:48732/local-files/read";
 export const DESKTOP_BINARY_FILE_URL =
@@ -387,6 +389,81 @@ export async function selectDesktopLocalFolder(
             typeof file.readable === "boolean" ? file.readable : undefined,
         })),
     },
+  };
+}
+
+export async function refreshDesktopLocalFolder(
+  folder: LocalFolderBinding,
+  signal?: AbortSignal,
+): Promise<LocalFolderBinding> {
+  const data = await postJson<SelectLocalFolderResponse>(
+    DESKTOP_REFRESH_FOLDER_URL,
+    { path: folder.path, boundAt: folder.boundAt },
+    signal,
+  );
+
+  const refreshedFolder = data.folder;
+  if (
+    !refreshedFolder ||
+    typeof refreshedFolder.id !== "string" ||
+    typeof refreshedFolder.name !== "string" ||
+    typeof refreshedFolder.path !== "string" ||
+    !Array.isArray(refreshedFolder.files)
+  ) {
+    throw new Error("本机连接器返回的刷新数据无效。");
+  }
+
+  return {
+    id: refreshedFolder.id,
+    name: refreshedFolder.name,
+    path: refreshedFolder.path,
+    boundAt:
+      typeof refreshedFolder.boundAt === "string"
+        ? refreshedFolder.boundAt
+        : folder.boundAt,
+    pdfCount:
+      typeof refreshedFolder.pdfCount === "number"
+        ? refreshedFolder.pdfCount
+        : refreshedFolder.files.filter(
+            (file) =>
+              typeof file === "object" &&
+              file !== null &&
+              typeof (file as LocalPdfFile).name === "string" &&
+              (file as LocalPdfFile).name.toLowerCase().endsWith(".pdf"),
+          ).length,
+    fileCount:
+      typeof refreshedFolder.fileCount === "number"
+        ? refreshedFolder.fileCount
+        : refreshedFolder.files.length,
+    truncated: refreshedFolder.truncated === true,
+    files: refreshedFolder.files
+      .filter(
+        (file): file is LocalPdfFile =>
+          typeof file === "object" &&
+          file !== null &&
+          typeof (file as LocalPdfFile).id === "string" &&
+          typeof (file as LocalPdfFile).name === "string" &&
+          typeof (file as LocalPdfFile).path === "string" &&
+          typeof (file as LocalPdfFile).size === "number" &&
+          typeof (file as LocalPdfFile).modifiedAt === "string",
+      )
+      .map((file) => ({
+        ...file,
+        extension:
+          typeof file.extension === "string" ? file.extension : undefined,
+        kind:
+          file.kind === "pdf" ||
+          file.kind === "word" ||
+          file.kind === "excel" ||
+          file.kind === "ppt" ||
+          file.kind === "image" ||
+          file.kind === "text" ||
+          file.kind === "other"
+            ? file.kind
+            : undefined,
+        readable:
+          typeof file.readable === "boolean" ? file.readable : undefined,
+      })),
   };
 }
 

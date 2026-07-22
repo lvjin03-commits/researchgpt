@@ -93,6 +93,15 @@ function assertLocalFilePath(filePath) {
   return filePath;
 }
 
+async function assertLocalFolderPath(folderPath) {
+  if (typeof folderPath !== "string" || folderPath.trim().length === 0) {
+    throw new Error("Missing folder path.");
+  }
+  const stats = await fs.stat(folderPath);
+  if (!stats.isDirectory()) throw new Error("Path is not a folder.");
+  return folderPath;
+}
+
 async function scanLocalFiles(folderPath) {
   const files = [];
   const queue = [folderPath];
@@ -164,6 +173,29 @@ async function selectLocalFolder() {
       name: path.basename(folderPath) || folderPath,
       path: folderPath,
       boundAt: new Date().toISOString(),
+      pdfCount,
+      fileCount: scan.files.length,
+      truncated: scan.truncated,
+      files: scan.files,
+    },
+  };
+}
+
+async function refreshLocalFolder(folderPath, boundAt) {
+  const normalizedPath = await assertLocalFolderPath(folderPath);
+  const scan = await scanLocalFiles(normalizedPath);
+  const pdfCount = scan.files.filter((file) => file.kind === "pdf").length;
+
+  return {
+    folder: {
+      id: Buffer.from(normalizedPath).toString("base64url"),
+      name: path.basename(normalizedPath) || normalizedPath,
+      path: normalizedPath,
+      boundAt:
+        typeof boundAt === "string" && boundAt.trim().length > 0
+          ? boundAt
+          : new Date().toISOString(),
+      refreshedAt: new Date().toISOString(),
       pdfCount,
       fileCount: scan.files.length,
       truncated: scan.truncated,
@@ -362,6 +394,22 @@ function createStatusServer() {
               error instanceof Error
                 ? error.message
                 : "Failed to select local folder.",
+          });
+        });
+      return;
+    }
+
+    if (request.method === "POST" && pathname === "/local-folders/refresh") {
+      void readJsonBody(request)
+        .then((body) => refreshLocalFolder(body.path, body.boundAt))
+        .then((result) => writeJson(response, 200, result))
+        .catch((error) => {
+          console.error("[desktop] local folder refresh failed:", error);
+          writeJson(response, 500, {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Failed to refresh local folder.",
           });
         });
       return;

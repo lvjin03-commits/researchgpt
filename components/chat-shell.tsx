@@ -55,6 +55,7 @@ import {
   upsertCloudWorkspace,
 } from "@/lib/chat/workspace-cloud-sync";
 import {
+  refreshDesktopLocalFolder,
   openDesktopLocalPdf,
   readDesktopLocalPdf,
   type LocalFolderBinding,
@@ -384,6 +385,9 @@ export function ChatShell() {
   >(null);
   const [localPdfStatus, setLocalPdfStatus] = useState<string | null>(null);
   const [activeLocalPdfAction, setActiveLocalPdfAction] = useState<
+    string | null
+  >(null);
+  const [refreshingLocalFolderId, setRefreshingLocalFolderId] = useState<
     string | null
   >(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -762,6 +766,66 @@ export function ChatShell() {
       setToolPanelOpen(true);
     },
     [activeProjectId, selectedFolderIds, startNewChat],
+  );
+
+  const handleRefreshLocalFolder = useCallback(
+    async (folder: LocalFolderBinding) => {
+      if (!activeProjectId || refreshingLocalFolderId) return;
+
+      setRefreshingLocalFolderId(folder.id);
+      setLocalPdfStatus(`正在同步本地文件夹：${folder.name}`);
+      setError(null);
+
+      try {
+        const refreshedFolder = await refreshDesktopLocalFolder(folder);
+        const now = new Date().toISOString();
+        const refreshedFileCount =
+          refreshedFolder.fileCount ?? refreshedFolder.files.length;
+
+        setProjects((current) =>
+          current.map((project) => {
+            if (project.id !== activeProjectId) return project;
+            return {
+              ...project,
+              localFolders: project.localFolders.map((item) =>
+                item.id === folder.id || item.path === folder.path
+                  ? refreshedFolder
+                  : item,
+              ),
+              lastTask: `已同步本地资料文件夹：${refreshedFolder.name}（${refreshedFileCount} 个文件）`,
+              updatedAt: now,
+            };
+          }),
+        );
+
+        setSelectedLocalFileIds((current) => {
+          const keptFileIds = new Set<string>();
+          for (const localFolder of activeProject?.localFolders ?? []) {
+            const nextFolder =
+              localFolder.id === folder.id || localFolder.path === folder.path
+                ? refreshedFolder
+                : localFolder;
+            for (const file of nextFolder.files) keptFileIds.add(file.id);
+          }
+          return current.filter((id) => keptFileIds.has(id));
+        });
+
+        setActiveToolFolderId(null);
+        setToolPanelOpen(true);
+        setLocalPdfStatus(
+          `已同步：${refreshedFolder.name}（${refreshedFileCount} 个文件，PDF ${refreshedFolder.pdfCount} 个）`,
+        );
+      } catch (error) {
+        setLocalPdfStatus(
+          error instanceof Error
+            ? `同步失败：${error.message}。请确认本机连接器已启用，且该文件夹仍然存在。`
+            : "同步失败。请确认本机连接器已启用，且该文件夹仍然存在。",
+        );
+      } finally {
+        setRefreshingLocalFolderId(null);
+      }
+    },
+    [activeProject?.localFolders, activeProjectId, refreshingLocalFolderId],
   );
 
   const handleOpenLocalPdf = useCallback(async (file: LocalPdfFile) => {
@@ -2036,8 +2100,10 @@ export function ChatShell() {
         operationError={libraryOperationError}
         localPdfStatus={localPdfStatus}
         activeLocalPdfAction={activeLocalPdfAction}
+        refreshingLocalFolderId={refreshingLocalFolderId}
         onOpenLocalPdf={(file) => void handleOpenLocalPdf(file)}
         onReadLocalPdf={(file) => void handleReadLocalPdf(file)}
+        onRefreshLocalFolder={(folder) => void handleRefreshLocalFolder(folder)}
         onToggleLocalFile={handleToggleLocalFile}
         onToggleLocalFolder={handleToggleLocalFolder}
         onClearLocalSelection={handleClearLocalFileSelection}
