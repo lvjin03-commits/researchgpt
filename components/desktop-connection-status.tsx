@@ -43,6 +43,8 @@ function capabilityText(status: DesktopStatus | null): string {
   if (!status?.capabilities?.length) return "可接管本地文件任务";
   const labels: Record<string, string> = {
     local_files: "本地文件",
+    open_file: "打开文件",
+    read_file_text: "读取文件",
     open_pdf: "打开 PDF",
     read_pdf: "读取 PDF",
     local_export: "本地导出",

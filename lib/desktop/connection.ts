@@ -40,6 +40,9 @@ export type LocalPdfFile = {
   path: string;
   size: number;
   modifiedAt: string;
+  extension?: string;
+  kind?: "pdf" | "word" | "excel" | "ppt" | "image" | "text" | "other";
+  readable?: boolean;
 };
 
 export type LocalFolderBinding = {
@@ -48,6 +51,7 @@ export type LocalFolderBinding = {
   path: string;
   boundAt: string;
   pdfCount: number;
+  fileCount?: number;
   truncated?: boolean;
   files: LocalPdfFile[];
 };
@@ -56,6 +60,8 @@ export type LocalPdfTextResult = {
   filePath: string;
   name: string;
   pageCount: number;
+  extension?: string;
+  kind?: string;
   text: string;
   charCount: number;
   truncated: boolean;
@@ -305,18 +311,46 @@ export async function selectDesktopLocalFolder(
       pdfCount:
         typeof folder.pdfCount === "number"
           ? folder.pdfCount
+          : folder.files.filter(
+              (file) =>
+                typeof file === "object" &&
+                file !== null &&
+                typeof (file as LocalPdfFile).name === "string" &&
+                (file as LocalPdfFile).name.toLowerCase().endsWith(".pdf"),
+            ).length,
+      fileCount:
+        typeof folder.fileCount === "number"
+          ? folder.fileCount
           : folder.files.length,
       truncated: folder.truncated === true,
-      files: folder.files.filter(
-        (file): file is LocalPdfFile =>
-          typeof file === "object" &&
-          file !== null &&
-          typeof (file as LocalPdfFile).id === "string" &&
-          typeof (file as LocalPdfFile).name === "string" &&
-          typeof (file as LocalPdfFile).path === "string" &&
-          typeof (file as LocalPdfFile).size === "number" &&
-          typeof (file as LocalPdfFile).modifiedAt === "string",
-      ),
+      files: folder.files
+        .filter(
+          (file): file is LocalPdfFile =>
+            typeof file === "object" &&
+            file !== null &&
+            typeof (file as LocalPdfFile).id === "string" &&
+            typeof (file as LocalPdfFile).name === "string" &&
+            typeof (file as LocalPdfFile).path === "string" &&
+            typeof (file as LocalPdfFile).size === "number" &&
+            typeof (file as LocalPdfFile).modifiedAt === "string",
+        )
+        .map((file) => ({
+          ...file,
+          extension:
+            typeof file.extension === "string" ? file.extension : undefined,
+          kind:
+            file.kind === "pdf" ||
+            file.kind === "word" ||
+            file.kind === "excel" ||
+            file.kind === "ppt" ||
+            file.kind === "image" ||
+            file.kind === "text" ||
+            file.kind === "other"
+              ? file.kind
+              : undefined,
+          readable:
+            typeof file.readable === "boolean" ? file.readable : undefined,
+        })),
     },
   };
 }
@@ -350,13 +384,15 @@ export async function readDesktopLocalPdf(
     typeof data.charCount !== "number" ||
     typeof data.truncated !== "boolean"
   ) {
-    throw new Error("本机连接器返回的 PDF 文本数据无效。");
+    throw new Error("本机连接器返回的文件文本数据无效。");
   }
 
   return {
     filePath: data.filePath,
     name: data.name,
     pageCount: data.pageCount,
+    extension: typeof data.extension === "string" ? data.extension : undefined,
+    kind: typeof data.kind === "string" ? data.kind : undefined,
     text: data.text,
     charCount: data.charCount,
     truncated: data.truncated,

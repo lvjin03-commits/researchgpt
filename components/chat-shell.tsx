@@ -115,13 +115,42 @@ function toDisplayUserMessage(payload: ChatSendPayload): DisplayChatMessage {
   };
 }
 
+function localFileKind(file: LocalPdfFile): string {
+  if (file.kind) return file.kind;
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (extension === "pdf") return "pdf";
+  if (extension === "doc" || extension === "docx") return "word";
+  if (extension === "xls" || extension === "xlsx") return "excel";
+  if (extension === "ppt" || extension === "pptx") return "ppt";
+  if (["png", "jpg", "jpeg", "webp", "gif", "bmp"].includes(extension)) {
+    return "image";
+  }
+  if (["txt", "md", "json", "csv", "tsv"].includes(extension)) return "text";
+  return "file";
+}
+
+function localFileTypeLabel(file: LocalPdfFile): string {
+  const labels: Record<string, string> = {
+    pdf: "PDF",
+    word: "Word",
+    excel: "Excel",
+    ppt: "PPT",
+    image: "图片",
+    text: "文本",
+    file: "文件",
+  };
+  return labels[localFileKind(file)] ?? "文件";
+}
+
 function buildLocalPdfManifest(project: ResearchProject): string {
   const files = project.localFolders.flatMap((folder) =>
-    folder.files.map((file) => `${folder.name} / ${file.name}`),
+    folder.files.map(
+      (file) => `${folder.name} / ${file.name}（${localFileTypeLabel(file)}）`,
+    ),
   );
   if (files.length === 0) return "";
   return [
-    `当前项目“${project.name}”绑定的本地 PDF 文件如下：`,
+    `当前项目“${project.name}”绑定的本地文件如下：`,
     ...files.map((file, index) => `${index + 1}. ${file}`),
   ].join("\n");
 }
@@ -161,7 +190,7 @@ async function buildLocalPdfContextForProject(
 
   for (const [index, item] of filesToRead.entries()) {
     onProgress(
-      `正在读取当前项目本地 PDF：${index + 1}/${filesToRead.length} ${item.file.name}`,
+      `正在读取当前项目本地文件：${index + 1}/${filesToRead.length} ${item.file.name}`,
     );
     try {
       const result = await readDesktopLocalPdf(item.file);
@@ -175,7 +204,7 @@ async function buildLocalPdfContextForProject(
       evidenceMessages.push({
         role: "user",
         content: [
-          `【本地 PDF 证据包 ${evidenceMessages.length + 1}/${filesToRead.length}】`,
+          `【本地文件证据包 ${evidenceMessages.length + 1}/${filesToRead.length}】`,
           `文件夹：${item.folderName}`,
           `文件名：${result.name}`,
           `页数：${result.pageCount}`,
@@ -195,26 +224,26 @@ async function buildLocalPdfContextForProject(
   }
 
   const summary = [
-    "【当前项目本地 PDF 上下文】",
-        "用户已经授权 ResearchGPT 本机连接器读取当前项目绑定的本地文件夹。回答项目相关问题时，必须优先且只使用这些本地 PDF 证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
+    "【当前项目本地文件上下文】",
+        "用户已经授权 ResearchGPT 本机连接器读取当前项目绑定的本地文件夹。回答项目相关问题时，必须优先且只使用这些本地文件证据；不要把旧聊天、其他项目或其他文献库文件夹当成本次证据。",
     options.scopeLabel ? `本次资料范围：${options.scopeLabel}` : "",
     selectedFileIds.size > 0
-      ? "用户已经在项目资料树中选中了部分 PDF。本次回答默认只分析这些选中的 PDF；除非用户明确要求全部文件，否则不要扩展到项目内其他 PDF。"
-      : "用户没有选中特定 PDF。本次回答默认分析当前项目绑定的全部本地 PDF。",
+      ? "用户已经在项目资料树中选中了部分文件。本次回答默认只分析这些选中的文件；除非用户明确要求全部文件，否则不要扩展到项目内其他文件。"
+      : "用户没有选中特定文件。本次回答默认分析当前项目绑定的全部本地文件。",
     "用户的表达不需要是固定口令。只要含义是精读、拆解、分析、比较、整理、生成矩阵、生成 PPT、大纲规划等，都要映射到当前项目资料范围执行。",
-    "如果用户问“是否必须上传文件”或“你能不能读取本地文件夹”，必须说明：在本机连接器在线且用户已绑定/授权本地文件夹时，可以读取本地文件夹里的 PDF；只有网页端单独运行、本机连接器离线、文件未授权或读取失败时，才需要用户上传或重新授权。",
+    "如果用户问“是否必须上传文件”或“你能不能读取本地文件夹”，必须说明：在本机连接器在线且用户已绑定/授权本地文件夹时，可以读取本地文件夹里的 PDF、Word、Excel、PPT、文本等文件；图片可打开和纳入范围，但图片内容识别需要 OCR/视觉模型。只有网页端单独运行、本机连接器离线、文件未授权或读取失败时，才需要用户上传或重新授权。",
     "如果用户要求分析“当前项目所有文件”，必须先按下方清单识别当前项目文件范围，不要回答成文献库、旧项目或其他文件夹中的文献。",
     buildLocalPdfManifest(project),
     evidenceMessages.length > 0
-      ? `已成功从授权本地文件夹读取 ${evidenceMessages.length} 个 PDF 的全文/摘录。本次总计送入模型约 ${usedChars} 个字符，覆盖 ${evidenceMessages.length}/${files.length} 个 PDF。后续证据包均来自这个项目。`
-      : "没有成功读取到本地 PDF 正文。",
+      ? `已成功从授权本地文件夹读取 ${evidenceMessages.length} 个文件的正文/摘录。本次总计送入模型约 ${usedChars} 个字符，覆盖 ${evidenceMessages.length}/${files.length} 个文件。后续证据包均来自这个项目。`
+      : "没有成功读取到本地文件正文。",
     failed.length > 0
-      ? `以下 PDF 读取失败，不能作为已读全文证据：\n${failed
+      ? `以下文件读取失败，不能作为已读全文证据：\n${failed
           .map((item, index) => `${index + 1}. ${item}`)
           .join("\n")}`
       : "",
     skipped.length > 0
-      ? `为控制单次分析成本，本次未读取以下 PDF。若用户要求“全部文献”，请明确说明本次最多读取前 ${maxFiles} 个，并建议分批分析：\n${skipped
+      ? `为控制单次分析成本，本次未读取以下文件。若用户要求“全部文献”，请明确说明本次最多读取前 ${maxFiles} 个，并建议分批分析：\n${skipped
           .map((item, index) => `${index + 1}. ${item.folderName} / ${item.name}`)
           .join("\n")}`
       : "",
@@ -446,7 +475,7 @@ export function ChatShell() {
   const activeProjectLocalPdfCount = useMemo(
     () =>
       activeProject?.localFolders.reduce(
-        (total, folder) => total + folder.pdfCount,
+        (total, folder) => total + (folder.fileCount ?? folder.files.length),
         0,
       ) ?? 0,
     [activeProject],
@@ -639,11 +668,12 @@ export function ChatShell() {
 
   const handleBindLocalFolder = useCallback(
     (folder: LocalFolderBinding) => {
+      const boundFileCount = folder.fileCount ?? folder.files.length;
       if (!activeProjectId) {
         const project = createResearchProject(
           folder.name || "本地文献项目",
           [],
-          `已绑定本地文献文件夹：${folder.name}（${folder.pdfCount} 个 PDF）`,
+          `已绑定本地资料文件夹：${folder.name}（${boundFileCount} 个文件）`,
         );
         const projectWithLocalFolder = {
           ...project,
@@ -656,7 +686,7 @@ export function ChatShell() {
         setContextMode("project");
         setError(null);
         setLocalPdfStatus(
-          `已创建项目并绑定本地文件夹：${folder.name}（${folder.pdfCount} 个 PDF）`,
+          `已创建项目并绑定本地文件夹：${folder.name}（${boundFileCount} 个文件）`,
         );
         setActiveToolFolderId(null);
         setToolPanelOpen(true);
@@ -674,7 +704,7 @@ export function ChatShell() {
           return {
             ...project,
             localFolders: [folder, ...existing].slice(0, 12),
-            lastTask: `已绑定本地文献文件夹：${folder.name}（${folder.pdfCount} 个 PDF）`,
+            lastTask: `已绑定本地资料文件夹：${folder.name}（${boundFileCount} 个文件）`,
             updatedAt: now,
           };
         }),
@@ -980,8 +1010,8 @@ export function ChatShell() {
         if (shouldReadLocalProject) {
           const scopeLabel =
             selectedLocalIdsForThisRequest.length > 0
-              ? `当前项目“${project.name}”中已选 ${selectedLocalIdsForThisRequest.length} 个 PDF`
-              : `当前项目“${project.name}”绑定的全部本地 PDF`;
+              ? `当前项目“${project.name}”中已选 ${selectedLocalIdsForThisRequest.length} 个文件`
+              : `当前项目“${project.name}”绑定的全部本地文件`;
           const localPdfContextMessages = await buildLocalPdfContextForProject(
             project,
             setActivity,
@@ -1135,18 +1165,18 @@ export function ChatShell() {
       if (!activeProject || files.length === 0) return;
 
       if (action === "single_read" && files.length !== 1) {
-        setError("单篇精读必须且只能选择 1 篇 PDF。");
+        setError("单篇精读必须且只能选择 1 个文件。");
         return;
       }
       if (action === "matrix" && files.length < 2) {
-        setError("文献矩阵至少需要选择 2 篇 PDF。");
+        setError("文献矩阵至少需要选择 2 个文件。");
         return;
       }
       if (
         (action === "translate_en" || action === "translate_bilingual") &&
         files.length < 1
       ) {
-        setError("文件翻译至少需要选择 1 篇 PDF。");
+        setError("文件翻译至少需要选择 1 个文件。");
         return;
       }
 
@@ -1159,19 +1189,22 @@ export function ChatShell() {
 
       const fileList = files
         .slice(0, 12)
-        .map((file, index) => `${index + 1}. ${file.name}`)
+        .map(
+          (file, index) =>
+            `${index + 1}. ${file.name}（${localFileTypeLabel(file)}）`,
+        )
         .join("\n");
-      const extra = files.length > 12 ? `\n...共 ${files.length} 篇 PDF` : "";
+      const extra = files.length > 12 ? `\n...共 ${files.length} 个文件` : "";
       const taskMessage =
         action === "single_read"
-          ? `单篇精读这篇 PDF：\n${fileList}\n\n请按研究问题、技术路线、关键实验、结果证据、创新性、局限性、可引用观点来分析。`
+          ? `单篇精读这个文件：\n${fileList}\n\n请按研究问题、技术路线、关键实验、结果证据、创新性、局限性、可引用观点来分析。`
           : action === "matrix"
-            ? `基于当前选中的 ${files.length} 篇 PDF 生成中文文献矩阵。\n\n文献范围：\n${fileList}${extra}\n\n矩阵至少包含：文献名称、研究主题、研究问题、研究对象、研究方法、关键结果、主要结论、核心贡献、局限性、与当前项目的关系。`
+            ? `基于当前选中的 ${files.length} 个文件生成中文文献矩阵。\n\n文献范围：\n${fileList}${extra}\n\n矩阵至少包含：文献名称、研究主题、研究问题、研究对象、研究方法、关键结果、主要结论、核心贡献、局限性、与当前项目的关系。`
             : action === "translate_en"
-              ? `请把当前选中的 ${files.length} 篇 PDF 翻译成专业、准确、自然的英文。\n\n文件范围：\n${fileList}${extra}\n\n输出要求：\n1. 只输出英文译文，不输出中文原文。\n2. 保留原文的章节层级、标题、编号、公式编号、图表编号和关键术语。\n3. 对无法可靠翻译的公式、单位、材料名、基因名、菌株名、设备型号保持原样。\n4. 如果全文较长，先按章节翻译最关键的正文内容，并在末尾说明哪些部分因长度限制未完整展开。`
+              ? `请把当前选中的 ${files.length} 个文件翻译成专业、准确、自然的英文。\n\n文件范围：\n${fileList}${extra}\n\n输出要求：\n1. 只输出英文译文，不输出中文原文。\n2. 保留原文的章节层级、标题、编号、公式编号、图表编号和关键术语。\n3. 对无法可靠翻译的公式、单位、材料名、基因名、菌株名、设备型号保持原样。\n4. 如果全文较长，先按章节翻译最关键的正文内容，并在末尾说明哪些部分因长度限制未完整展开。`
               : action === "translate_bilingual"
-                ? `请把当前选中的 ${files.length} 篇 PDF 做成中英双语对照翻译。\n\n文件范围：\n${fileList}${extra}\n\n输出格式：\n- 每一段先放中文原文，下一段放英文翻译。\n- 用“原文：”和“译文：”标注。\n- 保留原文的章节层级、标题、编号、公式编号、图表编号和关键术语。\n- 对无法可靠翻译的公式、单位、材料名、基因名、菌株名、设备型号保持原样。\n- 如果全文较长，先按章节翻译最关键的正文内容，并在末尾说明哪些部分因长度限制未完整展开。`
-            : `分析当前选中的 ${files.length} 篇 PDF。\n\n文献范围：\n${fileList}${extra}\n\n请输出主题归类、研究共识、研究分歧、研究空白，以及后续可展开的文献矩阵建议。`;
+                ? `请把当前选中的 ${files.length} 个文件做成中英双语对照翻译。\n\n文件范围：\n${fileList}${extra}\n\n输出格式：\n- 每一段先放中文原文，下一段放英文翻译。\n- 用“原文：”和“译文：”标注。\n- 保留原文的章节层级、标题、编号、公式编号、图表编号和关键术语。\n- 对无法可靠翻译的公式、单位、材料名、基因名、菌株名、设备型号保持原样。\n- 如果全文较长，先按章节翻译最关键的正文内容，并在末尾说明哪些部分因长度限制未完整展开。`
+            : `分析当前选中的 ${files.length} 个文件。\n\n文献范围：\n${fileList}${extra}\n\n请输出主题归类、研究共识、研究分歧、研究空白，以及后续可展开的文献矩阵建议。`;
 
       void submitMessage(
         { message: taskMessage },
@@ -1501,7 +1534,7 @@ export function ChatShell() {
               {contextMode === "temporary"
                 ? "临时问题，不使用项目上下文"
                 : activeProjectLocalPdfCount > 0
-                  ? `本地文件夹 ${activeProject?.localFolders.length ?? 0} 个 · PDF ${activeProjectLocalPdfCount} 个`
+                  ? `本地文件夹 ${activeProject?.localFolders.length ?? 0} 个 · 文件 ${activeProjectLocalPdfCount} 个`
                 : selectedFolders.length > 0
                   ? `已选择 ${selectedFolders.length} 个文献文件夹`
                   : "可直接绑定本地文件夹或选择项目资料"}
@@ -1635,7 +1668,7 @@ export function ChatShell() {
                               </p>
                             </div>
                             <span className="shrink-0 rounded-md bg-[#e8f2f6] px-2 py-1 text-xs font-bold text-[#245d82]">
-                              {folder.pdfCount} PDF
+                              {folder.fileCount ?? folder.files.length} 文件
                             </span>
                           </div>
                           {folder.files.length > 0 ? (
@@ -1648,6 +1681,9 @@ export function ChatShell() {
                                   <FileText className="h-4 w-4 shrink-0 text-[#245d82]" />
                                   <span className="min-w-0 flex-1 truncate text-xs font-bold text-[#172126]">
                                     {file.name}
+                                    <span className="ml-2 rounded bg-[#eef4f6] px-1.5 py-0.5 text-[10px] text-[#52636b]">
+                                      {localFileTypeLabel(file)}
+                                    </span>
                                   </span>
                                   <button
                                     type="button"
@@ -1688,12 +1724,12 @@ export function ChatShell() {
                             </div>
                           ) : (
                             <p className="mt-3 rounded-md bg-[#f8fbfc] px-3 py-2 text-xs font-semibold text-[#718087]">
-                              这个文件夹中暂未扫描到 PDF。
+                              这个文件夹中暂未扫描到可用文件。
                             </p>
                           )}
                           {folder.files.length > 8 && (
                             <p className="mt-2 text-xs font-medium text-[#718087]">
-                              仅显示前 8 个 PDF，后续会加入完整文件列表和搜索。
+                              仅显示前 8 个文件，后续会加入完整文件列表和搜索。
                             </p>
                           )}
                         </div>

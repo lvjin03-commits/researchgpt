@@ -8,6 +8,9 @@ export type LocalWorkspaceFile = {
   path: string;
   size: number;
   modifiedAt: string;
+  extension?: string;
+  kind?: "pdf" | "word" | "excel" | "ppt" | "image" | "text" | "other";
+  readable?: boolean;
 };
 
 export type LocalWorkspaceFolder = {
@@ -16,6 +19,7 @@ export type LocalWorkspaceFolder = {
   path: string;
   boundAt: string;
   pdfCount: number;
+  fileCount?: number;
   truncated?: boolean;
   files: LocalWorkspaceFile[];
 };
@@ -73,7 +77,19 @@ function isLocalFile(value: unknown): value is LocalWorkspaceFile {
     typeof record.name === "string" &&
     typeof record.path === "string" &&
     typeof record.size === "number" &&
-    typeof record.modifiedAt === "string"
+    typeof record.modifiedAt === "string" &&
+    (typeof record.extension === "undefined" ||
+      typeof record.extension === "string") &&
+    (typeof record.kind === "undefined" ||
+      record.kind === "pdf" ||
+      record.kind === "word" ||
+      record.kind === "excel" ||
+      record.kind === "ppt" ||
+      record.kind === "image" ||
+      record.kind === "text" ||
+      record.kind === "other") &&
+    (typeof record.readable === "undefined" ||
+      typeof record.readable === "boolean")
   );
 }
 
@@ -86,6 +102,8 @@ function isLocalFolder(value: unknown): value is LocalWorkspaceFolder {
     typeof record.path === "string" &&
     typeof record.boundAt === "string" &&
     typeof record.pdfCount === "number" &&
+    (typeof record.fileCount === "undefined" ||
+      typeof record.fileCount === "number") &&
     (typeof record.truncated === "undefined" ||
       typeof record.truncated === "boolean") &&
     Array.isArray(record.files) &&

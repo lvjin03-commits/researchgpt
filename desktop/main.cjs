@@ -14,6 +14,35 @@ const SHOW_CONNECTOR_WINDOW =
 const MAX_SCAN_FILES = 500;
 const MAX_READ_BYTES = 80 * 1024 * 1024;
 const DEFAULT_TEXT_LIMIT = 160000;
+const SUPPORTED_LOCAL_EXTENSIONS = new Set([
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".csv",
+  ".tsv",
+  ".ppt",
+  ".pptx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".bmp",
+  ".txt",
+  ".md",
+  ".json",
+]);
+const TEXT_EXTENSIONS = new Set([".txt", ".md", ".json", ".csv", ".tsv"]);
+const IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".bmp",
+]);
 
 let mainWindow = null;
 let statusServer = null;
@@ -32,17 +61,39 @@ async function readJsonBody(request) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function assertPdfPath(filePath) {
+function extensionFor(filePath) {
+  return path.extname(filePath).toLowerCase();
+}
+
+function kindForExtension(extension) {
+  if (extension === ".pdf") return "pdf";
+  if (extension === ".doc" || extension === ".docx") return "word";
+  if (extension === ".xls" || extension === ".xlsx") return "excel";
+  if (extension === ".ppt" || extension === ".pptx") return "ppt";
+  if (IMAGE_EXTENSIONS.has(extension)) return "image";
+  if (TEXT_EXTENSIONS.has(extension)) return "text";
+  return "other";
+}
+
+function canExtractText(extension) {
+  return (
+    extension === ".pdf" ||
+    extension === ".docx" ||
+    extension === ".xlsx" ||
+    extension === ".xls" ||
+    extension === ".pptx" ||
+    TEXT_EXTENSIONS.has(extension)
+  );
+}
+
+function assertLocalFilePath(filePath) {
   if (typeof filePath !== "string" || filePath.trim().length === 0) {
-    throw new Error("Missing PDF path.");
-  }
-  if (!filePath.toLowerCase().endsWith(".pdf")) {
-    throw new Error("Only PDF files can be opened or read.");
+    throw new Error("Missing file path.");
   }
   return filePath;
 }
 
-async function scanPdfFiles(folderPath) {
+async function scanLocalFiles(folderPath) {
   const files = [];
   const queue = [folderPath];
 
@@ -64,7 +115,8 @@ async function scanPdfFiles(folderPath) {
         continue;
       }
 
-      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".pdf")) {
+      const extension = extensionFor(entry.name);
+      if (!entry.isFile() || !SUPPORTED_LOCAL_EXTENSIONS.has(extension)) {
         continue;
       }
 
@@ -76,6 +128,9 @@ async function scanPdfFiles(folderPath) {
           path: entryPath,
           size: stats.size,
           modifiedAt: stats.mtime.toISOString(),
+          extension,
+          kind: kindForExtension(extension),
+          readable: canExtractText(extension),
         });
       } catch (error) {
         console.warn("[desktop] cannot stat file:", entryPath, error);
@@ -99,7 +154,8 @@ async function selectLocalFolder() {
   }
 
   const folderPath = result.filePaths[0];
-  const scan = await scanPdfFiles(folderPath);
+  const scan = await scanLocalFiles(folderPath);
+  const pdfCount = scan.files.filter((file) => file.kind === "pdf").length;
 
   return {
     canceled: false,
@@ -108,48 +164,125 @@ async function selectLocalFolder() {
       name: path.basename(folderPath) || folderPath,
       path: folderPath,
       boundAt: new Date().toISOString(),
-      pdfCount: scan.files.length,
+      pdfCount,
+      fileCount: scan.files.length,
       truncated: scan.truncated,
       files: scan.files,
     },
   };
 }
 
-async function openLocalPdf(filePath) {
-  const normalizedPath = assertPdfPath(filePath);
+async function openLocalFile(filePath) {
+  const normalizedPath = assertLocalFilePath(filePath);
   const stats = await fs.stat(normalizedPath);
-  if (!stats.isFile()) throw new Error("PDF path is not a file.");
+  if (!stats.isFile()) throw new Error("Path is not a file.");
 
   const errorMessage = await shell.openPath(normalizedPath);
   if (errorMessage) throw new Error(errorMessage);
   return { opened: true };
 }
 
-async function readLocalPdfText(filePath, limit = DEFAULT_TEXT_LIMIT) {
-  const normalizedPath = assertPdfPath(filePath);
-  const stats = await fs.stat(normalizedPath);
-  if (!stats.isFile()) throw new Error("PDF path is not a file.");
-  if (stats.size > MAX_READ_BYTES) {
-    throw new Error("PDF is too large for this preview reader.");
-  }
-
-  const buffer = await fs.readFile(normalizedPath);
-  const { extractText, getDocumentProxy } = await import("unpdf");
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
-  const extracted = await extractText(pdf, { mergePages: true });
-  const text = typeof extracted.text === "string" ? extracted.text : "";
+function applyTextLimit(text, limit) {
   const textLimit =
     typeof limit === "number" && Number.isFinite(limit) && limit > 0
       ? Math.min(Math.floor(limit), DEFAULT_TEXT_LIMIT)
       : DEFAULT_TEXT_LIMIT;
+  return {
+    text: text.slice(0, textLimit),
+    charCount: text.length,
+    truncated: text.length > textLimit,
+  };
+}
+
+function stripXmlText(xml) {
+  return xml
+    .replace(/<a:t[^>]*>/g, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+\n/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function readLocalFileText(filePath, limit = DEFAULT_TEXT_LIMIT) {
+  const normalizedPath = assertLocalFilePath(filePath);
+  const stats = await fs.stat(normalizedPath);
+  if (!stats.isFile()) throw new Error("Path is not a file.");
+  if (stats.size > MAX_READ_BYTES) {
+    throw new Error("File is too large for this preview reader.");
+  }
+
+  const extension = extensionFor(normalizedPath);
+  const kind = kindForExtension(extension);
+  const buffer = await fs.readFile(normalizedPath);
+  let pageCount = 1;
+  let text = "";
+
+  if (extension === ".pdf") {
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    const extracted = await extractText(pdf, { mergePages: true });
+    text = typeof extracted.text === "string" ? extracted.text : "";
+    pageCount = pdf.numPages;
+  } else if (extension === ".docx") {
+    const mammoth = require("mammoth");
+    const result = await mammoth.extractRawText({ buffer });
+    text = typeof result.value === "string" ? result.value : "";
+  } else if (extension === ".xlsx" || extension === ".xls") {
+    const XLSX = require("xlsx");
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    text = workbook.SheetNames.map((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+      return `# Sheet: ${sheetName}\n${csv}`;
+    }).join("\n\n");
+    pageCount = workbook.SheetNames.length || 1;
+  } else if (extension === ".pptx") {
+    const JSZip = require("jszip");
+    const zip = await JSZip.loadAsync(buffer);
+    const slideNames = Object.keys(zip.files)
+      .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+      .sort((left, right) => {
+        const leftNum = Number(left.match(/slide(\d+)\.xml/)?.[1] ?? 0);
+        const rightNum = Number(right.match(/slide(\d+)\.xml/)?.[1] ?? 0);
+        return leftNum - rightNum;
+      });
+    const slides = [];
+    for (const slideName of slideNames) {
+      const xml = await zip.files[slideName].async("string");
+      const slideText = stripXmlText(xml);
+      if (slideText) slides.push(`# ${path.basename(slideName, ".xml")}\n${slideText}`);
+    }
+    text = slides.join("\n\n");
+    pageCount = slideNames.length || 1;
+  } else if (TEXT_EXTENSIONS.has(extension)) {
+    text = buffer.toString("utf8");
+  } else if (IMAGE_EXTENSIONS.has(extension)) {
+    text = [
+      `[Image file: ${path.basename(normalizedPath)}]`,
+      "This file can be displayed and opened from the local connector.",
+      "Text extraction for images requires OCR or a vision model and is not available in the current local text reader.",
+    ].join("\n");
+  } else {
+    throw new Error("This file type is not readable yet.");
+  }
+
+  const limited = applyTextLimit(text, limit);
 
   return {
     filePath: normalizedPath,
     name: path.basename(normalizedPath),
-    pageCount: pdf.numPages,
-    text: text.slice(0, textLimit),
-    charCount: text.length,
-    truncated: text.length > textLimit,
+    extension,
+    kind,
+    pageCount,
+    text: limited.text,
+    charCount: limited.charCount,
+    truncated: limited.truncated,
   };
 }
 
@@ -180,6 +313,8 @@ function createStatusServer() {
         state: "connected",
         capabilities: [
           "local_files",
+          "open_file",
+          "read_file_text",
           "open_pdf",
           "read_pdf",
           "read_pdf_text",
@@ -206,13 +341,13 @@ function createStatusServer() {
 
     if (request.method === "POST" && pathname === "/local-files/open") {
       void readJsonBody(request)
-        .then((body) => openLocalPdf(body.path))
+        .then((body) => openLocalFile(body.path))
         .then((result) => writeJson(response, 200, result))
         .catch((error) => {
-          console.error("[desktop] local PDF open failed:", error);
+          console.error("[desktop] local file open failed:", error);
           writeJson(response, 500, {
             error:
-              error instanceof Error ? error.message : "Failed to open PDF.",
+              error instanceof Error ? error.message : "Failed to open file.",
           });
         });
       return;
@@ -220,13 +355,13 @@ function createStatusServer() {
 
     if (request.method === "POST" && pathname === "/local-files/read") {
       void readJsonBody(request)
-        .then((body) => readLocalPdfText(body.path, body.limit))
+        .then((body) => readLocalFileText(body.path, body.limit))
         .then((result) => writeJson(response, 200, result))
         .catch((error) => {
-          console.error("[desktop] local PDF read failed:", error);
+          console.error("[desktop] local file read failed:", error);
           writeJson(response, 500, {
             error:
-              error instanceof Error ? error.message : "Failed to read PDF.",
+              error instanceof Error ? error.message : "Failed to read file.",
           });
         });
       return;

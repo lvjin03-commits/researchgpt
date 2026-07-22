@@ -78,6 +78,33 @@ function isPdfFile(file: File): boolean {
   );
 }
 
+function localFileKind(file: LocalPdfFile): string {
+  if (file.kind) return file.kind;
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (extension === "pdf") return "pdf";
+  if (extension === "doc" || extension === "docx") return "word";
+  if (extension === "xls" || extension === "xlsx") return "excel";
+  if (extension === "ppt" || extension === "pptx") return "ppt";
+  if (["png", "jpg", "jpeg", "webp", "gif", "bmp"].includes(extension)) {
+    return "image";
+  }
+  if (["txt", "md", "json", "csv", "tsv"].includes(extension)) return "text";
+  return "file";
+}
+
+function localFileTypeLabel(file: LocalPdfFile): string {
+  const labels: Record<string, string> = {
+    pdf: "PDF",
+    word: "Word",
+    excel: "Excel",
+    ppt: "PPT",
+    image: "图片",
+    text: "文本",
+    file: "文件",
+  };
+  return labels[localFileKind(file)] ?? "文件";
+}
+
 export function ResearchToolPanel({
   open,
   folder,
@@ -137,8 +164,10 @@ export function ResearchToolPanel({
       .flatMap((localFolder) => localFolder.files)
       .filter((file) => selectedLocalFileSet.has(file.id)) ?? [];
   const projectPdfCount =
-    project?.localFolders.reduce((total, item) => total + item.pdfCount, 0) ??
-    0;
+    project?.localFolders.reduce(
+      (total, item) => total + (item.fileCount ?? item.files.length),
+      0,
+    ) ?? 0;
   const showProjectMaterials = !folder && project;
 
   const toggleExpandedLocalFolder = (folderId: string) => {
@@ -174,22 +203,22 @@ export function ResearchToolPanel({
   ) => {
     setContextMenu(null);
     if (action === "single_read" && files.length !== 1) {
-      setActionError("单篇精读必须且只能选择 1 篇 PDF。");
+      setActionError("单篇精读必须且只能选择 1 个文件。");
       return;
     }
     if (action === "analysis" && files.length < 1) {
-      setActionError("文献分析至少需要选择 1 篇 PDF。");
+      setActionError("文献分析至少需要选择 1 个文件。");
       return;
     }
     if (action === "matrix" && files.length < 2) {
-      setActionError("文献矩阵至少需要选择 2 篇 PDF。");
+      setActionError("文献矩阵至少需要选择 2 个文件。");
       return;
     }
     if (
       (action === "translate_en" || action === "translate_bilingual") &&
       files.length < 1
     ) {
-      setActionError("文件翻译至少需要选择 1 篇 PDF。");
+      setActionError("文件翻译至少需要选择 1 个文件。");
       return;
     }
     setActionError(null);
@@ -209,7 +238,7 @@ export function ResearchToolPanel({
               {folder
                 ? `${papers.length} 篇文献`
                 : project
-                  ? `${project.localFolders.length} 个本地文件夹 · ${projectPdfCount} 个 PDF`
+                  ? `${project.localFolders.length} 个本地文件夹 · ${projectPdfCount} 个文件`
                   : "执行过程与工具状态"}
             </p>
           </div>
@@ -414,12 +443,12 @@ export function ResearchToolPanel({
                 {project.name}
               </h2>
               <p className="mt-1 text-xs leading-5 text-[#607078]">
-                默认只读取本项目绑定的资料。勾选 PDF 后，下一次分析会优先只读取已选文件。
+                默认只读取本项目绑定的资料。勾选文件后，下一次分析会优先只读取已选文件。
               </p>
               {selectedLocalFileIds.length > 0 && (
                 <div className="mt-3 rounded-md bg-white px-3 py-2">
                   <div className="flex items-center justify-between text-xs font-bold text-[#174866]">
-                    <span>本次已选 {selectedLocalFileIds.length} 个 PDF</span>
+                    <span>本次已选 {selectedLocalFileIds.length} 个文件</span>
                     <button
                       type="button"
                       onClick={onClearLocalSelection}
@@ -579,7 +608,7 @@ export function ResearchToolPanel({
                                     onClick={() => onToggleLocalFile?.(file.id)}
                                     className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-[#174866]"
                                     aria-label={
-                                      selected ? "取消选择 PDF" : "选择 PDF"
+                                    selected ? "取消选择文件" : "选择文件"
                                     }
                                   >
                                     {selected ? (
@@ -599,7 +628,7 @@ export function ResearchToolPanel({
                                       {file.name}
                                     </span>
                                     <span className="block truncate text-[11px] text-[#7c8b91]">
-                                      双击打开 · {(file.size / 1024 / 1024).toFixed(1)} MB
+                                      {localFileTypeLabel(file)} · 双击打开 · {(file.size / 1024 / 1024).toFixed(1)} MB
                                     </span>
                                   </button>
                                   <button
@@ -607,7 +636,7 @@ export function ResearchToolPanel({
                                     onClick={() => onOpenLocalPdf?.(file)}
                                     disabled={activeLocalPdfAction === `open:${file.id}`}
                                     className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#d4dfe2] text-[#174866] hover:bg-[#eef6f9] disabled:opacity-50"
-                                    title="打开 PDF"
+                                    title="打开文件"
                                     aria-label={`打开 ${file.name}`}
                                   >
                                     {activeLocalPdfAction === `open:${file.id}` ? (
@@ -624,7 +653,7 @@ export function ResearchToolPanel({
                                   >
                                     {activeLocalPdfAction === `read:${file.id}`
                                       ? "读取中"
-                                      : "测试全文"}
+                                      : "读取测试"}
                                   </button>
                                 </li>
                               );
@@ -729,7 +758,7 @@ export function ResearchToolPanel({
                       }}
                       className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
                     >
-                      打开 PDF
+                      打开文件
                     </button>
                     <button
                       type="button"
@@ -739,7 +768,7 @@ export function ResearchToolPanel({
                       }}
                       className="block w-full rounded-md px-3 py-2 text-left font-semibold text-gray-800 hover:bg-[#eef6f9]"
                     >
-                      测试全文读取
+                      读取内容测试
                     </button>
                   </>
                 ) : (
