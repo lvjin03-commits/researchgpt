@@ -69,6 +69,12 @@ function normalized(value: string): string {
     .toLocaleLowerCase("zh-CN");
 }
 
+function isArtifactOrVisualRequest(value: string): boolean {
+  return /(?:生成|制作|创建|导出|画|绘制|整理成|总结成|转成|做成).{0,24}(?:图片|图像|图表|图解|可视化|流程图|时间轴|鱼骨图|技术路线图|框架图|结构图|思维导图|示意图|PPT|幻灯片|Word|文档|PDF|Excel|表格|报告|png|svg)|(?:image|diagram|visuali[sz]ation|chart|figure|graph|flowchart|timeline|fishbone|ishikawa|ppt|slides|word|docx|pdf|excel|xlsx|artifact)/i.test(
+    value,
+  );
+}
+
 function resolveNamedItem<T>(
   query: string,
   items: T[],
@@ -183,6 +189,7 @@ export function planLibraryCommand(
 ): LibraryCommandResult {
   const text = command.trim();
   if (!text) return { type: "none" };
+  if (isArtifactOrVisualRequest(text)) return { type: "none" };
 
   let match = text.match(
     /^(?:请|帮我|请帮我)?\s*(?:新建|创建)(?:一个)?(?:文献)?文件夹(?:叫|名为|为|：|:)?\s*(.+)$/i,
