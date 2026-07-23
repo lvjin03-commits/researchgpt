@@ -479,6 +479,25 @@ function routeFastPath(input: IntentRouterInput): IntentPlan | null {
   return null;
 }
 
+function routeSafetyInterception(input: IntentRouterInput): IntentPlan | null {
+  const query = compact(lastUserText(input.messages), 500);
+  if (!query) return null;
+
+  const critiquesExistingOutput =
+    /(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事).{0,30}(图|图片|图像|海报|信息图|结果|回答|输出|visual|image|poster|infographic)|(图|图片|图像|海报|信息图|结果|回答|输出|visual|image|poster|infographic).{0,30}(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事)/i.test(
+      query,
+    );
+
+  if (!critiquesExistingOutput) return null;
+
+  return createLocalPlan(input, "conversation", "用户在追问或评价已有输出的问题。", {
+    confidence: 0.92,
+    inputScope: "current_message",
+    outputType: "chat_answer",
+    tools: ["chat_model"],
+  });
+}
+
 function planFromRecord(
   record: Record<string, unknown>,
   input: IntentRouterInput,
@@ -586,11 +605,11 @@ export async function routeIntent(
   input: IntentRouterInput,
   signal?: AbortSignal,
 ): Promise<IntentPlan> {
-  const fastPath = routeFastPath(input);
-  if (fastPath) return fastPath;
+  const safetyPlan = routeSafetyInterception(input);
+  if (safetyPlan) return safetyPlan;
 
   const router = getRouterClient();
-  if (!router) return fallbackIntentPlan(input);
+  if (!router) return routeFastPath(input) ?? fallbackIntentPlan(input);
 
   const recentConversation = input.messages
     .filter((message) => message.role !== "system")
@@ -649,10 +668,10 @@ export async function routeIntent(
     const content = completion.choices[0]?.message.content ?? "";
     const record = extractJsonObject(content);
     const plan = record ? planFromRecord(record, input) : null;
-    return plan ?? fallbackIntentPlan(input);
+    return plan ?? routeFastPath(input) ?? fallbackIntentPlan(input);
   } catch (error) {
     console.warn("[intent-router] model routing failed", error);
-    return fallbackIntentPlan(input);
+    return routeFastPath(input) ?? fallbackIntentPlan(input);
   }
 }
 
