@@ -7,6 +7,28 @@ import type { AttachmentStorageMetadata } from "@/lib/uploads/types";
 import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
 import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 
+export type ChatProjectContext = {
+  id?: string;
+  name?: string;
+  selectedLocalFileIds?: string[];
+  localFolders: Array<{
+    id: string;
+    name: string;
+    path?: string;
+    fileCount: number;
+    pdfCount: number;
+    truncated?: boolean;
+    files: Array<{
+      id: string;
+      name: string;
+      size: number;
+      extension?: string;
+      kind?: string;
+      readable?: boolean;
+    }>;
+  }>;
+};
+
 export class ChatClientError extends Error {
   readonly statusCode: number;
 
@@ -159,6 +181,7 @@ export async function streamChatResponse(
     selectedFolderIds?: string[];
     contextMode?: WorkspaceContextMode;
     projectName?: string;
+    projectContext?: ChatProjectContext | null;
     onChunk: (chunk: string) => void;
     onStatus?: (message: string) => void;
     onUsage?: (usage: Extract<ChatStreamEvent, { type: "usage" }>) => void;
@@ -204,6 +227,7 @@ export async function streamChatResponse(
       selectedFolderIds: options.selectedFolderIds ?? [],
       contextMode: options.contextMode ?? "auto",
       projectName: options.projectName ?? "",
+      projectContext: options.projectContext ?? null,
     }),
     signal: options.signal,
   });

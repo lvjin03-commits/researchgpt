@@ -34,6 +34,7 @@ import {
   ChatClientError,
   isAbortError,
   streamChatResponse,
+  type ChatProjectContext,
 } from "@/lib/chat/client";
 import {
   buildChatApiMessages,
@@ -197,6 +198,35 @@ function buildLocalPdfManifest(project: ResearchProject): string {
     `当前项目“${project.name}”绑定的本地文件如下：`,
     ...files.map((file, index) => `${index + 1}. ${file}`),
   ].join("\n");
+}
+
+function buildProjectContextForChat(
+  project: ResearchProject | null,
+  selectedLocalFileIds: string[],
+): ChatProjectContext | null {
+  if (!project) return null;
+
+  return {
+    id: project.id,
+    name: project.name,
+    selectedLocalFileIds,
+    localFolders: project.localFolders.slice(0, 12).map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      path: folder.path,
+      fileCount: folder.fileCount ?? folder.files.length,
+      pdfCount: folder.pdfCount,
+      truncated: folder.truncated,
+      files: folder.files.slice(0, 80).map((file) => ({
+        id: file.id,
+        name: file.name,
+        size: file.size,
+        extension: file.extension,
+        kind: file.kind,
+        readable: file.readable,
+      })),
+    })),
+  };
 }
 
 async function buildLocalPdfContextForProject(
@@ -1145,6 +1175,10 @@ export function ChatShell() {
           selectedFolderIds: shouldReadLocalProject ? [] : selectedFolderIds,
           contextMode: contextModeOverride ?? contextMode,
           projectName: project?.name,
+          projectContext: buildProjectContextForChat(
+            project,
+            selectedLocalIdsForThisRequest,
+          ),
           onStatus: setActivity,
           onUsage: (nextUsage) =>
             setUsage((current) => ({

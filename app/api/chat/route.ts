@@ -16,6 +16,10 @@ import {
   intentRequestsGptImage,
   routeIntent,
 } from "@/lib/chat/intent-router";
+import {
+  executeToolPlan,
+  sanitizeExecutableProjectContext,
+} from "@/lib/chat/tool-executor";
 import { buildToolPlan, type ToolPlan } from "@/lib/chat/tool-planner";
 import { withScientificVisualPolicy } from "@/lib/chat/visual-policy";
 import {
@@ -51,6 +55,7 @@ type ChatRequestBody = {
   selectedFolderIds?: unknown;
   contextMode?: unknown;
   projectName?: unknown;
+  projectContext?: unknown;
 };
 
 function isContextMode(value: unknown): value is WorkspaceContextMode {
@@ -228,6 +233,10 @@ export async function POST(request: Request) {
       typeof body.projectName === "string"
         ? body.projectName.trim().slice(0, 120)
         : "";
+    const projectContext = sanitizeExecutableProjectContext(
+      body.projectContext,
+    );
+    const effectiveProjectName = projectName || projectContext?.name || "";
     const memory =
       typeof body.memory === "string" ? body.memory.trim().slice(0, 2000) : "";
     const sanitized = sanitizeIncomingChatMessages(body.messages);
@@ -254,7 +263,7 @@ export async function POST(request: Request) {
         messages,
         selectedFolderIds,
         contextMode,
-        projectName,
+        projectName: effectiveProjectName,
         webSearchRequested: webSearch,
         libraryRequested: useLibrary,
       },
@@ -264,9 +273,17 @@ export async function POST(request: Request) {
       messages,
       selectedFolderIds,
       contextMode,
-      projectName,
+      projectName: effectiveProjectName,
       webSearchRequested: webSearch,
       libraryRequested: useLibrary,
+    });
+    const toolExecution = await executeToolPlan({
+      intentPlan,
+      toolPlan,
+      projectContext,
+      selectedFolderIds,
+      contextMode,
+      projectName: effectiveProjectName,
     });
     const taskRoute = chatRouteFromIntent(intentPlan);
     const projectReferencePattern =
@@ -294,6 +311,10 @@ export async function POST(request: Request) {
       ],
       modelOption,
     );
+
+    for (const contextMessage of toolExecution.contextMessages) {
+      messages = insertContextBeforeLastUser(messages, contextMessage);
+    }
 
     let libraryStatus = "";
     if (effectiveUseLibrary) {
@@ -361,6 +382,11 @@ export async function POST(request: Request) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
+          for (const status of toolExecution.statuses) {
+            controller.enqueue(
+              encodeChatStreamEvent({ type: "status", message: status }),
+            );
+          }
           if (effectiveUseLibrary) {
             controller.enqueue(
               encodeChatStreamEvent({ type: "status", message: libraryStatus }),
@@ -385,6 +411,20 @@ export async function POST(request: Request) {
                 formatIntentPlanCard(intentPlan) + formatToolPlanCard(toolPlan),
             }),
           );
+          if (toolExecution.blockingMessage) {
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "text",
+                delta: [
+                  "工具执行层已暂停任务，避免读取错误资料：",
+                  "",
+                  toolExecution.blockingMessage,
+                ].join("\n"),
+              }),
+            );
+            controller.close();
+            return;
+          }
           if (toolPlan.needsUserDecision && toolPlan.confirmationQuestion) {
             controller.enqueue(
               encodeChatStreamEvent({
@@ -483,7 +523,7 @@ export async function POST(request: Request) {
                 userId: user.id,
                 feature: "chat",
                 taskKind: taskRoute.kind,
-                projectName,
+                projectName: effectiveProjectName,
                 modelTier,
                 usage: event,
               });
