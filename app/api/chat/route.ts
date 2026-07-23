@@ -40,6 +40,7 @@ import {
   generateResearchImage,
   isGptImageRequest,
 } from "@/lib/ai/image-generation";
+import { getToolLabel } from "@/lib/chat/tool-registry";
 import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 import { createClient } from "@/lib/supabase/server";
 import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/uploads/storage-constants";
@@ -126,22 +127,6 @@ const OUTPUT_LABELS: Record<IntentPlan["outputType"], string> = {
   workspace_operation: "工作区操作",
 };
 
-const TOOL_LABELS: Record<IntentPlan["tools"][number], string> = {
-  chat_model: "语言模型",
-  web_search: "联网搜索",
-  gpt_image: "GPT Image",
-  svg_visual_renderer: "结构化图表",
-  document_pipeline: "文档生成工具",
-  translation_pipeline: "翻译工具",
-  literature_pipeline: "文献分析工具",
-  presentation_pipeline: "PPT 工具",
-  spreadsheet_pipeline: "表格工具",
-  literature_library: "文献库工具",
-  project_workspace: "项目工作区",
-  local_connector: "本机连接器",
-  quality_checker: "质量检查",
-};
-
 function formatTokenEstimate(plan: IntentPlan): string {
   const estimate = plan.tokenEstimate;
   const pieces = [
@@ -161,7 +146,7 @@ function formatTokenEstimate(plan: IntentPlan): string {
 function formatIntentPlanCard(plan: IntentPlan): string {
   const estimate = plan.tokenEstimate;
   const tools = plan.tools
-    .map((tool) => TOOL_LABELS[tool] ?? tool)
+    .map(getToolLabel)
     .join("、");
   const notes = estimate.notes.length
     ? `\n> ${estimate.notes.join(" ")}`
@@ -219,7 +204,7 @@ function formatCompactPlanDisclosure(
 ): string {
   const estimate = intentPlan.tokenEstimate;
   const tools =
-    intentPlan.tools.map((tool) => TOOL_LABELS[tool] ?? tool).join("、") ||
+    intentPlan.tools.map(getToolLabel).join("、") ||
     "语言模型";
   const requiredSteps = toolPlan.steps
     .filter((step) => step.required)

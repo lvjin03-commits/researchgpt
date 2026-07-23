@@ -5,6 +5,7 @@ import type {
   IntentRouterInput,
   ToolName,
 } from "@/lib/chat/intent-router";
+import { getToolDefinition, getToolLabel } from "@/lib/chat/tool-registry";
 
 export type ToolPlanStage =
   | "validate_scope"
@@ -50,8 +51,8 @@ function step(
 function scopeDetail(plan: IntentPlan, input: IntentRouterInput): string {
   if (plan.inputScope === "current_project") {
     return input.projectName
-      ? `只读取当前项目「${input.projectName}」绑定的资料。`
-      : "需要先选择项目，避免把其他项目资料混入任务。";
+      ? `只读取当前项目「${input.projectName}」绑定或选中的资料，避免混入其他项目。`
+      : "需要先选择项目，才能安全读取项目资料。";
   }
   if (plan.inputScope === "selected_folders") {
     return input.selectedFolderIds.length > 0
@@ -59,18 +60,18 @@ function scopeDetail(plan: IntentPlan, input: IntentRouterInput): string {
       : "需要先选择文献文件夹。";
   }
   if (plan.inputScope === "selected_files") {
-    return "只读取用户本次勾选或拖入的文件。";
+    return "只读取用户本次勾选、拖入或明确指定的文件。";
   }
   if (plan.inputScope === "uploaded_files") {
-    return "只读取本次上传的文件。";
+    return "只读取本次上传到对话中的文件。";
   }
   if (plan.inputScope === "web") {
-    return "通过联网搜索工具获取外部资料，并保留来源。";
+    return "通过联网检索工具获取外部资料，并保留来源。";
   }
   if (plan.inputScope === "literature_library") {
     return "读取文献库中与当前问题相关的记录。";
   }
-  return "只根据当前问题回答，不自动带入项目资料。";
+  return "只根据当前问题回答，不主动带入项目资料。";
 }
 
 function requiresProjectOrSelection(plan: IntentPlan): boolean {
@@ -86,14 +87,24 @@ function hasProjectOrSelection(input: IntentRouterInput): boolean {
 }
 
 function highCostTools(plan: IntentPlan): ToolName[] {
-  return plan.tools.filter(
-    (tool) =>
-      tool === "gpt_image" ||
-      tool === "presentation_pipeline" ||
-      tool === "document_pipeline" ||
-      tool === "translation_pipeline" ||
-      tool === "literature_pipeline",
+  return plan.tools.filter((tool) =>
+    [
+      "gpt_image",
+      "presentation_pipeline",
+      "document_pipeline",
+      "translation_pipeline",
+      "literature_pipeline",
+    ].includes(tool),
   );
+}
+
+function toolPurpose(tools: ToolName[]): string {
+  return tools
+    .map((tool) => {
+      const definition = getToolDefinition(tool);
+      return `${definition.label}用于${definition.purpose}`;
+    })
+    .join("；");
 }
 
 function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
@@ -103,15 +114,15 @@ function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
         step(
           "image_brief",
           "collect_inputs",
-          "整理图片需求",
-          "把用户的自然语言要求转成可执行的图片规格，包括画面主题、用途、比例、风格和禁忌。",
+          "整理图片 brief",
+          "把自然语言要求转成可执行的图片规格，包括主题、用途、比例、风格、文字密度和禁忌项。",
           ["chat_model"],
         ),
         step(
           "image_generate",
           "generate_output",
-          "调用图片模型",
-          "使用 GPT Image 生成一张可直接用于汇报、文档或说明页的高质量图片。",
+          "生成高质量图片",
+          "调用图片生成工具，输出可用于汇报、文档或说明页的 PNG 图片。",
           ["gpt_image"],
         ),
       ];
@@ -120,15 +131,15 @@ function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
         step(
           "visual_structure",
           "analyze_content",
-          "确定图形结构",
-          "先判断适合流程图、时间轴、鱼骨图、矩阵图还是数据图表，而不是只看关键词。",
+          "确定图表结构",
+          "先判断适合流程图、时间轴、鱼骨图、矩阵图还是数据图表，再生成结构化图形。",
           ["chat_model"],
         ),
         step(
           "visual_render",
           "generate_output",
           "生成可编辑图表",
-          "用结构化图形工具生成 SVG/HTML 图表，后续可以继续编辑。",
+          "用结构化图形工具生成 SVG/PNG，便于后续继续修改。",
           ["svg_visual_renderer"],
         ),
       ];
@@ -138,7 +149,7 @@ function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
           "translation_parse",
           "parse_files",
           "读取原文档",
-          "解析用户选中的文档内容和基本版式，为保持原格式做准备。",
+          "解析用户选中文档的正文和基础版式，为保持原格式做准备。",
           ["local_connector", "translation_pipeline"],
         ),
         step(
@@ -172,7 +183,7 @@ function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
           "matrix_parse",
           "parse_files",
           "批量读取文献",
-          "读取当前项目或已选文件夹中的论文，至少需要两篇文献。",
+          "读取当前项目或已选文件范围内的论文；文献矩阵最低需要两篇文献。",
           ["local_connector", "literature_pipeline"],
         ),
         step(
@@ -180,7 +191,7 @@ function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
           "analyze_content",
           "生成文献矩阵",
           "提取研究主题、方法、关键结果、结论、局限性以及与综述主题的关系。",
-          ["literature_pipeline"],
+          ["literature_pipeline", "spreadsheet_pipeline"],
         ),
       ];
     case "presentation_generation":
@@ -189,7 +200,7 @@ function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
           "ppt_storyline",
           "analyze_content",
           "规划汇报故事线",
-          "先生成页数、每页逻辑和证据需求，避免直接生成草稿式 PPT。",
+          "先确定页数、每页逻辑、证据需求和版式类型，避免直接生成草稿式 PPT。",
           ["presentation_pipeline"],
         ),
         step(
@@ -198,6 +209,40 @@ function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
           "生成 PPT 文件",
           "套用模板、选择版式、控制文字密度，并尽量匹配图表证据。",
           ["presentation_pipeline"],
+        ),
+      ];
+    case "create_artifact":
+      return [
+        step(
+          "artifact_plan",
+          "collect_inputs",
+          "规划成果文件",
+          "确认用户要 Word、PDF、Excel、PPT、图片还是其他格式，并整理可交付内容。",
+          ["chat_model", "document_pipeline"],
+        ),
+        step(
+          "artifact_create",
+          "generate_output",
+          "生成真实文件",
+          "调用文件生成工具输出可下载成果，而不是只把内容留在聊天窗口。",
+          ["document_pipeline"],
+        ),
+      ];
+    case "data_analysis":
+      return [
+        step(
+          "data_parse",
+          "parse_files",
+          "读取表格数据",
+          "读取 Excel、CSV 或用户给出的表格数据，确认字段和数据范围。",
+          ["spreadsheet_pipeline"],
+        ),
+        step(
+          "data_result",
+          "analyze_content",
+          "生成分析结果",
+          "计算、对比并输出表格或图表，避免编造数值。",
+          ["spreadsheet_pipeline", "svg_visual_renderer"],
         ),
       ];
     case "web_research":
@@ -245,6 +290,23 @@ function buildIntentSteps(plan: IntentPlan): ToolPlanStep[] {
           "确认本机授权",
           "确认本机连接器已启用，并只读取用户授权的本地路径。",
           ["local_connector"],
+        ),
+      ];
+    case "file_analysis":
+      return [
+        step(
+          "file_parse",
+          "parse_files",
+          "读取文件内容",
+          "读取用户选择、上传或当前项目授权范围内的文件。",
+          ["local_connector"],
+        ),
+        step(
+          "file_analyze",
+          "analyze_content",
+          "分析文件证据",
+          "基于真实读取到的内容回答，缺失内容时明确说明。",
+          ["chat_model"],
         ),
       ];
     default:
@@ -303,23 +365,24 @@ export function buildToolPlan(
     blockers.push("这个任务需要先选择项目、文件夹或文件，否则容易读取错资料。");
   }
 
-  if (
-    intentPlan.intent === "literature_matrix" &&
-    intentPlan.inputScope === "selected_folders" &&
-    input.selectedFolderIds.length === 0
-  ) {
-    blockers.push("文献矩阵至少需要先选择一个包含两篇以上文献的资料范围。");
+  if (intentPlan.intent === "literature_matrix") {
+    warnings.push("文献矩阵最低需要两篇可读取文献；如果少于两篇，应先提醒用户补充资料。");
   }
 
   if (intentPlan.constraints.requireProjectIsolation) {
-    warnings.push("本次任务会启用项目隔离：默认不读取其他项目或其他文件夹。");
+    warnings.push("本次任务启用项目隔离：默认不读取其他项目或其他文件夹。");
   }
 
   const expensive = highCostTools(intentPlan);
   if (expensive.length > 0) {
     warnings.push(
-      "该任务会调用较重的工具。执行前应向用户说明预计 token 和可能产生的额外费用。",
+      `本任务涉及较重工具：${expensive.map(getToolLabel).join("、")}。执行前应展示预计 token 或高成本提醒。`,
     );
+  }
+
+  const toolDescriptions = toolPurpose(intentPlan.tools);
+  if (toolDescriptions) {
+    warnings.push(`工具层：${toolDescriptions}`);
   }
 
   const needsUserDecision =
@@ -343,4 +406,3 @@ export function buildToolPlan(
         : undefined),
   };
 }
-

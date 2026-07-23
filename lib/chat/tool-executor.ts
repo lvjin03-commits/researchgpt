@@ -1,6 +1,7 @@
 import type { ChatMessage } from "@/lib/ai/types";
-import type { IntentPlan, ToolName } from "@/lib/chat/intent-router";
+import type { IntentPlan } from "@/lib/chat/intent-router";
 import type { ToolPlan } from "@/lib/chat/tool-planner";
+import { getToolLabel } from "@/lib/chat/tool-registry";
 
 export type ExecutableProjectFile = {
   id: string;
@@ -139,24 +140,6 @@ export function sanitizeExecutableProjectContext(
   };
 }
 
-function toolLabel(tool: ToolName): string {
-  const labels: Partial<Record<ToolName, string>> = {
-    chat_model: "AI理解与回答",
-    web_search: "联网搜索",
-    local_connector: "本机连接器",
-    literature_library: "文献库",
-    literature_pipeline: "文献分析",
-    translation_pipeline: "学术翻译",
-    document_pipeline: "文档生成",
-    presentation_pipeline: "PPT生成",
-    gpt_image: "GPT Image",
-    svg_visual_renderer: "科研图表",
-    quality_checker: "质量检查",
-    project_workspace: "项目工作区",
-  };
-  return labels[tool] ?? tool;
-}
-
 function projectFileScope(context: ExecutableProjectContext): {
   selected: ExecutableProjectFile[];
   all: ExecutableProjectFile[];
@@ -180,7 +163,7 @@ function buildProjectManifest(context: ExecutableProjectContext): string {
     selectedOnly
       ? `本次用户已选中文件数：${selectedIds.size}。除非用户明确要求全部项目资料，否则优先只分析这些选中文件。`
       : "本次用户未勾选具体文件。项目任务默认读取当前项目绑定的全部资料，不要读取其他项目或其他文件夹。",
-    "注意：服务器不能直接访问用户电脑。若下方文件没有全文证据包，只能把它们当作授权范围和文件清单；真正全文读取由前端本机连接器完成。",
+    "注意：服务器不能直接访问用户电脑。下方清单只代表用户授权范围；真正全文读取由前端本机连接器完成。若没有全文证据包，不要假装已读全文。",
     "",
   ];
 
@@ -202,7 +185,9 @@ function buildProjectManifest(context: ExecutableProjectContext): string {
       );
     }
     if (emitted >= MAX_MANIFEST_FILES) {
-      lines.push(`其余文件未展开：为控制上下文，最多只展示 ${MAX_MANIFEST_FILES} 个文件名。`);
+      lines.push(
+        `其余文件未展开：为控制上下文，最多只展示 ${MAX_MANIFEST_FILES} 个文件名。`,
+      );
       break;
     }
     lines.push("");
@@ -232,7 +217,7 @@ export async function executeToolPlan(input: {
     `工具执行层：已规划 ${input.toolPlan.steps.length} 步，涉及 ${Array.from(
       tools,
     )
-      .map(toolLabel)
+      .map(getToolLabel)
       .join("、")}。`,
   );
 
@@ -259,7 +244,7 @@ export async function executeToolPlan(input: {
     });
   } else if (needsProjectContext && input.projectName) {
     statuses.push(
-      "项目资料：已选择项目，但前端没有同步本地资料清单；本次只能使用已上传/已写入对话的内容。",
+      "项目资料：已选择项目，但前端没有同步本地资料清单；本次只能使用已上传或已写入对话的内容。",
     );
   } else if (needsProjectContext) {
     return {
@@ -273,7 +258,7 @@ export async function executeToolPlan(input: {
 
   if (tools.has("local_connector") && !input.projectContext) {
     statuses.push(
-      "本机连接器：服务器端不能直接读取本机文件，需由网页前端通过本机连接器读取后再交给 AI。",
+      "本机连接器：服务器不能直接读取本机文件，需要网页前端通过本机连接器读取后再交给 AI。",
     );
   }
 

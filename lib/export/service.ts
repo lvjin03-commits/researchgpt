@@ -3,6 +3,7 @@
 import { buildExportFilename } from "@/lib/export/filename";
 import { ExportError } from "@/lib/export/errors";
 import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
+import { assertExportQuality } from "@/lib/export/quality";
 import { saveExport } from "@/lib/export/store";
 import {
   EXPORT_MIME_TYPES,
@@ -81,6 +82,7 @@ export async function createExport(
     content: request.content,
     metadata: request.metadata ?? {},
   });
+  assertExportQuality(request.format, buffer);
 
   const record = await saveExport({
     filename,

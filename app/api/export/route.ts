@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buildExportFilename } from "@/lib/export/filename";
 import { ExportError } from "@/lib/export/errors";
 import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
+import { assertExportQuality } from "@/lib/export/quality";
 import { parseExportRequest } from "@/lib/export/service";
 import { EXPORT_MIME_TYPES } from "@/lib/export/types";
 import type { ExportErrorResponse } from "@/lib/export/types";
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
       content: exportRequest.content,
       metadata: exportRequest.metadata ?? {},
     });
+    assertExportQuality(exportRequest.format, buffer);
 
     console.log("[export] created:", filename);
 

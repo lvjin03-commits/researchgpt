@@ -6,6 +6,11 @@ import { getTextFromMessageContent } from "@/lib/ai/types";
 import type { ChatTaskKind, ChatTaskRoute } from "@/lib/chat/task-router";
 import { routeChatTask } from "@/lib/chat/task-router";
 import { isGptImageRequest } from "@/lib/ai/image-generation";
+import {
+  CHAT_TOOL_NAMES,
+  defaultToolsForIntent,
+  summarizeToolDefinitions,
+} from "@/lib/chat/tool-registry";
 
 export type IntentKind =
   | "conversation"
@@ -128,50 +133,13 @@ function isIntentKind(value: unknown): value is IntentKind {
 }
 
 function normalizeTools(value: unknown, intent: IntentKind): ToolName[] {
-  const allowed = new Set<ToolName>([
-    "chat_model",
-    "web_search",
-    "gpt_image",
-    "svg_visual_renderer",
-    "document_pipeline",
-    "translation_pipeline",
-    "literature_pipeline",
-    "presentation_pipeline",
-    "spreadsheet_pipeline",
-    "literature_library",
-    "project_workspace",
-    "local_connector",
-    "quality_checker",
-  ]);
+  const allowed = new Set<ToolName>(CHAT_TOOL_NAMES);
   const tools = Array.isArray(value)
     ? value.filter((item): item is ToolName => allowed.has(item as ToolName))
     : [];
 
   if (tools.length > 0) return Array.from(new Set(tools));
-
-  switch (intent) {
-    case "generate_image":
-      return ["gpt_image", "quality_checker"];
-    case "visualization":
-      return ["svg_visual_renderer", "quality_checker"];
-    case "translate_document":
-      return ["translation_pipeline", "document_pipeline", "quality_checker"];
-    case "single_paper_reading":
-    case "literature_matrix":
-      return ["local_connector", "literature_pipeline", "quality_checker"];
-    case "presentation_generation":
-      return ["presentation_pipeline", "quality_checker"];
-    case "literature_library_operation":
-      return ["literature_library"];
-    case "project_operation":
-      return ["project_workspace"];
-    case "local_file_operation":
-      return ["local_connector"];
-    case "web_research":
-      return ["web_search", "chat_model"];
-    default:
-      return ["chat_model"];
-  }
+  return defaultToolsForIntent(intent);
 }
 
 function normalizeScope(value: unknown, input: IntentRouterInput): InputScope {
@@ -649,6 +617,9 @@ export async function routeIntent(
     `已选文件夹数量：${input.selectedFolderIds.length}`,
     `用户显式联网：${input.webSearchRequested}`,
     `用户显式使用文献库：${input.libraryRequested}`,
+    "",
+    "ResearchGPT 当前可用工具层：",
+    summarizeToolDefinitions([...CHAT_TOOL_NAMES]),
     "",
     "最近对话：",
     recentConversation,
