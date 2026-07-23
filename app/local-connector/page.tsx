@@ -3,7 +3,7 @@ import { Download, PlugZap, ShieldCheck } from "lucide-react";
 
 const installerUrl =
   process.env.NEXT_PUBLIC_LOCAL_CONNECTOR_DOWNLOAD_URL ||
-  "/downloads/ResearchGPT-Local-Connector-Setup.exe";
+  "https://github.com/lvjin03-commits/researchgpt/releases/download/local-connector-v0.1.0/ResearchGPT-Local-Connector-Setup.exe";
 
 const buildCommand = `cd C:\\Users\\j.lyu\\researchgpt
 npm run desktop:publish-installer`;
