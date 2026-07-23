@@ -28,6 +28,78 @@ type ChartSpec = {
   evidenceType?: "user_data" | "literature" | "ai_structure";
 };
 
+type PlanDisclosurePayload = {
+  summary: string;
+  lines: string[];
+};
+
+type MessagePart =
+  | { type: "markdown"; value: string }
+  | { type: "plan"; value: PlanDisclosurePayload };
+
+const PLAN_DISCLOSURE_PATTERN = /\[\[RESEARCHGPT_PLAN:([^\]]+)\]\]/g;
+
+function parsePlanDisclosurePayload(value: string): PlanDisclosurePayload | null {
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value)) as Partial<PlanDisclosurePayload>;
+    if (
+      typeof parsed.summary !== "string" ||
+      !Array.isArray(parsed.lines) ||
+      !parsed.lines.every((line) => typeof line === "string")
+    ) {
+      return null;
+    }
+
+    return {
+      summary: parsed.summary,
+      lines: parsed.lines.slice(0, 12),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function splitPlanDisclosures(content: string): MessagePart[] {
+  const parts: MessagePart[] = [];
+  let cursor = 0;
+
+  for (const match of content.matchAll(PLAN_DISCLOSURE_PATTERN)) {
+    const index = match.index ?? 0;
+    if (index > cursor) {
+      parts.push({ type: "markdown", value: content.slice(cursor, index) });
+    }
+
+    const payload = parsePlanDisclosurePayload(match[1] ?? "");
+    if (payload) {
+      parts.push({ type: "plan", value: payload });
+    }
+    cursor = index + match[0].length;
+  }
+
+  if (cursor < content.length) {
+    parts.push({ type: "markdown", value: content.slice(cursor) });
+  }
+
+  return parts.length ? parts : [{ type: "markdown", value: content }];
+}
+
+function PlanDisclosure({ payload }: { payload: PlanDisclosurePayload }) {
+  return (
+    <details className="my-3 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs leading-5 text-gray-500">
+      <summary className="cursor-pointer select-none font-medium text-gray-500 hover:text-gray-700">
+        {payload.summary}
+      </summary>
+      <div className="mt-2 space-y-1 border-t border-gray-200/70 pt-2">
+        {payload.lines.map((line, index) => (
+          <p key={`${line}-${index}`} className="m-0 whitespace-pre-wrap">
+            {line}
+          </p>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function parseChartSpec(value: string): ChartSpec | null {
   try {
     const parsed = JSON.parse(value) as Partial<ChartSpec>;
@@ -734,11 +806,20 @@ function AssistantMarkdown({ content }: { content: string }) {
   const body = imageSplit.body;
   const sources = sourceSplit.sources;
   const images = imageSplit.images;
+  const messageParts = splitPlanDisclosures(body);
   return (
     <div className="min-w-0 text-[15px] leading-7 text-gray-900">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
+      {messageParts.map((part, partIndex) =>
+        part.type === "plan" ? (
+          <PlanDisclosure
+            key={`plan-${partIndex}-${part.value.summary}`}
+            payload={part.value}
+          />
+        ) : (
+          <ReactMarkdown
+            key={`markdown-${partIndex}`}
+            remarkPlugins={[remarkGfm]}
+            components={{
           h1: ({ children }) => (
             <h1 className="mb-3 mt-7 text-2xl font-bold leading-8 first:mt-0">
               {children}
@@ -848,10 +929,12 @@ function AssistantMarkdown({ content }: { content: string }) {
               </code>
             );
           },
-        }}
-      >
-        {body}
-      </ReactMarkdown>
+            }}
+          >
+            {part.value}
+          </ReactMarkdown>
+        ),
+      )}
       {images.length > 0 && (
         <section className="mt-6">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-950">

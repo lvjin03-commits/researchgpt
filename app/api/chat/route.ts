@@ -213,6 +213,41 @@ function formatToolPlanCard(plan: ToolPlan): string {
     .join("\n");
 }
 
+function formatCompactPlanDisclosure(
+  intentPlan: IntentPlan,
+  toolPlan: ToolPlan,
+): string {
+  const estimate = intentPlan.tokenEstimate;
+  const tools =
+    intentPlan.tools.map((tool) => TOOL_LABELS[tool] ?? tool).join("、") ||
+    "语言模型";
+  const requiredSteps = toolPlan.steps
+    .filter((step) => step.required)
+    .slice(0, 5)
+    .map((step, index) => {
+      const stepTools = step.tools.length ? `（${step.tools.join(", ")}）` : "";
+      return `步骤 ${index + 1}：${step.title}${stepTools} - ${step.detail}`;
+    });
+  const lines = [
+    `识别任务：${INTENT_LABELS[intentPlan.intent]}（置信度 ${Math.round(intentPlan.confidence * 100)}%）`,
+    `读取范围：${SCOPE_LABELS[intentPlan.inputScope]}`,
+    `输出结果：${OUTPUT_LABELS[intentPlan.outputType]}`,
+    `调用工具：${tools}`,
+    `预计 token：输入约 ${estimate.inputTokens.toLocaleString("zh-CN")}，输出约 ${estimate.expectedOutputTokens.toLocaleString("zh-CN")}，合计约 ${estimate.totalTokens.toLocaleString("zh-CN")}`,
+    ...estimate.notes.slice(0, 1),
+    ...toolPlan.warnings.slice(0, 2).map((warning) => `提醒：${warning}`),
+    ...toolPlan.blockers.slice(0, 2).map((blocker) => `待确认：${blocker}`),
+    ...requiredSteps,
+  ].filter(Boolean);
+
+  const payload = {
+    summary: `执行规划 · ${INTENT_LABELS[intentPlan.intent]} · 约 ${estimate.totalTokens.toLocaleString("zh-CN")} tokens`,
+    lines,
+  };
+
+  return `\n\n[[RESEARCHGPT_PLAN:${encodeURIComponent(JSON.stringify(payload))}]]\n\n`;
+}
+
 export async function POST(request: Request) {
   try {
     const user = await requireChatUser();
@@ -402,6 +437,12 @@ export async function POST(request: Request) {
             encodeChatStreamEvent({
               type: "status",
               message: formatTokenEstimate(intentPlan),
+            }),
+          );
+          controller.enqueue(
+            encodeChatStreamEvent({
+              type: "text",
+              delta: formatCompactPlanDisclosure(intentPlan, toolPlan),
             }),
           );
           if (toolExecution.blockingMessage) {
