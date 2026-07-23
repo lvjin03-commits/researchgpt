@@ -1189,6 +1189,20 @@ export function ChatShell() {
               ].join("\n"),
             );
           },
+          onGeneratedImage: (image) => {
+            appendToAssistant(
+              [
+                "",
+                "",
+                "### AI 生成图片",
+                `![${image.title}](${image.imageUrl})`,
+                "",
+                `[打开原图](${image.imageUrl}) · [下载 PNG](${image.downloadUrl})`,
+                "",
+                `模型：${image.model}`,
+              ].join("\n"),
+            );
+          },
           onAttachmentsPrepared: (context) => {
             streamingMessages = streamingMessages.map((message, index) => {
               if (index !== history.length || message.role !== "user") {

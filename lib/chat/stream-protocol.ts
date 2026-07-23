@@ -14,6 +14,15 @@ export type ChatStreamEvent =
         sourceTitle: string;
       }>;
     }
+  | {
+      type: "generated_image";
+      image: {
+        title: string;
+        imageUrl: string;
+        downloadUrl: string;
+        model: string;
+      };
+    }
   | { type: "error"; message: string; code?: string }
   | {
       type: "usage";

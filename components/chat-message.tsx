@@ -789,6 +789,25 @@ function AssistantMarkdown({ content }: { content: string }) {
               {children}
             </a>
           ),
+          img: ({ src, alt }) => {
+            const imageSrc = typeof src === "string" ? src : "";
+            if (!imageSrc) return null;
+            return (
+              <a
+                href={imageSrc}
+                target="_blank"
+                rel="noreferrer"
+                className="my-4 block overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 shadow-sm"
+              >
+                <img
+                  src={imageSrc}
+                  alt={alt ?? "AI generated image"}
+                  className="w-full bg-gray-100 object-contain"
+                  loading="lazy"
+                />
+              </a>
+            );
+          },
           table: ({ children }) => (
             <div className="my-4 w-full overflow-x-auto rounded-lg border border-gray-200">
               <table className="w-full min-w-[520px] border-collapse text-left text-sm">

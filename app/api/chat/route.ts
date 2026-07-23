@@ -26,8 +26,13 @@ import {
   assertDailyAiBudgetAvailable,
   recordAiUsage,
 } from "@/lib/ai/usage-ledger";
+import {
+  generateResearchImage,
+  isGptImageRequest,
+} from "@/lib/ai/image-generation";
 import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 import { createClient } from "@/lib/supabase/server";
+import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/uploads/storage-constants";
 
 export const runtime = "nodejs";
 
@@ -56,6 +61,18 @@ function sanitizeFolderIds(value: unknown): string[] {
         .filter(Boolean),
     ),
   ).slice(0, 20);
+}
+
+function createGeneratedImagePath(userId: string): string {
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${userId}/generated-images/${id}.png`;
+}
+
+function generatedImageUrl(path: string): string {
+  return `/api/chat/generated-images?path=${encodeURIComponent(path)}`;
 }
 
 export async function POST(request: Request) {
@@ -186,6 +203,8 @@ export async function POST(request: Request) {
       task: taskRoute.kind,
     });
 
+    const shouldGenerateImage = isGptImageRequest(query);
+
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
@@ -197,9 +216,66 @@ export async function POST(request: Request) {
           controller.enqueue(
             encodeChatStreamEvent({
               type: "status",
-              message: taskRoute.status,
+              message: shouldGenerateImage
+                ? "正在调用 GPT Image 生成高质量科研图片"
+                : taskRoute.status,
             }),
           );
+
+          if (shouldGenerateImage) {
+            const image = await generateResearchImage(
+              messages,
+              user.id,
+              request.signal,
+            );
+            const imagePath = createGeneratedImagePath(user.id);
+            const { error: uploadError } = await supabase.storage
+              .from(CHAT_ATTACHMENTS_BUCKET)
+              .upload(imagePath, image.buffer, {
+                contentType: image.mimeType,
+                upsert: false,
+              });
+
+            if (uploadError) {
+              throw new Error(`图片保存失败：${uploadError.message}`);
+            }
+
+            const imageUrl = generatedImageUrl(imagePath);
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "text",
+                delta:
+                  "已生成一张 GPT Image 科研图片。你可以直接预览，也可以下载 PNG 后放入 PPT 或 Word。\n\n",
+              }),
+            );
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "generated_image",
+                image: {
+                  title: "ResearchGPT AI 生成图片",
+                  imageUrl,
+                  downloadUrl: `${imageUrl}&download=1`,
+                  model: image.model,
+                },
+              }),
+            );
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "usage",
+                model: image.model,
+                inputTokens: 0,
+                cachedInputTokens: 0,
+                outputTokens: 0,
+                reasoningTokens: 0,
+                totalTokens: 0,
+                webSearchCalls: 0,
+                codeInterpreterCalls: 0,
+                estimatedCostUsd: 0,
+              }),
+            );
+            controller.close();
+            return;
+          }
 
           for await (const event of openResponsesChatStream({
             messages,
