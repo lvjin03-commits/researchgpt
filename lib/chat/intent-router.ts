@@ -73,6 +73,13 @@ export type IntentPlan = {
     requireProjectIsolation?: boolean;
   };
   steps: string[];
+  tokenEstimate: {
+    inputTokens: number;
+    expectedOutputTokens: number;
+    totalTokens: number;
+    toolCalls: number;
+    notes: string[];
+  };
   planner: "model" | "local_fallback";
 };
 
@@ -218,6 +225,86 @@ function normalizeOutputType(
   return "chat_answer";
 }
 
+function estimateTokensFromText(value: string): number {
+  const compacted = value.replace(/\s+/g, "");
+  if (!compacted) return 0;
+
+  const cjkChars = (compacted.match(/[\u3400-\u9fff]/g) ?? []).length;
+  const otherChars = Math.max(0, compacted.length - cjkChars);
+  return Math.max(1, Math.ceil(cjkChars / 1.6 + otherChars / 4));
+}
+
+function expectedOutputTokensForIntent(intent: IntentKind): number {
+  switch (intent) {
+    case "generate_image":
+      return 450;
+    case "visualization":
+      return 1_200;
+    case "create_artifact":
+      return 1_800;
+    case "translate_document":
+      return 1_600;
+    case "single_paper_reading":
+      return 2_200;
+    case "literature_matrix":
+      return 2_600;
+    case "presentation_generation":
+      return 2_800;
+    case "file_analysis":
+      return 2_200;
+    case "data_analysis":
+      return 1_800;
+    case "web_research":
+      return 1_400;
+    case "literature_library_operation":
+    case "project_operation":
+    case "local_file_operation":
+      return 550;
+    default:
+      return 900;
+  }
+}
+
+function buildTokenEstimate(
+  input: IntentRouterInput,
+  intent: IntentKind,
+  tools: ToolName[],
+): IntentPlan["tokenEstimate"] {
+  const messageTokens = input.messages.reduce(
+    (total, message) =>
+      total + estimateTokensFromText(getTextFromMessageContent(message.content)),
+    0,
+  );
+  const projectTokens =
+    input.projectName || input.selectedFolderIds.length > 0 ? 120 : 0;
+  const routingTokens = 260;
+  const inputTokens = Math.max(1, messageTokens + projectTokens + routingTokens);
+  const expectedOutputTokens = expectedOutputTokensForIntent(intent);
+  const toolCalls = tools.filter((tool) => tool !== "chat_model").length;
+  const notes: string[] = [];
+
+  if (tools.includes("gpt_image")) {
+    notes.push("图片生成会额外产生图片模型费用，token 只统计文字规划部分。");
+  }
+  if (
+    tools.includes("local_connector") ||
+    tools.includes("literature_pipeline")
+  ) {
+    notes.push("如果读取全文，实际输入 token 会随文件数量和正文长度增加。");
+  }
+  if (tools.includes("web_search")) {
+    notes.push("联网检索会增加搜索调用和引用整理成本。");
+  }
+
+  return {
+    inputTokens,
+    expectedOutputTokens,
+    totalTokens: inputTokens + expectedOutputTokens,
+    toolCalls,
+    notes,
+  };
+}
+
 function extractJsonObject(value: string): Record<string, unknown> | null {
   const trimmed = value.trim();
   const start = trimmed.indexOf("{");
@@ -241,6 +328,7 @@ function planFromRecord(
     typeof record.constraints === "object" && record.constraints !== null
       ? (record.constraints as Record<string, unknown>)
       : {};
+  const tools = normalizeTools(record.tools, intent);
 
   return {
     intent,
@@ -251,7 +339,7 @@ function planFromRecord(
         : "已完成任务意图识别。",
     inputScope: normalizeScope(record.inputScope, input),
     outputType: normalizeOutputType(record.outputType, intent),
-    tools: normalizeTools(record.tools, intent),
+    tools,
     needsConfirmation: record.needsConfirmation === true,
     confirmationQuestion:
       typeof record.confirmationQuestion === "string"
@@ -278,6 +366,7 @@ function planFromRecord(
           .filter((item): item is string => typeof item === "string")
           .slice(0, 8)
       : [],
+    tokenEstimate: buildTokenEstimate(input, intent, tools),
     planner: "model",
   };
 }
@@ -318,6 +407,7 @@ function fallbackIntentPlan(input: IntentRouterInput): IntentPlan {
     : route.kind === "artifact"
       ? "create_artifact"
       : route.kind;
+  const tools = normalizeTools(undefined, intent);
 
   return {
     intent,
@@ -330,13 +420,14 @@ function fallbackIntentPlan(input: IntentRouterInput): IntentPlan {
         ? "current_project"
         : "current_message",
     outputType: normalizeOutputType(undefined, intent),
-    tools: normalizeTools(undefined, intent),
+    tools,
     needsConfirmation: false,
     constraints: {
       requireProjectIsolation:
         input.contextMode === "project" || input.selectedFolderIds.length > 0,
     },
     steps: [],
+    tokenEstimate: buildTokenEstimate(input, intent, tools),
     planner: "local_fallback",
   };
 }

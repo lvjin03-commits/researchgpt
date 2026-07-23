@@ -79,6 +79,22 @@ function generatedImageUrl(path: string): string {
   return `/api/chat/generated-images?path=${encodeURIComponent(path)}`;
 }
 
+function formatTokenEstimate(plan: Awaited<ReturnType<typeof routeIntent>>): string {
+  const estimate = plan.tokenEstimate;
+  const pieces = [
+    `预计 token：输入约 ${estimate.inputTokens.toLocaleString("zh-CN")}`,
+    `输出约 ${estimate.expectedOutputTokens.toLocaleString("zh-CN")}`,
+    `合计约 ${estimate.totalTokens.toLocaleString("zh-CN")}`,
+  ];
+  if (estimate.toolCalls > 0) {
+    pieces.push(`额外工具调用 ${estimate.toolCalls} 个`);
+  }
+  if (estimate.notes.length > 0) {
+    pieces.push(estimate.notes[0]);
+  }
+  return pieces.join("；");
+}
+
 export async function POST(request: Request) {
   try {
     const user = await requireChatUser();
@@ -233,6 +249,12 @@ export async function POST(request: Request) {
             encodeChatStreamEvent({
               type: "status",
               message: `任务调度：${intentPlan.summary}`,
+            }),
+          );
+          controller.enqueue(
+            encodeChatStreamEvent({
+              type: "status",
+              message: formatTokenEstimate(intentPlan),
             }),
           );
           if (intentPlan.needsConfirmation && intentPlan.confirmationQuestion) {
