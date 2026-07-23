@@ -104,7 +104,7 @@ export function routeChatTask(messages: ChatMessage[]): ChatTaskRoute {
         "Use explicit headings, concise section conclusions, compact paragraphs, and valid Markdown tables where useful so the content can be rendered into multiple professional file formats.",
         "For presentations, make each level-2 heading a potential slide and give it one takeaway plus no more than four concise bullets.",
         "For spreadsheets, organize comparable information into valid Markdown tables with stable column names.",
-        "Do not claim a downloadable file already exists. Direct the user to Generate file below the finished answer.",
+        "Do not tell the user to manually use a menu as the main workflow. The server will create download links automatically when a supported file format is requested.",
       ].join("\n"),
     };
   }

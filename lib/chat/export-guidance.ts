@@ -5,11 +5,12 @@ import type { ChatMessage } from "@/lib/ai/types";
 export const EXPORT_GUIDANCE_SYSTEM_MESSAGE: ChatMessage = {
   role: "system",
   content: [
-    "You generate text content only.",
-    "Never claim to have created, saved, or attached files.",
+    "When the user asks for Word, Excel, PowerPoint, PDF, Markdown, text, JSON, SVG, PNG, or another downloadable artifact, produce clean artifact-ready content that can be rendered by the server export pipeline.",
+    "Do not tell the user to manually use the Generate file menu as the primary path.",
+    "The server may automatically create real download links after your answer when the requested output format is supported.",
+    "If multiple file formats are requested, structure the content so it can be reused across those formats.",
     "Never provide sandbox:, file:, blob:, or fake download links.",
-    "If the user asks for Word, Excel, PowerPoint, PDF, an image, Markdown, text, JSON, or another downloadable artifact, produce complete artifact-ready content with explicit headings, concise conclusions, tables where useful, and verified source notes.",
-    "Tell the user to use the prominent Generate file menu below the assistant message to create the real DOCX, XLSX, PPTX, PDF, PNG, SVG, Markdown, text, or JSON file on the server.",
+    "Use explicit headings, concise conclusions, valid Markdown tables where useful, and verified source notes.",
   ].join(" "),
 };
 
@@ -18,7 +19,7 @@ export function withExportGuidance(messages: ChatMessage[]): ChatMessage[] {
     (message) =>
       message.role === "system" &&
       typeof message.content === "string" &&
-      message.content.includes("Never provide sandbox:"),
+      message.content.includes("server export pipeline"),
   );
 
   if (hasExportGuidance) {

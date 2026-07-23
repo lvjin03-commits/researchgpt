@@ -6,6 +6,8 @@ import {
   getChatModelOption,
   isChatModelTier,
 } from "@/lib/ai/chat-models";
+import { createExport } from "@/lib/export/service";
+import type { ExportFormat } from "@/lib/export/types";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
@@ -85,6 +87,58 @@ function createGeneratedImagePath(userId: string): string {
 
 function generatedImageUrl(path: string): string {
   return `/api/chat/generated-images?path=${encodeURIComponent(path)}`;
+}
+
+const QUERY_EXPORT_FORMATS: Array<{
+  format: ExportFormat;
+  pattern: RegExp;
+}> = [
+  { format: "docx", pattern: /\b(docx|word)\b|Word\s*文档|word\s*文档|文档/i },
+  { format: "xlsx", pattern: /\b(xlsx|excel)\b|Excel\s*(文件|文档|表格)|excel\s*(文件|文档|表格)|电子表格/i },
+  { format: "pptx", pattern: /\b(pptx|ppt|slides?)\b|PPT|幻灯片|演示文稿/i },
+  { format: "pdf", pattern: /\bpdf\b|PDF\s*(文件|文档)|pdf\s*(文件|文档)/i },
+  { format: "md", pattern: /\b(markdown|md)\b|Markdown/i },
+  { format: "txt", pattern: /\b(txt|text)\b|纯文本/i },
+  { format: "json", pattern: /\bjson\b/i },
+  { format: "svg", pattern: /\bsvg\b/i },
+  { format: "png", pattern: /\bpng\b/i },
+];
+
+function inferRequestedExportFormats(
+  query: string,
+  plan: IntentPlan,
+): ExportFormat[] {
+  const formats = new Set<ExportFormat>();
+  for (const item of QUERY_EXPORT_FORMATS) {
+    if (item.pattern.test(query)) {
+      formats.add(item.format);
+    }
+  }
+
+  if (plan.outputType === "word") formats.add("docx");
+  if (plan.outputType === "excel") formats.add("xlsx");
+  if (plan.outputType === "ppt") formats.add("pptx");
+  if (plan.outputType === "pdf") formats.add("pdf");
+
+  return Array.from(formats);
+}
+
+function shouldAutoCreateExports(query: string, plan: IntentPlan): boolean {
+  if (plan.intent === "create_artifact") return true;
+  if (["word", "excel", "ppt", "pdf"].includes(plan.outputType)) return true;
+  return /(生成|输出|导出|制作|创建|保存|下载).{0,24}(文件|文档|表格|报告|Word|Excel|PPT|PDF|docx|xlsx|pptx|pdf)/i.test(
+    query,
+  );
+}
+
+function createExportTitle(query: string): string {
+  const cleaned = query
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return "ResearchGPT 生成文件";
+  return cleaned.length > 48 ? cleaned.slice(0, 48) : cleaned;
 }
 
 const INTENT_LABELS: Record<IntentPlan["intent"], string> = {
@@ -522,6 +576,7 @@ export async function POST(request: Request) {
             return;
           }
 
+          let assistantText = "";
           for await (const event of openResponsesChatStream({
             messages,
             signal: request.signal,
@@ -547,7 +602,59 @@ export async function POST(request: Request) {
                 usage: event,
               });
             }
+            if (event.type === "text") {
+              assistantText += event.delta;
+            }
             controller.enqueue(encodeChatStreamEvent(event));
+          }
+
+          const requestedFormats = shouldAutoCreateExports(query, intentPlan)
+            ? inferRequestedExportFormats(query, intentPlan)
+            : [];
+
+          if (requestedFormats.length > 0 && assistantText.trim()) {
+            const links: string[] = [];
+            const title = createExportTitle(query);
+
+            for (const format of requestedFormats) {
+              try {
+                const created = await createExport(
+                  {
+                    format,
+                    title,
+                    content: assistantText,
+                    metadata: {
+                      source: "chat-auto-export",
+                      templateId: "academic",
+                    },
+                  },
+                  user.id,
+                );
+                links.push(`- [${created.filename}](${created.downloadUrl})`);
+              } catch (exportError) {
+                const message =
+                  exportError instanceof Error
+                    ? exportError.message
+                    : "未知错误";
+                links.push(`- ${format.toUpperCase()} 生成失败：${message}`);
+              }
+            }
+
+            if (links.length > 0) {
+              controller.enqueue(
+                encodeChatStreamEvent({
+                  type: "text",
+                  delta: [
+                    "",
+                    "",
+                    "---",
+                    "",
+                    "已生成可下载文件：",
+                    ...links,
+                  ].join("\n"),
+                }),
+              );
+            }
           }
           controller.close();
         } catch (error) {
