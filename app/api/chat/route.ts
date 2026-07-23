@@ -12,6 +12,7 @@ import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
 import { withResponseStyle } from "@/lib/chat/response-style";
 import {
   chatRouteFromIntent,
+  type IntentPlan,
   intentRequestsGptImage,
   routeIntent,
 } from "@/lib/chat/intent-router";
@@ -79,7 +80,63 @@ function generatedImageUrl(path: string): string {
   return `/api/chat/generated-images?path=${encodeURIComponent(path)}`;
 }
 
-function formatTokenEstimate(plan: Awaited<ReturnType<typeof routeIntent>>): string {
+const INTENT_LABELS: Record<IntentPlan["intent"], string> = {
+  conversation: "普通问答",
+  web_research: "联网检索",
+  generate_image: "高质量图片生成",
+  visualization: "可编辑科研图表",
+  create_artifact: "文件生成",
+  translate_document: "文档翻译",
+  single_paper_reading: "单篇精读",
+  literature_matrix: "文献矩阵",
+  presentation_generation: "PPT 生成",
+  file_analysis: "文件分析",
+  data_analysis: "数据分析",
+  literature_library_operation: "文献库操作",
+  project_operation: "项目操作",
+  local_file_operation: "本机文件操作",
+};
+
+const SCOPE_LABELS: Record<IntentPlan["inputScope"], string> = {
+  current_message: "只读取当前问题",
+  uploaded_files: "读取本次上传文件",
+  selected_files: "读取本次选中文件",
+  current_project: "读取当前项目资料",
+  selected_folders: "读取选中文献文件夹",
+  literature_library: "读取文献库",
+  web: "联网检索",
+};
+
+const OUTPUT_LABELS: Record<IntentPlan["outputType"], string> = {
+  chat_answer: "聊天回答",
+  polished_image: "高质量图片",
+  editable_visual: "可编辑图表",
+  word: "Word 文档",
+  excel: "Excel 文件",
+  ppt: "PPT 文件",
+  pdf: "PDF 文件",
+  translated_document: "翻译后的文档",
+  literature_matrix: "文献矩阵",
+  workspace_operation: "工作区操作",
+};
+
+const TOOL_LABELS: Record<IntentPlan["tools"][number], string> = {
+  chat_model: "语言模型",
+  web_search: "联网搜索",
+  gpt_image: "GPT Image",
+  svg_visual_renderer: "结构化图表",
+  document_pipeline: "文档生成工具",
+  translation_pipeline: "翻译工具",
+  literature_pipeline: "文献分析工具",
+  presentation_pipeline: "PPT 工具",
+  spreadsheet_pipeline: "表格工具",
+  literature_library: "文献库工具",
+  project_workspace: "项目工作区",
+  local_connector: "本机连接器",
+  quality_checker: "质量检查",
+};
+
+function formatTokenEstimate(plan: IntentPlan): string {
   const estimate = plan.tokenEstimate;
   const pieces = [
     `预计 token：输入约 ${estimate.inputTokens.toLocaleString("zh-CN")}`,
@@ -93,6 +150,32 @@ function formatTokenEstimate(plan: Awaited<ReturnType<typeof routeIntent>>): str
     pieces.push(estimate.notes[0]);
   }
   return pieces.join("；");
+}
+
+function formatIntentPlanCard(plan: IntentPlan): string {
+  const estimate = plan.tokenEstimate;
+  const tools = plan.tools
+    .map((tool) => TOOL_LABELS[tool] ?? tool)
+    .join("、");
+  const notes = estimate.notes.length
+    ? `\n> ${estimate.notes.join(" ")}`
+    : "";
+
+  return [
+    "### 本次任务执行计划",
+    "",
+    `- **识别任务**：${INTENT_LABELS[plan.intent]}（置信度 ${Math.round(plan.confidence * 100)}%）`,
+    `- **读取范围**：${SCOPE_LABELS[plan.inputScope]}`,
+    `- **输出结果**：${OUTPUT_LABELS[plan.outputType]}`,
+    `- **调用工具**：${tools || "语言模型"}`,
+    `- **预计 token**：输入约 ${estimate.inputTokens.toLocaleString("zh-CN")}，输出约 ${estimate.expectedOutputTokens.toLocaleString("zh-CN")}，合计约 ${estimate.totalTokens.toLocaleString("zh-CN")}`,
+    notes,
+    "",
+    "---",
+    "",
+  ]
+    .filter((line) => line !== undefined)
+    .join("\n");
 }
 
 export async function POST(request: Request) {
@@ -255,6 +338,12 @@ export async function POST(request: Request) {
             encodeChatStreamEvent({
               type: "status",
               message: formatTokenEstimate(intentPlan),
+            }),
+          );
+          controller.enqueue(
+            encodeChatStreamEvent({
+              type: "text",
+              delta: formatIntentPlanCard(intentPlan),
             }),
           );
           if (intentPlan.needsConfirmation && intentPlan.confirmationQuestion) {
