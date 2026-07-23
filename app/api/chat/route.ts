@@ -404,13 +404,6 @@ export async function POST(request: Request) {
               message: formatTokenEstimate(intentPlan),
             }),
           );
-          controller.enqueue(
-            encodeChatStreamEvent({
-              type: "text",
-              delta:
-                formatIntentPlanCard(intentPlan) + formatToolPlanCard(toolPlan),
-            }),
-          );
           if (toolExecution.blockingMessage) {
             controller.enqueue(
               encodeChatStreamEvent({
