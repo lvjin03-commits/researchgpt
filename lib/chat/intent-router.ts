@@ -80,7 +80,7 @@ export type IntentPlan = {
     toolCalls: number;
     notes: string[];
   };
-  planner: "model" | "local_fallback";
+  planner: "model" | "local_fast_path" | "local_fallback";
 };
 
 export type IntentRouterInput = {
@@ -317,6 +317,168 @@ function extractJsonObject(value: string): Record<string, unknown> | null {
   }
 }
 
+function createLocalPlan(
+  input: IntentRouterInput,
+  intent: IntentKind,
+  summary: string,
+  options: {
+    confidence?: number;
+    inputScope?: InputScope;
+    outputType?: IntentPlan["outputType"];
+    tools?: ToolName[];
+    steps?: string[];
+    planner?: IntentPlan["planner"];
+  } = {},
+): IntentPlan {
+  const tools = options.tools ?? normalizeTools(undefined, intent);
+  const inputScope =
+    options.inputScope ??
+    (input.contextMode === "project" || input.selectedFolderIds.length > 0
+      ? "current_project"
+      : "current_message");
+
+  return {
+    intent,
+    confidence: options.confidence ?? 0.88,
+    summary,
+    inputScope,
+    outputType: options.outputType ?? normalizeOutputType(undefined, intent),
+    tools,
+    needsConfirmation: false,
+    constraints: {
+      requireProjectIsolation:
+        inputScope === "current_project" ||
+        inputScope === "selected_files" ||
+        inputScope === "selected_folders",
+    },
+    steps: options.steps ?? [],
+    tokenEstimate: buildTokenEstimate(input, intent, tools),
+    planner: options.planner ?? "local_fast_path",
+  };
+}
+
+function routeFastPath(input: IntentRouterInput): IntentPlan | null {
+  const query = compact(lastUserText(input.messages), 500);
+  if (!query) return null;
+
+  const lower = query.toLowerCase();
+  const hasProjectScope =
+    input.contextMode === "project" || input.selectedFolderIds.length > 0;
+  const projectScope: InputScope = hasProjectScope
+    ? "current_project"
+    : "current_message";
+  const critiquesExistingOutput =
+    /(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事).{0,30}(图|图片|图像|海报|信息图|结果|回答|输出|visual|image|poster|infographic)|(图|图片|图像|海报|信息图|结果|回答|输出|visual|image|poster|infographic).{0,30}(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事)/i.test(
+      query,
+    );
+
+  if (critiquesExistingOutput) {
+    return createLocalPlan(input, "conversation", "用户在追问或评价已有输出的问题。", {
+      confidence: 0.9,
+      inputScope: "current_message",
+      outputType: "chat_answer",
+      tools: ["chat_model"],
+    });
+  }
+
+  if (input.webSearchRequested) {
+    return createLocalPlan(input, "web_research", "用户已明确启用联网检索。", {
+      inputScope: "web",
+      tools: ["web_search", "chat_model"],
+      outputType: "chat_answer",
+    });
+  }
+
+  if (
+    /(新建|创建|删除|重命名|改名|归档|恢复|切换).{0,10}(项目|project)/i.test(
+      query,
+    )
+  ) {
+    return createLocalPlan(input, "project_operation", "用户要操作科研项目。", {
+      inputScope: "current_project",
+      outputType: "workspace_operation",
+      tools: ["project_workspace"],
+    });
+  }
+
+  if (
+    /(新建|创建|删除|重命名|改名|移动|拖拽|上传|保存).{0,12}(文件夹|文献|论文|pdf|PDF)/i.test(
+      query,
+    )
+  ) {
+    return createLocalPlan(
+      input,
+      "literature_library_operation",
+      "用户要操作文献库或文献文件夹。",
+      {
+        inputScope: input.selectedFolderIds.length
+          ? "selected_folders"
+          : "literature_library",
+        outputType: "workspace_operation",
+        tools: ["literature_library"],
+      },
+    );
+  }
+
+  if (/(绑定|授权|读取|打开).{0,12}(本地|文件夹|文件|电脑)/i.test(query)) {
+    return createLocalPlan(input, "local_file_operation", "用户要操作本机文件。", {
+      inputScope: projectScope,
+      outputType: "workspace_operation",
+      tools: ["local_connector"],
+    });
+  }
+
+  if (
+    /(翻译|translate).{0,16}(文档|文件|docx|word|pdf|ppt|pptx|中英|英文|english)/i.test(
+      query,
+    )
+  ) {
+    return createLocalPlan(input, "translate_document", "用户要翻译文档并保留格式。", {
+      inputScope: projectScope,
+      outputType: "translated_document",
+      tools: ["translation_pipeline", "document_pipeline", "quality_checker"],
+    });
+  }
+
+  if (/(文献矩阵|矩阵).{0,20}(生成|整理|分析|导出)?/i.test(query)) {
+    return createLocalPlan(input, "literature_matrix", "用户要生成文献矩阵。", {
+      inputScope: projectScope,
+      outputType: "literature_matrix",
+      tools: ["local_connector", "literature_pipeline", "quality_checker"],
+    });
+  }
+
+  if (
+    /(单篇精读|精读|解读).{0,20}(文献|论文|paper|pdf|PDF)?/i.test(query)
+  ) {
+    return createLocalPlan(input, "single_paper_reading", "用户要单篇文献精读。", {
+      inputScope: projectScope,
+      outputType: "chat_answer",
+      tools: ["local_connector", "literature_pipeline", "quality_checker"],
+    });
+  }
+
+  if (/(ppt|pptx|幻灯片|汇报).{0,20}(生成|制作|导出|做|create|generate)/i.test(lower)) {
+    return createLocalPlan(input, "presentation_generation", "用户要生成 PPT。", {
+      inputScope: projectScope,
+      outputType: "ppt",
+      tools: ["presentation_pipeline", "quality_checker"],
+    });
+  }
+
+  const shortCasualMessage = query.length <= 40 && !/[?？].{0,4}(最新|搜索|文献|论文|文件|图片|图|ppt|pdf|word|excel)/i.test(query);
+  if (shortCasualMessage) {
+    return createLocalPlan(input, "conversation", "用户是普通短问答。", {
+      confidence: 0.78,
+      inputScope: "current_message",
+      outputType: "chat_answer",
+      tools: ["chat_model"],
+    });
+  }
+
+  return null;
+}
+
 function planFromRecord(
   record: Record<string, unknown>,
   input: IntentRouterInput,
@@ -407,50 +569,42 @@ function fallbackIntentPlan(input: IntentRouterInput): IntentPlan {
     : route.kind === "artifact"
       ? "create_artifact"
       : route.kind;
-  const tools = normalizeTools(undefined, intent);
-
-  return {
+  return createLocalPlan(
+    input,
     intent,
-    confidence: image ? 0.82 : 0.55,
-    summary: image
+    image
       ? "用户需要生成一张可直接使用的高质量图片。"
       : "使用本地兜底规则完成任务识别。",
-    inputScope:
-      input.contextMode === "project" || input.selectedFolderIds.length > 0
-        ? "current_project"
-        : "current_message",
-    outputType: normalizeOutputType(undefined, intent),
-    tools,
-    needsConfirmation: false,
-    constraints: {
-      requireProjectIsolation:
-        input.contextMode === "project" || input.selectedFolderIds.length > 0,
+    {
+      confidence: image ? 0.82 : 0.55,
+      planner: "local_fallback",
     },
-    steps: [],
-    tokenEstimate: buildTokenEstimate(input, intent, tools),
-    planner: "local_fallback",
-  };
+  );
 }
 
 export async function routeIntent(
   input: IntentRouterInput,
   signal?: AbortSignal,
 ): Promise<IntentPlan> {
+  const fastPath = routeFastPath(input);
+  if (fastPath) return fastPath;
+
   const router = getRouterClient();
   if (!router) return fallbackIntentPlan(input);
 
   const recentConversation = input.messages
     .filter((message) => message.role !== "system")
-    .slice(-6)
+    .slice(-4)
     .map((message) => {
       const role = message.role === "user" ? "用户" : "助手";
-      return `${role}: ${compact(getTextFromMessageContent(message.content), 1200)}`;
+      return `${role}: ${compact(getTextFromMessageContent(message.content), 700)}`;
     })
     .join("\n\n");
 
   const prompt = [
     "你是 ResearchGPT 的 Intent Router，不回答用户问题，只判断用户真实想完成的任务。",
     "不要主要依赖关键词。请理解用户语义、上下文、否定表达和输出目标。",
+    "如果用户是在问已有图片/输出为什么不对、哪里有差别、为什么没有区别、质量差在哪里，应判断为 conversation + chat_answer；不要调用图片生成。",
     "如果用户说“不要流程图/不要鱼骨图/要像 GPT 那种图片/做成一张能直接用于汇报的图”，应判断为 generate_image + polished_image，而不是 visualization。",
     "如果用户要可编辑流程图、时间轴、鱼骨图、柱状图等结构化图，才判断为 visualization + editable_visual。",
     "如果用户要求翻译文件并保持格式，应判断为 translate_document。",

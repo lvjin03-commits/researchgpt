@@ -39,6 +39,17 @@ export function isGptImageRequest(query: string): boolean {
   const text = query.trim();
   if (!text) return false;
 
+  const asksAboutExistingImage =
+    /(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事).{0,30}(图|图片|图像|海报|信息图|visual|image|poster|infographic)|(图|图片|图像|海报|信息图|visual|image|poster|infographic).{0,30}(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事)/i.test(
+      text,
+    );
+  const explicitCreationVerb =
+    /(生成|制作|创建|设计|画|绘制|总结成|整理成|转成|做成|输出|重新生成|重画|改成|生成一张|做一张|画一张|generate|create|draw|design|make|render)/i.test(
+      text,
+    );
+
+  if (asksAboutExistingImage && !explicitCreationVerb) return false;
+
   const wantsPolishedImage =
     /(像\s*(?:GPT|ChatGPT)|同等质量|高质量|专业|精美|好看|成品|可直接用|直接用于|海报感|海报式|真正像海报|不要草稿|不是草稿).{0,28}(图片|图像|图|海报|插画|信息图|配图|PNG|JPG|JPEG|WEBP|visual|image|infographic|poster)|(?:图片|图像|海报|插画|信息图|科研插图|配图|PNG|JPG|JPEG|WEBP).{0,28}(像\s*(?:GPT|ChatGPT)|同等质量|高质量|专业|精美|好看|成品|可直接用|直接用于|不要草稿|不是草稿)/i.test(
       text,
