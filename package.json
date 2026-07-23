@@ -14,9 +14,10 @@
     "desktop:publish-installer": "npm run desktop:installer && powershell -NoProfile -ExecutionPolicy Bypass -Command \"New-Item -ItemType Directory -Force public/downloads | Out-Null; Copy-Item -Force release-installer/ResearchGPT-Local-Connector-Setup.exe public/downloads/ResearchGPT-Local-Connector-Setup.exe\"",
     "build": "next build",
     "start": "next start",
+    "check:encoding": "node scripts/check-encoding.mjs",
     "lint": "eslint",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
-    "qa": "npm run build"
+    "qa": "npm run check:encoding && npm run build"
   },
   "build": {
     "appId": "com.researchgpt.localconnector",
@@ -53,7 +54,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ResearchGPT 本机连接器",
+      "shortcutName": "ResearchGPT Local Connector",
       "runAfterFinish": true
     }
   },
