@@ -10,7 +10,11 @@ import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
 import { withResponseStyle } from "@/lib/chat/response-style";
-import { routeChatTask } from "@/lib/chat/task-router";
+import {
+  chatRouteFromIntent,
+  intentRequestsGptImage,
+  routeIntent,
+} from "@/lib/chat/intent-router";
 import { withScientificVisualPolicy } from "@/lib/chat/visual-policy";
 import {
   requireChatUser,
@@ -116,7 +120,18 @@ export async function POST(request: Request) {
             .filter((part) => part.type === "text")
             .map((part) => part.text)
             .join("\n") ?? "";
-    const taskRoute = routeChatTask(messages);
+    const intentPlan = await routeIntent(
+      {
+        messages,
+        selectedFolderIds,
+        contextMode,
+        projectName,
+        webSearchRequested: webSearch,
+        libraryRequested: useLibrary,
+      },
+      request.signal,
+    );
+    const taskRoute = chatRouteFromIntent(intentPlan);
     const projectReferencePattern =
       /(这些|上述|本项目|当前项目|文件夹|文献|论文|数据|实验|分析|比较|矩阵|大纲|汇报|PPT|综述|this project|these papers|folder|literature|paper|dataset|analysis)/i;
     const shouldUseProjectContext =
@@ -203,7 +218,8 @@ export async function POST(request: Request) {
       task: taskRoute.kind,
     });
 
-    const shouldGenerateImage = isGptImageRequest(query);
+    const shouldGenerateImage =
+      intentRequestsGptImage(intentPlan) || isGptImageRequest(query);
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -212,6 +228,26 @@ export async function POST(request: Request) {
             controller.enqueue(
               encodeChatStreamEvent({ type: "status", message: libraryStatus }),
             );
+          }
+          controller.enqueue(
+            encodeChatStreamEvent({
+              type: "status",
+              message: `任务调度：${intentPlan.summary}`,
+            }),
+          );
+          if (intentPlan.needsConfirmation && intentPlan.confirmationQuestion) {
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "text",
+                delta: [
+                  "我需要先确认一下，避免调用错工具：",
+                  "",
+                  intentPlan.confirmationQuestion,
+                ].join("\n"),
+              }),
+            );
+            controller.close();
+            return;
           }
           controller.enqueue(
             encodeChatStreamEvent({
