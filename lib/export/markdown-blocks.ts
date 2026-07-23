@@ -219,10 +219,18 @@ export function parseMarkdownBlocks(content: string): MarkdownBlock[] {
       index += 1;
     }
 
-    blocks.push({
-      type: "paragraph",
-      inlines: parseInlineMarkdown(paragraphLines.join("\n")),
-    });
+    const paragraphText = paragraphLines.join("\n");
+    const softParagraphs = paragraphText
+      .split(/\n(?=\S)/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    for (const item of softParagraphs.length ? softParagraphs : [paragraphText]) {
+      blocks.push({
+        type: "paragraph",
+        inlines: parseInlineMarkdown(item),
+      });
+    }
   }
 
   return blocks;

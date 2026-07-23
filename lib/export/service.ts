@@ -25,6 +25,57 @@ const EXPORT_FORMATS = new Set<ExportFormat>([
   "json",
 ]);
 
+function extractFencedBlocks(content: string): Array<{ language: string; body: string }> {
+  const blocks: Array<{ language: string; body: string }> = [];
+  const pattern = /```([a-zA-Z0-9_-]*)\s*\n([\s\S]*?)```/g;
+  for (const match of content.matchAll(pattern)) {
+    const body = match[2]?.trim();
+    if (body) {
+      blocks.push({ language: (match[1] ?? "").toLowerCase(), body });
+    }
+  }
+  return blocks;
+}
+
+function normalizeArtifactContent(format: ExportFormat, content: string): string {
+  const normalized = content.replace(/\r\n/g, "\n").trim();
+  const fenced = extractFencedBlocks(normalized);
+
+  if (format === "xlsx") {
+    const tabular = fenced.find((block) =>
+      /^(csv|tsv|xlsx|excel)$/i.test(block.language),
+    );
+    if (tabular) return tabular.body;
+  }
+
+  if (format === "docx" || format === "pdf" || format === "md") {
+    const markdown = fenced.find((block) =>
+      /^(markdown|md)$/i.test(block.language),
+    );
+    if (markdown) return markdown.body;
+  }
+
+  if (format === "txt") {
+    const text = fenced.find((block) => /^(text|txt)$/i.test(block.language));
+    if (text) return text.body;
+  }
+
+  const withoutPlan = normalized.replace(
+    /\[\[RESEARCHGPT_PLAN:[\s\S]*?\]\]\s*/g,
+    "",
+  );
+  const withoutFooter = withoutPlan.replace(
+    /\n-{3,}\n\s*已生成可下载文件：[\s\S]*$/u,
+    "",
+  );
+  const firstHeading = withoutFooter.search(/^#{1,3}\s+/m);
+  if (firstHeading > 0) {
+    return withoutFooter.slice(firstHeading).trim();
+  }
+
+  return withoutFooter.trim();
+}
+
 export function parseExportRequest(body: unknown): ExportRequest {
   if (typeof body !== "object" || body === null) {
     throw new ExportError("Invalid export request body.", 400);
@@ -77,9 +128,10 @@ export async function createExport(
 ): Promise<ExportSuccessResponse> {
   const filename = buildExportFilename(request.title, request.format);
   const mimeType = EXPORT_MIME_TYPES[request.format];
+  const content = normalizeArtifactContent(request.format, request.content);
   const buffer = await generateExportBuffer(request.format, {
     title: request.title,
-    content: request.content,
+    content,
     metadata: request.metadata ?? {},
   });
   assertExportQuality(request.format, buffer);

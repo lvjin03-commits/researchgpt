@@ -35,7 +35,9 @@ export type ExportRecord = {
   mimeType: string;
   userId: string;
   createdAt: number;
-  filePath: string;
+  filePath?: string;
+  storageBucket?: string;
+  storagePath?: string;
 };
 
 export const EXPORT_MIME_TYPES: Record<ExportFormat, string> = {
