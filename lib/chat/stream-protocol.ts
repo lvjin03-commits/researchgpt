@@ -23,6 +23,7 @@ export type ChatStreamEvent =
         model: string;
       };
     }
+  | { type: "incomplete"; reason: string }
   | { type: "error"; message: string; code?: string }
   | {
       type: "usage";

@@ -146,6 +146,16 @@ export async function* openResponsesChatStream({
         codeInterpreterCallIds.add(event.item_id);
         yield { type: "status", message: "数据计算完成，正在生成结论和图表" };
       } else if (event.type === "response.completed") {
+        const response = event.response as {
+          status?: string;
+          incomplete_details?: { reason?: string | null } | null;
+        };
+        if (response.status === "incomplete") {
+          yield {
+            type: "incomplete",
+            reason: response.incomplete_details?.reason || "max_output_tokens",
+          };
+        }
         const citedUrls = new Map<string, string>();
         for (const item of event.response.output) {
           if (item.type !== "message") continue;
@@ -235,6 +245,7 @@ async function* openDeepSeekChatStream({
         totalTokens: number;
       }
     | null = null;
+  let finishReason: string | null = null;
 
   try {
     const stream = await client.chat.completions.create(
@@ -249,6 +260,10 @@ async function* openDeepSeekChatStream({
     );
 
     for await (const chunk of stream) {
+      const chunkFinishReason = chunk.choices[0]?.finish_reason;
+      if (chunkFinishReason) {
+        finishReason = chunkFinishReason;
+      }
       const text = chunk.choices[0]?.delta?.content;
       if (text) {
         yield { type: "text", delta: text };
@@ -261,6 +276,10 @@ async function* openDeepSeekChatStream({
           totalTokens: chunk.usage.total_tokens ?? 0,
         };
       }
+    }
+
+    if (finishReason === "length") {
+      yield { type: "incomplete", reason: "max_output_tokens" };
     }
 
     if (usage) {

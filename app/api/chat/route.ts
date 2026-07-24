@@ -353,6 +353,26 @@ function buildEmptyAssistantMessage(error?: unknown): string {
   ].join("\n");
 }
 
+function buildAutoContinuationMessages(
+  messages: ChatMessage[],
+  assistantText: string,
+): ChatMessage[] {
+  const partialAnswer =
+    assistantText.length > 8000 ? assistantText.slice(-8000) : assistantText;
+  return [
+    ...messages,
+    {
+      role: "assistant",
+      content: partialAnswer,
+    },
+    {
+      role: "user",
+      content:
+        "上一条回答因为输出长度限制在半句处中断了。请从中断处自然续写并完成原任务，不要重复已经写过的内容，不要重新开头；如果是综述、报告或长文，请补完整结论。",
+    },
+  ];
+}
+
 const INTENT_LABELS: Record<IntentPlan["intent"], string> = {
   conversation: "普通问答",
   web_research: "联网检索",
@@ -853,9 +873,11 @@ export async function POST(request: Request) {
             option: ChatModelOption,
             tier: ChatModelTier,
             enableOpenAiTools: boolean,
+            overrideMessages?: ChatMessage[],
           ) => {
+            let wasIncomplete = false;
             for await (const event of openResponsesChatStream({
-              messages,
+              messages: overrideMessages ?? messages,
               signal: request.signal,
               model: option.model,
               provider: option.provider,
@@ -871,6 +893,10 @@ export async function POST(request: Request) {
               maxOutputTokens: option.maxOutputTokens,
               promptCacheKey: `chat:${user.id}:${tier}`,
             })) {
+              if (event.type === "incomplete") {
+                wasIncomplete = true;
+                continue;
+              }
               if (event.type === "usage") {
                 await recordAiUsage(supabase, {
                   userId: user.id,
@@ -886,12 +912,16 @@ export async function POST(request: Request) {
               }
               controller.enqueue(encodeChatStreamEvent(event));
             }
+            return wasIncomplete;
           };
 
           let streamFailure: unknown = null;
+          let wasIncomplete = false;
+          let continuationOption = modelOption;
+          let continuationTier = modelTier;
 
           try {
-            await streamModel(modelOption, modelTier, true);
+            wasIncomplete = await streamModel(modelOption, modelTier, true);
           } catch (streamError) {
             if (
               assistantText.trim().length === 0 &&
@@ -910,7 +940,13 @@ export async function POST(request: Request) {
                 }),
               );
               try {
-                await streamModel(fallbackOption, "economy", false);
+                wasIncomplete = await streamModel(
+                  fallbackOption,
+                  "economy",
+                  false,
+                );
+                continuationOption = fallbackOption;
+                continuationTier = "economy";
               } catch (fallbackError) {
                 streamFailure = fallbackError;
               }
@@ -928,6 +964,44 @@ export async function POST(request: Request) {
             );
           } else if (streamFailure) {
             throw streamFailure;
+          }
+
+          if (assistantText.trim().length > 0 && wasIncomplete && !streamFailure) {
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "status",
+                message: "回答到达单次输出上限，正在自动续写一次",
+              }),
+            );
+            const beforeContinuationLength = assistantText.length;
+            try {
+              const continuationIncomplete = await streamModel(
+                continuationOption,
+                continuationTier,
+                false,
+                buildAutoContinuationMessages(messages, assistantText),
+              );
+              if (
+                continuationIncomplete ||
+                assistantText.length <= beforeContinuationLength
+              ) {
+                controller.enqueue(
+                  encodeChatStreamEvent({
+                    type: "text",
+                    delta:
+                      "\n\n> 本次回答已接近模型输出上限。如果还没有完全结束，请直接发送“继续”，我会从这里接着写。",
+                  }),
+                );
+              }
+            } catch {
+              controller.enqueue(
+                encodeChatStreamEvent({
+                  type: "text",
+                  delta:
+                    "\n\n> 本次回答到达模型输出上限，自动续写没有成功。如果内容还没完整，请直接发送“继续”。",
+                }),
+              );
+            }
           }
 
           const requestedFormats = requestedExportFormats;
