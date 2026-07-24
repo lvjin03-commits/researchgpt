@@ -43,6 +43,7 @@ type SidebarProps = {
   projects: ResearchProject[];
   activeProjectId: string | null;
   onClose: () => void;
+  onNewChat: () => void;
   onNewProject: () => void;
   onSelectConversation: (conversationId: string) => void;
   onDeleteConversation: (conversationId: string) => void;
@@ -76,6 +77,7 @@ export function Sidebar({
   projects,
   activeProjectId,
   onClose,
+  onNewChat,
   onNewProject,
   onSelectConversation,
   onDeleteConversation,
@@ -487,7 +489,22 @@ export function Sidebar({
             <div>{renderFolders(null)}</div>
           )}
 
-          <SectionTitle>最近对话</SectionTitle>
+          <div className="flex items-center justify-between px-2 pb-1.5 pt-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#7c8b91]">
+              最近对话
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                onNewChat();
+                onClose();
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-[#c8d7dc] bg-white px-2 py-1 text-[11px] font-bold text-[#174866] shadow-[0_1px_1px_rgba(26,47,56,0.04)] hover:border-[#8eabb8] hover:bg-[#f1f6f8]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              新建对话
+            </button>
+          </div>
           {conversations.length === 0 ? (
             <p className="px-2 py-3 text-xs text-gray-500">暂无对话</p>
           ) : (

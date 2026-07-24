@@ -1695,6 +1695,7 @@ export function ChatShell() {
         projects={projects}
         activeProjectId={activeProjectId}
         onClose={() => setSidebarOpen(false)}
+        onNewChat={handleNewChat}
         onNewProject={openNewProjectDialog}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
