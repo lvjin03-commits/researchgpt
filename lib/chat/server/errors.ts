@@ -32,7 +32,13 @@ export function toChatApiErrorResponse(
     let code = "AI_PROVIDER_ERROR";
 
     if (error.statusCode === 429 || raw.includes("quota") || raw.includes("rate limit")) {
-      message = "当前 AI 额度或请求频率已达到上限。请稍后重试，或切换到经济模式。";
+      if (raw.includes("daily ai budget reached")) {
+        message =
+          "今天的 AI 成本保护额度已用完。为了避免继续烧钱，系统已暂停新的 AI 调用。你可以明天再试，或在 Vercel 环境变量里提高 AI_DAILY_USER_BUDGET_USD。";
+      } else {
+        message =
+          "当前模型额度不足或请求过快。系统会优先建议切换到 ResearchGPT Nano；如果仍失败，通常说明供应商账号余额不足、API Key 权限不足，或需要稍后重试。";
+      }
       code = "AI_QUOTA_EXCEEDED";
     } else if (
       error.statusCode === 403 ||

@@ -48,15 +48,15 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
   {
     tier: "professional",
     label: "ResearchGPT Pro",
-    description: "专业型，调用 GPT-5.5 nano，适合高质量科研分析。",
-    model: "gpt-5.5-nano",
+    description: "专业型，调用当前可用的 GPT 专业模型，适合高质量科研分析。",
+    model: "gpt-5.4",
     provider: "openai",
     reasoningEffort: "medium",
     maxOutputTokens: 5000,
     maxVisuals: 6,
     expensive: true,
     costWarning:
-      "专业型将调用 GPT-5.5 nano，适合高质量科研分析，token 成本高于经济/标准模型。确认继续使用吗？",
+      "专业型将调用 GPT 专业模型，适合高质量科研分析，token 成本高于经济/标准模型。确认继续使用吗？",
   },
   {
     tier: "flagship",

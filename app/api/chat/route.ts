@@ -3,6 +3,8 @@ import { openResponsesChatStream } from "@/lib/ai/openai";
 import type { ChatMessage } from "@/lib/ai/types";
 import {
   DEFAULT_CHAT_MODEL_TIER,
+  type ChatModelOption,
+  type ChatModelTier,
   getChatModelOption,
   isChatModelTier,
 } from "@/lib/ai/chat-models";
@@ -28,6 +30,7 @@ import {
   requireChatUser,
   toChatApiErrorResponse,
 } from "@/lib/chat/server/errors";
+import { AIProviderError } from "@/lib/ai/errors";
 import { buildLiteratureLibraryContext } from "@/lib/chat/server/library-context";
 import { encodeChatStreamEvent } from "@/lib/chat/stream-protocol";
 import {
@@ -207,6 +210,29 @@ function buildAutoExportInstruction(formats: ExportFormat[]): ChatMessage {
       "如果同时生成多种文件，请输出一份结构清晰、可复用的正式内容。",
     ].join("\n"),
   };
+}
+
+function isQuotaOrRateLimitError(error: unknown): boolean {
+  if (!(error instanceof AIProviderError)) return false;
+  const raw = error.message.toLowerCase();
+  return (
+    error.statusCode === 429 ||
+    raw.includes("quota") ||
+    raw.includes("rate limit") ||
+    raw.includes("too many requests")
+  );
+}
+
+function isRecoverableModelError(error: unknown): boolean {
+  if (!(error instanceof AIProviderError)) return false;
+  const raw = error.message.toLowerCase();
+  return (
+    error.statusCode === 400 ||
+    error.statusCode === 403 ||
+    raw.includes("model_not_found") ||
+    raw.includes("does not exist") ||
+    raw.includes("does not have access")
+  );
 }
 
 const INTENT_LABELS: Record<IntentPlan["intent"], string> = {
@@ -651,35 +677,68 @@ export async function POST(request: Request) {
           }
 
           let assistantText = "";
-          for await (const event of openResponsesChatStream({
-            messages,
-            signal: request.signal,
-            model: modelOption.model,
-            provider: modelOption.provider,
-            reasoningEffort: modelOption.reasoningEffort,
-            webSearch:
-              modelOption.provider === "openai" ? effectiveWebSearch : false,
-            codeInterpreter:
-              modelOption.provider === "openai"
-                ? taskRoute.useCodeInterpreter
-                : false,
-            maxOutputTokens: modelOption.maxOutputTokens,
-            promptCacheKey: `chat:${user.id}:${modelTier}`,
-          })) {
-            if (event.type === "usage") {
-              await recordAiUsage(supabase, {
-                userId: user.id,
-                feature: "chat",
-                taskKind: taskRoute.kind,
-                projectName: effectiveProjectName,
-                modelTier,
-                usage: event,
-              });
+          const streamModel = async (
+            option: ChatModelOption,
+            tier: ChatModelTier,
+            enableOpenAiTools: boolean,
+          ) => {
+            for await (const event of openResponsesChatStream({
+              messages,
+              signal: request.signal,
+              model: option.model,
+              provider: option.provider,
+              reasoningEffort: option.reasoningEffort,
+              webSearch:
+                enableOpenAiTools && option.provider === "openai"
+                  ? effectiveWebSearch
+                  : false,
+              codeInterpreter:
+                enableOpenAiTools && option.provider === "openai"
+                  ? taskRoute.useCodeInterpreter
+                  : false,
+              maxOutputTokens: option.maxOutputTokens,
+              promptCacheKey: `chat:${user.id}:${tier}`,
+            })) {
+              if (event.type === "usage") {
+                await recordAiUsage(supabase, {
+                  userId: user.id,
+                  feature: "chat",
+                  taskKind: taskRoute.kind,
+                  projectName: effectiveProjectName,
+                  modelTier: tier,
+                  usage: event,
+                });
+              }
+              if (event.type === "text") {
+                assistantText += event.delta;
+              }
+              controller.enqueue(encodeChatStreamEvent(event));
             }
-            if (event.type === "text") {
-              assistantText += event.delta;
+          };
+
+          try {
+            await streamModel(modelOption, modelTier, true);
+          } catch (streamError) {
+            if (
+              assistantText.trim().length === 0 &&
+              modelTier !== "economy" &&
+              (isQuotaOrRateLimitError(streamError) ||
+                isRecoverableModelError(streamError))
+            ) {
+              const fallbackOption = getChatModelOption("economy");
+              const fallbackReason = isRecoverableModelError(streamError)
+                ? "当前模型不可用或账号没有权限"
+                : "当前模型触发额度或频率限制";
+              controller.enqueue(
+                encodeChatStreamEvent({
+                  type: "status",
+                  message: `${fallbackReason}，已自动切换到 ResearchGPT Nano 重试。本次回答会优先保证可用性，复杂推理和图片/联网工具可能降级。`,
+                }),
+              );
+              await streamModel(fallbackOption, "economy", false);
+            } else {
+              throw streamError;
             }
-            controller.enqueue(encodeChatStreamEvent(event));
           }
 
           const requestedFormats = requestedExportFormats;
