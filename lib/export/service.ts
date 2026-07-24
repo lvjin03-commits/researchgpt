@@ -43,7 +43,7 @@ function normalizeArtifactContent(format: ExportFormat, content: string): string
 
   if (format === "xlsx") {
     const tabular = fenced.find((block) =>
-      /^(csv|tsv|xlsx|excel)$/i.test(block.language),
+      /^(json|csv|tsv|xlsx|excel)$/i.test(block.language),
     );
     if (tabular) return tabular.body;
   }

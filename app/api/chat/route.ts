@@ -206,7 +206,7 @@ function buildAutoExportInstruction(formats: ExportFormat[]): ChatMessage {
       "你只需要输出可以直接渲染为文件的正文内容。",
       "不要告诉用户去点击 Generate file，不要要求用户复制 Markdown，不要输出手动生成步骤。",
       "如果是 Word/PDF，请使用清晰标题、段落、列表和 Markdown 表格。",
-      "如果是 Excel，请优先输出干净的 Markdown 表格或 CSV 数据，不要把说明文字混入表格数据。",
+      "如果是 Excel，必须先判断表格主题和字段，再输出机器可读表格数据；优先输出一个 ```json 代码块，结构为 {\"sheets\":[{\"name\":\"工作表名\",\"columns\":[\"字段1\",\"字段2\"],\"rows\":[{\"字段1\":\"值\",\"字段2\":\"值\"}]}]}，也可输出干净 CSV。禁止把多条记录塞进一个单元格，禁止把说明文字混入表格数据。",
       "如果同时生成多种文件，请输出一份结构清晰、可复用的正式内容。",
     ].join("\n"),
   };
