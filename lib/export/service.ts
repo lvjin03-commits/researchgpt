@@ -38,7 +38,7 @@ function extractFencedBlocks(content: string): Array<{ language: string; body: s
   return blocks;
 }
 
-function normalizeArtifactContent(format: ExportFormat, content: string): string {
+export function normalizeArtifactContent(format: ExportFormat, content: string): string {
   const normalized = content.replace(/\r\n/g, "\n").trim();
   const fenced = extractFencedBlocks(normalized);
 

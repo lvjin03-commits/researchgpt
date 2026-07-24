@@ -1,5 +1,6 @@
 import { ExportError } from "@/lib/export/errors";
 import type { ExportFormat } from "@/lib/export/types";
+import AdmZip from "adm-zip";
 
 export type ExportQualityIssue = {
   code: string;
@@ -21,6 +22,53 @@ function includesText(buffer: Buffer, text: string): boolean {
   return buffer.subarray(0, Math.min(buffer.length, 2048)).toString("utf8").includes(text);
 }
 
+function extractOfficeXmlText(buffer: Buffer, entryName: string): string {
+  try {
+    const zip = new AdmZip(buffer);
+    const entry = zip.getEntry(entryName);
+    return entry?.getData().toString("utf8") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function inspectDocxContent(buffer: Buffer, issues: ExportQualityIssue[]): void {
+  const documentXml = extractOfficeXmlText(buffer, "word/document.xml");
+  if (!documentXml) {
+    issues.push({
+      code: "missing_docx_document_xml",
+      message: "Generated Word file is missing its main document content.",
+    });
+    return;
+  }
+
+  const text = documentXml
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (
+    /generate\s+file|copy\s+and\s+paste|select\s+.+format|download\s+link/i.test(
+      text,
+    ) ||
+    /生成文件|复制.*粘贴|选择.*格式|下载链接/.test(text)
+  ) {
+    issues.push({
+      code: "docx_instruction_pollution",
+      message:
+        "Generated Word content still contains export instructions instead of document body.",
+    });
+  }
+
+  if (/\|\s*-{3,}\s*\||```/.test(text)) {
+    issues.push({
+      code: "docx_markdown_residue",
+      message:
+        "Generated Word content still contains raw Markdown residue.",
+    });
+  }
+}
+
 export function inspectExportBuffer(
   format: ExportFormat,
   buffer: Buffer,
@@ -37,6 +85,10 @@ export function inspectExportBuffer(
       code: "invalid_office_package",
       message: "生成的 Office 文件结构无效，打开时可能损坏。",
     });
+  }
+
+  if (format === "docx" && startsWith(buffer, "PK")) {
+    inspectDocxContent(buffer, issues);
   }
 
   if (format === "pdf" && !startsWith(buffer, "%PDF")) {

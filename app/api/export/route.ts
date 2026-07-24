@@ -4,7 +4,10 @@ import { prepareExportPayload } from "@/lib/export/content-sanitize";
 import { ExportError } from "@/lib/export/errors";
 import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
 import { assertExportQuality } from "@/lib/export/quality";
-import { parseExportRequest } from "@/lib/export/service";
+import {
+  normalizeArtifactContent,
+  parseExportRequest,
+} from "@/lib/export/service";
 import { EXPORT_MIME_TYPES } from "@/lib/export/types";
 import type { ExportErrorResponse } from "@/lib/export/types";
 
@@ -63,13 +66,14 @@ export async function POST(request: Request) {
       content: exportRequest.content,
       format: exportRequest.format,
     });
-    const filename = buildExportFilename(
-      prepared.title,
+    const filename = buildExportFilename(prepared.title, exportRequest.format);
+    const content = normalizeArtifactContent(
       exportRequest.format,
+      prepared.content,
     );
     const buffer = await generateExportBuffer(exportRequest.format, {
       title: prepared.title,
-      content: prepared.content,
+      content,
       metadata: exportRequest.metadata ?? {},
     });
     assertExportQuality(exportRequest.format, buffer);

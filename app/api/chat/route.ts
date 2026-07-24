@@ -42,10 +42,7 @@ import {
   assertDailyAiBudgetAvailable,
   recordAiUsage,
 } from "@/lib/ai/usage-ledger";
-import {
-  generateResearchImage,
-  isGptImageRequest,
-} from "@/lib/ai/image-generation";
+import { generateResearchImage } from "@/lib/ai/image-generation";
 import { getToolLabel } from "@/lib/chat/tool-registry";
 import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 import { createClient } from "@/lib/supabase/server";
@@ -234,16 +231,30 @@ function inferReadableExportFormats(
   return Array.from(formats);
 }
 
-function shouldReadableAutoCreateExports(
+function intentPlanRequestsExport(plan: IntentPlan): boolean {
+  return (
+    plan.intent === "create_artifact" ||
+    ["word", "excel", "ppt", "pdf"].includes(plan.outputType)
+  );
+}
+
+function exportFormatsFromIntentPlan(
   query: string,
   plan: IntentPlan,
-): boolean {
-  if (shouldCleanAutoCreateExports(query, plan)) return true;
-  if (plan.intent === "create_artifact") return true;
-  if (["word", "excel", "ppt", "pdf"].includes(plan.outputType)) return true;
-  return /(生成|输出|导出|制作|创建|保存|下载|做成|转成|给我).{0,30}(文件|文档|表格|报告|Word|Excel|PPT|PDF|docx|xlsx|pptx|pdf)|\b(word|excel|ppt|pdf|docx|xlsx|pptx)\b.{0,30}(文件|文档|表格|报告|输出|导出|生成|下载)/i.test(
-    query,
-  );
+): ExportFormat[] {
+  if (!intentPlanRequestsExport(plan)) return [];
+
+  const formats = new Set<ExportFormat>();
+  if (plan.outputType === "word") formats.add("docx");
+  if (plan.outputType === "excel") formats.add("xlsx");
+  if (plan.outputType === "ppt") formats.add("pptx");
+  if (plan.outputType === "pdf") formats.add("pdf");
+
+  for (const format of inferReadableExportFormats(query, plan)) {
+    formats.add(format);
+  }
+
+  return Array.from(formats);
 }
 
 function stripGeneratedFileFooter(content: string): string {
@@ -766,9 +777,10 @@ export async function POST(request: Request) {
       webSearchRequested: webSearch,
       libraryRequested: useLibrary,
     });
-    const requestedExportFormats = shouldReadableAutoCreateExports(query, intentPlan)
-      ? inferReadableExportFormats(query, intentPlan)
-      : [];
+    const requestedExportFormats = exportFormatsFromIntentPlan(
+      query,
+      intentPlan,
+    );
     const previousAssistantExportSource =
       previousAssistantTextBeforeLastUser(messages);
     const shouldExportPreviousAssistant =
@@ -876,8 +888,7 @@ export async function POST(request: Request) {
       task: taskRoute.kind,
     });
 
-    const shouldGenerateImage =
-      intentRequestsGptImage(intentPlan) || isGptImageRequest(query);
+    const shouldGenerateImage = intentRequestsGptImage(intentPlan);
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {

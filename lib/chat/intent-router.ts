@@ -325,6 +325,53 @@ function createLocalPlan(
   };
 }
 
+function textIncludesAny(text: string, needles: string[]): boolean {
+  return needles.some((needle) => text.includes(needle));
+}
+
+function isQuestionAboutExistingOutput(query: string): boolean {
+  const lower = query.toLowerCase();
+  const questionOrCritiqueTerms = [
+    "为什么",
+    "为啥",
+    "原因",
+    "哪里",
+    "区别",
+    "差别",
+    "差距",
+    "问题",
+    "不一样",
+    "一样",
+    "没区别",
+    "没有区别",
+    "没有任何区别",
+    "不像",
+    "怎么回事",
+    "什么情况",
+    "分析一下",
+    "评价",
+  ];
+  const outputTerms = [
+    "图",
+    "图片",
+    "图像",
+    "海报",
+    "结果",
+    "回答",
+    "输出",
+    "文件",
+    "image",
+    "poster",
+    "visual",
+    "infographic",
+  ];
+
+  return (
+    textIncludesAny(lower, questionOrCritiqueTerms) &&
+    textIncludesAny(lower, outputTerms)
+  );
+}
+
 function routeFastPath(input: IntentRouterInput): IntentPlan | null {
   const query = compact(lastUserText(input.messages), 500);
   if (!query) return null;
@@ -335,6 +382,20 @@ function routeFastPath(input: IntentRouterInput): IntentPlan | null {
   const projectScope: InputScope = hasProjectScope
     ? "current_project"
     : "current_message";
+  if (isQuestionAboutExistingOutput(query)) {
+    return createLocalPlan(
+      input,
+      "conversation",
+      "用户在询问或评价已有输出，不应触发图片或文件生成。",
+      {
+        confidence: 0.94,
+        inputScope: "current_message",
+        outputType: "chat_answer",
+        tools: ["chat_model"],
+      },
+    );
+  }
+
   const critiquesExistingOutput =
     /(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事).{0,30}(图|图片|图像|海报|信息图|结果|回答|输出|visual|image|poster|infographic)|(图|图片|图像|海报|信息图|结果|回答|输出|visual|image|poster|infographic).{0,30}(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事)/i.test(
       query,
@@ -450,6 +511,20 @@ function routeFastPath(input: IntentRouterInput): IntentPlan | null {
 function routeSafetyInterception(input: IntentRouterInput): IntentPlan | null {
   const query = compact(lastUserText(input.messages), 500);
   if (!query) return null;
+
+  if (isQuestionAboutExistingOutput(query)) {
+    return createLocalPlan(
+      input,
+      "conversation",
+      "用户在询问或评价已有输出，不应触发图片或文件生成。",
+      {
+        confidence: 0.96,
+        inputScope: "current_message",
+        outputType: "chat_answer",
+        tools: ["chat_model"],
+      },
+    );
+  }
 
   const critiquesExistingOutput =
     /(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事).{0,30}(图|图片|图像|海报|信息图|结果|回答|输出|visual|image|poster|infographic)|(图|图片|图像|海报|信息图|结果|回答|输出|visual|image|poster|infographic).{0,30}(为什么|为啥|原因|哪里|哪儿|区别|差别|差距|问题|评价|评估|分析|比较|不像|没有.*区别|没.*区别|不一样|一样|什么情况|怎么回事)/i.test(
