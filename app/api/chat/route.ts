@@ -629,9 +629,6 @@ function formatTokenEstimate(plan: IntentPlan): string {
 
 function formatIntentPlanCard(plan: IntentPlan): string {
   const estimate = plan.tokenEstimate;
-  const tools = plan.tools
-    .map(getToolLabel)
-    .join("、");
   const notes = estimate.notes.length
     ? `\n> ${estimate.notes.join(" ")}`
     : "";
@@ -642,7 +639,6 @@ function formatIntentPlanCard(plan: IntentPlan): string {
     `- **识别任务**：${INTENT_LABELS[plan.intent]}（置信度 ${Math.round(plan.confidence * 100)}%）`,
     `- **读取范围**：${SCOPE_LABELS[plan.inputScope]}`,
     `- **输出结果**：${OUTPUT_LABELS[plan.outputType]}`,
-    `- **调用工具**：${tools || "语言模型"}`,
     `- **预计 token**：输入约 ${estimate.inputTokens.toLocaleString("zh-CN")}，输出约 ${estimate.expectedOutputTokens.toLocaleString("zh-CN")}，合计约 ${estimate.totalTokens.toLocaleString("zh-CN")}`,
     notes,
     "",
@@ -688,8 +684,9 @@ function formatCompactPlanDisclosure(
 ): string {
   const estimate = intentPlan.tokenEstimate;
   const tools =
-    intentPlan.tools.map(getToolLabel).join("、") ||
-    "语言模型";
+    Array.from(new Set(toolPlan.steps.flatMap((step) => step.tools)))
+      .map(getToolLabel)
+      .join("、") || "语言模型";
   const requiredSteps = toolPlan.steps
     .filter((step) => step.required)
     .slice(0, 5)
@@ -768,6 +765,7 @@ export async function POST(request: Request) {
       contextMode,
       projectName: effectiveProjectName,
       projectContext,
+      memory,
     });
     const intentPlan = await routeIntent(
       {

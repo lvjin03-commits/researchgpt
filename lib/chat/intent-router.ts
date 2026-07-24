@@ -9,7 +9,6 @@ import { isGptImageRequest } from "@/lib/ai/image-generation";
 import {
   CHAT_TOOL_NAMES,
   defaultToolsForIntent,
-  summarizeToolDefinitions,
 } from "@/lib/chat/tool-registry";
 import type { ContextBundle } from "@/lib/chat/context-bundle";
 
@@ -53,7 +52,7 @@ export type InputScope =
   | "literature_library"
   | "web";
 
-export type IntentPlan = {
+export type IntentRoute = {
   intent: IntentKind;
   confidence: number;
   summary: string;
@@ -69,7 +68,6 @@ export type IntentPlan = {
     | "translated_document"
     | "literature_matrix"
     | "workspace_operation";
-  tools: ToolName[];
   needsConfirmation: boolean;
   confirmationQuestion?: string;
   constraints: {
@@ -78,6 +76,13 @@ export type IntentPlan = {
     language?: string;
     requireProjectIsolation?: boolean;
   };
+  planner: "model" | "local_fast_path" | "local_fallback";
+};
+
+export type IntentPlan = IntentRoute & {
+  // Compatibility fields. Intent Router no longer asks the model to plan tools
+  // or execution steps; Tool Planner owns that layer.
+  tools: ToolName[];
   steps: string[];
   tokenEstimate: {
     inputTokens: number;
@@ -86,7 +91,6 @@ export type IntentPlan = {
     toolCalls: number;
     notes: string[];
   };
-  planner: "model" | "local_fast_path" | "local_fallback";
 };
 
 export type IntentRouterInput = {
@@ -650,7 +654,7 @@ function planFromRecord(
     typeof record.constraints === "object" && record.constraints !== null
       ? (record.constraints as Record<string, unknown>)
       : {};
-  const tools = normalizeTools(record.tools, intent);
+  const tools = normalizeTools(undefined, intent);
 
   return {
     intent,
@@ -683,11 +687,7 @@ function planFromRecord(
           : undefined,
       requireProjectIsolation: constraints.requireProjectIsolation === true,
     },
-    steps: Array.isArray(record.steps)
-      ? record.steps
-          .filter((item): item is string => typeof item === "string")
-          .slice(0, 8)
-      : [],
+    steps: [],
     tokenEstimate: buildTokenEstimate(input, intent, tools),
     planner: "model",
   };
@@ -771,6 +771,15 @@ export async function routeIntent(
         `- follow-up target: ${input.contextBundle.followUpTarget}`,
         `- task hint: ${input.contextBundle.taskTypeHint}`,
         `- content source: ${input.contextBundle.contentSource}`,
+        `- cached context summary: ${
+          input.contextBundle.memorySummary || "none"
+        }`,
+        `- active file scope: ${
+          input.contextBundle.activeFilesSummary || "none"
+        }`,
+        `- last assistant conclusion: ${
+          input.contextBundle.lastAssistantConclusion || "none"
+        }`,
         `- previous output summary: ${
           input.contextBundle.usablePreviousOutputSummary || "none"
         }`,
@@ -790,18 +799,16 @@ export async function routeIntent(
     "如果用户要求分析当前项目、选中文件或文件夹，inputScope 应优先是 current_project/selected_files/selected_folders，并要求项目隔离。",
     "如果不确定工具或范围，needsConfirmation=true，并给出一个简短确认问题。",
     "",
-    "只输出 JSON，不要输出解释文字。JSON 字段：",
+    "只输出 JSON，不要输出解释文字。Intent Router 只判断用户想做什么、针对什么对象、是否需要确认；不要规划工具、不要规划执行步骤。",
     "{",
     '  "intent": "conversation|web_research|generate_image|visualization|create_artifact|translate_document|single_paper_reading|literature_matrix|presentation_generation|file_analysis|data_analysis|literature_library_operation|project_operation|local_file_operation",',
     '  "confidence": 0.0,',
     '  "summary": "一句话说明用户想做什么",',
     '  "inputScope": "current_message|uploaded_files|selected_files|current_project|selected_folders|literature_library|web",',
     '  "outputType": "chat_answer|polished_image|editable_visual|word|excel|ppt|pdf|translated_document|literature_matrix|workspace_operation",',
-    '  "tools": ["chat_model"],',
     '  "needsConfirmation": false,',
     '  "confirmationQuestion": "",',
-    '  "constraints": {"avoid": [], "style": "", "language": "", "requireProjectIsolation": false},',
-    '  "steps": ["简短执行步骤"]',
+    '  "constraints": {"avoid": [], "style": "", "language": "", "requireProjectIsolation": false}',
     "}",
     "",
     `当前项目：${input.projectName || "未选择"}`,
@@ -809,9 +816,6 @@ export async function routeIntent(
     `已选文件夹数量：${input.selectedFolderIds.length}`,
     `用户显式联网：${input.webSearchRequested}`,
     `用户显式使用文献库：${input.libraryRequested}`,
-    "",
-    "ResearchGPT 当前可用工具层：",
-    summarizeToolDefinitions([...CHAT_TOOL_NAMES]),
     "",
     contextBundlePrompt,
     "",
@@ -859,9 +863,8 @@ export function chatRouteFromIntent(plan: IntentPlan): ChatTaskRoute {
   };
 
   const kind = taskKindByIntent[plan.intent];
-  const usesWeb = plan.tools.includes("web_search") || plan.inputScope === "web";
-  const usesCode =
-    plan.tools.includes("spreadsheet_pipeline") || plan.intent === "data_analysis";
+  const usesWeb = plan.intent === "web_research" || plan.inputScope === "web";
+  const usesCode = plan.intent === "data_analysis" || plan.outputType === "excel";
 
   return {
     kind,
@@ -873,7 +876,6 @@ export function chatRouteFromIntent(plan: IntentPlan): ChatTaskRoute {
       `Intent: ${plan.intent}`,
       `Output type: ${plan.outputType}`,
       `Input scope: ${plan.inputScope}`,
-      `Tools: ${plan.tools.join(", ")}`,
       plan.constraints.style ? `Style: ${plan.constraints.style}` : "",
       plan.constraints.avoid?.length
         ? `Avoid: ${plan.constraints.avoid.join(", ")}`
@@ -889,9 +891,5 @@ export function chatRouteFromIntent(plan: IntentPlan): ChatTaskRoute {
 }
 
 export function intentRequestsGptImage(plan: IntentPlan): boolean {
-  return (
-    plan.intent === "generate_image" ||
-    plan.outputType === "polished_image" ||
-    plan.tools.includes("gpt_image")
-  );
+  return plan.intent === "generate_image" || plan.outputType === "polished_image";
 }

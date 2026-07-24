@@ -86,16 +86,16 @@ function hasProjectOrSelection(input: IntentRouterInput): boolean {
   return Boolean(input.projectName) || input.selectedFolderIds.length > 0;
 }
 
-function highCostTools(plan: IntentPlan): ToolName[] {
-  return plan.tools.filter((tool) =>
-    [
-      "gpt_image",
-      "presentation_pipeline",
-      "document_pipeline",
-      "translation_pipeline",
-      "literature_pipeline",
-    ].includes(tool),
-  );
+function uniqueTools(steps: ToolPlanStep[]): ToolName[] {
+  return Array.from(new Set(steps.flatMap((item) => item.tools)));
+}
+
+function shouldRunQualityCheck(plan: IntentPlan): boolean {
+  return ![
+    "conversation",
+    "project_operation",
+    "literature_library_operation",
+  ].includes(plan.intent);
 }
 
 function toolPurpose(tools: ToolName[]): string {
@@ -339,7 +339,7 @@ export function buildToolPlan(
     ...buildIntentSteps(intentPlan),
   ];
 
-  if (intentPlan.tools.includes("quality_checker")) {
+  if (shouldRunQualityCheck(intentPlan)) {
     steps.push(
       step(
         "quality_check",
@@ -373,14 +373,23 @@ export function buildToolPlan(
     warnings.push("本次任务启用项目隔离：默认不读取其他项目或其他文件夹。");
   }
 
-  const expensive = highCostTools(intentPlan);
+  const plannedTools = uniqueTools(steps);
+  const expensive = plannedTools.filter((tool) =>
+    [
+      "gpt_image",
+      "presentation_pipeline",
+      "document_pipeline",
+      "translation_pipeline",
+      "literature_pipeline",
+    ].includes(tool),
+  );
   if (expensive.length > 0) {
     warnings.push(
       `本任务涉及较重工具：${expensive.map(getToolLabel).join("、")}。执行前应展示预计 token 或高成本提醒。`,
     );
   }
 
-  const toolDescriptions = toolPurpose(intentPlan.tools);
+  const toolDescriptions = toolPurpose(plannedTools);
   if (toolDescriptions) {
     warnings.push(`工具层：${toolDescriptions}`);
   }

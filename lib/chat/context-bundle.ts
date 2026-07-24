@@ -28,6 +28,10 @@ export type ContextBundle = {
   selectedFolderCount: number;
   localFolderCount: number;
   selectedLocalFileCount: number;
+  memorySummary: string;
+  recentConversationSummary: string;
+  activeFilesSummary: string;
+  lastAssistantConclusion: string;
   usablePreviousOutput: string;
   usablePreviousOutputSummary: string;
   conflicts: string[];
@@ -36,6 +40,10 @@ export type ContextBundle = {
 
 const MAX_PREVIOUS_OUTPUT_CHARS = 6000;
 const MAX_PREVIOUS_SUMMARY_CHARS = 900;
+const MAX_MEMORY_SUMMARY_CHARS = 1200;
+const MAX_RECENT_CONVERSATION_CHARS = 1200;
+const MAX_LAST_ASSISTANT_CHARS = 700;
+const MAX_ACTIVE_FILES_CHARS = 900;
 
 function compact(value: string, maxLength: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -74,6 +82,88 @@ function previousAssistantTextBeforeLastUser(messages: ChatMessage[]): string {
   }
 
   return "";
+}
+
+function recentConversationSummary(messages: ChatMessage[]): string {
+  const items = messages
+    .filter((message) => message.role !== "system")
+    .slice(-8)
+    .map((message) => {
+      const role = message.role === "user" ? "User" : "Assistant";
+      const text = compact(
+        stripGeneratedFileFooter(getTextFromMessageContent(message.content)),
+        220,
+      );
+      return text ? `${role}: ${text}` : "";
+    })
+    .filter(Boolean);
+
+  return compact(items.join("\n"), MAX_RECENT_CONVERSATION_CHARS);
+}
+
+function activeFilesSummary(input: {
+  projectContext: ExecutableProjectContext | null;
+  selectedFolderIds: string[];
+  projectName: string;
+}): string {
+  const parts: string[] = [];
+  if (input.projectName) parts.push(`Project: ${input.projectName}`);
+  if (input.selectedFolderIds.length > 0) {
+    parts.push(`Selected cloud folders: ${input.selectedFolderIds.length}`);
+  }
+
+  const context = input.projectContext;
+  if (!context) return compact(parts.join("; "), MAX_ACTIVE_FILES_CHARS);
+
+  const selectedIds = new Set(context.selectedLocalFileIds);
+  const folders = context.localFolders.slice(0, 6).map((folder) => {
+    const selectedInFolder = folder.files.filter((file) =>
+      selectedIds.has(file.id),
+    );
+    const visibleFiles = (selectedInFolder.length ? selectedInFolder : folder.files)
+      .slice(0, 5)
+      .map((file) => {
+        const ext = file.extension ? `.${file.extension}` : "";
+        const readability =
+          typeof file.readable === "boolean"
+            ? file.readable
+              ? "readable"
+              : "not readable"
+            : "readability unknown";
+        return `${file.name}${ext ? ` (${ext}, ${readability})` : ` (${readability})`}`;
+      });
+
+    const scopeLabel = selectedInFolder.length
+      ? `${selectedInFolder.length} selected`
+      : `${folder.fileCount} files`;
+    return `${folder.name}: ${scopeLabel}${
+      visibleFiles.length ? `; examples: ${visibleFiles.join(" | ")}` : ""
+    }`;
+  });
+
+  parts.push(`Bound local folders: ${context.localFolders.length}`);
+  if (context.selectedLocalFileIds.length > 0) {
+    parts.push(`Selected local files: ${context.selectedLocalFileIds.length}`);
+  }
+  if (folders.length > 0) parts.push(folders.join("\n"));
+
+  return compact(parts.join("\n"), MAX_ACTIVE_FILES_CHARS);
+}
+
+function buildMemorySummary(input: {
+  memory?: string;
+  projectName: string;
+  recentSummary: string;
+  activeSummary: string;
+}): string {
+  const parts = [
+    input.memory ? `Saved user preferences: ${compact(input.memory, 600)}` : "",
+    input.projectName ? `Active project: ${input.projectName}` : "",
+    input.activeSummary ? `Active material scope: ${input.activeSummary}` : "",
+    input.recentSummary ? `Recent conversation: ${input.recentSummary}` : "",
+  ].filter(Boolean);
+
+  return compact(parts.join("\n"), MAX_MEMORY_SUMMARY_CHARS);
 }
 
 function hasAny(text: string, patterns: RegExp[]): boolean {
@@ -125,11 +215,28 @@ export function buildContextBundle(input: {
   contextMode: "auto" | "project" | "temporary";
   projectName: string;
   projectContext: ExecutableProjectContext | null;
+  memory?: string;
 }): ContextBundle {
   const currentUserRequest = lastUserText(input.messages);
   const previousAssistantOutput = previousAssistantTextBeforeLastUser(
     input.messages,
   );
+  const recentSummary = recentConversationSummary(input.messages);
+  const lastAssistantConclusion = compact(
+    previousAssistantOutput,
+    MAX_LAST_ASSISTANT_CHARS,
+  );
+  const activeSummary = activeFilesSummary({
+    projectContext: input.projectContext,
+    selectedFolderIds: input.selectedFolderIds,
+    projectName: input.projectName,
+  });
+  const memorySummary = buildMemorySummary({
+    memory: input.memory,
+    projectName: input.projectName,
+    recentSummary,
+    activeSummary,
+  });
   const localFolderCount = input.projectContext?.localFolders.length ?? 0;
   const localSelectedCount = selectedLocalFileCount(input.projectContext);
   const hasProjectContext =
@@ -204,6 +311,10 @@ export function buildContextBundle(input: {
     selectedFolderCount: input.selectedFolderIds.length,
     localFolderCount,
     selectedLocalFileCount: localSelectedCount,
+    memorySummary,
+    recentConversationSummary: recentSummary,
+    activeFilesSummary: activeSummary,
+    lastAssistantConclusion,
     usablePreviousOutput: previousAssistantOutput.slice(
       0,
       MAX_PREVIOUS_OUTPUT_CHARS,
@@ -229,6 +340,15 @@ export function contextBundleToSystemMessage(bundle: ContextBundle): ChatMessage
     `Selected cloud folder count: ${bundle.selectedFolderCount}`,
     `Bound local folder count: ${bundle.localFolderCount}`,
     `Selected local file count: ${bundle.selectedLocalFileCount}`,
+    bundle.memorySummary
+      ? `Cached context summary: ${bundle.memorySummary}`
+      : "Cached context summary: none",
+    bundle.activeFilesSummary
+      ? `Active file scope summary: ${bundle.activeFilesSummary}`
+      : "Active file scope summary: none",
+    bundle.lastAssistantConclusion
+      ? `Last assistant conclusion: ${bundle.lastAssistantConclusion}`
+      : "Last assistant conclusion: none",
     bundle.usablePreviousOutputSummary
       ? `Reusable previous output summary: ${bundle.usablePreviousOutputSummary}`
       : "Reusable previous output summary: none",
@@ -244,9 +364,13 @@ export function contextBundleToSystemMessage(bundle: ContextBundle): ChatMessage
     "2. If the user critiques a previous image, file, or answer, explain or suggest a revision. Do not trigger a generation tool unless the user explicitly asks to regenerate.",
     "3. If selected files exist, read only selected files first. Otherwise use the current project's bound material.",
     "4. The current user request always has priority over old context.",
+    "5. Prefer the cached context summary for continuity. Only use the full previous output when the user explicitly asks to reuse, revise, export, or critique that previous output.",
   ];
 
-  if (bundle.usablePreviousOutput) {
+  if (
+    bundle.usablePreviousOutput &&
+    bundle.contentSource === "previous_assistant_output"
+  ) {
     lines.push("", "[Reusable Previous Output Full Text]", bundle.usablePreviousOutput);
   }
 
