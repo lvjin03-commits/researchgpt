@@ -11,6 +11,7 @@ import {
   defaultToolsForIntent,
   summarizeToolDefinitions,
 } from "@/lib/chat/tool-registry";
+import type { ContextBundle } from "@/lib/chat/context-bundle";
 
 export type IntentKind =
   | "conversation"
@@ -95,6 +96,7 @@ export type IntentRouterInput = {
   projectName?: string;
   webSearchRequested: boolean;
   libraryRequested: boolean;
+  contextBundle?: ContextBundle;
 };
 
 function lastUserText(messages: ChatMessage[]): string {
@@ -372,6 +374,58 @@ function isQuestionAboutExistingOutput(query: string): boolean {
   );
 }
 
+function routeContextBundleFastPath(input: IntentRouterInput): IntentPlan | null {
+  const query = compact(lastUserText(input.messages), 500);
+  const bundle = input.contextBundle;
+  if (!query || !bundle) return null;
+
+  if (
+    bundle.taskTypeHint === "critique_existing_output" &&
+    bundle.contentSource === "previous_assistant_output"
+  ) {
+    return createLocalPlan(
+      input,
+      "conversation",
+      "User is asking about or critiquing the previous assistant output.",
+      {
+        confidence: 0.95,
+        inputScope: "current_message",
+        outputType: "chat_answer",
+        tools: ["chat_model"],
+      },
+    );
+  }
+
+  if (
+    bundle.taskTypeHint === "create_artifact" &&
+    bundle.contentSource === "previous_assistant_output"
+  ) {
+    const outputType: IntentPlan["outputType"] =
+      /\bexcel\b|xlsx|表格/i.test(query) &&
+      !/\bword\b|docx|pdf|ppt|pptx/i.test(query)
+        ? "excel"
+        : /pdf/i.test(query) && !/\bword\b|docx|excel|xlsx|ppt|pptx/i.test(query)
+          ? "pdf"
+          : /ppt|pptx/i.test(query) &&
+              !/\bword\b|docx|excel|xlsx|pdf/i.test(query)
+            ? "ppt"
+            : "word";
+    return createLocalPlan(
+      input,
+      "create_artifact",
+      "User is continuing from the previous assistant output and wants downloadable files.",
+      {
+        confidence: 0.94,
+        inputScope: "current_message",
+        outputType,
+        tools: ["document_pipeline", "quality_checker"],
+      },
+    );
+  }
+
+  return null;
+}
+
 function routeFastPath(input: IntentRouterInput): IntentPlan | null {
   const query = compact(lastUserText(input.messages), 500);
   if (!query) return null;
@@ -387,6 +441,50 @@ function routeFastPath(input: IntentRouterInput): IntentPlan | null {
       input,
       "conversation",
       "用户在询问或评价已有输出，不应触发图片或文件生成。",
+      {
+        confidence: 0.94,
+        inputScope: "current_message",
+        outputType: "chat_answer",
+        tools: ["chat_model"],
+      },
+    );
+  }
+
+  if (
+    input.contextBundle?.taskTypeHint === "create_artifact" &&
+    input.contextBundle.contentSource === "previous_assistant_output"
+  ) {
+    const outputType: IntentPlan["outputType"] =
+      /\bexcel\b|xlsx|表格/i.test(query) &&
+      !/\bword\b|docx|pdf|ppt|pptx/i.test(query)
+        ? "excel"
+        : /pdf/i.test(query) && !/\bword\b|docx|excel|xlsx|ppt|pptx/i.test(query)
+          ? "pdf"
+          : /ppt|pptx/i.test(query) &&
+              !/\bword\b|docx|excel|xlsx|pdf/i.test(query)
+            ? "ppt"
+            : "word";
+    return createLocalPlan(
+      input,
+      "create_artifact",
+      "User is continuing from the previous assistant output and wants downloadable files.",
+      {
+        confidence: 0.93,
+        inputScope: "current_message",
+        outputType,
+        tools: ["document_pipeline", "quality_checker"],
+      },
+    );
+  }
+
+  if (
+    input.contextBundle?.taskTypeHint === "critique_existing_output" &&
+    input.contextBundle.contentSource === "previous_assistant_output"
+  ) {
+    return createLocalPlan(
+      input,
+      "conversation",
+      "User is critiquing or asking about the previous assistant output.",
       {
         confidence: 0.94,
         inputScope: "current_message",
@@ -651,6 +749,9 @@ export async function routeIntent(
   const safetyPlan = routeSafetyInterception(input);
   if (safetyPlan) return safetyPlan;
 
+  const contextFastPlan = routeContextBundleFastPath(input);
+  if (contextFastPlan) return contextFastPlan;
+
   const router = getRouterClient();
   if (!router) return routeFastPath(input) ?? fallbackIntentPlan(input);
 
@@ -662,6 +763,22 @@ export async function routeIntent(
       return `${role}: ${compact(getTextFromMessageContent(message.content), 700)}`;
     })
     .join("\n\n");
+  const contextBundlePrompt = input.contextBundle
+    ? [
+        "Context bundle:",
+        `- current request: ${compact(input.contextBundle.currentUserRequest, 300)}`,
+        `- is follow-up: ${input.contextBundle.isFollowUp ? "yes" : "no"}`,
+        `- follow-up target: ${input.contextBundle.followUpTarget}`,
+        `- task hint: ${input.contextBundle.taskTypeHint}`,
+        `- content source: ${input.contextBundle.contentSource}`,
+        `- previous output summary: ${
+          input.contextBundle.usablePreviousOutputSummary || "none"
+        }`,
+        input.contextBundle.missingRequiredInfo.length
+          ? `- missing info: ${input.contextBundle.missingRequiredInfo.join("; ")}`
+          : "- missing info: none",
+      ].join("\n")
+    : "Context bundle: none";
 
   const prompt = [
     "你是 ResearchGPT 的 Intent Router，不回答用户问题，只判断用户真实想完成的任务。",
@@ -695,6 +812,8 @@ export async function routeIntent(
     "",
     "ResearchGPT 当前可用工具层：",
     summarizeToolDefinitions([...CHAT_TOOL_NAMES]),
+    "",
+    contextBundlePrompt,
     "",
     "最近对话：",
     recentConversation,

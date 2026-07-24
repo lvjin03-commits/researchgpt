@@ -28,6 +28,10 @@ import {
 import { buildToolPlan, type ToolPlan } from "@/lib/chat/tool-planner";
 import { withScientificVisualPolicy } from "@/lib/chat/visual-policy";
 import {
+  buildContextBundle,
+  contextBundleToSystemMessage,
+} from "@/lib/chat/context-bundle";
+import {
   requireChatUser,
   toChatApiErrorResponse,
 } from "@/lib/chat/server/errors";
@@ -758,6 +762,13 @@ export async function POST(request: Request) {
             .filter((part) => part.type === "text")
             .map((part) => part.text)
             .join("\n") ?? "";
+    const contextBundle = buildContextBundle({
+      messages,
+      selectedFolderIds,
+      contextMode,
+      projectName: effectiveProjectName,
+      projectContext,
+    });
     const intentPlan = await routeIntent(
       {
         messages,
@@ -766,6 +777,7 @@ export async function POST(request: Request) {
         projectName: effectiveProjectName,
         webSearchRequested: webSearch,
         libraryRequested: useLibrary,
+        contextBundle,
       },
       request.signal,
     );
@@ -816,6 +828,7 @@ export async function POST(request: Request) {
             "你不能声称已经新建、重命名、删除或移动文献库中的任何对象。文献库变更必须由界面的文献库操作工具实际执行并返回成功结果；如果用户的指令没有被工具识别，请要求用户明确文件夹和文献名称。",
           ].join("\n\n"),
         },
+        contextBundleToSystemMessage(contextBundle),
         ...(requestedExportFormats.length > 0
           ? [buildReadableAutoExportInstruction(requestedExportFormats)]
           : []),
