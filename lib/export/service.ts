@@ -1,6 +1,7 @@
 // Server-only module. Do not import from client components or /api/chat route entry.
 
 import { buildExportFilename } from "@/lib/export/filename";
+import { prepareExportPayload } from "@/lib/export/content-sanitize";
 import { ExportError } from "@/lib/export/errors";
 import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
 import { assertExportQuality } from "@/lib/export/quality";
@@ -126,11 +127,16 @@ export async function createExport(
   request: ExportRequest,
   userId: string,
 ): Promise<ExportSuccessResponse> {
-  const filename = buildExportFilename(request.title, request.format);
-  const mimeType = EXPORT_MIME_TYPES[request.format];
-  const content = normalizeArtifactContent(request.format, request.content);
-  const buffer = await generateExportBuffer(request.format, {
+  const prepared = prepareExportPayload({
     title: request.title,
+    content: request.content,
+    format: request.format,
+  });
+  const filename = buildExportFilename(prepared.title, request.format);
+  const mimeType = EXPORT_MIME_TYPES[request.format];
+  const content = normalizeArtifactContent(request.format, prepared.content);
+  const buffer = await generateExportBuffer(request.format, {
+    title: prepared.title,
     content,
     metadata: request.metadata ?? {},
   });

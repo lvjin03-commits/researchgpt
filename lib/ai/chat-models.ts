@@ -32,7 +32,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     model: "deepseek-v4-flash",
     provider: "deepseek",
     reasoningEffort: "none",
-    maxOutputTokens: 1600,
+    maxOutputTokens: 3200,
     maxVisuals: 1,
   },
   {
@@ -42,7 +42,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     model: "deepseek-v4-pro",
     provider: "deepseek",
     reasoningEffort: "low",
-    maxOutputTokens: 3000,
+    maxOutputTokens: 4500,
     maxVisuals: 3,
   },
   {
@@ -52,7 +52,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     model: "gpt-5.4",
     provider: "openai",
     reasoningEffort: "medium",
-    maxOutputTokens: 5000,
+    maxOutputTokens: 7000,
     maxVisuals: 6,
     expensive: true,
     costWarning:
@@ -65,7 +65,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
     model: "gpt-5.6-sol",
     provider: "openai",
     reasoningEffort: "medium",
-    maxOutputTokens: 7000,
+    maxOutputTokens: 9000,
     maxVisuals: 8,
     expensive: true,
     costWarning:

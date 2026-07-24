@@ -353,6 +353,28 @@ function buildEmptyAssistantMessage(error?: unknown): string {
   ].join("\n");
 }
 
+const MAX_AUTO_CONTINUATIONS = 3;
+
+function looksAbruptlyTruncated(text: string): boolean {
+  const trimmed = stripGeneratedFileFooter(text).trim();
+  if (trimmed.length < 600) return false;
+
+  const tail = trimmed.slice(-120).trim();
+  if (!tail) return false;
+
+  if (/[。！？.!?）)\]】}"'”’]$/.test(tail)) {
+    return false;
+  }
+
+  if (/[，,；;：:、-]$/.test(tail)) {
+    return true;
+  }
+
+  return /\b(of|and|or|the|a|an|to|for|with|in|on|by|from|as|that|which|where|while|because|including|such as)$/i.test(
+    tail,
+  );
+}
+
 function buildAutoContinuationMessages(
   messages: ChatMessage[],
   assistantText: string,
@@ -369,6 +391,167 @@ function buildAutoContinuationMessages(
       role: "user",
       content:
         "上一条回答因为输出长度限制在半句处中断了。请从中断处自然续写并完成原任务，不要重复已经写过的内容，不要重新开头；如果是综述、报告或长文，请补完整结论。",
+    },
+  ];
+}
+
+type LongFormSegment = {
+  title: string;
+  instruction: string;
+};
+
+function requestedLongFormLength(query: string): number | null {
+  const match = query.match(/(\d{3,5})\s*(字|词|words?)/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function shouldUseSegmentedLongForm(
+  query: string,
+  plan: IntentPlan,
+  requestedFormats: ExportFormat[],
+): boolean {
+  if (
+    plan.intent === "generate_image" ||
+    plan.intent === "visualization" ||
+    plan.outputType === "polished_image" ||
+    plan.outputType === "editable_visual" ||
+    plan.outputType === "excel" ||
+    plan.outputType === "literature_matrix" ||
+    plan.outputType === "workspace_operation"
+  ) {
+    return false;
+  }
+
+  const requestedLength = requestedLongFormLength(query);
+  const asksLongForm =
+    /(综述|长文|论文|报告|文章|review|literature\s+review|essay|article|report)/i.test(
+      query,
+    );
+  const asksWriting =
+    /(写|撰写|生成|输出|整理|总结|形成|帮我|write|draft|generate|compose|summarize)/i.test(
+      query,
+    );
+  const asksExport = requestedFormats.some((format) =>
+    ["docx", "pdf", "md", "txt"].includes(format),
+  );
+
+  if (requestedLength !== null && requestedLength >= 700) return true;
+  if (asksLongForm && asksWriting) return true;
+  if (asksLongForm && asksExport) return true;
+  return false;
+}
+
+function buildLongFormSegments(query: string): LongFormSegment[] {
+  const requestedLength = requestedLongFormLength(query);
+  const compactLengthNote = requestedLength
+    ? `Target total length is about ${requestedLength} Chinese characters or words as requested. Allocate the length across all segments and avoid excessive expansion.`
+    : "Keep the final answer complete and concise. Allocate depth across all segments instead of over-expanding the first part.";
+
+  if (/(综述|review|literature\s+review)/i.test(query)) {
+    return [
+      {
+        title: "Title, abstract, and introduction",
+        instruction: `${compactLengthNote} Write the final title, a concise abstract, keywords if appropriate, and the introduction/background. Do not stop before the section is complete.`,
+      },
+      {
+        title: "Main research landscape",
+        instruction:
+          "Write the core classification, major research directions, and representative concepts. Connect claims with evidence or sources already available in the conversation.",
+      },
+      {
+        title: "Mechanisms, methods, and evidence",
+        instruction:
+          "Write the technical mechanisms, methods, key findings, data patterns, and evidence comparison. Use clear paragraph structure instead of loose notes.",
+      },
+      {
+        title: "Advantages, limitations, and gaps",
+        instruction:
+          "Write the advantages, limitations, contradictions, unresolved problems, and research gaps. Avoid repeating previous sections.",
+      },
+      {
+        title: "Future directions, conclusion, and references",
+        instruction:
+          "Write future directions, a complete conclusion, and a references/source section when evidence is available. Finish with a natural closing sentence.",
+      },
+    ];
+  }
+
+  if (/(报告|report|论文|essay|article|文章)/i.test(query)) {
+    return [
+      {
+        title: "Purpose and background",
+        instruction: `${compactLengthNote} Write the title, purpose, background, and problem definition.`,
+      },
+      {
+        title: "Core analysis",
+        instruction:
+          "Write the main analysis body with clear subsections, evidence, comparisons, and reasoning.",
+      },
+      {
+        title: "Findings and implications",
+        instruction:
+          "Write key findings, implications, limitations, and practical recommendations if relevant.",
+      },
+      {
+        title: "Conclusion",
+        instruction:
+          "Write a complete conclusion and any source/reference notes. Ensure the whole answer is finished.",
+      },
+    ];
+  }
+
+  return [
+    {
+      title: "Opening and context",
+      instruction: `${compactLengthNote} Write the opening part and clarify the task background.`,
+    },
+    {
+      title: "Main body",
+      instruction: "Write the main body with structured reasoning and evidence.",
+    },
+    {
+      title: "Closing",
+      instruction: "Write the final part, conclusion, and any source/reference notes.",
+    },
+  ];
+}
+
+function buildSegmentMessages(
+  messages: ChatMessage[],
+  assistantText: string,
+  segment: LongFormSegment,
+  index: number,
+  total: number,
+): ChatMessage[] {
+  const previousTail =
+    assistantText.length > 5000 ? assistantText.slice(-5000) : assistantText;
+  const segmentInstruction: ChatMessage = {
+    role: "system",
+    content: [
+      "You are in segmented long-form generation mode.",
+      `Write segment ${index} of ${total}: ${segment.title}.`,
+      segment.instruction,
+      "Output only the content for this segment. Do not say you are generating a segment. Do not ask the user to continue. Do not repeat completed text.",
+      "If this is the final segment, complete the whole task with a clear ending.",
+    ].join("\n"),
+  };
+
+  return [
+    segmentInstruction,
+    ...messages,
+    ...(previousTail.trim()
+      ? [
+          {
+            role: "assistant" as const,
+            content: previousTail,
+          },
+        ]
+      : []),
+    {
+      role: "user",
+      content: `Continue the original task by writing segment ${index}/${total}: ${segment.title}.`,
     },
   ];
 }
@@ -919,7 +1102,69 @@ export async function POST(request: Request) {
           let wasIncomplete = false;
           let continuationOption = modelOption;
           let continuationTier = modelTier;
+          const longFormSegments = shouldUseSegmentedLongForm(
+            query,
+            intentPlan,
+            requestedExportFormats,
+          )
+            ? buildLongFormSegments(query)
+            : [];
 
+          if (longFormSegments.length > 0) {
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "status",
+                message:
+                  "长文任务已切换为分段生成：系统会逐段完成并自动合并，避免回答在中途截断。",
+              }),
+            );
+
+            for (let index = 0; index < longFormSegments.length; index += 1) {
+              const segment = longFormSegments[index];
+              controller.enqueue(
+                encodeChatStreamEvent({
+                  type: "status",
+                  message: `正在生成第 ${index + 1}/${longFormSegments.length} 段：${segment.title}`,
+                }),
+              );
+
+              const beforeSegmentLength = assistantText.length;
+              try {
+                const segmentIncomplete = await streamModel(
+                  continuationOption,
+                  continuationTier,
+                  index === 0,
+                  buildSegmentMessages(
+                    messages,
+                    assistantText,
+                    segment,
+                    index + 1,
+                    longFormSegments.length,
+                  ),
+                );
+                wasIncomplete = wasIncomplete || segmentIncomplete;
+              } catch (streamError) {
+                streamFailure = streamError;
+                break;
+              }
+
+              if (assistantText.length <= beforeSegmentLength) {
+                streamFailure = new Error(
+                  `Segment ${index + 1} did not return usable content.`,
+                );
+                break;
+              }
+
+              const separator = "\n\n";
+              assistantText += separator;
+              controller.enqueue(
+                encodeChatStreamEvent({
+                  type: "text",
+                  delta: separator,
+                }),
+              );
+            }
+          } else {
           try {
             wasIncomplete = await streamModel(modelOption, modelTier, true);
           } catch (streamError) {
@@ -953,6 +1198,7 @@ export async function POST(request: Request) {
             } else {
               streamFailure = streamError;
             }
+          }
           }
 
           if (assistantText.trim().length === 0) {
@@ -1001,6 +1247,46 @@ export async function POST(request: Request) {
                     "\n\n> 本次回答到达模型输出上限，自动续写没有成功。如果内容还没完整，请直接发送“继续”。",
                 }),
               );
+            }
+          }
+
+          if (assistantText.trim().length > 0 && !streamFailure) {
+            let extraContinuationCount = wasIncomplete ? 1 : 0;
+
+            while (
+              looksAbruptlyTruncated(assistantText) &&
+              extraContinuationCount < MAX_AUTO_CONTINUATIONS
+            ) {
+              extraContinuationCount += 1;
+              controller.enqueue(
+                encodeChatStreamEvent({
+                  type: "status",
+                  message: `回答停在未完成句子处，正在自动续写第 ${extraContinuationCount} 次。`,
+                }),
+              );
+
+              const beforeContinuationLength = assistantText.length;
+              try {
+                await streamModel(
+                  continuationOption,
+                  continuationTier,
+                  false,
+                  buildAutoContinuationMessages(messages, assistantText),
+                );
+              } catch {
+                controller.enqueue(
+                  encodeChatStreamEvent({
+                    type: "text",
+                    delta:
+                      "\n\n> 本次回答接近模型输出上限，自动续写没有成功。如果内容仍不完整，请直接发送“继续”，我会从这里接着写。",
+                  }),
+                );
+                break;
+              }
+
+              if (assistantText.length <= beforeContinuationLength) {
+                break;
+              }
             }
           }
 
