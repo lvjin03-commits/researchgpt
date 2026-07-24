@@ -12,6 +12,12 @@ import {
 } from "@/lib/chat/tool-registry";
 import type { ContextBundle } from "@/lib/chat/context-bundle";
 
+const ROUTER_RECENT_MESSAGE_LIMIT = 3;
+const ROUTER_MESSAGE_CHARS = 360;
+const ROUTER_REQUEST_CHARS = 220;
+const ROUTER_SUMMARY_CHARS = 260;
+const ROUTER_OUTPUT_TOKENS = 360;
+
 export type IntentKind =
   | "conversation"
   | "web_research"
@@ -244,18 +250,43 @@ function buildTokenEstimate(
   intent: IntentKind,
   tools: ToolName[],
 ): IntentPlan["tokenEstimate"] {
-  const messageTokens = input.messages.reduce(
+  const recentMessageTokens = input.messages
+    .filter((message) => message.role !== "system")
+    .slice(-ROUTER_RECENT_MESSAGE_LIMIT)
+    .reduce(
     (total, message) =>
-      total + estimateTokensFromText(getTextFromMessageContent(message.content)),
+        total +
+        estimateTokensFromText(
+          compact(getTextFromMessageContent(message.content), ROUTER_MESSAGE_CHARS),
+        ),
     0,
   );
+  const bundle = input.contextBundle;
+  const contextTokens = bundle
+    ? [
+        bundle.currentUserRequest,
+        bundle.memorySummary,
+        bundle.activeFilesSummary,
+        bundle.lastAssistantConclusion,
+        bundle.usablePreviousOutputSummary,
+      ].reduce(
+        (total, value) =>
+          total + estimateTokensFromText(compact(value || "", ROUTER_SUMMARY_CHARS)),
+        0,
+      )
+    : 0;
   const projectTokens =
     input.projectName || input.selectedFolderIds.length > 0 ? 120 : 0;
   const routingTokens = 260;
-  const inputTokens = Math.max(1, messageTokens + projectTokens + routingTokens);
+  const inputTokens = Math.max(
+    1,
+    recentMessageTokens + contextTokens + projectTokens + routingTokens,
+  );
   const expectedOutputTokens = expectedOutputTokensForIntent(intent);
   const toolCalls = tools.filter((tool) => tool !== "chat_model").length;
   const notes: string[] = [];
+
+  notes.push("Router 只读取短上下文和摘要，不读取全文文献，主要用于避免误调用高成本工具。");
 
   if (tools.includes("gpt_image")) {
     notes.push("图片生成会额外产生图片模型费用，token 只统计文字规划部分。");
@@ -757,31 +788,31 @@ export async function routeIntent(
 
   const recentConversation = input.messages
     .filter((message) => message.role !== "system")
-    .slice(-4)
+    .slice(-ROUTER_RECENT_MESSAGE_LIMIT)
     .map((message) => {
       const role = message.role === "user" ? "用户" : "助手";
-      return `${role}: ${compact(getTextFromMessageContent(message.content), 700)}`;
+      return `${role}: ${compact(getTextFromMessageContent(message.content), ROUTER_MESSAGE_CHARS)}`;
     })
     .join("\n\n");
   const contextBundlePrompt = input.contextBundle
     ? [
         "Context bundle:",
-        `- current request: ${compact(input.contextBundle.currentUserRequest, 300)}`,
+        `- current request: ${compact(input.contextBundle.currentUserRequest, ROUTER_REQUEST_CHARS)}`,
         `- is follow-up: ${input.contextBundle.isFollowUp ? "yes" : "no"}`,
         `- follow-up target: ${input.contextBundle.followUpTarget}`,
         `- task hint: ${input.contextBundle.taskTypeHint}`,
         `- content source: ${input.contextBundle.contentSource}`,
         `- cached context summary: ${
-          input.contextBundle.memorySummary || "none"
+          compact(input.contextBundle.memorySummary || "none", ROUTER_SUMMARY_CHARS)
         }`,
         `- active file scope: ${
-          input.contextBundle.activeFilesSummary || "none"
+          compact(input.contextBundle.activeFilesSummary || "none", ROUTER_SUMMARY_CHARS)
         }`,
         `- last assistant conclusion: ${
-          input.contextBundle.lastAssistantConclusion || "none"
+          compact(input.contextBundle.lastAssistantConclusion || "none", ROUTER_SUMMARY_CHARS)
         }`,
         `- previous output summary: ${
-          input.contextBundle.usablePreviousOutputSummary || "none"
+          compact(input.contextBundle.usablePreviousOutputSummary || "none", ROUTER_SUMMARY_CHARS)
         }`,
         input.contextBundle.missingRequiredInfo.length
           ? `- missing info: ${input.contextBundle.missingRequiredInfo.join("; ")}`
@@ -830,7 +861,7 @@ export async function routeIntent(
         messages: [{ role: "user", content: prompt }],
         temperature: 0,
         response_format: { type: "json_object" },
-        max_tokens: 700,
+        max_tokens: ROUTER_OUTPUT_TOKENS,
       },
       { signal },
     );
