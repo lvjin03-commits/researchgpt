@@ -27,6 +27,11 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
     cachedInputPerMillion: 0.5,
     outputPerMillion: 30,
   },
+  "gpt-5.5-nano": {
+    inputPerMillion: 1,
+    cachedInputPerMillion: 0.1,
+    outputPerMillion: 6,
+  },
   "gpt-5.6": {
     inputPerMillion: 5,
     cachedInputPerMillion: 0.5,

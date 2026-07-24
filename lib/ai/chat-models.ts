@@ -28,7 +28,7 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
   {
     tier: "economy",
     label: "ResearchGPT Nano",
-    description: "经济型，适合日常问答、摘要、简单整理。",
+    description: "经济型，适合日常问答、摘要和简单整理。",
     model: "deepseek-v4-flash",
     provider: "deepseek",
     reasoningEffort: "none",
@@ -48,15 +48,15 @@ export const CHAT_MODEL_OPTIONS: readonly ChatModelOption[] = [
   {
     tier: "professional",
     label: "ResearchGPT Pro",
-    description: "专业型，调用 GPT5.4，适合高质量科研分析。",
-    model: "gpt-5.4",
+    description: "专业型，调用 GPT-5.5 nano，适合高质量科研分析。",
+    model: "gpt-5.5-nano",
     provider: "openai",
     reasoningEffort: "medium",
     maxOutputTokens: 5000,
     maxVisuals: 6,
     expensive: true,
     costWarning:
-      "专业型将调用 GPT5.4，适合高质量科研分析，但 token 成本较高。确认继续使用吗？",
+      "专业型将调用 GPT-5.5 nano，适合高质量科研分析，token 成本高于经济/标准模型。确认继续使用吗？",
   },
   {
     tier: "flagship",
