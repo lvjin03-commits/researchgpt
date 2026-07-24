@@ -339,6 +339,20 @@ function isRecoverableModelError(error: unknown): boolean {
   );
 }
 
+function buildEmptyAssistantMessage(error?: unknown): string {
+  const mapped = error ? toChatApiErrorResponse(error).body.error : "";
+  const reason = mapped
+    ? `\n\n可能原因：${mapped}`
+    : "\n\n可能原因：模型服务本次返回了空内容，或联网检索/工具调用中途没有继续生成正文。";
+
+  return [
+    "\n\n我没有收到可用的正文回答，已经拦截到这次空输出。",
+    reason,
+    "",
+    "请直接重试一次；如果连续出现，可以先关闭联网检索或切换到更稳定的模型后再问。系统后续不应该再只显示执行计划而没有正文。",
+  ].join("\n");
+}
+
 const INTENT_LABELS: Record<IntentPlan["intent"], string> = {
   conversation: "普通问答",
   web_research: "联网检索",
@@ -874,6 +888,8 @@ export async function POST(request: Request) {
             }
           };
 
+          let streamFailure: unknown = null;
+
           try {
             await streamModel(modelOption, modelTier, true);
           } catch (streamError) {
@@ -893,10 +909,25 @@ export async function POST(request: Request) {
                   message: `${fallbackReason}，已自动切换到 ResearchGPT Nano 重试。本次回答会优先保证可用性，复杂推理和图片/联网工具可能降级。`,
                 }),
               );
-              await streamModel(fallbackOption, "economy", false);
+              try {
+                await streamModel(fallbackOption, "economy", false);
+              } catch (fallbackError) {
+                streamFailure = fallbackError;
+              }
             } else {
-              throw streamError;
+              streamFailure = streamError;
             }
+          }
+
+          if (assistantText.trim().length === 0) {
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "text",
+                delta: buildEmptyAssistantMessage(streamFailure),
+              }),
+            );
+          } else if (streamFailure) {
+            throw streamFailure;
           }
 
           const requestedFormats = requestedExportFormats;

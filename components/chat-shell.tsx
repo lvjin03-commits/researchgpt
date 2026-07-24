@@ -1275,6 +1275,21 @@ export function ChatShell() {
           }
           return;
         }
+        const message =
+          caught instanceof ChatClientError
+            ? caught.message
+            : "出现错误，请重试。";
+        appendToAssistant(
+          [
+            "",
+            "",
+            "> 本次回答中断，没有生成完整正文。",
+            "",
+            `原因：${message}`,
+            "",
+            "请直接重试一次；如果连续出现，可以关闭联网检索或切换模型后再问。",
+          ].join("\n"),
+        );
         setError(
           caught instanceof ChatClientError
             ? caught.message
