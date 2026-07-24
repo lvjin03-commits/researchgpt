@@ -1,6 +1,7 @@
 import { validateChatMessages } from "@/lib/ai/provider";
 import { openResponsesChatStream } from "@/lib/ai/openai";
 import type { ChatMessage } from "@/lib/ai/types";
+import { getTextFromMessageContent } from "@/lib/ai/types";
 import {
   DEFAULT_CHAT_MODEL_TIER,
   type ChatModelOption,
@@ -194,6 +195,109 @@ function createCleanExportTitle(query: string): string {
 
   if (!cleaned) return "ResearchGPT 生成文件";
   return cleaned.length > 48 ? cleaned.slice(0, 48) : cleaned;
+}
+
+const CLEAN_EXPORT_FORMAT_ALIASES: Array<{
+  format: ExportFormat;
+  pattern: RegExp;
+}> = [
+  { format: "docx", pattern: /\b(docx|word)\b|word\s*(文件|文档)|微软文档/i },
+  { format: "xlsx", pattern: /\b(xlsx|excel)\b|excel\s*(文件|文档|表格)|电子表格|工作簿/i },
+  { format: "pptx", pattern: /\b(pptx|ppt|slides?)\b|幻灯片|演示文稿/i },
+  { format: "pdf", pattern: /\bpdf\b|pdf\s*(文件|文档)/i },
+  { format: "md", pattern: /\b(markdown|md)\b/i },
+  { format: "txt", pattern: /\b(txt|text)\b|纯文本/i },
+  { format: "json", pattern: /\bjson\b/i },
+  { format: "svg", pattern: /\bsvg\b/i },
+  { format: "png", pattern: /\bpng\b/i },
+];
+
+function inferReadableExportFormats(
+  query: string,
+  plan: IntentPlan,
+): ExportFormat[] {
+  const formats = new Set<ExportFormat>(
+    inferCleanRequestedExportFormats(query, plan),
+  );
+
+  for (const item of CLEAN_EXPORT_FORMAT_ALIASES) {
+    if (item.pattern.test(query)) {
+      formats.add(item.format);
+    }
+  }
+
+  if (plan.outputType === "word") formats.add("docx");
+  if (plan.outputType === "excel") formats.add("xlsx");
+  if (plan.outputType === "ppt") formats.add("pptx");
+  if (plan.outputType === "pdf") formats.add("pdf");
+
+  return Array.from(formats);
+}
+
+function shouldReadableAutoCreateExports(
+  query: string,
+  plan: IntentPlan,
+): boolean {
+  if (shouldCleanAutoCreateExports(query, plan)) return true;
+  if (plan.intent === "create_artifact") return true;
+  if (["word", "excel", "ppt", "pdf"].includes(plan.outputType)) return true;
+  return /(生成|输出|导出|制作|创建|保存|下载|做成|转成|给我).{0,30}(文件|文档|表格|报告|Word|Excel|PPT|PDF|docx|xlsx|pptx|pdf)|\b(word|excel|ppt|pdf|docx|xlsx|pptx)\b.{0,30}(文件|文档|表格|报告|输出|导出|生成|下载)/i.test(
+    query,
+  );
+}
+
+function stripGeneratedFileFooter(content: string): string {
+  return content
+    .replace(/\[\[RESEARCHGPT_PLAN:[\s\S]*?\]\]\s*/g, "")
+    .replace(/\n-{3,}\n\s*(已生成可下载文件|Generated downloadable files)[\s\S]*$/iu, "")
+    .trim();
+}
+
+function previousAssistantTextBeforeLastUser(messages: ChatMessage[]): string {
+  const lastUserIndex = messages.findLastIndex(
+    (message) => message.role === "user",
+  );
+  const searchEnd = lastUserIndex >= 0 ? lastUserIndex : messages.length;
+
+  for (let index = searchEnd - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "assistant") continue;
+    const text = stripGeneratedFileFooter(
+      getTextFromMessageContent(message.content),
+    );
+    if (text.length >= 80) return text;
+  }
+
+  return "";
+}
+
+function isFollowUpExportRequest(query: string, formats: ExportFormat[]): boolean {
+  if (formats.length === 0) return false;
+  const compactQuery = query.replace(/\s+/g, "").toLowerCase();
+  if (compactQuery.length > 80) return false;
+  return /^(帮我|请|直接|把|将|再)?(生成|输出|导出|制作|保存|下载|做成|转成)?(excel|xlsx|word|docx|pdf|ppt|pptx|、|，|,|和|及|以及|\+)+文件?$/.test(
+    compactQuery,
+  );
+}
+
+function buildReadableAutoExportInstruction(formats: ExportFormat[]): ChatMessage {
+  const names = formats.map((format) => format.toUpperCase()).join("、");
+  return {
+    role: "system",
+    content: [
+      `用户本次明确要求生成可下载文件，目标格式：${names}。`,
+      "服务端会在回答结束后自动创建真实下载链接。",
+      "你只需要输出可直接渲染为文件的正式正文，不要让用户再去点击 Generate file，不要要求用户复制 Markdown。",
+      "如果用户是在上一条回答后追问生成文件，应当默认沿用上一条回答的内容与上下文，不要反问“要生成什么内容”。",
+      "Word/PDF 请使用清晰标题、段落、列表和 Markdown 表格。",
+      'Excel 必须先判断表格主题和字段，再输出机器可读数据；优先输出一个 fenced json 代码块，结构为 {"sheets":[{"name":"工作表名","columns":["字段1","字段2"],"rows":[{"字段1":"值","字段2":"值"}]}]}。也可以输出干净 CSV。禁止把多条记录塞进一个单元格，禁止把说明文字混入表格数据。',
+      "如果同时生成多种文件，请输出一份结构清晰、可复用的正式内容。",
+    ].join("\n"),
+  };
+}
+
+function buildExportLinksMessage(links: string[]): string {
+  return ["", "", "---", "", "已生成可下载文件：", ...links].join("\n");
 }
 
 function buildAutoExportInstruction(formats: ExportFormat[]): ChatMessage {
@@ -445,9 +549,14 @@ export async function POST(request: Request) {
       webSearchRequested: webSearch,
       libraryRequested: useLibrary,
     });
-    const requestedExportFormats = shouldCleanAutoCreateExports(query, intentPlan)
-      ? inferCleanRequestedExportFormats(query, intentPlan)
+    const requestedExportFormats = shouldReadableAutoCreateExports(query, intentPlan)
+      ? inferReadableExportFormats(query, intentPlan)
       : [];
+    const previousAssistantExportSource =
+      previousAssistantTextBeforeLastUser(messages);
+    const shouldExportPreviousAssistant =
+      isFollowUpExportRequest(query, requestedExportFormats) &&
+      previousAssistantExportSource.length > 0;
     const toolExecution = await executeToolPlan({
       intentPlan,
       toolPlan,
@@ -479,7 +588,7 @@ export async function POST(request: Request) {
           ].join("\n\n"),
         },
         ...(requestedExportFormats.length > 0
-          ? [buildAutoExportInstruction(requestedExportFormats)]
+          ? [buildReadableAutoExportInstruction(requestedExportFormats)]
           : []),
         ...messages,
       ],
@@ -676,6 +785,55 @@ export async function POST(request: Request) {
             return;
           }
 
+          if (shouldExportPreviousAssistant) {
+            const links: string[] = [];
+            const title = createCleanExportTitle(
+              previousAssistantExportSource.split("\n").find((line) => line.trim()) ||
+                query,
+            );
+
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "status",
+                message: "已读取上一条回答，正在生成可下载文件。",
+              }),
+            );
+
+            for (const format of requestedExportFormats) {
+              try {
+                const created = await createExport(
+                  {
+                    format,
+                    title,
+                    content: previousAssistantExportSource,
+                    metadata: {
+                      source: "chat-follow-up-export",
+                      templateId: "academic",
+                    },
+                  },
+                  user.id,
+                );
+                links.push(`- [${created.filename}](${created.downloadUrl})`);
+              } catch (exportError) {
+                const message =
+                  exportError instanceof Error ? exportError.message : "未知错误";
+                links.push(`- ${format.toUpperCase()} 生成失败：${message}`);
+              }
+            }
+
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "text",
+                delta: [
+                  "我已按上一条回答的内容生成文件，不需要你再补充主题。",
+                  buildExportLinksMessage(links),
+                ].join("\n"),
+              }),
+            );
+            controller.close();
+            return;
+          }
+
           let assistantText = "";
           const streamModel = async (
             option: ChatModelOption,
@@ -775,14 +933,7 @@ export async function POST(request: Request) {
               controller.enqueue(
                 encodeChatStreamEvent({
                   type: "text",
-                  delta: [
-                    "",
-                    "",
-                    "---",
-                    "",
-                    "已生成可下载文件：",
-                    ...links,
-                  ].join("\n"),
+                  delta: buildExportLinksMessage(links),
                 }),
               );
             }
