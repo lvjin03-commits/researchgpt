@@ -7,7 +7,9 @@ import {
 } from "@/lib/export/artifact-planner";
 
 function getTemplateId(value: unknown): ArtifactTemplateId {
-  return value === "modern" || value === "minimal" ? value : "academic";
+  return value === "modern" || value === "minimal" || value === "nature"
+    ? value
+    : "academic";
 }
 
 export async function generateExportBuffer(

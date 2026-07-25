@@ -10,6 +10,7 @@ import {
   isChatModelTier,
 } from "@/lib/ai/chat-models";
 import { createExport } from "@/lib/export/service";
+import type { ArtifactTemplateId } from "@/lib/export/artifact-planner";
 import type { ExportFormat } from "@/lib/export/types";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { withModelIdentity } from "@/lib/chat/model-identity";
@@ -200,6 +201,22 @@ function createCleanExportTitle(query: string): string {
   return cleaned.length > 48 ? cleaned.slice(0, 48) : cleaned;
 }
 
+function selectExportTemplateId(
+  query: string,
+  format: ExportFormat,
+): ArtifactTemplateId {
+  if (
+    format === "docx" &&
+    /(nature|top\s*journal|manuscript|sci|review|literature\s+review|顶刊|综述|论文|稿件)/i.test(
+      query,
+    )
+  ) {
+    return "nature";
+  }
+
+  return "academic";
+}
+
 const CLEAN_EXPORT_FORMAT_ALIASES: Array<{
   format: ExportFormat;
   pattern: RegExp;
@@ -338,7 +355,31 @@ function shouldUseDedicatedArtifactMode(
   );
 }
 
-function artifactFormatInstruction(format: ExportFormat): string {
+function artifactTemplateInstruction(
+  format: ExportFormat,
+  templateId: ArtifactTemplateId,
+): string {
+  if (format !== "docx" || templateId !== "nature") return "";
+
+  return [
+    "Template track: Nature/top-journal manuscript.",
+    "Plan the manuscript internally first, then output only the final markdown source.",
+    "Required manuscript structure:",
+    "- H1: concise scientific title derived from the subject; never use the user's command as the title.",
+    "- Abstract: one paragraph, 120-180 words, focused on background, core argument, evidence, and implication.",
+    "- Keywords: 4-8 professional terms.",
+    "- Numbered H2 sections with evidence-focused paragraphs, not chat-style bullets unless the user explicitly requests bullets.",
+    "- Tables only when they clarify comparisons; every table needs a short caption or lead-in sentence.",
+    "- Figure captions or figure placeholders only when visuals are useful for the argument.",
+    "- References section. Use only references present in the available source context; if sources are unavailable, state that references need to be completed from source literature instead of fabricating citations.",
+    "Style: restrained top-journal academic prose, precise transitions, no chatty wording, no operational instructions.",
+  ].join("\n");
+}
+
+function artifactFormatInstruction(
+  format: ExportFormat,
+  templateId: ArtifactTemplateId,
+): string {
   if (format === "xlsx") {
     return [
       "Target format: XLSX.",
@@ -355,9 +396,13 @@ function artifactFormatInstruction(format: ExportFormat): string {
       "Return only one fenced markdown code block.",
       "Create a professional document source, not a chat answer.",
       "Use a real document title, abstract/summary when appropriate, clear heading levels, paragraphs, tables, and references if available.",
+      "For SCI, Nature, top-journal, manuscript, or literature-review requests, produce manuscript-style source: concise scientific title, Abstract, Keywords, numbered sections, evidence-focused paragraphs, table captions, figure captions when useful, and References.",
       "Do not use the user's command as the title. Derive the title from the actual subject.",
       "Do not include instructions such as 'click Generate file' or 'copy this markdown'.",
-    ].join("\n");
+      artifactTemplateInstruction(format, templateId),
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   if (format === "pptx") {
@@ -397,6 +442,7 @@ function buildDedicatedArtifactMessages(
   baseMessages: ChatMessage[],
   format: ExportFormat,
   query: string,
+  templateId: ArtifactTemplateId,
 ): ChatMessage[] {
   return [
     {
@@ -408,7 +454,7 @@ function buildDedicatedArtifactMessages(
         "Do not write a conversational answer. Do not ask follow-up questions unless the task is impossible without missing source data.",
         "Use the conversation, project context, uploaded files, retrieved context, and the user's latest request as the content source.",
         "If the user asked for multiple files, this pass creates exactly one format; optimize for that format.",
-        artifactFormatInstruction(format),
+        artifactFormatInstruction(format, templateId),
       ].join("\n\n"),
     },
     ...baseMessages,
@@ -1173,7 +1219,7 @@ export async function POST(request: Request) {
                     content: previousAssistantExportSource,
                     metadata: {
                       source: "chat-follow-up-export",
-                      templateId: "academic",
+                      templateId: selectExportTemplateId(query, format),
                     },
                   },
                   user.id,
@@ -1250,12 +1296,14 @@ export async function POST(request: Request) {
             format: ExportFormat,
             option: ChatModelOption,
             tier: ChatModelTier,
+            templateId: ArtifactTemplateId,
           ) => {
             let source = "";
             const artifactMessages = buildDedicatedArtifactMessages(
               messages,
               format,
               query,
+              templateId,
             );
             for await (const event of openResponsesChatStream({
               messages: artifactMessages,
@@ -1316,6 +1364,7 @@ export async function POST(request: Request) {
 
             for (const format of requestedExportFormats) {
               try {
+                const templateId = selectExportTemplateId(query, format);
                 controller.enqueue(
                   encodeChatStreamEvent({
                     type: "status",
@@ -1326,6 +1375,7 @@ export async function POST(request: Request) {
                   format,
                   modelOption,
                   modelTier,
+                  templateId,
                 );
                 if (!artifactSource) {
                   throw new Error("文件内容为空，未创建下载文件。");
@@ -1337,7 +1387,7 @@ export async function POST(request: Request) {
                     content: artifactSource,
                     metadata: {
                       source: "chat-dedicated-artifact-mode",
-                      templateId: "academic",
+                      templateId,
                       artifactOnly: true,
                     },
                   },
@@ -1571,7 +1621,7 @@ export async function POST(request: Request) {
                     content: assistantText,
                     metadata: {
                       source: "chat-auto-export",
-                      templateId: "academic",
+                      templateId: selectExportTemplateId(query, format),
                     },
                   },
                   user.id,

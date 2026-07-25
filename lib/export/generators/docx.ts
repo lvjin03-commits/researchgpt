@@ -35,6 +35,23 @@ type DocxPalette = {
   text: string;
   muted: string;
   border: string;
+  font?: string;
+  titleSize?: number;
+  bodySize?: number;
+  heading1Size?: number;
+  heading2Size?: number;
+  heading3Size?: number;
+  bodyLine?: number;
+  paragraphAfter?: number;
+  firstLineIndent?: number;
+  showKindLabel?: boolean;
+  titleAlignment?: typeof AlignmentType.CENTER;
+  pageMargins?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
 };
 
 const PALETTES: Record<ArtifactTemplateId, DocxPalette> = {
@@ -59,7 +76,43 @@ const PALETTES: Record<ArtifactTemplateId, DocxPalette> = {
     muted: "64748B",
     border: "CBD5E1",
   },
+  nature: {
+    accent: "111827",
+    accentSoft: "F8FAFC",
+    text: "111827",
+    muted: "374151",
+    border: "D1D5DB",
+    font: "Times New Roman",
+    titleSize: 36,
+    bodySize: 22,
+    heading1Size: 28,
+    heading2Size: 24,
+    heading3Size: 22,
+    bodyLine: 420,
+    paragraphAfter: 160,
+    firstLineIndent: 0,
+    showKindLabel: false,
+    titleAlignment: AlignmentType.CENTER,
+    pageMargins: {
+      top: 1440,
+      right: 1440,
+      bottom: 1440,
+      left: 1440,
+    },
+  },
 };
+
+function fontFor(palette: DocxPalette, fallback = "Microsoft YaHei"): string {
+  return palette.font ?? fallback;
+}
+
+function bodySizeFor(palette: DocxPalette): number {
+  return palette.bodySize ?? 21;
+}
+
+function bodyLineFor(palette: DocxPalette): number {
+  return palette.bodyLine ?? 340;
+}
 
 function kindLabel(kind: WordDocumentKind): string {
   switch (kind) {
@@ -84,7 +137,7 @@ function normalizeInlineText(text: string): string {
 
 function inlineSpansToTextRuns(
   inlines: InlineSpan[],
-  options: { size?: number; color?: string; bold?: boolean } = {},
+  options: { size?: number; color?: string; bold?: boolean; font?: string } = {},
 ): TextRun[] {
   return inlines.map(
     (span) =>
@@ -92,7 +145,7 @@ function inlineSpansToTextRuns(
         text: normalizeInlineText(span.text),
         bold: options.bold || span.bold,
         italics: span.italic,
-        font: span.code ? "Courier New" : "Microsoft YaHei",
+        font: span.code ? "Courier New" : (options.font ?? "Microsoft YaHei"),
         size: options.size ?? 21,
         color: options.color,
         shading: span.code
@@ -107,11 +160,17 @@ function inlineSpansToTextRuns(
 
 function textRun(
   text: string,
-  options: { size?: number; color?: string; bold?: boolean; italics?: boolean } = {},
+  options: {
+    size?: number;
+    color?: string;
+    bold?: boolean;
+    italics?: boolean;
+    font?: string;
+  } = {},
 ): TextRun {
   return new TextRun({
     text,
-    font: "Microsoft YaHei",
+    font: options.font ?? "Microsoft YaHei",
     size: options.size ?? 21,
     color: options.color,
     bold: options.bold,
@@ -120,28 +179,38 @@ function textRun(
 }
 
 function buildCover(spec: WordDocumentSpec, palette: DocxPalette): Paragraph[] {
-  return [
-    new Paragraph({
+  const children: Paragraph[] = [];
+
+  if (palette.showKindLabel !== false) {
+    children.push(new Paragraph({
       spacing: { before: 360, after: 140 },
       children: [
         textRun(kindLabel(spec.kind).toUpperCase(), {
           size: 18,
           bold: true,
           color: palette.accent,
+          font: fontFor(palette),
         }),
       ],
-    }),
+    }));
+  }
+
+  children.push(
     new Paragraph({
       spacing: { after: 420 },
+      alignment: palette.titleAlignment,
       children: [
         textRun(spec.title, {
-          size: 38,
+          size: palette.titleSize ?? 38,
           bold: true,
           color: palette.text,
+          font: fontFor(palette),
         }),
       ],
     }),
-  ];
+  );
+
+  return children;
 }
 
 function buildMetaBlocks(spec: WordDocumentSpec, palette: DocxPalette): Paragraph[] {
@@ -152,11 +221,23 @@ function buildMetaBlocks(spec: WordDocumentSpec, palette: DocxPalette): Paragrap
       new Paragraph({
         heading: HeadingLevel.HEADING_1,
         spacing: { before: 240, after: 120 },
-        children: [textRun("Abstract", { bold: true, color: palette.accent })],
+        children: [
+          textRun("Abstract", {
+            bold: true,
+            color: palette.accent,
+            font: fontFor(palette),
+          }),
+        ],
       }),
       new Paragraph({
-        spacing: { after: 180, line: 340 },
-        children: [textRun(spec.abstract, { size: 21, color: palette.text })],
+        spacing: { after: 180, line: bodyLineFor(palette) },
+        children: [
+          textRun(spec.abstract, {
+            size: bodySizeFor(palette),
+            color: palette.text,
+            font: fontFor(palette),
+          }),
+        ],
       }),
     );
   }
@@ -166,8 +247,15 @@ function buildMetaBlocks(spec: WordDocumentSpec, palette: DocxPalette): Paragrap
       new Paragraph({
         spacing: { after: 260 },
         children: [
-          textRun("Keywords: ", { bold: true, color: palette.accent }),
-          textRun(spec.keywords.join("; "), { color: palette.muted }),
+          textRun("Keywords: ", {
+            bold: true,
+            color: palette.accent,
+            font: fontFor(palette),
+          }),
+          textRun(spec.keywords.join("; "), {
+            color: palette.muted,
+            font: fontFor(palette),
+          }),
         ],
       }),
     );
@@ -189,8 +277,14 @@ function sectionHeading(section: WordSection, palette: DocxPalette): Paragraph {
     children: [
       textRun(section.title, {
         bold: true,
-        size: section.level === 1 ? 28 : section.level === 2 ? 24 : 22,
+        size:
+          section.level === 1
+            ? (palette.heading1Size ?? 28)
+            : section.level === 2
+              ? (palette.heading2Size ?? 24)
+              : (palette.heading3Size ?? 22),
         color: section.level === 1 ? palette.accent : palette.text,
+        font: fontFor(palette),
       }),
     ],
   });
@@ -199,11 +293,12 @@ function sectionHeading(section: WordSection, palette: DocxPalette): Paragraph {
 function paragraphBlock(block: WordContentBlock, palette: DocxPalette): Paragraph | null {
   if (block.type !== "paragraph") return null;
   return new Paragraph({
-    spacing: { after: 140, line: 340 },
-    indent: { firstLine: 420 },
+    spacing: { after: palette.paragraphAfter ?? 140, line: bodyLineFor(palette) },
+    indent: { firstLine: palette.firstLineIndent ?? 420 },
     children: inlineSpansToTextRuns(block.inlines, {
-      size: 21,
+      size: bodySizeFor(palette),
       color: palette.text,
+      font: fontFor(palette),
     }),
   });
 }
@@ -213,14 +308,19 @@ function listBlocks(block: WordContentBlock, palette: DocxPalette): Paragraph[] 
   return block.items.map(
     (item, index) =>
       new Paragraph({
-        spacing: { after: 90, line: 320 },
+        spacing: { after: 90, line: bodyLineFor(palette) },
         indent: { left: 420 },
         children: [
           textRun(block.ordered ? `${index + 1}. ` : "• ", {
             bold: true,
             color: palette.accent,
+            font: fontFor(palette),
           }),
-          ...inlineSpansToTextRuns(item, { size: 21, color: palette.text }),
+          ...inlineSpansToTextRuns(item, {
+            size: bodySizeFor(palette),
+            color: palette.text,
+            font: fontFor(palette),
+          }),
         ],
       }),
   );
@@ -229,7 +329,7 @@ function listBlocks(block: WordContentBlock, palette: DocxPalette): Paragraph[] 
 function calloutBlock(block: WordContentBlock, palette: DocxPalette): Paragraph | null {
   if (block.type !== "callout") return null;
   return new Paragraph({
-    spacing: { before: 100, after: 160, line: 320 },
+    spacing: { before: 100, after: 160, line: bodyLineFor(palette) },
     indent: { left: 260 },
     shading: {
       type: ShadingType.CLEAR,
@@ -246,6 +346,7 @@ function calloutBlock(block: WordContentBlock, palette: DocxPalette): Paragraph 
     children: inlineSpansToTextRuns(block.inlines, {
       size: 20,
       color: palette.text,
+      font: fontFor(palette),
     }),
   });
 }
@@ -279,6 +380,7 @@ function buildTableCell(
           size: 18,
           color: header ? palette.accent : palette.text,
           bold: header,
+          font: fontFor(palette),
         }),
       }),
     ],
@@ -296,6 +398,7 @@ function tableBlock(block: WordTableBlock, palette: DocxPalette): Array<Paragrap
           size: 19,
           bold: true,
           color: palette.muted,
+          font: fontFor(palette),
         }),
       ],
     }),
@@ -367,7 +470,14 @@ function renderReferences(spec: WordDocumentSpec, palette: DocxPalette): Paragra
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
       spacing: { before: 380, after: 160 },
-      children: [textRun("References", { bold: true, color: palette.accent, size: 28 })],
+      children: [
+        textRun("References", {
+          bold: true,
+          color: palette.accent,
+          size: palette.heading1Size ?? 28,
+          font: fontFor(palette),
+        }),
+      ],
     }),
     ...spec.references.map(
       (reference, index) =>
@@ -375,8 +485,16 @@ function renderReferences(spec: WordDocumentSpec, palette: DocxPalette): Paragra
           spacing: { after: 90, line: 300 },
           indent: { hanging: 360 },
           children: [
-            textRun(`[${index + 1}] `, { bold: true, color: palette.accent }),
-            textRun(reference, { color: palette.text }),
+            textRun(`[${index + 1}] `, {
+              bold: true,
+              color: palette.accent,
+              font: fontFor(palette),
+            }),
+            textRun(reference, {
+              color: palette.text,
+              size: bodySizeFor(palette),
+              font: fontFor(palette),
+            }),
           ],
         }),
     ),
@@ -388,13 +506,25 @@ function renderWarnings(spec: WordDocumentSpec, palette: DocxPalette): Paragraph
   return [
     new Paragraph({
       spacing: { before: 200, after: 80 },
-      children: [textRun("Generation Notes", { bold: true, color: palette.muted })],
+      children: [
+        textRun("Generation Notes", {
+          bold: true,
+          color: palette.muted,
+          font: fontFor(palette),
+        }),
+      ],
     }),
     ...spec.warnings.map(
       (warning) =>
         new Paragraph({
           spacing: { after: 60 },
-          children: [textRun(`• ${warning}`, { size: 18, color: palette.muted })],
+          children: [
+            textRun(`• ${warning}`, {
+              size: 18,
+              color: palette.muted,
+              font: fontFor(palette),
+            }),
+          ],
         }),
     ),
   ];
@@ -420,6 +550,13 @@ export async function generateDocxBuffer(
 ): Promise<Buffer> {
   const palette = PALETTES[templateId] ?? PALETTES.academic;
   const spec = buildWordDocumentSpec({ title, content });
+  const font = fontFor(palette);
+  const pageMargins = palette.pageMargins ?? {
+    top: 1440,
+    right: 1440,
+    bottom: 1440,
+    left: 1440,
+  };
   const document = new Document({
     creator: "ResearchGPT",
     title: spec.title,
@@ -428,12 +565,12 @@ export async function generateDocxBuffer(
       default: {
         document: {
           run: {
-            font: "Microsoft YaHei",
-            size: 21,
+            font,
+            size: bodySizeFor(palette),
             color: palette.text,
           },
           paragraph: {
-            spacing: { line: 340 },
+            spacing: { line: bodyLineFor(palette) },
           },
         },
       },
@@ -445,10 +582,10 @@ export async function generateDocxBuffer(
           next: "Normal",
           quickFormat: true,
           run: {
-            size: 28,
+            size: palette.heading1Size ?? 28,
             bold: true,
             color: palette.accent,
-            font: "Microsoft YaHei",
+            font,
           },
           paragraph: {
             spacing: { before: 360, after: 120 },
@@ -461,10 +598,10 @@ export async function generateDocxBuffer(
           next: "Normal",
           quickFormat: true,
           run: {
-            size: 24,
+            size: palette.heading2Size ?? 24,
             bold: true,
             color: palette.text,
-            font: "Microsoft YaHei",
+            font,
           },
           paragraph: {
             spacing: { before: 260, after: 100 },
@@ -477,10 +614,10 @@ export async function generateDocxBuffer(
           next: "Normal",
           quickFormat: true,
           run: {
-            size: 22,
+            size: palette.heading3Size ?? 22,
             bold: true,
             color: palette.text,
-            font: "Microsoft YaHei",
+            font,
           },
           paragraph: {
             spacing: { before: 220, after: 80 },
@@ -492,12 +629,7 @@ export async function generateDocxBuffer(
       {
         properties: {
           page: {
-            margin: {
-              top: 1440,
-              right: 1440,
-              bottom: 1440,
-              left: 1440,
-            },
+            margin: pageMargins,
           },
         },
         children: buildDocxChildren(spec, palette),

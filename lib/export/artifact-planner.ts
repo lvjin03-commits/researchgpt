@@ -1,7 +1,7 @@
 import { buildArtifactSpec, type ArtifactSpec } from "@/lib/export/artifact-spec";
 import type { ExportFormat } from "@/lib/export/types";
 
-export type ArtifactTemplateId = "academic" | "modern" | "minimal";
+export type ArtifactTemplateId = "academic" | "modern" | "minimal" | "nature";
 
 export type ArtifactTemplate = {
   id: ArtifactTemplateId;
@@ -45,6 +45,14 @@ export const ARTIFACT_TEMPLATES: ArtifactTemplate[] = [
     name: "简洁报告",
     description: "克制留白，适合打印、归档和快速阅读。",
     accent: "#475569",
+    background: "#ffffff",
+  },
+  {
+    id: "nature",
+    name: "Nature Manuscript",
+    description:
+      "Top-journal manuscript track with strict title, abstract, section, table, and reference layout rules.",
+    accent: "#111827",
     background: "#ffffff",
   },
 ];
