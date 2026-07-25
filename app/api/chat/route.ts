@@ -37,7 +37,9 @@ import {
 } from "@/lib/chat/server/errors";
 import { AIProviderError } from "@/lib/ai/errors";
 import { buildLiteratureLibraryContext } from "@/lib/chat/server/library-context";
-import { encodeChatStreamEvent } from "@/lib/chat/stream-protocol";
+import {
+  encodeChatStreamEvent,
+} from "@/lib/chat/stream-protocol";
 import {
   applyChatContextBudget,
   insertContextBeforeLastUser,
@@ -313,6 +315,130 @@ function buildReadableAutoExportInstruction(formats: ExportFormat[]): ChatMessag
 
 function buildExportLinksMessage(links: string[]): string {
   return ["", "", "---", "", "已生成可下载文件：", ...links].join("\n");
+}
+
+function isDedicatedArtifactFormat(format: ExportFormat): boolean {
+  return ["docx", "xlsx", "pptx", "pdf", "md", "txt", "json", "svg", "png"].includes(
+    format,
+  );
+}
+
+function shouldUseDedicatedArtifactMode(
+  plan: IntentPlan,
+  formats: ExportFormat[],
+  exportingPreviousAssistant: boolean,
+): boolean {
+  if (exportingPreviousAssistant) return false;
+  if (formats.length === 0) return false;
+  if (!formats.every(isDedicatedArtifactFormat)) return false;
+  return (
+    plan.intent === "create_artifact" ||
+    plan.intent === "presentation_generation" ||
+    ["word", "excel", "ppt", "pdf"].includes(plan.outputType)
+  );
+}
+
+function artifactFormatInstruction(format: ExportFormat): string {
+  if (format === "xlsx") {
+    return [
+      "Target format: XLSX.",
+      "Return only one fenced json code block.",
+      'Schema: {"sheets":[{"name":"Sheet name","columns":["Column A","Column B"],"rows":[{"Column A":"value","Column B":"value"}]}]}.',
+      "Use separate fields and rows. Never put a whole table, paragraph, or markdown table into one cell.",
+      "Do not include prose outside the json block.",
+    ].join("\n");
+  }
+
+  if (format === "docx" || format === "pdf" || format === "md") {
+    return [
+      `Target format: ${format.toUpperCase()}.`,
+      "Return only one fenced markdown code block.",
+      "Create a professional document source, not a chat answer.",
+      "Use a real document title, abstract/summary when appropriate, clear heading levels, paragraphs, tables, and references if available.",
+      "Do not use the user's command as the title. Derive the title from the actual subject.",
+      "Do not include instructions such as 'click Generate file' or 'copy this markdown'.",
+    ].join("\n");
+  }
+
+  if (format === "pptx") {
+    return [
+      "Target format: PPTX.",
+      "Return only one fenced markdown code block.",
+      "Create a slide-production outline. Each H2 is one slide.",
+      "For every slide include: title, one-sentence takeaway, 3-5 concise bullets, visual/layout suggestion, and speaker note.",
+      "Do not output a long article. Keep slide text brief and presentation-ready.",
+    ].join("\n");
+  }
+
+  if (format === "svg" || format === "png") {
+    return [
+      `Target format: ${format.toUpperCase()}.`,
+      "Return only one fenced svg code block when possible.",
+      "Design a polished scientific visual with explicit layout, legible labels, balanced spacing, and no clipped text.",
+      "Do not output a chat explanation before the visual source.",
+    ].join("\n");
+  }
+
+  if (format === "json") {
+    return [
+      "Target format: JSON.",
+      "Return only one fenced json code block.",
+      "Use clear keys and structured data. No prose outside the json block.",
+    ].join("\n");
+  }
+
+  return [
+    `Target format: ${format.toUpperCase()}.`,
+    "Return only the final artifact content. Do not include chat instructions.",
+  ].join("\n");
+}
+
+function buildDedicatedArtifactMessages(
+  baseMessages: ChatMessage[],
+  format: ExportFormat,
+  query: string,
+): ChatMessage[] {
+  return [
+    {
+      role: "system",
+      content: [
+        "You are ResearchGPT Artifact Builder.",
+        "This is a hidden file-generation pass. The user will not see your raw content.",
+        "Your job is to create artifact source content for a server-side file generator.",
+        "Do not write a conversational answer. Do not ask follow-up questions unless the task is impossible without missing source data.",
+        "Use the conversation, project context, uploaded files, retrieved context, and the user's latest request as the content source.",
+        "If the user asked for multiple files, this pass creates exactly one format; optimize for that format.",
+        artifactFormatInstruction(format),
+      ].join("\n\n"),
+    },
+    ...baseMessages,
+    {
+      role: "user",
+      content: [
+        `Create the ${format.toUpperCase()} artifact source for this request:`,
+        query,
+        "",
+        "Output only the artifact source content requested above.",
+      ].join("\n"),
+    },
+  ];
+}
+
+function createArtifactExportTitle(query: string, content: string): string {
+  const withoutFence = content
+    .replace(/^```[a-z]*\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+  const markdownHeading = withoutFence.match(/^#\s+(.+)$/m)?.[1]?.trim();
+  const jsonSheetName = withoutFence.match(/"name"\s*:\s*"([^"]+)"/)?.[1]?.trim();
+  const title = markdownHeading || jsonSheetName || query;
+  return createCleanExportTitle(
+    title
+      .replace(/\b(generate|create|export|download|make)\b/gi, "")
+      .replace(/\b(word|excel|ppt|pdf|docx|xlsx|pptx)\b/gi, "")
+      .replace(/生成|输出|导出|下载|制作|创建|文档|文件|表格/g, "")
+      .trim() || query,
+  );
 }
 
 function buildAutoExportInstruction(formats: ExportFormat[]): ChatMessage {
@@ -1119,6 +1245,124 @@ export async function POST(request: Request) {
             }
             return wasIncomplete;
           };
+
+          const generateArtifactSource = async (
+            format: ExportFormat,
+            option: ChatModelOption,
+            tier: ChatModelTier,
+          ) => {
+            let source = "";
+            const artifactMessages = buildDedicatedArtifactMessages(
+              messages,
+              format,
+              query,
+            );
+            for await (const event of openResponsesChatStream({
+              messages: artifactMessages,
+              signal: request.signal,
+              model: option.model,
+              provider: option.provider,
+              reasoningEffort: option.reasoningEffort,
+              webSearch:
+                option.provider === "openai" && effectiveWebSearch
+                  ? true
+                  : false,
+              codeInterpreter: false,
+              maxOutputTokens: option.maxOutputTokens,
+              promptCacheKey: `artifact:${user.id}:${tier}:${format}`,
+            })) {
+              if (event.type === "text") {
+                source += event.delta;
+                continue;
+              }
+              if (event.type === "usage") {
+                await recordAiUsage(supabase, {
+                  userId: user.id,
+                  feature: "artifact-generation",
+                  taskKind: taskRoute.kind,
+                  projectName: effectiveProjectName,
+                  modelTier: tier,
+                  usage: event,
+                });
+                controller.enqueue(encodeChatStreamEvent(event));
+              }
+              if (event.type === "incomplete") {
+                controller.enqueue(
+                  encodeChatStreamEvent({
+                    type: "status",
+                    message: `${format.toUpperCase()} 内容接近单次输出上限，系统会用已生成内容继续创建文件。`,
+                  }),
+                );
+              }
+            }
+            return source.trim();
+          };
+
+          const useDedicatedArtifactMode = shouldUseDedicatedArtifactMode(
+            intentPlan,
+            requestedExportFormats,
+            shouldExportPreviousAssistant,
+          );
+
+          if (useDedicatedArtifactMode) {
+            const links: string[] = [];
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "status",
+                message:
+                  "已切换到文件生成模式：系统会在后台生成文件内容，不再把聊天正文直接塞进文档。",
+              }),
+            );
+
+            for (const format of requestedExportFormats) {
+              try {
+                controller.enqueue(
+                  encodeChatStreamEvent({
+                    type: "status",
+                    message: `正在生成 ${format.toUpperCase()} 文件内容并排版。`,
+                  }),
+                );
+                const artifactSource = await generateArtifactSource(
+                  format,
+                  modelOption,
+                  modelTier,
+                );
+                if (!artifactSource) {
+                  throw new Error("文件内容为空，未创建下载文件。");
+                }
+                const created = await createExport(
+                  {
+                    format,
+                    title: createArtifactExportTitle(query, artifactSource),
+                    content: artifactSource,
+                    metadata: {
+                      source: "chat-dedicated-artifact-mode",
+                      templateId: "academic",
+                      artifactOnly: true,
+                    },
+                  },
+                  user.id,
+                );
+                links.push(`- [${created.filename}](${created.downloadUrl})`);
+              } catch (exportError) {
+                const message =
+                  exportError instanceof Error ? exportError.message : "未知错误";
+                links.push(`- ${format.toUpperCase()} 生成失败：${message}`);
+              }
+            }
+
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "text",
+                delta: [
+                  "已完成文件生成。正文没有在聊天区重复展开，避免把聊天回答误当成文档内容。",
+                  buildExportLinksMessage(links),
+                ].join("\n\n"),
+              }),
+            );
+            controller.close();
+            return;
+          }
 
           let streamFailure: unknown = null;
           let wasIncomplete = false;
