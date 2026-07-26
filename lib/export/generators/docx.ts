@@ -5,6 +5,7 @@ import {
   BorderStyle,
   Document,
   HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   ShadingType,
@@ -17,6 +18,7 @@ import {
   WidthType,
 } from "docx";
 import type { InlineSpan } from "@/lib/export/markdown-blocks";
+import type { ExportVisualSpec } from "@/lib/export/artifact-boundary";
 import type { ArtifactTemplateId } from "@/lib/export/artifact-planner";
 import {
   buildWordDocumentSpec,
@@ -28,6 +30,8 @@ import {
 } from "@/lib/export/word-pipeline";
 
 const CONTENT_WIDTH_DXA = 9360;
+const FIGURE_IMAGE_WIDTH = 540;
+const FIGURE_SVG_WIDTH = 1200;
 
 type DocxPalette = {
   accent: string;
@@ -133,6 +137,259 @@ function kindLabel(kind: WordDocumentKind): string {
 
 function normalizeInlineText(text: string): string {
   return text.replace(/\s+/g, " ");
+}
+
+function plainTextFromInlines(inlines: InlineSpan[]): string {
+  return inlines.map((span) => span.text).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function escapeXml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function truncateText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+
+function wrapText(value: string, maxChars: number, maxLines = 3): string[] {
+  const text = truncateText(value, maxChars * maxLines + 16);
+  if (!text) return [];
+  const hasSpaces = /\s/.test(text);
+  const tokens = hasSpaces ? text.split(/\s+/) : Array.from(text);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const token of tokens) {
+    const candidate = hasSpaces
+      ? current
+        ? `${current} ${token}`
+        : token
+      : `${current}${token}`;
+    if (candidate.length > maxChars && current) {
+      lines.push(current);
+      current = token;
+      if (lines.length >= maxLines) break;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current && lines.length < maxLines) lines.push(current);
+  if (lines.length > 0 && text.length > lines.join(hasSpaces ? " " : "").length) {
+    lines[lines.length - 1] = truncateText(lines[lines.length - 1], maxChars);
+  }
+  return lines;
+}
+
+function svgText(
+  lines: string[],
+  x: number,
+  y: number,
+  options: {
+    size?: number;
+    weight?: number;
+    color?: string;
+    anchor?: "start" | "middle";
+    lineHeight?: number;
+  } = {},
+): string {
+  const size = options.size ?? 26;
+  const lineHeight = options.lineHeight ?? Math.round(size * 1.35);
+  const anchor = options.anchor ?? "start";
+  return [
+    `<text x="${x}" y="${y}" font-family="Arial, Microsoft YaHei, sans-serif" font-size="${size}" font-weight="${options.weight ?? 400}" fill="${options.color ?? "#111827"}" text-anchor="${anchor}">`,
+    ...lines.map((line, index) =>
+      `<tspan x="${x}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`,
+    ),
+    "</text>",
+  ].join("");
+}
+
+function parseVisualRaw(spec: ExportVisualSpec): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(spec.raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed[0] && typeof parsed[0] === "object"
+        ? (parsed[0] as Record<string, unknown>)
+        : {};
+    }
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function valueString(record: Record<string, unknown>, keys: string[], fallback = ""): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number") return String(value);
+  }
+  return fallback;
+}
+
+function visualItems(spec: ExportVisualSpec): Array<{ title: string; description: string }> {
+  const raw = parseVisualRaw(spec);
+  const steps = raw.steps;
+  if (Array.isArray(steps)) {
+    return steps
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((item, index) => ({
+        title: valueString(item, ["title", "name", "label"], `Step ${index + 1}`),
+        description: valueString(item, ["description", "summary", "detail", "value"]),
+      }))
+      .slice(0, 6);
+  }
+
+  const nodes = raw.nodes;
+  if (Array.isArray(nodes)) {
+    return nodes
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((item, index) => ({
+        title: valueString(item, ["title", "name", "label", "id"], `Node ${index + 1}`),
+        description: valueString(item, ["description", "summary", "detail"]),
+      }))
+      .slice(0, 8);
+  }
+
+  const data = raw.data;
+  if (Array.isArray(data)) {
+    return data
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((item, index) => ({
+        title: valueString(item, ["title", "name", "label", "category"], `Item ${index + 1}`),
+        description: valueString(item, ["description", "summary", "value", "result"]),
+      }))
+      .slice(0, 8);
+  }
+
+  return [
+    {
+      title: spec.title || "Conceptual figure",
+      description: spec.caption || "Structured evidence diagram generated from the document content.",
+    },
+  ];
+}
+
+function renderWorkflowSvg(spec: ExportVisualSpec): { svg: string; width: number; height: number } {
+  const items = visualItems(spec);
+  const count = Math.max(1, items.length);
+  const width = FIGURE_SVG_WIDTH;
+  const height = count <= 4 ? 520 : 660;
+  const margin = 70;
+  const title = spec.title || "Conceptual figure";
+  const boxWidth = count <= 4 ? 240 : 300;
+  const boxHeight = count <= 4 ? 180 : 150;
+  const gap = count <= 4 ? 35 : 45;
+  const startX = count <= 4 ? 80 : 110;
+  const topY = count <= 4 ? 190 : 165;
+  const bottomY = 385;
+  const palette = ["#EFF6FF", "#ECFDF5", "#FFF7ED", "#F5F3FF", "#F0FDFA", "#FDF2F8"];
+
+  const boxes = items
+    .map((item, index) => {
+      const row = count <= 4 ? 0 : Math.floor(index / 3);
+      const col = count <= 4 ? index : index % 3;
+      const x = count <= 4
+        ? startX + index * (boxWidth + gap)
+        : startX + col * (boxWidth + 65);
+      const y = count <= 4 ? topY : topY + row * 205;
+      const fill = palette[index % palette.length];
+      const arrow =
+        index < items.length - 1 && (count <= 4 || col < 2)
+          ? `<path d="M ${x + boxWidth + 10} ${y + boxHeight / 2} H ${x + boxWidth + gap - 8}" stroke="#2563EB" stroke-width="4" fill="none" marker-end="url(#arrow)" />`
+          : "";
+      return [
+        `<rect x="${x}" y="${y}" width="${boxWidth}" height="${boxHeight}" rx="18" fill="${fill}" stroke="#93C5FD" stroke-width="2" />`,
+        `<circle cx="${x + 34}" cy="${y + 34}" r="18" fill="#1D4ED8" />`,
+        svgText([String(index + 1)], x + 34, y + 43, {
+          size: 24,
+          weight: 700,
+          color: "#FFFFFF",
+          anchor: "middle",
+        }),
+        svgText(wrapText(item.title, 18, 2), x + 62, y + 34, {
+          size: 25,
+          weight: 700,
+          color: "#111827",
+        }),
+        svgText(wrapText(item.description, 26, 3), x + 24, y + 92, {
+          size: 21,
+          color: "#374151",
+        }),
+        arrow,
+      ].join("");
+    })
+    .join("");
+
+  const caption = spec.caption || "Author-generated conceptual diagram.";
+  return {
+    width,
+    height,
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <defs>
+        <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+          <path d="M 0 0 L 12 6 L 0 12 z" fill="#2563EB" />
+        </marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#FFFFFF" />
+      <rect x="36" y="36" width="${width - 72}" height="${height - 72}" rx="22" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="2" />
+      ${svgText(wrapText(title, 58, 2), margin, 88, { size: 32, weight: 800, color: "#0F172A" })}
+      <line x1="${margin}" y1="122" x2="${width - margin}" y2="122" stroke="#2563EB" stroke-width="4" />
+      ${boxes}
+      ${svgText(wrapText(caption, 92, 2), margin, height - 58, { size: 18, color: "#64748B" })}
+    </svg>`,
+  };
+}
+
+type RenderedVisualFigure = {
+  spec: ExportVisualSpec;
+  data: Buffer;
+  width: number;
+  height: number;
+};
+
+function normalizeVisualSpecs(value: unknown): ExportVisualSpec[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is ExportVisualSpec => {
+      if (!item || typeof item !== "object") return false;
+      const record = item as Record<string, unknown>;
+      return typeof record.raw === "string" && typeof record.title === "string";
+    })
+    .map((item) => ({
+      kind: item.kind || "figure",
+      title: item.title || "Conceptual figure",
+      caption: item.caption || "",
+      source: item.source || "",
+      raw: item.raw,
+    }));
+}
+
+async function renderVisualFigures(specs: ExportVisualSpec[]): Promise<RenderedVisualFigure[]> {
+  if (specs.length === 0) return [];
+  const sharp = (await import("sharp")).default;
+  const figures: RenderedVisualFigure[] = [];
+
+  for (const spec of specs) {
+    const rendered = renderWorkflowSvg(spec);
+    const data = await sharp(Buffer.from(rendered.svg, "utf8")).png().toBuffer();
+    figures.push({
+      spec,
+      data,
+      width: rendered.width,
+      height: rendered.height,
+    });
+  }
+
+  return figures;
 }
 
 function inlineSpansToTextRuns(
@@ -440,9 +697,107 @@ function tableBlock(block: WordTableBlock, palette: DocxPalette): Array<Paragrap
   ];
 }
 
-function renderSection(section: WordSection, palette: DocxPalette): Array<Paragraph | Table> {
+type FigureRenderState = {
+  figures: RenderedVisualFigure[];
+  cursor: number;
+  number: number;
+};
+
+function isFigurePlaceholderCallout(block: WordContentBlock): boolean {
+  return block.type === "callout" && /^Figure placeholder:/i.test(plainTextFromInlines(block.inlines));
+}
+
+function figureBlocks(
+  figure: RenderedVisualFigure,
+  palette: DocxPalette,
+  figureNumber: number,
+): Paragraph[] {
+  const displayHeight = Math.round(FIGURE_IMAGE_WIDTH * (figure.height / figure.width));
+  const caption = figure.spec.caption || figure.spec.title;
+  const source = figure.spec.source || "Author-generated conceptual diagram based on the document content.";
+
+  return [
+    new Paragraph({
+      spacing: { before: 180, after: 90 },
+      alignment: AlignmentType.CENTER,
+      children: [
+        new ImageRun({
+          type: "png",
+          data: figure.data,
+          transformation: {
+            width: FIGURE_IMAGE_WIDTH,
+            height: Math.min(310, Math.max(210, displayHeight)),
+          },
+          altText: {
+            title: figure.spec.title,
+            description: caption,
+            name: `Figure ${figureNumber}`,
+          },
+        }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { after: 60, line: 280 },
+      children: [
+        textRun(`Figure ${figureNumber}. `, {
+          bold: true,
+          size: 18,
+          color: palette.text,
+          font: fontFor(palette),
+        }),
+        textRun(caption, {
+          size: 18,
+          color: palette.text,
+          font: fontFor(palette),
+        }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { after: 160, line: 260 },
+      children: [
+        textRun(`Source: ${source}`, {
+          size: 16,
+          color: palette.muted,
+          italics: true,
+          font: fontFor(palette),
+        }),
+      ],
+    }),
+  ];
+}
+
+function consumeFigure(state: FigureRenderState, palette: DocxPalette): Paragraph[] {
+  const figure = state.figures[state.cursor];
+  if (!figure) return [];
+  state.cursor += 1;
+  const figureNumber = state.number;
+  state.number += 1;
+  return figureBlocks(figure, palette, figureNumber);
+}
+
+function appendUnusedFigures(state: FigureRenderState, palette: DocxPalette): Paragraph[] {
+  const children: Paragraph[] = [];
+  while (state.cursor < state.figures.length) {
+    children.push(...consumeFigure(state, palette));
+  }
+  return children;
+}
+
+function renderSection(
+  section: WordSection,
+  palette: DocxPalette,
+  figureState: FigureRenderState,
+): Array<Paragraph | Table> {
   const children: Array<Paragraph | Table> = [sectionHeading(section, palette)];
   for (const block of section.blocks) {
+    if (isFigurePlaceholderCallout(block)) {
+      const figure = consumeFigure(figureState, palette);
+      if (figure.length > 0) {
+        children.push(...figure);
+        continue;
+      }
+    }
+
     const paragraph = paragraphBlock(block, palette);
     if (paragraph) {
       children.push(paragraph);
@@ -533,11 +888,19 @@ function renderWarnings(spec: WordDocumentSpec, palette: DocxPalette): Paragraph
 function buildDocxChildren(
   spec: WordDocumentSpec,
   palette: DocxPalette,
+  figures: RenderedVisualFigure[],
 ): Array<Paragraph | Table> {
+  const figureState: FigureRenderState = {
+    figures,
+    cursor: 0,
+    number: 1,
+  };
+
   return [
     ...buildCover(spec, palette),
     ...buildMetaBlocks(spec, palette),
-    ...spec.sections.flatMap((section) => renderSection(section, palette)),
+    ...spec.sections.flatMap((section) => renderSection(section, palette, figureState)),
+    ...appendUnusedFigures(figureState, palette),
     ...renderReferences(spec, palette),
     ...renderWarnings(spec, palette),
   ];
@@ -547,6 +910,7 @@ export async function generateDocxBuffer(
   title: string,
   content: string,
   templateId: ArtifactTemplateId = "academic",
+  metadata: Record<string, unknown> = {},
 ): Promise<Buffer> {
   const spec = buildWordDocumentSpec({ title, content });
   const effectiveTemplateId =
@@ -561,6 +925,7 @@ export async function generateDocxBuffer(
     bottom: 1440,
     left: 1440,
   };
+  const figures = await renderVisualFigures(normalizeVisualSpecs(metadata.visualSpecs));
   const document = new Document({
     creator: "ResearchGPT",
     title: spec.title,
@@ -636,7 +1001,7 @@ export async function generateDocxBuffer(
             margin: pageMargins,
           },
         },
-        children: buildDocxChildren(spec, palette),
+        children: buildDocxChildren(spec, palette, figures),
       },
     ],
   });

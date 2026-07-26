@@ -47,7 +47,7 @@ export async function generateExportBuffer(
       );
     case "docx": {
       const { generateDocxBuffer } = await import("@/lib/export/generators/docx");
-      return generateDocxBuffer(input.title, content, templateId);
+      return generateDocxBuffer(input.title, content, templateId, input.metadata);
     }
     case "pdf": {
       const { renderMarkdownToPdfBuffer } = await import("@/lib/export/pdf-render");
