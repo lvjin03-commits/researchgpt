@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { buildExportFilename } from "@/lib/export/filename";
 import { prepareExportPayload } from "@/lib/export/content-sanitize";
+import { assertArtifactContentComplete } from "@/lib/export/completeness";
 import { ExportError } from "@/lib/export/errors";
 import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
 import { assertExportQuality } from "@/lib/export/quality";
@@ -71,6 +72,12 @@ export async function POST(request: Request) {
       exportRequest.format,
       prepared.content,
     );
+    assertArtifactContentComplete({
+      format: exportRequest.format,
+      title: prepared.title,
+      content,
+      metadata: exportRequest.metadata ?? {},
+    });
     const buffer = await generateExportBuffer(exportRequest.format, {
       title: prepared.title,
       content,

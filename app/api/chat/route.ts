@@ -9,6 +9,10 @@ import {
   getChatModelOption,
   isChatModelTier,
 } from "@/lib/ai/chat-models";
+import {
+  inspectArtifactContentCompleteness,
+  type ArtifactCompletenessReport,
+} from "@/lib/export/completeness";
 import { createExport } from "@/lib/export/service";
 import type { ArtifactTemplateId } from "@/lib/export/artifact-planner";
 import type { ExportFormat } from "@/lib/export/types";
@@ -491,6 +495,51 @@ function buildDedicatedArtifactMessages(
         query,
         "",
         "Output only the artifact source content requested above.",
+      ].join("\n"),
+    },
+  ];
+}
+
+function buildArtifactContinuationMessages(
+  baseMessages: ChatMessage[],
+  format: ExportFormat,
+  query: string,
+  templateId: ArtifactTemplateId,
+  partialSource: string,
+  report: ArtifactCompletenessReport,
+): ChatMessage[] {
+  const issueSummary =
+    report.issues.map((issue) => issue.message).join("\n") ||
+    "The previous artifact source is incomplete.";
+  const tail = partialSource.slice(-14_000);
+
+  return [
+    {
+      role: "system",
+      content: [
+        "You are ResearchGPT Artifact Builder.",
+        "Continue an unfinished hidden artifact-generation pass.",
+        "Do not restart the document. Do not repeat existing sections.",
+        "Start exactly from the point where the partial source stopped.",
+        "Return only continuation artifact source content. No chat explanation.",
+        artifactFormatInstruction(format, templateId),
+      ].join("\n\n"),
+    },
+    ...baseMessages,
+    {
+      role: "assistant",
+      content: tail,
+    },
+    {
+      role: "user",
+      content: [
+        `The ${format.toUpperCase()} artifact source for the request below is incomplete.`,
+        `Original request: ${query}`,
+        "",
+        "Completeness issues:",
+        issueSummary,
+        "",
+        "Continue and finish the artifact. Do not repeat the text already provided.",
       ].join("\n"),
     },
   ];
@@ -1325,28 +1374,33 @@ export async function POST(request: Request) {
             templateId: ArtifactTemplateId,
           ) => {
             let source = "";
-            const artifactMessages = buildDedicatedArtifactMessages(
+            let artifactMessages = buildDedicatedArtifactMessages(
               messages,
               format,
               query,
               templateId,
             );
-            for await (const event of openResponsesChatStream({
-              messages: artifactMessages,
-              signal: request.signal,
-              model: option.model,
-              provider: option.provider,
-              reasoningEffort: option.reasoningEffort,
-              webSearch:
-                option.provider === "openai" && effectiveWebSearch
-                  ? true
-                  : false,
-              codeInterpreter: false,
-              maxOutputTokens: option.maxOutputTokens,
-              promptCacheKey: `artifact:${user.id}:${tier}:${format}`,
-            })) {
+            let latestReport: ArtifactCompletenessReport | null = null;
+            for (let attempt = 0; attempt < 4; attempt += 1) {
+              let streamWasIncomplete = false;
+              let chunk = "";
+
+              for await (const event of openResponsesChatStream({
+                messages: artifactMessages,
+                signal: request.signal,
+                model: option.model,
+                provider: option.provider,
+                reasoningEffort: option.reasoningEffort,
+                webSearch:
+                  option.provider === "openai" && effectiveWebSearch
+                    ? true
+                    : false,
+                codeInterpreter: false,
+                maxOutputTokens: option.maxOutputTokens,
+                promptCacheKey: `artifact:${user.id}:${tier}:${format}:attempt-${attempt}`,
+              })) {
               if (event.type === "text") {
-                source += event.delta;
+                chunk += event.delta;
                 continue;
               }
               if (event.type === "usage") {
@@ -1361,6 +1415,7 @@ export async function POST(request: Request) {
                 controller.enqueue(encodeChatStreamEvent(event));
               }
               if (event.type === "incomplete") {
+                streamWasIncomplete = true;
                 controller.enqueue(
                   encodeChatStreamEvent({
                     type: "status",
@@ -1368,6 +1423,44 @@ export async function POST(request: Request) {
                   }),
                 );
               }
+
+              }
+
+              source = [source.trim(), chunk.trim()].filter(Boolean).join("\n\n");
+              latestReport = inspectArtifactContentCompleteness({
+                format,
+                title: createArtifactExportTitle(query, source),
+                content: source,
+                metadata: {
+                  source: "chat-dedicated-artifact-mode",
+                  templateId,
+                  artifactOnly: true,
+                  requestQuery: query,
+                },
+              });
+
+              if (!streamWasIncomplete && latestReport.passed) {
+                break;
+              }
+
+              if (attempt >= 3) {
+                break;
+              }
+
+              artifactMessages = buildArtifactContinuationMessages(
+                messages,
+                format,
+                query,
+                templateId,
+                source,
+                latestReport,
+              );
+              controller.enqueue(
+                encodeChatStreamEvent({
+                  type: "status",
+                  message: `${format.toUpperCase()} 内容仍不完整，正在进行第 ${attempt + 2} 次续写与修复。`,
+                }),
+              );
             }
             return source.trim();
           };
@@ -1415,6 +1508,7 @@ export async function POST(request: Request) {
                       source: "chat-dedicated-artifact-mode",
                       templateId,
                       artifactOnly: true,
+                      requestQuery: query,
                     },
                   },
                   user.id,

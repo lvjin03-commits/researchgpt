@@ -2,6 +2,7 @@
 
 import { buildExportFilename } from "@/lib/export/filename";
 import { prepareExportPayload } from "@/lib/export/content-sanitize";
+import { assertArtifactContentComplete } from "@/lib/export/completeness";
 import { ExportError } from "@/lib/export/errors";
 import { generateExportBuffer } from "@/lib/export/generators/generate-buffer";
 import { assertExportQuality } from "@/lib/export/quality";
@@ -38,6 +39,13 @@ function extractFencedBlocks(content: string): Array<{ language: string; body: s
   return blocks;
 }
 
+function stripPlannerAndDownloadFooters(content: string): string {
+  return content
+    .replace(/\[\[RESEARCHGPT_PLAN:[\s\S]*?\]\]\s*/g, "")
+    .replace(/\n-{3,}\n\s*Generated downloadable file:[\s\S]*$/iu, "")
+    .replace(/\n-{3,}\n\s*已生成可下载文件：[\s\S]*$/u, "");
+}
+
 export function normalizeArtifactContent(format: ExportFormat, content: string): string {
   const normalized = content.replace(/\r\n/g, "\n").trim();
   const fenced = extractFencedBlocks(normalized);
@@ -61,14 +69,7 @@ export function normalizeArtifactContent(format: ExportFormat, content: string):
     if (text) return text.body;
   }
 
-  const withoutPlan = normalized.replace(
-    /\[\[RESEARCHGPT_PLAN:[\s\S]*?\]\]\s*/g,
-    "",
-  );
-  const withoutFooter = withoutPlan.replace(
-    /\n-{3,}\n\s*已生成可下载文件：[\s\S]*$/u,
-    "",
-  );
+  const withoutFooter = stripPlannerAndDownloadFooters(normalized);
   const firstHeading = withoutFooter.search(/^#{1,3}\s+/m);
   if (firstHeading > 0) {
     return withoutFooter.slice(firstHeading).trim();
@@ -135,6 +136,12 @@ export async function createExport(
   const filename = buildExportFilename(prepared.title, request.format);
   const mimeType = EXPORT_MIME_TYPES[request.format];
   const content = normalizeArtifactContent(request.format, prepared.content);
+  assertArtifactContentComplete({
+    format: request.format,
+    title: prepared.title,
+    content,
+    metadata: request.metadata ?? {},
+  });
   const buffer = await generateExportBuffer(request.format, {
     title: prepared.title,
     content,
