@@ -261,11 +261,30 @@ function intentPlanRequestsExport(plan: IntentPlan): boolean {
   );
 }
 
+function queryExplicitlyRequestsFileCreation(query: string): boolean {
+  const compact = query.replace(/\s+/g, " ").trim();
+  const hasCreateVerb =
+    /(generate|create|make|export|download|save|write|produce|生成|输出|导出|制作|创建|保存|下载|写一篇|做一份)/i.test(
+      compact,
+    );
+  const hasFileTarget =
+    /\b(word|docx|excel|xlsx|ppt|pptx|pdf|markdown|md|txt|json|svg|png)\b|文档|文件|表格|幻灯片|演示文稿|综述|报告/i.test(
+      compact,
+    );
+  return hasCreateVerb && hasFileTarget;
+}
+
 function exportFormatsFromIntentPlan(
   query: string,
   plan: IntentPlan,
 ): ExportFormat[] {
-  if (!intentPlanRequestsExport(plan)) return [];
+  if (
+    !intentPlanRequestsExport(plan) &&
+    !shouldAutoCreateExports(query, plan) &&
+    !queryExplicitlyRequestsFileCreation(query)
+  ) {
+    return [];
+  }
 
   const formats = new Set<ExportFormat>();
   if (plan.outputType === "word") formats.add("docx");
@@ -275,6 +294,10 @@ function exportFormatsFromIntentPlan(
 
   for (const format of inferReadableExportFormats(query, plan)) {
     formats.add(format);
+  }
+
+  if (formats.size === 0 && queryExplicitlyRequestsFileCreation(query)) {
+    formats.add("docx");
   }
 
   return Array.from(formats);
@@ -348,6 +371,9 @@ function shouldUseDedicatedArtifactMode(
   if (exportingPreviousAssistant) return false;
   if (formats.length === 0) return false;
   if (!formats.every(isDedicatedArtifactFormat)) return false;
+  if (formats.some((format) => ["docx", "xlsx", "pptx", "pdf"].includes(format))) {
+    return true;
+  }
   return (
     plan.intent === "create_artifact" ||
     plan.intent === "presentation_generation" ||

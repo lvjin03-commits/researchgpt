@@ -19,6 +19,7 @@ const BULLET_PATTERN = /^[-*+]\s+(.+)$/;
 const NUMBERED_PATTERN = /^\d+\.\s+(.+)$/;
 const BLOCKQUOTE_PATTERN = /^>\s?(.+)$/;
 const TABLE_SEPARATOR_CELL_PATTERN = /^:?-{3,}:?$/;
+const HORIZONTAL_RULE_PATTERN = /^-{3,}$|^\*{3,}$|^_{3,}$/;
 
 function parseTableRow(line: string): string[] | null {
   const trimmed = line.trim();
@@ -89,6 +90,11 @@ export function parseMarkdownBlocks(content: string): MarkdownBlock[] {
     const line = lines[index];
 
     if (line.trim() === "") {
+      index += 1;
+      continue;
+    }
+
+    if (HORIZONTAL_RULE_PATTERN.test(line.trim())) {
       index += 1;
       continue;
     }

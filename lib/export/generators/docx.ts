@@ -548,8 +548,12 @@ export async function generateDocxBuffer(
   content: string,
   templateId: ArtifactTemplateId = "academic",
 ): Promise<Buffer> {
-  const palette = PALETTES[templateId] ?? PALETTES.academic;
   const spec = buildWordDocumentSpec({ title, content });
+  const effectiveTemplateId =
+    templateId === "academic" && spec.kind === "sci_review"
+      ? "nature"
+      : templateId;
+  const palette = PALETTES[effectiveTemplateId] ?? PALETTES.academic;
   const font = fontFor(palette);
   const pageMargins = palette.pageMargins ?? {
     top: 1440,

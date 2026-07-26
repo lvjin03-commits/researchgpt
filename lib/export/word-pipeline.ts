@@ -66,6 +66,15 @@ const COMMAND_LINE_PATTERNS: RegExp[] = [
   /copy\s+and\s+paste/i,
   /select\s+.+format/i,
   /download\s+link/i,
+  /click\s+generate/i,
+  /output\s+only/i,
+  /return\s+only/i,
+  /生成.*(?:文件|文档|word|docx|excel|xlsx|pdf|ppt)/i,
+  /输出.*(?:文件|文档|word|docx|excel|xlsx|pdf|ppt)/i,
+  /导出.*(?:文件|文档|word|docx|excel|xlsx|pdf|ppt)/i,
+  /下载.*(?:文件|文档|word|docx|excel|xlsx|pdf|ppt)/i,
+  /复制.*(?:markdown|内容|粘贴)/i,
+  /点击.*(?:生成|下载)/i,
   /生成文件/,
   /点击.*生成/,
   /复制.*粘贴/,
@@ -95,10 +104,28 @@ function compact(value: string): string {
   return normalizeTitle(value).replace(/[^\p{L}\p{N}]+/gu, "").toLowerCase();
 }
 
+function stripHeadingNumber(value: string): string {
+  return normalizeTitle(value)
+    .replace(/^\d+(?:\.\d+)*[.)、]?\s*/, "")
+    .replace(/^section\s+\d+(?:\.\d+)*[.)]?\s*/i, "")
+    .trim();
+}
+
+function compactHeading(value: string): string {
+  return compact(stripHeadingNumber(value));
+}
+
 function lineLooksLikeCommand(line: string): boolean {
   const normalized = normalizeTitle(line);
   if (!normalized) return true;
+  if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(normalized)) return true;
   return COMMAND_LINE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isGenericDocumentHeading(value: string): boolean {
+  return /^(content|contents|正文|目录|abstract|keywords?|references?|bibliography)$/i.test(
+    stripHeadingNumber(value),
+  );
 }
 
 function isBadTitleCandidate(value: string): boolean {
@@ -106,6 +133,7 @@ function isBadTitleCandidate(value: string): boolean {
   if (!title) return true;
   if (title.length > 140) return true;
   if (lineLooksLikeCommand(title)) return true;
+  if (isGenericDocumentHeading(title)) return true;
   if (/^(word|excel|pdf|ppt|docx|xlsx|markdown|csv)\b/i.test(title)) return true;
   return false;
 }
@@ -137,6 +165,29 @@ function isKeywordsLine(value: string): boolean {
 }
 
 function extractKeywords(value: string): string[] {
+  return normalizeTitle(value)
+    .replace(/^(keywords?|关键词)\s*[:：]/i, "")
+    .split(/[;,，；、]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+function isReferencesHeadingStrict(value: string): boolean {
+  return /^(references|reference|bibliography|参考文献|引用文献)$/i.test(
+    stripHeadingNumber(value),
+  );
+}
+
+function isAbstractHeadingStrict(value: string): boolean {
+  return /^(abstract|摘要)$/i.test(stripHeadingNumber(value));
+}
+
+function isKeywordsLineStrict(value: string): boolean {
+  return /^(keywords?|关键词)\s*[:：]/i.test(normalizeTitle(value));
+}
+
+function extractKeywordsStrict(value: string): string[] {
   return normalizeTitle(value)
     .replace(/^(keywords?|关键词)\s*[:：]/i, "")
     .split(/[;,，；、]/)
@@ -258,8 +309,10 @@ function collectReferencesFromSection(section: WordSection): string[] {
 function ensureSciReviewShape(spec: WordDocumentSpec): WordDocumentSpec {
   if (spec.kind !== "sci_review") return spec;
 
-  const sections = [...spec.sections];
-  const firstTitle = compact(sections[0]?.title ?? "");
+  const sections = spec.sections.filter(
+    (section) => compactHeading(section.title) !== "content",
+  );
+  const firstTitle = compactHeading(sections[0]?.title ?? "");
   if (firstTitle !== "introduction" && firstTitle !== "引言") {
     sections.unshift(
       createSection("1. Introduction", 1),
@@ -279,6 +332,10 @@ function titleFromContent(
   requestedTitle: string,
   blocks: MarkdownBlock[],
 ): string {
+  if (!isBadTitleCandidate(requestedTitle)) {
+    return normalizeTitle(requestedTitle);
+  }
+
   for (const block of blocks) {
     if (block.type !== "heading") continue;
     const candidate = plain(block.inlines);
@@ -316,14 +373,14 @@ export function buildWordDocumentSpec(input: {
   for (const block of blocks) {
     if (block.type === "heading") {
       const heading = plain(block.inlines);
-      if (!heading || compact(heading) === compact(title)) continue;
+      if (!heading || compactHeading(heading) === compactHeading(title)) continue;
 
-      captureReferences = isReferencesHeading(heading);
-      captureAbstract = isAbstractHeading(heading);
+      captureReferences =
+        isReferencesHeadingStrict(heading) || isReferencesHeading(heading);
+      captureAbstract =
+        isAbstractHeadingStrict(heading) || isAbstractHeading(heading);
 
       if (captureReferences || captureAbstract) {
-        current = createSection(heading, block.level);
-        sections.push(current);
         continue;
       }
 
@@ -343,20 +400,33 @@ export function buildWordDocumentSpec(input: {
     }
 
     const text = blockToParagraphText(block);
-    if (isKeywordsLine(text)) {
-      keywords.push(...extractKeywords(text));
+    if (isKeywordsLineStrict(text) || isKeywordsLine(text)) {
+      keywords.push(
+        ...(isKeywordsLineStrict(text)
+          ? extractKeywordsStrict(text)
+          : extractKeywords(text)),
+      );
       continue;
     }
 
-    if (captureAbstract && !abstract && text) {
-      abstract = text;
+    if (captureAbstract) {
+      if (!abstract && text) {
+        abstract = text;
+      }
       continue;
     }
 
     tableIndex = appendBlock(current, block, tableIndex);
   }
 
-  let meaningfulSections = removeEmptySections(sections);
+  let meaningfulSections = removeEmptySections(sections).filter(
+    (section) =>
+      !isReferencesHeadingStrict(section.title) &&
+      !isReferencesHeading(section.title) &&
+      !isAbstractHeadingStrict(section.title) &&
+      !isAbstractHeading(section.title) &&
+      compactHeading(section.title) !== "keywords",
+  );
 
   if (!abstract) {
     const firstParagraph = meaningfulSections
@@ -391,7 +461,7 @@ export function buildWordDocumentSpec(input: {
   }
 
   for (const section of meaningfulSections) {
-    if (isReferencesHeading(section.title)) {
+    if (isReferencesHeadingStrict(section.title) || isReferencesHeading(section.title)) {
       references.push(...collectReferencesFromSection(section));
     }
   }
@@ -402,7 +472,11 @@ export function buildWordDocumentSpec(input: {
     abstract,
     keywords: [...new Set(keywords)],
     sections: meaningfulSections.filter(
-      (section) => !isReferencesHeading(section.title) && !isAbstractHeading(section.title),
+      (section) =>
+        !isReferencesHeadingStrict(section.title) &&
+        !isReferencesHeading(section.title) &&
+        !isAbstractHeadingStrict(section.title) &&
+        !isAbstractHeading(section.title),
     ),
     references: [...new Set(references)].slice(0, 80),
     warnings,
