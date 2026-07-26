@@ -557,6 +557,60 @@ function buildArtifactContinuationMessages(
   ];
 }
 
+function hasMissingRequiredSection(
+  report: ArtifactCompletenessReport | null,
+): report is ArtifactCompletenessReport {
+  return (
+    report?.issues.some((issue) => issue.code === "missing_required_section") ??
+    false
+  );
+}
+
+function buildArtifactRepairMessages(
+  baseMessages: ChatMessage[],
+  format: ExportFormat,
+  query: string,
+  templateId: ArtifactTemplateId,
+  incompleteSource: string,
+  report: ArtifactCompletenessReport,
+): ChatMessage[] {
+  const issueSummary =
+    report.issues.map((issue) => issue.message).join("\n") ||
+    "The previous artifact source is incomplete.";
+
+  return [
+    {
+      role: "system",
+      content: [
+        "You are ResearchGPT Artifact Builder.",
+        "Repair a failed hidden artifact-generation pass by rewriting the complete artifact source.",
+        "The previous source was rejected by the export quality gate because required document structure was missing.",
+        "Do not merely continue from the end. Rebuild the whole artifact with the required structure.",
+        "Preserve useful substance from the failed source, but output a complete, export-ready document.",
+        "Return only final artifact source content. No chat explanation.",
+        artifactFormatInstruction(format, templateId),
+      ].join("\n\n"),
+    },
+    ...baseMessages,
+    {
+      role: "assistant",
+      content: incompleteSource.slice(-16_000),
+    },
+    {
+      role: "user",
+      content: [
+        `The ${format.toUpperCase()} artifact source for the request below failed export completeness checks.`,
+        `Original request: ${query}`,
+        "",
+        "Completeness issues:",
+        issueSummary,
+        "",
+        "Rewrite the complete artifact now. Include all required front matter and closing sections. Do not output only a continuation.",
+      ].join("\n"),
+    },
+  ];
+}
+
 function createArtifactExportTitle(query: string, content: string): string {
   const withoutFence = content
     .replace(/^```[a-z]*\s*/i, "")
@@ -1465,14 +1519,23 @@ export async function POST(request: Request) {
                 break;
               }
 
-              artifactMessages = buildArtifactContinuationMessages(
-                messages,
-                format,
-                query,
-                templateId,
-                source,
-                latestReport,
-              );
+              artifactMessages = hasMissingRequiredSection(latestReport)
+                ? buildArtifactRepairMessages(
+                    messages,
+                    format,
+                    query,
+                    templateId,
+                    source,
+                    latestReport,
+                  )
+                : buildArtifactContinuationMessages(
+                    messages,
+                    format,
+                    query,
+                    templateId,
+                    source,
+                    latestReport,
+                  );
               controller.enqueue(
                 encodeChatStreamEvent({
                   type: "status",

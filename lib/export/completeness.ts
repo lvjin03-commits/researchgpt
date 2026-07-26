@@ -85,7 +85,9 @@ function stripMarkdownSyntax(content: string): string {
       block.replace(/^```[a-zA-Z0-9_-]*\s*/, "").replace(/```\s*$/, ""),
     )
     .replace(/!\[[^\]]*]\([^)]+\)/g, "")
-    .replace(/\[[^\]]+]\([^)]+\)/g, (match) => match.replace(/^\[|\]\([^)]+\)$/g, ""))
+    .replace(/\[[^\]]+]\([^)]+\)/g, (match) =>
+      match.replace(/^\[|\]\([^)]+\)$/g, ""),
+    )
     .replace(/<[^>]+>/g, "")
     .replace(/[#>*_`~|:-]/g, " ")
     .replace(/\s+/g, " ")
@@ -99,10 +101,14 @@ function countTextUnits(text: string): number {
 }
 
 function extractRequestedLengthUnits(text: string): number | null {
-  const chineseLength = text.match(/(?:约|大约|左右|不少于|至少)?\s*(\d{3,5})\s*字/u);
+  const chineseLength = text.match(
+    /(?:约|大约|左右|不少于|至少)?\s*(\d{3,5})\s*字/u,
+  );
   if (chineseLength?.[1]) return Number(chineseLength[1]);
 
-  const englishLength = text.match(/(?:about|around|at least|approximately)?\s*(\d{3,5})\s*(?:words?|字)/iu);
+  const englishLength = text.match(
+    /(?:about|around|at least|approximately)?\s*(\d{3,5})\s*(?:words?|字)/iu,
+  );
   if (englishLength?.[1]) return Number(englishLength[1]);
 
   return null;
@@ -128,16 +134,18 @@ function requiresLongformCheck(input: ArtifactCompletenessInput): boolean {
 function endsUnfinished(text: string): boolean {
   const normalized = text.trim();
   if (!normalized) return true;
-  if (/[，、；：,;:]$/.test(normalized)) return true;
+  if (/[,，、;；:]$/.test(normalized)) return true;
 
   const tail = normalized
-    .replace(/[。.!?！？）)\]】"'”’]+$/g, "")
+    .replace(/[。.!！?？\]）)"'”’]+$/g, "")
     .split(/\s+/)
     .slice(-3)
     .join(" ")
     .toLowerCase();
 
-  return UNFINISHED_ENDINGS.some((ending) => tail === ending || tail.endsWith(` ${ending}`));
+  return UNFINISHED_ENDINGS.some(
+    (ending) => tail === ending || tail.endsWith(` ${ending}`),
+  );
 }
 
 function hasAnyHeading(content: string, patterns: RegExp[]): boolean {
@@ -155,10 +163,7 @@ export function inspectArtifactContentCompleteness(
   }
 
   const plainText = stripMarkdownSyntax(input.content);
-  const combinedRequest = [
-    input.title,
-    getMetadataText(input.metadata),
-  ].join("\n");
+  const combinedRequest = [input.title, getMetadataText(input.metadata)].join("\n");
   const requestedLength = extractRequestedLengthUnits(combinedRequest);
   const textUnits = countTextUnits(plainText);
 
@@ -197,11 +202,18 @@ export function inspectArtifactContentCompleteness(
       },
       {
         name: "引言或研究背景",
-        patterns: [/^#{1,3}\s*(introduction|background)\b/im, /^#{1,3}\s*(引言|研究背景)/m],
+        patterns: [
+          /^#{1,3}\s*(introduction|background)\b/im,
+          /^#{1,3}\s*(引言|研究背景)/m,
+        ],
       },
       {
         name: "参考文献或引用占位",
-        patterns: [/^#{1,3}\s*(references|参考文献)\b/im, /\[\d+]/, /\(\w+ et al\.,?\s*\d{4}\)/i],
+        patterns: [
+          /^#{1,3}\s*(references|参考文献)\b/im,
+          /\[\d+]/,
+          /\(\w+ et al\.,?\s*\d{4}\)/i,
+        ],
       },
     ];
 
