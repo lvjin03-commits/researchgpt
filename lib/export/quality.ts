@@ -100,6 +100,18 @@ function inspectDocxContent(buffer: Buffer, issues: ExportQualityIssue[]): void 
       message: "Generated Word content still contains raw Markdown residue.",
     });
   }
+
+  if (
+    /"(?:type|steps|caption|source|evidenceType|nodes|edges|series|data|labels|values)"\s*:/i.test(
+      text,
+    ) &&
+    /"(?:evidenceType|steps|caption|source)"\s*:/i.test(text)
+  ) {
+    issues.push({
+      code: "docx_structured_json_residue",
+      message: "Generated Word content still contains raw structured figure JSON.",
+    });
+  }
 }
 
 function inspectPptxContent(buffer: Buffer, issues: ExportQualityIssue[]): void {

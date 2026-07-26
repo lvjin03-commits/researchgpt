@@ -231,13 +231,103 @@ function tableCaptionFor(section: WordSection, tableIndex: number): string {
   return `Table ${tableIndex}. ${base}`;
 }
 
+type StructuredVisualSpec = {
+  title: string;
+  caption: string;
+  source: string;
+};
+
+const STRUCTURED_VISUAL_KEYS =
+  /"(?:type|title|steps|caption|source|evidenceType|nodes|edges|series|data|labels|values)"\s*:/i;
+
+function cleanJsonLikeBlock(value: string): string {
+  return normalizeText(value)
+    .replace(/^```(?:json|chart|figure|visual|diagram)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .replace(/^>\s?/gm, "")
+    .trim();
+}
+
+function firstJsonStringField(value: string, field: string): string {
+  const pattern = new RegExp(`"${field}"\\s*:\\s*"([^"]+)"`, "i");
+  return pattern.exec(value)?.[1]?.trim() ?? "";
+}
+
+function maybeStructuredVisualSpec(value: string): StructuredVisualSpec | null {
+  const raw = cleanJsonLikeBlock(value);
+  if (!raw || (!raw.startsWith("{") && !raw.startsWith("["))) return null;
+  if (!STRUCTURED_VISUAL_KEYS.test(raw)) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const record = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!record || typeof record !== "object") return null;
+
+    const object = record as Record<string, unknown>;
+    const searchable = `${object.type ?? ""} ${object.evidenceType ?? ""}`;
+    const hasVisualPayload = [
+      "steps",
+      "nodes",
+      "edges",
+      "series",
+      "data",
+      "labels",
+      "values",
+      "caption",
+      "source",
+    ].some((key) => key in object);
+    if (
+      !hasVisualPayload &&
+      !/figure|visual|diagram|process|timeline|taxonomy|framework|comparison|chart|structure/i.test(
+        searchable,
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      title:
+        typeof object.title === "string" && object.title.trim()
+          ? object.title.trim()
+          : "Structured figure",
+      caption:
+        typeof object.caption === "string" && object.caption.trim()
+          ? object.caption.trim()
+          : "",
+      source:
+        typeof object.source === "string" && object.source.trim()
+          ? object.source.trim()
+          : "",
+    };
+  } catch {
+    return {
+      title: firstJsonStringField(raw, "title") || "Structured figure",
+      caption: firstJsonStringField(raw, "caption"),
+      source: firstJsonStringField(raw, "source"),
+    };
+  }
+}
+
+function structuredVisualToInlines(spec: StructuredVisualSpec): InlineSpan[] {
+  const text = [
+    `[Figure placeholder: ${spec.title}]`,
+    spec.caption ? `Caption: ${spec.caption}` : "",
+    spec.source ? `Source: ${spec.source}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return parseInlineMarkdown(text);
+}
+
 function shouldKeepCodeBlock(content: string): boolean {
   const trimmed = content.trim();
   if (!trimmed) return false;
+  if (maybeStructuredVisualSpec(trimmed)) return false;
   if (/^\|.+\|\s*\n\|[-:\s|]+\|/m.test(trimmed)) return false;
   if (/^(json|csv|markdown|md|text)$/i.test(trimmed.split(/\s+/)[0] ?? "")) {
     return false;
   }
+  if (/^[{[]/.test(trimmed) && STRUCTURED_VISUAL_KEYS.test(trimmed)) return false;
   return trimmed.length < 1200;
 }
 
@@ -250,12 +340,28 @@ function appendBlock(
     case "paragraph": {
       const text = plain(block.inlines);
       if (!text || lineLooksLikeCommand(text)) return tableIndex;
+      const structuredVisual = maybeStructuredVisualSpec(text);
+      if (structuredVisual) {
+        section.blocks.push({
+          type: "callout",
+          inlines: structuredVisualToInlines(structuredVisual),
+        });
+        return tableIndex;
+      }
       section.blocks.push({ type: "paragraph", inlines: block.inlines });
       return tableIndex;
     }
-    case "blockquote":
-      section.blocks.push({ type: "callout", inlines: block.inlines });
+    case "blockquote": {
+      const text = plain(block.inlines);
+      const structuredVisual = maybeStructuredVisualSpec(text);
+      section.blocks.push({
+        type: "callout",
+        inlines: structuredVisual
+          ? structuredVisualToInlines(structuredVisual)
+          : block.inlines,
+      });
       return tableIndex;
+    }
     case "bullet":
     case "numbered":
       section.blocks.push({
@@ -274,14 +380,21 @@ function appendBlock(
       });
       return nextIndex;
     }
-    case "code":
-      if (shouldKeepCodeBlock(block.content)) {
+    case "code": {
+      const structuredVisual = maybeStructuredVisualSpec(block.content);
+      if (structuredVisual) {
+        section.blocks.push({
+          type: "callout",
+          inlines: structuredVisualToInlines(structuredVisual),
+        });
+      } else if (shouldKeepCodeBlock(block.content)) {
         section.blocks.push({
           type: "callout",
           inlines: parseInlineMarkdown(block.content.trim()),
         });
       }
       return tableIndex;
+    }
     case "heading":
       return tableIndex;
   }
