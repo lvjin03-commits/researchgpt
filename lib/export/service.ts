@@ -1,7 +1,10 @@
 // Server-only module. Do not import from client components or /api/chat route entry.
 
 import { buildExportFilename } from "@/lib/export/filename";
-import { prepareExportPayload } from "@/lib/export/content-sanitize";
+import {
+  prepareExportPayload,
+  sanitizeExportContent,
+} from "@/lib/export/content-sanitize";
 import {
   buildArtifactRecoveryMessage,
   prepareArtifactContentForExport,
@@ -46,7 +49,43 @@ function stripPlannerAndDownloadFooters(content: string): string {
   return content
     .replace(/\[\[RESEARCHGPT_PLAN:[\s\S]*?\]\]\s*/g, "")
     .replace(/\n-{3,}\n\s*Generated downloadable file:[\s\S]*$/iu, "")
-    .replace(/\n-{3,}\n\s*已生成可下载文件：[\s\S]*$/u, "");
+    .replace(/\n-{3,}\n\s*已生成可下载文件[:：][\s\S]*$/u, "")
+    .replace(/\n-{3,}\n\s*已完成文件生成[\s\S]*$/u, "");
+}
+
+async function generateQualityCheckedBuffer(
+  format: ExportFormat,
+  input: {
+    title: string;
+    content: string;
+    metadata: Record<string, unknown>;
+  },
+): Promise<Buffer> {
+  const firstBuffer = await generateExportBuffer(format, input);
+
+  try {
+    assertExportQuality(format, firstBuffer);
+    return firstBuffer;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const shouldRetry =
+      format === "docx" &&
+      /instruction|markdown|mojibake|乱码|说明|污染/i.test(message);
+
+    if (!shouldRetry) throw error;
+
+    const cleanedContent = sanitizeExportContent(input.content, {
+      title: input.title,
+      userQuery: input.title,
+      format,
+    });
+    const retryBuffer = await generateExportBuffer(format, {
+      ...input,
+      content: cleanedContent,
+    });
+    assertExportQuality(format, retryBuffer);
+    return retryBuffer;
+  }
 }
 
 export function normalizeArtifactContent(format: ExportFormat, content: string): string {
@@ -138,7 +177,14 @@ export async function createExport(
   });
   const filename = buildExportFilename(prepared.title, request.format);
   const mimeType = EXPORT_MIME_TYPES[request.format];
-  const normalizedContent = normalizeArtifactContent(request.format, prepared.content);
+  const normalizedContent = sanitizeExportContent(
+    normalizeArtifactContent(request.format, prepared.content),
+    {
+      title: prepared.title,
+      userQuery: request.title,
+      format: request.format,
+    },
+  );
   const preparedContent = prepareArtifactContentForExport({
     format: request.format,
     title: prepared.title,
@@ -148,12 +194,16 @@ export async function createExport(
   if (preparedContent.report.blocked) {
     throw new ExportError(buildArtifactRecoveryMessage(preparedContent.report), 422);
   }
-  const buffer = await generateExportBuffer(request.format, {
+  const finalContent = sanitizeExportContent(preparedContent.content, {
     title: prepared.title,
-    content: preparedContent.content,
+    userQuery: request.title,
+    format: request.format,
+  });
+  const buffer = await generateQualityCheckedBuffer(request.format, {
+    title: prepared.title,
+    content: finalContent,
     metadata: request.metadata ?? {},
   });
-  assertExportQuality(request.format, buffer);
 
   const record = await saveExport({
     filename,

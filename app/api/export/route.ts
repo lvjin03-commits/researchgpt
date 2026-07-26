@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { buildExportFilename } from "@/lib/export/filename";
-import { prepareExportPayload } from "@/lib/export/content-sanitize";
+import {
+  prepareExportPayload,
+  sanitizeExportContent,
+} from "@/lib/export/content-sanitize";
 import {
   buildArtifactRecoveryMessage,
   prepareArtifactContentForExport,
@@ -13,7 +16,7 @@ import {
   parseExportRequest,
 } from "@/lib/export/service";
 import { EXPORT_MIME_TYPES } from "@/lib/export/types";
-import type { ExportErrorResponse } from "@/lib/export/types";
+import type { ExportErrorResponse, ExportFormat } from "@/lib/export/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -44,6 +47,41 @@ async function requireUser() {
   return user;
 }
 
+async function generateQualityCheckedBuffer(
+  format: ExportFormat,
+  input: {
+    title: string;
+    content: string;
+    metadata: Record<string, unknown>;
+  },
+): Promise<Buffer> {
+  const firstBuffer = await generateExportBuffer(format, input);
+
+  try {
+    assertExportQuality(format, firstBuffer);
+    return firstBuffer;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const shouldRetry =
+      format === "docx" &&
+      /instruction|markdown|mojibake|乱码|说明|污染/i.test(message);
+
+    if (!shouldRetry) throw error;
+
+    const cleanedContent = sanitizeExportContent(input.content, {
+      title: input.title,
+      userQuery: input.title,
+      format,
+    });
+    const retryBuffer = await generateExportBuffer(format, {
+      ...input,
+      content: cleanedContent,
+    });
+    assertExportQuality(format, retryBuffer);
+    return retryBuffer;
+  }
+}
+
 export async function POST(request: Request) {
   console.log("[export] request received");
 
@@ -71,9 +109,13 @@ export async function POST(request: Request) {
       format: exportRequest.format,
     });
     const filename = buildExportFilename(prepared.title, exportRequest.format);
-    const normalizedContent = normalizeArtifactContent(
-      exportRequest.format,
-      prepared.content,
+    const normalizedContent = sanitizeExportContent(
+      normalizeArtifactContent(exportRequest.format, prepared.content),
+      {
+        title: prepared.title,
+        userQuery: exportRequest.title,
+        format: exportRequest.format,
+      },
     );
     const preparedContent = prepareArtifactContentForExport({
       format: exportRequest.format,
@@ -84,12 +126,16 @@ export async function POST(request: Request) {
     if (preparedContent.report.blocked) {
       throw new ExportError(buildArtifactRecoveryMessage(preparedContent.report), 422);
     }
-    const buffer = await generateExportBuffer(exportRequest.format, {
+    const finalContent = sanitizeExportContent(preparedContent.content, {
       title: prepared.title,
-      content: preparedContent.content,
+      userQuery: exportRequest.title,
+      format: exportRequest.format,
+    });
+    const buffer = await generateQualityCheckedBuffer(exportRequest.format, {
+      title: prepared.title,
+      content: finalContent,
       metadata: exportRequest.metadata ?? {},
     });
-    assertExportQuality(exportRequest.format, buffer);
 
     console.log("[export] created:", filename);
 

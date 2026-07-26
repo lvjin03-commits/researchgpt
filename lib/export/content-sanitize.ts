@@ -3,36 +3,44 @@ import type { ExportFormat } from "@/lib/export/types";
 const DEFAULT_EXPORT_TITLE = "ResearchGPT 生成文件";
 const MAX_TITLE_LENGTH = 90;
 
-const LEADING_GUIDE_PATTERNS: RegExp[] = [
-  /^我(已|已经)?(为你|帮你|给你)?(准备|整理|生成|写好).{0,80}(word|excel|ppt|pdf|文档|文件|表格)/iu,
-  /^以下(是|为).{0,80}(完整内容|文档内容|正文|markdown|csv|json|word|excel|ppt|pdf)/iu,
-  /^下面(是|为).{0,80}(完整内容|文档内容|正文|markdown|csv|json|word|excel|ppt|pdf)/iu,
-  /^请(点击|使用|选择|复制|粘贴).{0,100}(generate file|生成文件|下载|word|excel|pdf|ppt|markdown|csv|json)/iu,
-  /^要生成.{0,80}(word|excel|pdf|ppt|docx|xlsx|pptx)/iu,
-  /^如果你(需要|希望).{0,80}(我可以|可以继续|再生成|继续)/iu,
-  /^here is .{0,80}(markdown|csv|json|word|excel|document|file)/iu,
-  /^please .{0,100}(generate file|copy|paste|download|select)/iu,
-  /^word\s*(文档|文件)?\s*(内容)?\s*(\(.*?\)|（.*?）)?\s*[:：]?$/iu,
-  /^excel\s*(文档|文件|表格)?\s*(内容)?\s*(\(.*?\)|（.*?）)?\s*[:：]?$/iu,
-  /^pdf\s*(文档|文件)?\s*(内容)?\s*(\(.*?\)|（.*?）)?\s*[:：]?$/iu,
-  /^ppt\s*(文档|文件|幻灯片)?\s*(内容)?\s*(\(.*?\)|（.*?）)?\s*[:：]?$/iu,
-  /^#+\s*(word|excel|pdf|ppt).{0,30}(内容|格式|文档|文件)/iu,
-];
-
-const COMMAND_PATTERNS: RegExp[] = [
-  /^(请|帮我|给我|把|将|按|按照|基于|用|以|直接|需要|想要|生成|输出|导出|下载|保存|制作|创建|写|撰写|整理|总结|改成|补成|转成|做成|翻译)/u,
-  /(生成|输出|导出|下载|保存|整理|总结|改成|补成|转成|做成|写成|撰写|翻译|制作|创建)/u,
-  /(word|docx|excel|xlsx|ppt|pptx|pdf|markdown|md|文件|文档|表格|图片|下载链接)/iu,
-  /(generate\s+file|download|export|create\s+(a\s+)?file)/iu,
-];
-
-const EXPORT_GUIDE_PATTERNS: RegExp[] = [
+const EXPORT_INSTRUCTION_PATTERNS: RegExp[] = [
   /generate\s+file/iu,
+  /copy\s+(this\s+)?(markdown|content|text)/iu,
+  /copy\s+and\s+paste/iu,
+  /select\s+.+(word|excel|pdf|ppt|docx|xlsx|pptx).+format/iu,
+  /download\s+link/iu,
+  /click\s+.+(generate|download|export)/iu,
+  /please\s+.+(copy|paste|download|select|generate)/iu,
   /生成文件/u,
   /下载链接/u,
-  /选择.*(word|excel|pdf|ppt|docx|xlsx|pptx)/iu,
-  /(word|excel|pdf|ppt)\s*(文档|文件|表格|幻灯片)?.{0,80}(选择|格式|粘贴|复制|markdown|csv|json)/iu,
-  /(粘贴|复制).*?(markdown|csv|json|内容)/iu,
+  /复制.*粘贴/u,
+  /粘贴.*(markdown|csv|json|内容)/iu,
+  /选择.*(word|excel|pdf|ppt|docx|xlsx|pptx).*格式/iu,
+  /点击.*(生成|下载|导出)/u,
+  /请.*(复制|粘贴|点击|选择|生成文件|下载)/u,
+  /如果.*缺少材料.*(补充|上传|提供)/u,
+  /如果.*(接口|存储|模型).*重试/u,
+  /下一步[:：]/u,
+  /已完成文件生成/u,
+  /正文没有在聊天区重复展开/u,
+  /避免把聊天回答误当成文档内容/u,
+  /文档还没有达到可交付标准/u,
+  /系统会继续补齐/u,
+  /处理方式[:：]/u,
+  /暂未生成[:：]/u,
+  /生成失败[:：]/u,
+  /我(已|已经)?(为你|帮你)?(准备|整理|生成|写好).{0,80}(word|excel|ppt|pdf|文档|文件|表格)/iu,
+  /以下(是|为).{0,80}(完整内容|文档内容|正文|markdown|csv|json|word|excel|ppt|pdf)/iu,
+  /下面(是|为).{0,80}(完整内容|文档内容|正文|markdown|csv|json|word|excel|ppt|pdf)/iu,
+];
+
+const GUIDE_HEADING_PATTERNS: RegExp[] = [
+  /^#{1,6}\s*(word|excel|pdf|ppt|docx|xlsx|pptx).{0,40}(内容|格式|文档|文件|表格)/iu,
+  /^(word|excel|pdf|ppt|docx|xlsx|pptx)\s*(文档|文件|表格)?\s*(内容|格式)?\s*[:：]?$/iu,
+  /^已生成可下载文件[:：]?$/u,
+  /^已生成可下载文件[:：]?.*$/u,
+  /^已完成文件生成[:：]?.*$/u,
+  /^generated downloadable file[:：]?$/iu,
 ];
 
 function normalizeLine(line: string): string {
@@ -55,16 +63,16 @@ function compactForCompare(value: string): string {
 function truncateTitle(title: string): string {
   const normalized = normalizeLine(title).replace(/\s+/g, " ").trim();
   if (!normalized) return DEFAULT_EXPORT_TITLE;
-  return normalized.length <= MAX_TITLE_LENGTH ? normalized : `${normalized.slice(0, MAX_TITLE_LENGTH - 1).trim()}...`;
+  return normalized.length <= MAX_TITLE_LENGTH
+    ? normalized
+    : `${normalized.slice(0, MAX_TITLE_LENGTH - 1).trim()}...`;
 }
 
 function looksLikeExportInstruction(line: string): boolean {
   const text = normalizeLine(line);
   if (!text) return false;
-  if (LEADING_GUIDE_PATTERNS.some((pattern) => pattern.test(text))) return true;
-  if (EXPORT_GUIDE_PATTERNS.some((pattern) => pattern.test(text))) return true;
-  const matchCount = COMMAND_PATTERNS.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
-  return matchCount >= 2;
+  if (GUIDE_HEADING_PATTERNS.some((pattern) => pattern.test(text))) return true;
+  return EXPORT_INSTRUCTION_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 function isDecorativeOrEmpty(line: string): boolean {
@@ -86,38 +94,48 @@ function shouldDropLeadingLine(line: string, userQuery?: string): boolean {
 
 function stripLeadingGuidance(content: string, userQuery?: string): string {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
-  let changed = true;
-  while (changed && lines.length > 0) {
-    changed = false;
-    while (lines.length > 0 && shouldDropLeadingLine(lines[0] ?? "", userQuery)) {
-      lines.shift();
-      changed = true;
-    }
-    while (lines.length > 0 && isDecorativeOrEmpty(lines[0] ?? "")) {
-      lines.shift();
-      changed = true;
-    }
+  while (lines.length > 0 && shouldDropLeadingLine(lines[0] ?? "", userQuery)) {
+    lines.shift();
+  }
+  while (lines.length > 0 && isDecorativeOrEmpty(lines[0] ?? "")) {
+    lines.shift();
   }
   return lines.join("\n").trim();
+}
+
+function stripInstructionLinesEverywhere(content: string): string {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const kept: string[] = [];
+
+  for (const line of lines) {
+    if (looksLikeExportInstruction(line)) continue;
+    kept.push(line);
+  }
+
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function unwrapPrimaryMarkdownFence(content: string, format?: ExportFormat): string {
   if (!["docx", "pdf", "md", "txt"].includes(format ?? "")) return content;
   const trimmed = content.trim();
-  const fullFence = /^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```\s*$/iu.exec(trimmed);
+  const fullFence = /^```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```\s*$/iu.exec(
+    trimmed,
+  );
   if (fullFence?.[1]?.trim()) return fullFence[1].trim();
 
-  const firstFence = /```(markdown|md|text)\s*\n([\s\S]*?)\n```/iu.exec(trimmed);
+  const firstFence = /```(markdown|md|text)\s*\n([\s\S]*?)\n```/iu.exec(
+    trimmed,
+  );
   if (!firstFence?.[2]?.trim()) return content;
+
   const before = trimmed.slice(0, firstFence.index).trim();
   const after = trimmed.slice(firstFence.index + firstFence[0].length).trim();
-  const wrapperBefore =
-    !before ||
-    before.length < 700 ||
-    before.split("\n").some((line) => looksLikeExportInstruction(line));
-  const guideOnlyBefore = !before || before.split("\n").every((line) => shouldDropLeadingLine(line));
-  const guideOnlyAfter = !after || after.split("\n").every((line) => shouldDropLeadingLine(line));
-  return (guideOnlyBefore || wrapperBefore) && guideOnlyAfter ? firstFence[2].trim() : content;
+  const beforeIsGuide =
+    !before || before.split("\n").every((line) => shouldDropLeadingLine(line));
+  const afterIsGuide =
+    !after || after.split("\n").every((line) => shouldDropLeadingLine(line));
+
+  return beforeIsGuide && afterIsGuide ? firstFence[2].trim() : content;
 }
 
 function dropDuplicateTitleHeading(content: string, title?: string): string {
@@ -136,10 +154,10 @@ function dropDuplicateTitleHeading(content: string, title?: string): string {
   return lines.join("\n").trim();
 }
 
-function removeLeadingInstructionBlock(content: string, userQuery?: string, format?: ExportFormat): string {
-  const withoutGuidance = stripLeadingGuidance(content, userQuery);
-  const unwrapped = unwrapPrimaryMarkdownFence(withoutGuidance, format);
-  return stripLeadingGuidance(unwrapped, userQuery);
+function removeGuidance(content: string, userQuery?: string, format?: ExportFormat): string {
+  const withoutLeadingGuidance = stripLeadingGuidance(content, userQuery);
+  const unwrapped = unwrapPrimaryMarkdownFence(withoutLeadingGuidance, format);
+  return stripInstructionLinesEverywhere(stripLeadingGuidance(unwrapped, userQuery));
 }
 
 export function sanitizeExportContent(
@@ -147,7 +165,7 @@ export function sanitizeExportContent(
   options: { userQuery?: string; title?: string; format?: ExportFormat } = {},
 ): string {
   const cleaned = dropDuplicateTitleHeading(
-    removeLeadingInstructionBlock(content, options.userQuery, options.format),
+    removeGuidance(content, options.userQuery, options.format),
     options.title,
   );
   return cleaned.trim();

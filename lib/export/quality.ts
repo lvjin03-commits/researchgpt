@@ -84,7 +84,9 @@ function inspectDocxContent(buffer: Buffer, issues: ExportQualityIssue[]): void 
 
   if (
     /generate\s+file|copy\s+and\s+paste|select\s+.+format|download\s+link/i.test(text) ||
-    /生成文件|复制.*粘贴|选择.*格式|下载链接/.test(text)
+    /生成文件|复制.*粘贴|选择.*格式|下载链接|下一步[:：]|暂未生成|生成失败|处理方式[:：]|补充材料|正文没有在聊天区重复展开/.test(
+      text,
+    )
   ) {
     issues.push({
       code: "docx_instruction_pollution",
