@@ -1,5 +1,6 @@
 import { ExportError } from "@/lib/export/errors";
 import type { ExportFormat } from "@/lib/export/types";
+import { buildWordDocumentSpec } from "@/lib/export/word-pipeline";
 
 export type ArtifactCompletenessIssue = {
   code:
@@ -134,10 +135,10 @@ function requiresLongformCheck(input: ArtifactCompletenessInput): boolean {
 function endsUnfinished(text: string): boolean {
   const normalized = text.trim();
   if (!normalized) return true;
-  if (/[,，、;；:]$/.test(normalized)) return true;
+  if (/[,，、:：;；]$/.test(normalized)) return true;
 
   const tail = normalized
-    .replace(/[。.!！?？\]）)"'”’]+$/g, "")
+    .replace(/[。?!？！]"'”’）\]]+$/g, "")
     .split(/\s+/)
     .slice(-3)
     .join(" ")
@@ -148,8 +149,80 @@ function endsUnfinished(text: string): boolean {
   );
 }
 
-function hasAnyHeading(content: string, patterns: RegExp[]): boolean {
-  return patterns.some((pattern) => pattern.test(content));
+function compactHeading(value: string): string {
+  return value
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\d+(?:\.\d+)*[.)、]?\s*/, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .toLowerCase();
+}
+
+function hasCitationOrReferencePlaceholder(content: string): boolean {
+  return (
+    /^#{1,3}\s*(references|reference|bibliography|参考文献|引用文献)\b/im.test(
+      content,
+    ) ||
+    /\[\d+]/.test(content) ||
+    /\(\w+ et al\.,?\s*\d{4}\)/i.test(content) ||
+    /references need to be completed|reference list should be completed/i.test(
+      content,
+    ) ||
+    /参考文献.*(待补充|需补充|需要补充|根据原始文献补全)/u.test(content)
+  );
+}
+
+function addIssue(
+  issues: ArtifactCompletenessIssue[],
+  message: string,
+): void {
+  issues.push({
+    code: "missing_required_section",
+    message,
+  });
+}
+
+function inspectAcademicStructure(input: ArtifactCompletenessInput): ArtifactCompletenessIssue[] {
+  const issues: ArtifactCompletenessIssue[] = [];
+  const spec = buildWordDocumentSpec({
+    title: input.title,
+    content: input.content,
+  });
+
+  if (!spec.title || spec.title === "ResearchGPT Generated Document") {
+    addIssue(issues, "学术长文档缺少可用标题。");
+  }
+
+  if (!spec.abstract || countTextUnits(spec.abstract) < 60) {
+    addIssue(issues, "学术长文档缺少摘要，或摘要过短。");
+  }
+
+  if (spec.keywords.length === 0 && !/^(keywords?|关键词)\s*[:：]/im.test(input.content)) {
+    addIssue(issues, "学术长文档缺少关键词。");
+  }
+
+  const headings = spec.sections.map((section) => compactHeading(section.title));
+  const hasIntro = headings.some((heading) =>
+    [
+      "introduction",
+      "background",
+      "researchbackground",
+      "引言",
+      "研究背景",
+    ].includes(heading),
+  );
+  if (!hasIntro) {
+    addIssue(issues, "学术长文档缺少引言或研究背景。");
+  }
+
+  if (spec.sections.length < 3) {
+    addIssue(issues, "学术长文档正文结构过少，至少需要引言、主体讨论和结论类章节。");
+  }
+
+  if (spec.references.length === 0 && !hasCitationOrReferencePlaceholder(input.content)) {
+    addIssue(issues, "学术长文档缺少参考文献或引用占位。");
+  }
+
+  return issues;
 }
 
 export function inspectArtifactContentCompleteness(
@@ -195,36 +268,7 @@ export function inspectArtifactContentCompleteness(
     /sci|nature|review|manuscript|综述|论文|文献/i.test(combinedRequest);
 
   if (looksAcademic) {
-    const requiredSections = [
-      {
-        name: "标题或摘要",
-        patterns: [/^#\s+.+/m, /^abstract\b/im, /^摘要\b/m],
-      },
-      {
-        name: "引言或研究背景",
-        patterns: [
-          /^#{1,3}\s*(introduction|background)\b/im,
-          /^#{1,3}\s*(引言|研究背景)/m,
-        ],
-      },
-      {
-        name: "参考文献或引用占位",
-        patterns: [
-          /^#{1,3}\s*(references|参考文献)\b/im,
-          /\[\d+]/,
-          /\(\w+ et al\.,?\s*\d{4}\)/i,
-        ],
-      },
-    ];
-
-    for (const section of requiredSections) {
-      if (!hasAnyHeading(input.content, section.patterns)) {
-        issues.push({
-          code: "missing_required_section",
-          message: `学术长文档缺少必要结构：${section.name}。`,
-        });
-      }
-    }
+    issues.push(...inspectAcademicStructure(input));
   }
 
   return {
