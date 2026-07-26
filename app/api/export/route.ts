@@ -4,6 +4,7 @@ import {
   prepareExportPayload,
   sanitizeExportContent,
 } from "@/lib/export/content-sanitize";
+import { separateArtifactChannels } from "@/lib/export/artifact-boundary";
 import {
   buildArtifactRecoveryMessage,
   prepareArtifactContentForExport,
@@ -64,7 +65,7 @@ async function generateQualityCheckedBuffer(
     const message = error instanceof Error ? error.message : String(error);
     const shouldRetry =
       format === "docx" &&
-      /instruction|markdown|mojibake|乱码|说明|污染/i.test(message);
+      /instruction|markdown|mojibake|乱码|说明|污染|structured|json|figure/i.test(message);
 
     if (!shouldRetry) throw error;
 
@@ -117,24 +118,39 @@ export async function POST(request: Request) {
         format: exportRequest.format,
       },
     );
+    const initialChannels = separateArtifactChannels(
+      exportRequest.format,
+      normalizedContent,
+    );
     const preparedContent = prepareArtifactContentForExport({
       format: exportRequest.format,
       title: prepared.title,
-      content: normalizedContent,
-      metadata: exportRequest.metadata ?? {},
+      content: initialChannels.content,
+      metadata: {
+        ...(exportRequest.metadata ?? {}),
+        visualSpecs: initialChannels.visualSpecs,
+      },
     });
     if (preparedContent.report.blocked) {
       throw new ExportError(buildArtifactRecoveryMessage(preparedContent.report), 422);
     }
-    const finalContent = sanitizeExportContent(preparedContent.content, {
+    const sanitizedFinalContent = sanitizeExportContent(preparedContent.content, {
       title: prepared.title,
       userQuery: exportRequest.title,
       format: exportRequest.format,
     });
+    const finalChannels = separateArtifactChannels(
+      exportRequest.format,
+      sanitizedFinalContent,
+    );
+    const exportMetadata = {
+      ...(exportRequest.metadata ?? {}),
+      visualSpecs: [...initialChannels.visualSpecs, ...finalChannels.visualSpecs],
+    };
     const buffer = await generateQualityCheckedBuffer(exportRequest.format, {
       title: prepared.title,
-      content: finalContent,
-      metadata: exportRequest.metadata ?? {},
+      content: finalChannels.content,
+      metadata: exportMetadata,
     });
 
     console.log("[export] created:", filename);

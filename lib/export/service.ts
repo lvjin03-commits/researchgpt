@@ -5,6 +5,7 @@ import {
   prepareExportPayload,
   sanitizeExportContent,
 } from "@/lib/export/content-sanitize";
+import { separateArtifactChannels } from "@/lib/export/artifact-boundary";
 import {
   buildArtifactRecoveryMessage,
   prepareArtifactContentForExport,
@@ -70,7 +71,7 @@ async function generateQualityCheckedBuffer(
     const message = error instanceof Error ? error.message : String(error);
     const shouldRetry =
       format === "docx" &&
-      /instruction|markdown|mojibake|乱码|说明|污染/i.test(message);
+      /instruction|markdown|mojibake|乱码|说明|污染|structured|json|figure/i.test(message);
 
     if (!shouldRetry) throw error;
 
@@ -185,24 +186,39 @@ export async function createExport(
       format: request.format,
     },
   );
+  const initialChannels = separateArtifactChannels(
+    request.format,
+    normalizedContent,
+  );
   const preparedContent = prepareArtifactContentForExport({
     format: request.format,
     title: prepared.title,
-    content: normalizedContent,
-    metadata: request.metadata ?? {},
+    content: initialChannels.content,
+    metadata: {
+      ...(request.metadata ?? {}),
+      visualSpecs: initialChannels.visualSpecs,
+    },
   });
   if (preparedContent.report.blocked) {
     throw new ExportError(buildArtifactRecoveryMessage(preparedContent.report), 422);
   }
-  const finalContent = sanitizeExportContent(preparedContent.content, {
+  const sanitizedFinalContent = sanitizeExportContent(preparedContent.content, {
     title: prepared.title,
     userQuery: request.title,
     format: request.format,
   });
+  const finalChannels = separateArtifactChannels(
+    request.format,
+    sanitizedFinalContent,
+  );
+  const exportMetadata = {
+    ...(request.metadata ?? {}),
+    visualSpecs: [...initialChannels.visualSpecs, ...finalChannels.visualSpecs],
+  };
   const buffer = await generateQualityCheckedBuffer(request.format, {
     title: prepared.title,
-    content: finalContent,
-    metadata: request.metadata ?? {},
+    content: finalChannels.content,
+    metadata: exportMetadata,
   });
 
   const record = await saveExport({
