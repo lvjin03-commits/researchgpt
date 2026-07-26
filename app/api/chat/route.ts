@@ -373,6 +373,16 @@ function buildExportLinksMessage(links: string[]): string {
   return ["", "", "---", "", "已生成可下载文件：", ...links].join("\n");
 }
 
+function buildRecoverableExportFailureLine(
+  format: ExportFormat,
+  message: string,
+): string {
+  return [
+    `- ${format.toUpperCase()} 暂未生成：${message}`,
+    "  下一步：如果是缺少材料，请补充文献、数据或引用来源；如果是接口或存储问题，请稍后重试或切换模型后继续生成。",
+  ].join("\n");
+}
+
 function isDedicatedArtifactFormat(format: ExportFormat): boolean {
   return ["docx", "xlsx", "pptx", "pdf", "md", "txt", "json", "svg", "png"].includes(
     format,
@@ -1378,7 +1388,7 @@ export async function POST(request: Request) {
               } catch (exportError) {
                 const message =
                   exportError instanceof Error ? exportError.message : "未知错误";
-                links.push(`- ${format.toUpperCase()} 生成失败：${message}`);
+                links.push(buildRecoverableExportFailureLine(format, message));
               }
             }
 
@@ -1607,7 +1617,7 @@ export async function POST(request: Request) {
               } catch (exportError) {
                 const message =
                   exportError instanceof Error ? exportError.message : "未知错误";
-                links.push(`- ${format.toUpperCase()} 生成失败：${message}`);
+                links.push(buildRecoverableExportFailureLine(format, message));
               }
             }
 
@@ -1842,7 +1852,7 @@ export async function POST(request: Request) {
                   exportError instanceof Error
                     ? exportError.message
                     : "未知错误";
-                links.push(`- ${format.toUpperCase()} 生成失败：${message}`);
+                links.push(buildRecoverableExportFailureLine(format, message));
               }
             }
 
