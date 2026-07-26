@@ -1,5 +1,6 @@
 import { validateChatMessages } from "@/lib/ai/provider";
 import { openResponsesChatStream } from "@/lib/ai/openai";
+import { createHash } from "node:crypto";
 import type { ChatMessage } from "@/lib/ai/types";
 import { getTextFromMessageContent } from "@/lib/ai/types";
 import {
@@ -72,6 +73,17 @@ type ChatRequestBody = {
   projectName?: unknown;
   projectContext?: unknown;
 };
+
+function buildPromptCacheKey(...parts: Array<string | number | undefined>): string {
+  const raw = parts.filter((part) => part !== undefined && part !== "").join(":");
+  const digest = createHash("sha256").update(raw).digest("hex").slice(0, 16);
+  const readable = parts
+    .filter((part) => part !== undefined && part !== "")
+    .map((part) => String(part).replace(/[^a-zA-Z0-9_-]/g, "-"))
+    .join(":")
+    .slice(0, 40);
+  return `${readable}:${digest}`.slice(0, 64);
+}
 
 function isContextMode(value: unknown): value is WorkspaceContextMode {
   return value === "auto" || value === "project" || value === "temporary";
@@ -1343,7 +1355,7 @@ export async function POST(request: Request) {
                   ? taskRoute.useCodeInterpreter
                   : false,
               maxOutputTokens: option.maxOutputTokens,
-              promptCacheKey: `chat:${user.id}:${tier}`,
+              promptCacheKey: buildPromptCacheKey("chat", user.id, tier),
             })) {
               if (event.type === "incomplete") {
                 wasIncomplete = true;
@@ -1397,7 +1409,13 @@ export async function POST(request: Request) {
                     : false,
                 codeInterpreter: false,
                 maxOutputTokens: option.maxOutputTokens,
-                promptCacheKey: `artifact:${user.id}:${tier}:${format}:attempt-${attempt}`,
+                promptCacheKey: buildPromptCacheKey(
+                  "artifact",
+                  user.id,
+                  tier,
+                  format,
+                  attempt,
+                ),
               })) {
               if (event.type === "text") {
                 chunk += event.delta;
