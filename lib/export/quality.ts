@@ -1,5 +1,6 @@
 import { ExportError } from "@/lib/export/errors";
 import type { ExportFormat } from "@/lib/export/types";
+import { detectMojibake } from "@/lib/text/mojibake";
 import AdmZip from "adm-zip";
 
 export type ExportQualityIssue = {
@@ -32,6 +33,42 @@ function extractOfficeXmlText(buffer: Buffer, entryName: string): string {
   }
 }
 
+function extractOfficeXmlTexts(buffer: Buffer, entryPattern: RegExp): string {
+  try {
+    const zip = new AdmZip(buffer);
+    return zip
+      .getEntries()
+      .filter((entry) => entryPattern.test(entry.entryName))
+      .map((entry) => entry.getData().toString("utf8"))
+      .join("\n");
+  } catch {
+    return "";
+  }
+}
+
+function xmlToText(xml: string): string {
+  return xml
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function inspectTextForMojibake(
+  text: string,
+  issues: ExportQualityIssue[],
+  codePrefix: string,
+): void {
+  const findings = detectMojibake(text);
+  if (findings.length === 0) return;
+
+  issues.push({
+    code: `${codePrefix}_mojibake`,
+    message: `Generated content contains mojibake-like text (${findings
+      .map((finding) => finding.pattern)
+      .join(", ")}).`,
+  });
+}
+
 function inspectDocxContent(buffer: Buffer, issues: ExportQualityIssue[]): void {
   const documentXml = extractOfficeXmlText(buffer, "word/document.xml");
   if (!documentXml) {
@@ -42,31 +79,39 @@ function inspectDocxContent(buffer: Buffer, issues: ExportQualityIssue[]): void 
     return;
   }
 
-  const text = documentXml
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = xmlToText(documentXml);
+  inspectTextForMojibake(text, issues, "docx");
 
   if (
-    /generate\s+file|copy\s+and\s+paste|select\s+.+format|download\s+link/i.test(
-      text,
-    ) ||
+    /generate\s+file|copy\s+and\s+paste|select\s+.+format|download\s+link/i.test(text) ||
     /生成文件|复制.*粘贴|选择.*格式|下载链接/.test(text)
   ) {
     issues.push({
       code: "docx_instruction_pollution",
-      message:
-        "Generated Word content still contains export instructions instead of document body.",
+      message: "Generated Word content still contains export instructions instead of document body.",
     });
   }
 
   if (/\|\s*-{3,}\s*\||```/.test(text)) {
     issues.push({
       code: "docx_markdown_residue",
-      message:
-        "Generated Word content still contains raw Markdown residue.",
+      message: "Generated Word content still contains raw Markdown residue.",
     });
   }
+}
+
+function inspectPptxContent(buffer: Buffer, issues: ExportQualityIssue[]): void {
+  const slideXml = extractOfficeXmlTexts(buffer, /^ppt\/slides\/slide\d+\.xml$/);
+  if (!slideXml) return;
+  inspectTextForMojibake(xmlToText(slideXml), issues, "pptx");
+}
+
+function inspectXlsxContent(buffer: Buffer, issues: ExportQualityIssue[]): void {
+  const sharedStringsXml = extractOfficeXmlText(buffer, "xl/sharedStrings.xml");
+  const sheetXml = extractOfficeXmlTexts(buffer, /^xl\/worksheets\/sheet\d+\.xml$/);
+  const text = xmlToText(`${sharedStringsXml}\n${sheetXml}`);
+  if (!text) return;
+  inspectTextForMojibake(text, issues, "xlsx");
 }
 
 export function inspectExportBuffer(
@@ -76,14 +121,14 @@ export function inspectExportBuffer(
   const issues: ExportQualityIssue[] = [];
 
   if (buffer.length === 0) {
-    issues.push({ code: "empty_file", message: "生成文件为空。" });
+    issues.push({ code: "empty_file", message: "Generated file is empty." });
     return { passed: false, issues };
   }
 
   if (ZIP_FORMATS.has(format) && !startsWith(buffer, "PK")) {
     issues.push({
       code: "invalid_office_package",
-      message: "生成的 Office 文件结构无效，打开时可能损坏。",
+      message: "Generated Office file is not a valid Office package.",
     });
   }
 
@@ -91,10 +136,18 @@ export function inspectExportBuffer(
     inspectDocxContent(buffer, issues);
   }
 
+  if (format === "pptx" && startsWith(buffer, "PK")) {
+    inspectPptxContent(buffer, issues);
+  }
+
+  if (format === "xlsx" && startsWith(buffer, "PK")) {
+    inspectXlsxContent(buffer, issues);
+  }
+
   if (format === "pdf" && !startsWith(buffer, "%PDF")) {
     issues.push({
       code: "invalid_pdf",
-      message: "生成的 PDF 文件结构无效，打开时可能乱码或损坏。",
+      message: "Generated PDF is not a valid PDF file.",
     });
   }
 
@@ -103,7 +156,7 @@ export function inspectExportBuffer(
     if (pngSignature !== "89504e470d0a1a0a") {
       issues.push({
         code: "invalid_png",
-        message: "生成的 PNG 文件结构无效。",
+        message: "Generated PNG is not a valid PNG file.",
       });
     }
   }
@@ -111,15 +164,20 @@ export function inspectExportBuffer(
   if (format === "svg" && !includesText(buffer, "<svg")) {
     issues.push({
       code: "invalid_svg",
-      message: "生成的 SVG 文件结构无效。",
+      message: "Generated SVG is not a valid SVG file.",
     });
   }
 
-  if ((format === "txt" || format === "md" || format === "json") && buffer.length < 4) {
-    issues.push({
-      code: "too_short",
-      message: "生成的文本内容过短，可能没有成功输出。",
-    });
+  if (format === "svg" || format === "txt" || format === "md" || format === "json") {
+    const text = buffer.toString("utf8");
+    inspectTextForMojibake(text, issues, format);
+
+    if ((format === "txt" || format === "md" || format === "json") && text.trim().length < 4) {
+      issues.push({
+        code: "too_short",
+        message: "Generated text content is too short.",
+      });
+    }
   }
 
   return { passed: issues.length === 0, issues };
@@ -132,7 +190,7 @@ export function assertExportQuality(
   const report = inspectExportBuffer(format, buffer);
   if (report.passed) return;
   throw new ExportError(
-    `文件质量检查失败：${report.issues.map((issue) => issue.message).join("；")}`,
+    `Export quality check failed: ${report.issues.map((issue) => issue.message).join("; ")}`,
     500,
   );
 }

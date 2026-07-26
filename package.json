@@ -15,6 +15,7 @@
     "build": "next build",
     "start": "next start",
     "check:encoding": "node scripts/check-encoding.mjs",
+    "check:mojibake": "node scripts/check-encoding.mjs",
     "lint": "eslint",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "qa": "npm run check:encoding && npm run build"
