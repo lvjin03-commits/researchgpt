@@ -18,6 +18,7 @@
     "check:mojibake": "node scripts/check-encoding.mjs",
     "lint": "eslint",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
+    "test:word-visuals": "node scripts/verify-word-visuals.cjs",
     "qa": "npm run check:encoding && npm run build"
   },
   "build": {
