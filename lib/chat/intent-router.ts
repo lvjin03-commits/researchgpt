@@ -51,6 +51,7 @@ export type ToolName =
 
 export type InputScope =
   | "current_message"
+  | "previous_assistant_output"
   | "uploaded_files"
   | "selected_files"
   | "current_project"
@@ -157,6 +158,7 @@ function normalizeTools(value: unknown, intent: IntentKind): ToolName[] {
 function normalizeScope(value: unknown, input: IntentRouterInput): InputScope {
   const scopes: InputScope[] = [
     "current_message",
+    "previous_assistant_output",
     "uploaded_files",
     "selected_files",
     "current_project",
@@ -409,14 +411,84 @@ function isQuestionAboutExistingOutput(query: string): boolean {
   );
 }
 
+function hasReusablePreviousOutput(input: IntentRouterInput): boolean {
+  const bundle = input.contextBundle;
+  return Boolean(
+    bundle?.usablePreviousOutputSummary &&
+      bundle.usablePreviousOutputSummary.length >= 40,
+  );
+}
+
+function queryUsesPreviousOutputAsSource(query: string): boolean {
+  const normalized = query.replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+
+  const referencesPrevious =
+    /(\u521a\u624d|\u4e0a\u9762|\u4e0a\u4e00(?:\u6761|\u8f6e|\u7248)|\u524d\u9762|\u8fd9\u4e2a|\u8fd9\u6bb5|\u5b83|\u8be5\u5185\u5bb9|\u4e0a\u8ff0|\u524d\u8ff0|previous|above|last|the answer|that output)/iu.test(
+      normalized,
+    );
+  const transformsOutput =
+    /(\u8f93\u51fa|\u5bfc\u51fa|\u751f\u6210|\u505a\u6210|\u8f6c\u6210|\u6539\u6210|\u4fee\u6539|\u91cd\u5199|\u6539\u5199|\u6da6\u8272|\u7eed\u5199|\u7ee7\u7eed|\u8865\u5145|\u7ffb\u8bd1|\u5168\u6587\u82f1\u6587|\u5168\u6587\u4e2d\u6587|\u4e2d\u82f1|\u53cc\u8bed|\u4e24\u4e2a\u7248\u672c|\u82f1\u6587\u7248|\u4e2d\u6587\u7248|export|convert|revise|rewrite|polish|continue|translate|english version|chinese version|both versions)/iu.test(
+      normalized,
+    );
+  const bareNewVisualRequest =
+    !referencesPrevious &&
+    /(\u751f\u6210|\u505a|\u753b|\u51fa|create|generate|make).{0,12}(\u56fe\u7247|\u56fe\u50cf|\u6d77\u62a5|image|poster)/iu.test(
+      normalized,
+    );
+  if (bareNewVisualRequest) return false;
+
+  return referencesPrevious || transformsOutput;
+}
+
+function outputTypeFromQuery(query: string): IntentPlan["outputType"] {
+  if (/\bexcel\b|xlsx|\u8868\u683c|\u7535\u5b50\u8868\u683c/i.test(query)) return "excel";
+  if (/\bppt\b|pptx|\u5e7b\u706f\u7247|\u6c47\u62a5/i.test(query)) return "ppt";
+  if (/\bpdf\b/i.test(query)) return "pdf";
+  if (/\bword\b|docx|\u6587\u6863|\u62a5\u544a|\u7efc\u8ff0/i.test(query)) return "word";
+  if (/\u56fe\u7247|\u56fe\u50cf|\u6d77\u62a5|image|png|poster/i.test(query)) return "polished_image";
+  return "chat_answer";
+}
+
+function intentForPreviousOutputTransform(query: string): {
+  intent: IntentKind;
+  outputType: IntentPlan["outputType"];
+  tools: ToolName[];
+} {
+  const outputType = outputTypeFromQuery(query);
+  if (outputType === "polished_image") {
+    return {
+      intent: "generate_image",
+      outputType,
+      tools: ["gpt_image", "quality_checker"],
+    };
+  }
+  if (["word", "excel", "ppt", "pdf"].includes(outputType)) {
+    return {
+      intent: "create_artifact",
+      outputType,
+      tools: ["document_pipeline", "quality_checker"],
+    };
+  }
+  return {
+    intent: "conversation",
+    outputType: "chat_answer",
+    tools: ["chat_model"],
+  };
+}
+
 function routeContextBundleFastPath(input: IntentRouterInput): IntentPlan | null {
   const query = compact(lastUserText(input.messages), 500);
   const bundle = input.contextBundle;
   if (!query || !bundle) return null;
 
+  const shouldUsePrevious =
+    bundle.contentSource === "previous_assistant_output" ||
+    (hasReusablePreviousOutput(input) && queryUsesPreviousOutputAsSource(query));
+
   if (
     bundle.taskTypeHint === "critique_existing_output" &&
-    bundle.contentSource === "previous_assistant_output"
+    shouldUsePrevious
   ) {
     return createLocalPlan(
       input,
@@ -424,7 +496,7 @@ function routeContextBundleFastPath(input: IntentRouterInput): IntentPlan | null
       "User is asking about or critiquing the previous assistant output.",
       {
         confidence: 0.95,
-        inputScope: "current_message",
+        inputScope: "previous_assistant_output",
         outputType: "chat_answer",
         tools: ["chat_model"],
       },
@@ -432,28 +504,19 @@ function routeContextBundleFastPath(input: IntentRouterInput): IntentPlan | null
   }
 
   if (
-    bundle.taskTypeHint === "create_artifact" &&
-    bundle.contentSource === "previous_assistant_output"
+    shouldUsePrevious &&
+    ["create_artifact", "revise_existing_output"].includes(bundle.taskTypeHint)
   ) {
-    const outputType: IntentPlan["outputType"] =
-      /\bexcel\b|xlsx|表格/i.test(query) &&
-      !/\bword\b|docx|pdf|ppt|pptx/i.test(query)
-        ? "excel"
-        : /pdf/i.test(query) && !/\bword\b|docx|excel|xlsx|ppt|pptx/i.test(query)
-          ? "pdf"
-          : /ppt|pptx/i.test(query) &&
-              !/\bword\b|docx|excel|xlsx|pdf/i.test(query)
-            ? "ppt"
-            : "word";
+    const resolved = intentForPreviousOutputTransform(query);
     return createLocalPlan(
       input,
-      "create_artifact",
-      "User is continuing from the previous assistant output and wants downloadable files.",
+      resolved.intent,
+      "User is transforming or exporting the previous assistant output.",
       {
         confidence: 0.94,
-        inputScope: "current_message",
-        outputType,
-        tools: ["document_pipeline", "quality_checker"],
+        inputScope: "previous_assistant_output",
+        outputType: resolved.outputType,
+        tools: resolved.tools,
       },
     );
   }
@@ -471,6 +534,36 @@ function routeFastPath(input: IntentRouterInput): IntentPlan | null {
   const projectScope: InputScope = hasProjectScope
     ? "current_project"
     : "current_message";
+
+  if (isQuestionAboutExistingOutput(query) && hasReusablePreviousOutput(input)) {
+    return createLocalPlan(
+      input,
+      "conversation",
+      "User is asking about or critiquing the previous assistant output.",
+      {
+        confidence: 0.96,
+        inputScope: "previous_assistant_output",
+        outputType: "chat_answer",
+        tools: ["chat_model"],
+      },
+    );
+  }
+
+  if (hasReusablePreviousOutput(input) && queryUsesPreviousOutputAsSource(query)) {
+    const resolved = intentForPreviousOutputTransform(query);
+    return createLocalPlan(
+      input,
+      resolved.intent,
+      "User is using the previous assistant output as the source.",
+      {
+        confidence: 0.92,
+        inputScope: "previous_assistant_output",
+        outputType: resolved.outputType,
+        tools: resolved.tools,
+      },
+    );
+  }
+
   if (isQuestionAboutExistingOutput(query)) {
     return createLocalPlan(
       input,
@@ -644,6 +737,20 @@ function routeFastPath(input: IntentRouterInput): IntentPlan | null {
 function routeSafetyInterception(input: IntentRouterInput): IntentPlan | null {
   const query = compact(lastUserText(input.messages), 500);
   if (!query) return null;
+
+  if (isQuestionAboutExistingOutput(query) && hasReusablePreviousOutput(input)) {
+    return createLocalPlan(
+      input,
+      "conversation",
+      "User is asking about or critiquing the previous assistant output.",
+      {
+        confidence: 0.96,
+        inputScope: "previous_assistant_output",
+        outputType: "chat_answer",
+        tools: ["chat_model"],
+      },
+    );
+  }
 
   if (isQuestionAboutExistingOutput(query)) {
     return createLocalPlan(
@@ -826,6 +933,7 @@ export async function routeIntent(
     "如果用户是在问已有图片/输出为什么不对、哪里有差别、为什么没有区别、质量差在哪里，应判断为 conversation + chat_answer；不要调用图片生成。",
     "如果用户说“不要流程图/不要鱼骨图/要像 GPT 那种图片/做成一张能直接用于汇报的图”，应判断为 generate_image + polished_image，而不是 visualization。",
     "如果用户要可编辑流程图、时间轴、鱼骨图、柱状图等结构化图，才判断为 visualization + editable_visual。",
+    "如果用户要求把上一轮回答、刚才结果、这个输出改写、翻译、导出，或生成 Word/Excel/PDF/PPT，inputScope 必须是 previous_assistant_output；不要要求用户重新选择项目或文件。",
     "如果用户要求翻译文件并保持格式，应判断为 translate_document。",
     "如果用户要求分析当前项目、选中文件或文件夹，inputScope 应优先是 current_project/selected_files/selected_folders，并要求项目隔离。",
     "如果不确定工具或范围，needsConfirmation=true，并给出一个简短确认问题。",
@@ -835,7 +943,7 @@ export async function routeIntent(
     '  "intent": "conversation|web_research|generate_image|visualization|create_artifact|translate_document|single_paper_reading|literature_matrix|presentation_generation|file_analysis|data_analysis|literature_library_operation|project_operation|local_file_operation",',
     '  "confidence": 0.0,',
     '  "summary": "一句话说明用户想做什么",',
-    '  "inputScope": "current_message|uploaded_files|selected_files|current_project|selected_folders|literature_library|web",',
+    '  "inputScope": "current_message|previous_assistant_output|uploaded_files|selected_files|current_project|selected_folders|literature_library|web",',
     '  "outputType": "chat_answer|polished_image|editable_visual|word|excel|ppt|pdf|translated_document|literature_matrix|workspace_operation",',
     '  "needsConfirmation": false,',
     '  "confirmationQuestion": "",',

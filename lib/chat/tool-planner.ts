@@ -49,6 +49,9 @@ function step(
 }
 
 function scopeDetail(plan: IntentPlan, input: IntentRouterInput): string {
+  if (plan.inputScope === "previous_assistant_output") {
+    return "只使用上一轮回答或上一轮生成结果作为资料源，不读取项目、本地文件或文献库。";
+  }
   if (plan.inputScope === "current_project") {
     return input.projectName
       ? `只读取当前项目「${input.projectName}」绑定或选中的资料，避免混入其他项目。`

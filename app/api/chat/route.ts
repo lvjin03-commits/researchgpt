@@ -344,13 +344,85 @@ function previousAssistantTextBeforeLastUser(messages: ChatMessage[]): string {
   return "";
 }
 
+function queryLooksLikeFollowUpTransformRequest(query: string): boolean {
+  const compactQuery = query.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!compactQuery || compactQuery.length > 180) return false;
+
+  const followUpReference =
+    /\b(previous|above|last answer|last response|this|that|same content|it)\b/i.test(
+      compactQuery,
+    ) ||
+    /(\u4e0a\u9762|\u521a\u624d|\u4e0a\u4e00\u6761|\u4e4b\u524d|\u524d\u9762|\u8fd9\u4e2a|\u8fd9\u4efd|\u8fd9\u7bc7|\u8be5|\u5b83|\u5176|\u540c\u6837\u5185\u5bb9|\u5176\u4ed6\u5185\u5bb9\u4e0d\u53d8)/u.test(
+      query,
+    );
+  const transformAction =
+    /\b(translate|rephrase|rewrite|export|download|make|create|generate|version|english|chinese|bilingual)\b/i.test(
+      compactQuery,
+    ) ||
+    /(\u8f93\u51fa|\u751f\u6210|\u5bfc\u51fa|\u4e0b\u8f7d|\u4fdd\u5b58|\u6539\u6210|\u6539\u5199|\u91cd\u5199|\u7ffb\u8bd1|\u7248\u672c|\u5168\u82f1\u6587|\u5168\u4e2d\u6587|\u82f1\u6587|\u4e2d\u6587|\u4e2d\u82f1|\u53cc\u8bed)/u.test(
+      query,
+    );
+
+  return followUpReference || transformAction;
+}
+
+function queryRequiresFreshExternalSource(query: string): boolean {
+  return /(\u641c\u7d22|\u68c0\u7d22|\u8bfb\u53d6|\u5206\u6790.*(\u9879\u76ee|\u6587\u4ef6\u5939|\u6587\u732e|pdf)|\u4e0a\u4f20|\u65b0\u6587\u4ef6|\u672c\u5730\u6587\u4ef6|search|retrieve|read .*file|analy[sz]e .*file|project|folder|uploaded file)/iu.test(
+    query,
+  );
+}
+
 function isFollowUpExportRequest(query: string, formats: ExportFormat[]): boolean {
   if (formats.length === 0) return false;
+  const normalizedQuery = query.replace(/\s+/g, "").toLowerCase();
+  if (normalizedQuery.length > 180) return false;
+  const requestedFormat =
+    /(excel|xlsx|word|docx|pdf|ppt|pptx|\u8868\u683c|\u6587\u6863|\u5e7b\u706f\u7247)/iu.test(
+      normalizedQuery,
+    );
+  return requestedFormat && queryLooksLikeFollowUpTransformRequest(query);
   const compactQuery = query.replace(/\s+/g, "").toLowerCase();
   if (compactQuery.length > 80) return false;
   return /^(帮我|请|直接|把|将|再)?(生成|输出|导出|制作|保存|下载|做成|转成)?(excel|xlsx|word|docx|pdf|ppt|pptx|、|，|,|和|及|以及|\+)+文件?$/.test(
     compactQuery,
   );
+}
+
+function shouldUsePreviousAssistantAsSource(
+  query: string,
+  source: string,
+  formats: ExportFormat[],
+): boolean {
+  if (source.length < 80) return false;
+  if (isFollowUpExportRequest(query, formats)) return true;
+  if (!queryLooksLikeFollowUpTransformRequest(query)) return false;
+  return !queryRequiresFreshExternalSource(query);
+}
+
+function buildPreviousAssistantSourceMessage(source: string): ChatMessage {
+  return {
+    role: "system",
+    content: [
+      "The latest user request is a follow-up transformation of the previous assistant output.",
+      "Use the previous assistant output below as the source material.",
+      "Do not ask the user to select a project, folder, or file unless the user explicitly asks to analyze new external material.",
+      "If the user asks for multiple language versions, produce those versions from this source.",
+      `Previous assistant output:\n${source.slice(0, 12000)}`,
+    ].join("\n\n"),
+  };
+}
+
+function toolPlanUsingConversationSource(toolPlan: ToolPlan): ToolPlan {
+  return {
+    ...toolPlan,
+    blockers: [],
+    needsUserDecision: false,
+    confirmationQuestion: undefined,
+    warnings: [
+      ...toolPlan.warnings,
+      "Using the previous assistant output as the source for this follow-up request.",
+    ],
+  };
 }
 
 function buildReadableAutoExportInstruction(formats: ExportFormat[]): ChatMessage {
@@ -932,6 +1004,7 @@ const INTENT_LABELS: Record<IntentPlan["intent"], string> = {
 };
 
 const SCOPE_LABELS: Record<IntentPlan["inputScope"], string> = {
+  previous_assistant_output: "承接上一轮结果",
   current_message: "只读取当前问题",
   uploaded_files: "读取本次上传文件",
   selected_files: "读取本次选中文件",
@@ -1129,6 +1202,7 @@ export async function POST(request: Request) {
       projectName: effectiveProjectName,
       webSearchRequested: webSearch,
       libraryRequested: useLibrary,
+      contextBundle,
     });
     const requestedExportFormats = exportFormatsFromIntentPlan(
       query,
@@ -1136,16 +1210,24 @@ export async function POST(request: Request) {
     );
     const previousAssistantExportSource =
       previousAssistantTextBeforeLastUser(messages);
+    const shouldUsePreviousAssistantSource = shouldUsePreviousAssistantAsSource(
+      query,
+      previousAssistantExportSource,
+      requestedExportFormats,
+    ) || intentPlan.inputScope === "previous_assistant_output";
     const shouldExportPreviousAssistant =
-      isFollowUpExportRequest(query, requestedExportFormats) &&
-      previousAssistantExportSource.length > 0;
+      requestedExportFormats.length > 0 && shouldUsePreviousAssistantSource;
+    const effectiveToolPlan = shouldUsePreviousAssistantSource
+      ? toolPlanUsingConversationSource(toolPlan)
+      : toolPlan;
     const toolExecution = await executeToolPlan({
       intentPlan,
-      toolPlan,
+      toolPlan: effectiveToolPlan,
       projectContext,
       selectedFolderIds,
       contextMode,
       projectName: effectiveProjectName,
+      allowConversationSource: shouldUsePreviousAssistantSource,
     });
     const taskRoute = chatRouteFromIntent(intentPlan);
     const projectReferencePattern =
@@ -1177,6 +1259,13 @@ export async function POST(request: Request) {
       ],
       modelOption,
     );
+
+    if (shouldUsePreviousAssistantSource) {
+      messages = insertContextBeforeLastUser(
+        messages,
+        buildPreviousAssistantSourceMessage(previousAssistantExportSource),
+      );
+    }
 
     for (const contextMessage of toolExecution.contextMessages) {
       messages = insertContextBeforeLastUser(messages, contextMessage);
@@ -1272,7 +1361,7 @@ export async function POST(request: Request) {
           controller.enqueue(
             encodeChatStreamEvent({
               type: "text",
-              delta: formatCompactPlanDisclosure(intentPlan, toolPlan),
+              delta: formatCompactPlanDisclosure(intentPlan, effectiveToolPlan),
             }),
           );
           if (toolExecution.blockingMessage) {
@@ -1289,14 +1378,17 @@ export async function POST(request: Request) {
             controller.close();
             return;
           }
-          if (toolPlan.needsUserDecision && toolPlan.confirmationQuestion) {
+          if (
+            effectiveToolPlan.needsUserDecision &&
+            effectiveToolPlan.confirmationQuestion
+          ) {
             controller.enqueue(
               encodeChatStreamEvent({
                 type: "text",
                 delta: [
                   "我需要先确认一下，避免调用错工具：",
                   "",
-                  toolPlan.confirmationQuestion,
+                  effectiveToolPlan.confirmationQuestion,
                 ].join("\n"),
               }),
             );

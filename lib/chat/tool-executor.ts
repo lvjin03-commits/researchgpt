@@ -203,15 +203,19 @@ export async function executeToolPlan(input: {
   selectedFolderIds: string[];
   contextMode: "auto" | "project" | "temporary";
   projectName: string;
+  allowConversationSource?: boolean;
 }): Promise<ToolExecutionResult> {
   const statuses: string[] = [];
   const contextMessages: ChatMessage[] = [];
   const tools = new Set(input.toolPlan.steps.flatMap((step) => step.tools));
+  const usesPreviousAssistantOutput =
+    input.intentPlan.inputScope === "previous_assistant_output";
   const needsProjectContext =
-    input.intentPlan.inputScope === "current_project" ||
-    input.contextMode === "project" ||
-    tools.has("local_connector") ||
-    tools.has("project_workspace");
+    !usesPreviousAssistantOutput &&
+    (input.intentPlan.inputScope === "current_project" ||
+      input.contextMode === "project" ||
+      tools.has("local_connector") ||
+      tools.has("project_workspace"));
 
   statuses.push(
     `工具执行层：已规划 ${input.toolPlan.steps.length} 步，涉及 ${Array.from(
@@ -223,6 +227,13 @@ export async function executeToolPlan(input: {
 
   if (input.contextMode === "temporary") {
     statuses.push("执行范围：临时问题，不读取当前项目资料。");
+    return { ran: true, statuses, contextMessages };
+  }
+
+  if (usesPreviousAssistantOutput) {
+    statuses.push(
+      "资料范围：已承接上一轮回答作为本次处理来源，不读取项目或本地文件。",
+    );
     return { ran: true, statuses, contextMessages };
   }
 
@@ -246,6 +257,10 @@ export async function executeToolPlan(input: {
     statuses.push(
       "项目资料：已选择项目，但前端没有同步本地资料清单；本次只能使用已上传或已写入对话的内容。",
     );
+  } else if (needsProjectContext && input.allowConversationSource) {
+    statuses.push(
+      "资料范围：已承接上一轮回答作为本次处理来源，不读取项目或本地文件。",
+    );
   } else if (needsProjectContext) {
     return {
       ran: true,
@@ -256,7 +271,11 @@ export async function executeToolPlan(input: {
     };
   }
 
-  if (tools.has("local_connector") && !input.projectContext) {
+  if (
+    tools.has("local_connector") &&
+    !input.projectContext &&
+    !input.allowConversationSource
+  ) {
     statuses.push(
       "本机连接器：服务器不能直接读取本机文件，需要网页前端通过本机连接器读取后再交给 AI。",
     );
