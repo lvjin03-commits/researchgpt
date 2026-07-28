@@ -95,7 +95,7 @@ export class DocumentV2JobService {
     verifiedReferences?: VerifiedReference[];
   }): Promise<DocumentJobSnapshot> {
     const now = this.clock().toISOString();
-    const jobId = randomUUID();
+    const jobId = input.request.requestId;
     const orchestration = createDocumentOrchestrationState({
       jobId,
       request: input.request,
@@ -142,7 +142,11 @@ export class DocumentV2JobService {
     return resumeDocumentJob(this.repository, jobId, this.clock);
   }
 
-  async run(jobId: string, workerId: string): Promise<DocumentJobSnapshot> {
+  async run(
+    jobId: string,
+    workerId: string,
+    options: { maxComponents?: number } = {},
+  ): Promise<DocumentJobSnapshot> {
     const leasedJob = await this.repository.acquireLease({
       jobId,
       workerId,
@@ -168,6 +172,8 @@ export class DocumentV2JobService {
       job.revision,
     );
 
+    const maxComponents = options.maxComponents ?? Number.POSITIVE_INFINITY;
+    let processedComponents = 0;
     while (job.checkpoint.orchestration.status !== "completed") {
       if (await this.cancelRequested(job.jobId)) return this.cancel(job);
       const before = job.checkpoint.orchestration.currentComponentIndex;
@@ -239,6 +245,30 @@ export class DocumentV2JobService {
         undefined,
         this.clock().getTime() - started,
       );
+      processedComponents += 1;
+      if (
+        processedComponents >= maxComponents &&
+        orchestration.status !== "completed"
+      ) {
+        const queuedAt = this.clock().toISOString();
+        job = await this.repository.save(
+          DocumentJobSchema.parse({
+            ...job,
+            status: "queued",
+            leaseOwner: undefined,
+            leaseExpiresAt: undefined,
+            updatedAt: queuedAt,
+          }),
+          job.revision,
+        );
+        await this.event(
+          job,
+          "content_generation",
+          "progress",
+          "本轮内容已保存，任务将在下一轮从断点继续。",
+        );
+        return this.snapshot(jobId);
+      }
     }
 
     job = await this.changeStage(job, "document_assembly");

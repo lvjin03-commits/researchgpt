@@ -86,6 +86,47 @@ Step 8 adds:
   cancel/resume controls;
 - the server-side `DOCUMENT_V2_RUNTIME_ENABLED` rollout switch.
 
+## Production worker
+
+The production executor is deliberately separate from the user-facing chat
+request. A protected scheduled request to
+`/api/internal/document-v2-worker` atomically claims one queued job, generates
+at most one planned component, saves the checkpoint, releases the lease, and
+continues on a later tick. The final tick renders and validates the DOCX and
+stores it in the existing authenticated download channel.
+
+Required server-only environment variables:
+
+- `SUPABASE_SERVICE_ROLE_KEY` for claiming jobs and storing artifacts;
+- `CRON_SECRET` for the internal worker endpoint;
+- `OPENAI_API_KEY` for structured component and final figure generation;
+- optional `OPENAI_DOCUMENT_MODEL` and `OPENAI_IMAGE_MODEL` overrides.
+
+Migration `014_document_v2_worker.sql` installs the service-role-only atomic
+claim function. The five-minute Vercel schedule advances one component per
+invocation. The user-facing creation route remains behind the existing rollout
+switch and is not changed by this worker step.
+
+## Step 10 creation boundary
+
+`POST /api/document-v2/jobs` is the authenticated creation boundary. It does
+not render a document inside the request. It performs, in order:
+
+1. semantic understanding of the complete user instruction;
+2. compatible template resolution;
+3. AI outline planning within the template component limits;
+4. deterministic component-key and length allocation;
+5. durable job creation for the background worker.
+
+The caller supplies a UUID `idempotencyKey`. That key becomes both the
+document request ID and job ID. Repeating the same request returns the existing
+job before any model call, preventing duplicate planning, generation, and
+charges. The response contains only the public job snapshot; prompts, plans,
+content, references, and checkpoints remain server-side.
+
+This endpoint remains protected by `DOCUMENT_V2_RUNTIME_ENABLED`. Step 10 does
+not connect the legacy chat route or switch production traffic.
+
 Migration `013_document_v2_runtime.sql` was applied to the production
 ResearchGPT Supabase project on 2026-07-28 after a dry run confirmed it was the
 only pending migration. Remote migration history now matches local versions
@@ -94,7 +135,5 @@ only pending migration. Remote migration history now matches local versions
 ## Not yet connected
 
 - production chat route;
-- background worker/queue;
-- download artifact service;
-- document creation route and chat intent handoff;
+- chat intent handoff to the creation route;
 - placement of the monitor in the production chat transcript.

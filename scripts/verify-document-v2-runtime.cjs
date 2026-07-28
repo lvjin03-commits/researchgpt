@@ -222,6 +222,37 @@ async function verifyLeaseBlocksDuplicateWorker() {
   );
 }
 
+async function verifyBoundedTicksResumeFromCheckpoint() {
+  const repository = new InMemoryDocumentJobRepository();
+  const calls = {};
+  const service = makeService(repository, calls);
+  const created = await service.create({
+    ownerId: "user-1",
+    request,
+    plan,
+    verifiedReferences: references,
+  });
+
+  const first = await service.run(created.job.jobId, "worker-1", {
+    maxComponents: 1,
+  });
+  assert.equal(first.job.status, "queued");
+  assert.equal(first.job.completedComponents, 1);
+  assert.equal(first.job.leaseOwner, undefined);
+
+  const second = await service.run(created.job.jobId, "worker-2", {
+    maxComponents: 1,
+  });
+  assert.equal(second.job.status, "queued");
+  assert.equal(second.job.completedComponents, 2);
+
+  const completed = await service.run(created.job.jobId, "worker-3", {
+    maxComponents: 1,
+  });
+  assert.equal(completed.job.status, "completed");
+  assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
+}
+
 async function verifyFinalizerFailureIsVisible() {
   const repository = new InMemoryDocumentJobRepository();
   const service = makeService(repository, {}, {
@@ -253,6 +284,7 @@ async function verifyFinalizerFailureIsVisible() {
 async function main() {
   await verifyCancelResumeAndCompletion();
   await verifyLeaseBlocksDuplicateWorker();
+  await verifyBoundedTicksResumeFromCheckpoint();
   await verifyFinalizerFailureIsVisible();
   const previousFlag = process.env.DOCUMENT_V2_RUNTIME_ENABLED;
   delete process.env.DOCUMENT_V2_RUNTIME_ENABLED;
@@ -261,6 +293,18 @@ async function main() {
     params: Promise.resolve({ id: "23b7cee2-bfa7-49d7-b58b-98b734bc5201" }),
   });
   assert.equal(disabled.status, 404);
+  const createRoute = require("../app/api/document-v2/jobs/route.ts");
+  const disabledCreate = await createRoute.POST(
+    new Request("http://localhost/api/document-v2/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: requestId,
+        instruction: "Generate an SCI review about physical gels.",
+      }),
+    }),
+  );
+  assert.equal(disabledCreate.status, 404);
   if (previousFlag === undefined) {
     delete process.env.DOCUMENT_V2_RUNTIME_ENABLED;
   } else {
