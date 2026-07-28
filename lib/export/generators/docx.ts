@@ -21,6 +21,14 @@ import type { InlineSpan } from "@/lib/export/markdown-blocks";
 import type { ExportVisualSpec } from "@/lib/export/artifact-boundary";
 import type { ArtifactTemplateId } from "@/lib/export/artifact-planner";
 import {
+  resolveDocumentLanguage,
+  type DocumentLanguage,
+} from "@/lib/export/document-language";
+import {
+  parseDocumentSpec,
+  type DocumentTableBlock,
+} from "@/lib/export/document-spec";
+import {
   buildWordDocumentSpec,
   type WordContentBlock,
   type WordDocumentKind,
@@ -40,6 +48,10 @@ type DocxPalette = {
   muted: string;
   border: string;
   font?: string;
+  headingFont?: string;
+  captionFont?: string;
+  tableFont?: string;
+  sciStyle?: boolean;
   titleSize?: number;
   bodySize?: number;
   heading1Size?: number;
@@ -49,7 +61,10 @@ type DocxPalette = {
   paragraphAfter?: number;
   firstLineIndent?: number;
   showKindLabel?: boolean;
-  titleAlignment?: typeof AlignmentType.CENTER;
+  titleAlignment?:
+    | typeof AlignmentType.CENTER
+    | typeof AlignmentType.LEFT
+    | typeof AlignmentType.RIGHT;
   pageMargins?: {
     top: number;
     right: number;
@@ -81,33 +96,41 @@ const PALETTES: Record<ArtifactTemplateId, DocxPalette> = {
     border: "CBD5E1",
   },
   nature: {
-    accent: "111827",
-    accentSoft: "F8FAFC",
-    text: "111827",
-    muted: "374151",
-    border: "D1D5DB",
+    accent: "111111",
+    accentSoft: "F2F2F2",
+    text: "222222",
+    muted: "444444",
+    border: "CCCCCC",
     font: "Times New Roman",
-    titleSize: 36,
-    bodySize: 22,
-    heading1Size: 28,
-    heading2Size: 24,
-    heading3Size: 22,
-    bodyLine: 420,
-    paragraphAfter: 160,
+    headingFont: "Arial",
+    captionFont: "Arial",
+    tableFont: "Arial",
+    sciStyle: true,
+    titleSize: 44,
+    bodySize: 20,
+    heading1Size: 26,
+    heading2Size: 22,
+    heading3Size: 20,
+    bodyLine: 276,
+    paragraphAfter: 120,
     firstLineIndent: 0,
     showKindLabel: false,
-    titleAlignment: AlignmentType.CENTER,
+    titleAlignment: AlignmentType.LEFT,
     pageMargins: {
-      top: 1440,
-      right: 1440,
-      bottom: 1440,
-      left: 1440,
+      top: 1134,
+      right: 1247,
+      bottom: 1134,
+      left: 1247,
     },
   },
 };
 
 function fontFor(palette: DocxPalette, fallback = "Microsoft YaHei"): string {
   return palette.font ?? fallback;
+}
+
+function headingFontFor(palette: DocxPalette): string {
+  return palette.headingFont ?? fontFor(palette);
 }
 
 function bodySizeFor(palette: DocxPalette): number {
@@ -118,7 +141,23 @@ function bodyLineFor(palette: DocxPalette): number {
   return palette.bodyLine ?? 340;
 }
 
-function kindLabel(kind: WordDocumentKind): string {
+function kindLabel(kind: WordDocumentKind, language: DocumentLanguage): string {
+  if (language === "zh-CN") {
+    switch (kind) {
+      case "sci_review":
+        return "学术综述";
+      case "paper_reading":
+        return "论文精读报告";
+      case "research_report":
+        return "研究报告";
+      case "translation":
+        return "翻译文档";
+      case "meeting_notes":
+        return "会议纪要";
+      case "general":
+        return "研究文档";
+    }
+  }
   switch (kind) {
     case "sci_review":
       return "SCI Review";
@@ -352,6 +391,7 @@ function renderWorkflowSvg(spec: ExportVisualSpec): { svg: string; width: number
 type RenderedVisualFigure = {
   spec: ExportVisualSpec;
   data: Buffer;
+  imageType: "png" | "jpg";
   width: number;
   height: number;
 };
@@ -384,12 +424,76 @@ async function renderVisualFigures(specs: ExportVisualSpec[]): Promise<RenderedV
     figures.push({
       spec,
       data,
+      imageType: "png",
       width: rendered.width,
       height: rendered.height,
     });
   }
 
   return figures;
+}
+
+function finalImageAssets(value: unknown): RenderedVisualFigure[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const asset = item as Record<string, unknown>;
+    if (
+      typeof asset.dataBase64 !== "string" ||
+      typeof asset.caption !== "string" ||
+      typeof asset.source !== "string"
+    ) {
+      return [];
+    }
+    const mimeType = asset.mimeType === "image/jpeg" ? "image/jpeg" : "image/png";
+    return [{
+      spec: {
+        kind: "final_image",
+        title: asset.caption,
+        caption: asset.caption,
+        source: asset.source,
+        raw: "",
+      },
+      data: Buffer.from(asset.dataBase64, "base64"),
+      imageType: mimeType === "image/jpeg" ? "jpg" : "png",
+      width: typeof asset.width === "number" ? asset.width : 1536,
+      height: typeof asset.height === "number" ? asset.height : 864,
+    } satisfies RenderedVisualFigure];
+  });
+}
+
+function applyMatureTableMetadata(
+  wordSpec: WordDocumentSpec,
+  value: unknown,
+): WordDocumentSpec {
+  if (!value || typeof value !== "object") return wordSpec;
+  const documentSpec = parseDocumentSpec(JSON.stringify(value));
+  if (!documentSpec) return wordSpec;
+  const matureTables = documentSpec.sections.flatMap((section) =>
+    section.blocks.filter(
+      (block): block is DocumentTableBlock => block.type === "table",
+    ),
+  );
+  let cursor = 0;
+  return {
+    ...wordSpec,
+    sections: wordSpec.sections.map((section) => ({
+      ...section,
+      blocks: section.blocks.map((block) => {
+        if (block.type !== "table") return block;
+        const mature = matureTables[cursor];
+        cursor += 1;
+        if (!mature) return block;
+        return {
+          ...block,
+          caption: mature.caption,
+          source: mature.source
+            ? `${wordSpec.language === "zh-CN" ? "来源" : "Source"}：${mature.source}`
+            : undefined,
+        };
+      }),
+    })),
+  };
 }
 
 function inlineSpansToTextRuns(
@@ -442,7 +546,7 @@ function buildCover(spec: WordDocumentSpec, palette: DocxPalette): Paragraph[] {
     children.push(new Paragraph({
       spacing: { before: 360, after: 140 },
       children: [
-        textRun(kindLabel(spec.kind).toUpperCase(), {
+        textRun(kindLabel(spec.kind, spec.language).toUpperCase(), {
           size: 18,
           bold: true,
           color: palette.accent,
@@ -454,14 +558,15 @@ function buildCover(spec: WordDocumentSpec, palette: DocxPalette): Paragraph[] {
 
   children.push(
     new Paragraph({
-      spacing: { after: 420 },
+      style: palette.sciStyle ? "Title" : undefined,
+      spacing: { before: 0, after: palette.sciStyle ? 240 : 420 },
       alignment: palette.titleAlignment,
       children: [
         textRun(spec.title, {
           size: palette.titleSize ?? 38,
           bold: true,
           color: palette.text,
-          font: fontFor(palette),
+          font: headingFontFor(palette),
         }),
       ],
     }),
@@ -476,21 +581,26 @@ function buildMetaBlocks(spec: WordDocumentSpec, palette: DocxPalette): Paragrap
   if (spec.abstract) {
     children.push(
       new Paragraph({
-        heading: HeadingLevel.HEADING_1,
-        spacing: { before: 240, after: 120 },
+        spacing: { before: palette.sciStyle ? 0 : 240, after: 0 },
+        keepNext: true,
         children: [
-          textRun("Abstract", {
+          textRun(spec.language === "zh-CN" ? "摘要" : "Abstract", {
             bold: true,
             color: palette.accent,
-            font: fontFor(palette),
+            size: palette.sciStyle ? 20 : undefined,
+            font: headingFontFor(palette),
           }),
         ],
       }),
       new Paragraph({
-        spacing: { after: 180, line: bodyLineFor(palette) },
+        spacing: {
+          after: palette.sciStyle ? 160 : 180,
+          line: palette.sciStyle ? 264 : bodyLineFor(palette),
+        },
+        alignment: AlignmentType.JUSTIFIED,
         children: [
           textRun(spec.abstract, {
-            size: bodySizeFor(palette),
+            size: palette.sciStyle ? 19 : bodySizeFor(palette),
             color: palette.text,
             font: fontFor(palette),
           }),
@@ -502,15 +612,17 @@ function buildMetaBlocks(spec: WordDocumentSpec, palette: DocxPalette): Paragrap
   if (spec.keywords.length > 0) {
     children.push(
       new Paragraph({
-        spacing: { after: 260 },
+        spacing: { after: palette.sciStyle ? 160 : 260 },
         children: [
-          textRun("Keywords: ", {
+          textRun(spec.language === "zh-CN" ? "关键词：" : "Keywords: ", {
             bold: true,
             color: palette.accent,
-            font: fontFor(palette),
+            size: palette.sciStyle ? 19 : undefined,
+            font: palette.sciStyle ? "Times New Roman" : fontFor(palette),
           }),
           textRun(spec.keywords.join("; "), {
             color: palette.muted,
+            size: palette.sciStyle ? 19 : undefined,
             font: fontFor(palette),
           }),
         ],
@@ -528,9 +640,28 @@ function headingLevel(level: 1 | 2 | 3): (typeof HeadingLevel)[keyof typeof Head
 }
 
 function sectionHeading(section: WordSection, palette: DocxPalette): Paragraph {
+  const before =
+    palette.sciStyle
+      ? section.level === 1
+        ? 280
+        : section.level === 2
+          ? 200
+          : 160
+      : section.level === 1
+        ? 360
+        : 220;
+  const after =
+    palette.sciStyle
+      ? section.level === 1
+        ? 100
+        : section.level === 2
+          ? 80
+          : 60
+      : 120;
   return new Paragraph({
     heading: headingLevel(section.level),
-    spacing: { before: section.level === 1 ? 360 : 220, after: 120 },
+    spacing: { before, after },
+    keepNext: true,
     children: [
       textRun(section.title, {
         bold: true,
@@ -541,7 +672,7 @@ function sectionHeading(section: WordSection, palette: DocxPalette): Paragraph {
               ? (palette.heading2Size ?? 24)
               : (palette.heading3Size ?? 22),
         color: section.level === 1 ? palette.accent : palette.text,
-        font: fontFor(palette),
+        font: headingFontFor(palette),
       }),
     ],
   });
@@ -552,6 +683,8 @@ function paragraphBlock(block: WordContentBlock, palette: DocxPalette): Paragrap
   return new Paragraph({
     spacing: { after: palette.paragraphAfter ?? 140, line: bodyLineFor(palette) },
     indent: { firstLine: palette.firstLineIndent ?? 420 },
+    alignment: palette.sciStyle ? AlignmentType.JUSTIFIED : undefined,
+    widowControl: true,
     children: inlineSpansToTextRuns(block.inlines, {
       size: bodySizeFor(palette),
       color: palette.text,
@@ -634,10 +767,10 @@ function buildTableCell(
       new Paragraph({
         spacing: { before: 0, after: 0, line: 280 },
         children: inlineSpansToTextRuns(inlines, {
-          size: 18,
+          size: header ? 18 : palette.sciStyle ? 17 : 18,
           color: header ? palette.accent : palette.text,
           bold: header,
-          font: fontFor(palette),
+          font: palette.tableFont ?? fontFor(palette),
         }),
       }),
     ],
@@ -646,16 +779,17 @@ function buildTableCell(
 
 function tableBlock(block: WordTableBlock, palette: DocxPalette): Array<Paragraph | Table> {
   const widths = tableColumnWidths(block.headers.length);
-  return [
+  const children: Array<Paragraph | Table> = [
     new Paragraph({
       spacing: { before: 160, after: 80 },
-      alignment: AlignmentType.CENTER,
+      alignment: palette.sciStyle ? AlignmentType.LEFT : AlignmentType.CENTER,
+      keepNext: true,
       children: [
         textRun(block.caption, {
-          size: 19,
+          size: palette.sciStyle ? 17 : 19,
           bold: true,
           color: palette.muted,
-          font: fontFor(palette),
+          font: palette.captionFont ?? fontFor(palette),
         }),
       ],
     }),
@@ -666,10 +800,22 @@ function tableBlock(block: WordTableBlock, palette: DocxPalette): Array<Paragrap
       borders: {
         top: { style: BorderStyle.SINGLE, color: palette.accent, size: 8 },
         bottom: { style: BorderStyle.SINGLE, color: palette.accent, size: 8 },
-        left: { style: BorderStyle.SINGLE, color: palette.border, size: 4 },
-        right: { style: BorderStyle.SINGLE, color: palette.border, size: 4 },
+        left: {
+          style: palette.sciStyle ? BorderStyle.NONE : BorderStyle.SINGLE,
+          color: palette.border,
+          size: palette.sciStyle ? 0 : 4,
+        },
+        right: {
+          style: palette.sciStyle ? BorderStyle.NONE : BorderStyle.SINGLE,
+          color: palette.border,
+          size: palette.sciStyle ? 0 : 4,
+        },
         insideHorizontal: { style: BorderStyle.SINGLE, color: palette.border, size: 4 },
-        insideVertical: { style: BorderStyle.SINGLE, color: palette.border, size: 4 },
+        insideVertical: {
+          style: palette.sciStyle ? BorderStyle.NONE : BorderStyle.SINGLE,
+          color: palette.border,
+          size: palette.sciStyle ? 0 : 4,
+        },
       },
       rows: [
         new TableRow({
@@ -693,14 +839,32 @@ function tableBlock(block: WordTableBlock, palette: DocxPalette): Array<Paragrap
         ),
       ],
     }),
-    new Paragraph({ spacing: { after: 180 } }),
   ];
+  if (block.source) {
+    children.push(
+      new Paragraph({
+        spacing: { before: 60, after: 180 },
+        children: [
+          textRun(block.source, {
+            size: 16,
+            color: palette.muted,
+            italics: true,
+            font: fontFor(palette),
+          }),
+        ],
+      }),
+    );
+  } else {
+    children.push(new Paragraph({ spacing: { after: 180 } }));
+  }
+  return children;
 }
 
 type FigureRenderState = {
   figures: RenderedVisualFigure[];
   cursor: number;
   number: number;
+  language: DocumentLanguage;
 };
 
 function isFigurePlaceholderCallout(block: WordContentBlock): boolean {
@@ -711,18 +875,26 @@ function figureBlocks(
   figure: RenderedVisualFigure,
   palette: DocxPalette,
   figureNumber: number,
+  language: DocumentLanguage,
 ): Paragraph[] {
   const displayHeight = Math.round(FIGURE_IMAGE_WIDTH * (figure.height / figure.width));
   const caption = figure.spec.caption || figure.spec.title;
-  const source = figure.spec.source || "Author-generated conceptual diagram based on the document content.";
+  const source =
+    figure.spec.source ||
+    (language === "zh-CN"
+      ? "作者根据文档内容生成的概念示意图。"
+      : "Author-generated conceptual diagram based on the document content.");
+  const figureLabel = language === "zh-CN" ? "图" : "Figure";
+  const sourceLabel = language === "zh-CN" ? "来源" : "Source";
 
   return [
     new Paragraph({
       spacing: { before: 180, after: 90 },
       alignment: AlignmentType.CENTER,
+      keepNext: true,
       children: [
         new ImageRun({
-          type: "png",
+          type: figure.imageType,
           data: figure.data,
           transformation: {
             width: FIGURE_IMAGE_WIDTH,
@@ -731,31 +903,33 @@ function figureBlocks(
           altText: {
             title: figure.spec.title,
             description: caption,
-            name: `Figure ${figureNumber}`,
+            name: `${figureLabel} ${figureNumber}`,
           },
         }),
       ],
     }),
     new Paragraph({
+      style: palette.sciStyle ? "Caption" : undefined,
       spacing: { after: 60, line: 280 },
+      keepNext: true,
       children: [
-        textRun(`Figure ${figureNumber}. `, {
+        textRun(`${palette.sciStyle ? "Fig." : figureLabel} ${figureNumber} | `, {
           bold: true,
-          size: 18,
+          size: palette.sciStyle ? 17 : 18,
           color: palette.text,
-          font: fontFor(palette),
+          font: palette.captionFont ?? fontFor(palette),
         }),
         textRun(caption, {
-          size: 18,
+          size: palette.sciStyle ? 17 : 18,
           color: palette.text,
-          font: fontFor(palette),
+          font: palette.captionFont ?? fontFor(palette),
         }),
       ],
     }),
     new Paragraph({
       spacing: { after: 160, line: 260 },
       children: [
-        textRun(`Source: ${source}`, {
+        textRun(`${sourceLabel}：${source}`, {
           size: 16,
           color: palette.muted,
           italics: true,
@@ -772,7 +946,7 @@ function consumeFigure(state: FigureRenderState, palette: DocxPalette): Paragrap
   state.cursor += 1;
   const figureNumber = state.number;
   state.number += 1;
-  return figureBlocks(figure, palette, figureNumber);
+  return figureBlocks(figure, palette, figureNumber, state.language);
 }
 
 function appendUnusedFigures(state: FigureRenderState, palette: DocxPalette): Paragraph[] {
@@ -824,30 +998,39 @@ function renderReferences(spec: WordDocumentSpec, palette: DocxPalette): Paragra
   return [
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
-      spacing: { before: 380, after: 160 },
+      spacing: {
+        before: palette.sciStyle ? 280 : 380,
+        after: palette.sciStyle ? 100 : 160,
+      },
+      keepNext: true,
       children: [
-        textRun("References", {
+        textRun(spec.language === "zh-CN" ? "参考文献" : "References", {
           bold: true,
           color: palette.accent,
           size: palette.heading1Size ?? 28,
-          font: fontFor(palette),
+          font: headingFontFor(palette),
         }),
       ],
     }),
     ...spec.references.map(
       (reference, index) =>
         new Paragraph({
-          spacing: { after: 90, line: 300 },
-          indent: { hanging: 360 },
+          style: palette.sciStyle ? "Reference" : undefined,
+          spacing: {
+            after: palette.sciStyle ? 60 : 90,
+            line: palette.sciStyle ? 240 : 300,
+          },
+          indent: { hanging: palette.sciStyle ? 283 : 360 },
           children: [
             textRun(`[${index + 1}] `, {
               bold: true,
               color: palette.accent,
+              size: palette.sciStyle ? 17 : undefined,
               font: fontFor(palette),
             }),
-            textRun(reference, {
+            textRun(reference.replace(/^\s*\[?\d+\]?[.)、]?\s*/, ""), {
               color: palette.text,
-              size: bodySizeFor(palette),
+              size: palette.sciStyle ? 17 : bodySizeFor(palette),
               font: fontFor(palette),
             }),
           ],
@@ -862,7 +1045,7 @@ function renderWarnings(spec: WordDocumentSpec, palette: DocxPalette): Paragraph
     new Paragraph({
       spacing: { before: 200, after: 80 },
       children: [
-        textRun("Generation Notes", {
+        textRun(spec.language === "zh-CN" ? "生成说明" : "Generation Notes", {
           bold: true,
           color: palette.muted,
           font: fontFor(palette),
@@ -894,6 +1077,7 @@ function buildDocxChildren(
     figures,
     cursor: 0,
     number: 1,
+    language: spec.language,
   };
 
   return [
@@ -912,7 +1096,19 @@ export async function generateDocxBuffer(
   templateId: ArtifactTemplateId = "academic",
   metadata: Record<string, unknown> = {},
 ): Promise<Buffer> {
-  const spec = buildWordDocumentSpec({ title, content });
+  const language = resolveDocumentLanguage({
+    requestedLanguage: metadata.documentLanguage,
+    query: typeof metadata.requestQuery === "string" ? metadata.requestQuery : "",
+    title,
+    content,
+  });
+  const parsedSpec = buildWordDocumentSpec({
+    title,
+    content,
+    language,
+    context: typeof metadata.requestQuery === "string" ? metadata.requestQuery : "",
+  });
+  const spec = applyMatureTableMetadata(parsedSpec, metadata.documentSpec);
   const effectiveTemplateId =
     templateId === "academic" && spec.kind === "sci_review"
       ? "nature"
@@ -925,11 +1121,15 @@ export async function generateDocxBuffer(
     bottom: 1440,
     left: 1440,
   };
-  const figures = await renderVisualFigures(normalizeVisualSpecs(metadata.visualSpecs));
+  const matureImageAssets = finalImageAssets(metadata.imageAssets);
+  const figures =
+    matureImageAssets.length > 0
+      ? matureImageAssets
+      : await renderVisualFigures(normalizeVisualSpecs(metadata.visualSpecs));
   const document = new Document({
     creator: "ResearchGPT",
     title: spec.title,
-    description: kindLabel(spec.kind),
+    description: kindLabel(spec.kind, spec.language),
     styles: {
       default: {
         document: {
@@ -945,6 +1145,25 @@ export async function generateDocxBuffer(
       },
       paragraphStyles: [
         {
+          id: "Title",
+          name: "Title",
+          basedOn: "Normal",
+          next: "Normal",
+          quickFormat: true,
+          run: {
+            size: palette.titleSize ?? 38,
+            bold: true,
+            color: palette.text,
+            font: headingFontFor(palette),
+          },
+          paragraph: {
+            spacing: {
+              before: 0,
+              after: palette.sciStyle ? 240 : 420,
+            },
+          },
+        },
+        {
           id: "Heading1",
           name: "Heading 1",
           basedOn: "Normal",
@@ -954,10 +1173,14 @@ export async function generateDocxBuffer(
             size: palette.heading1Size ?? 28,
             bold: true,
             color: palette.accent,
-            font,
+            font: headingFontFor(palette),
           },
           paragraph: {
-            spacing: { before: 360, after: 120 },
+            spacing: {
+              before: palette.sciStyle ? 280 : 360,
+              after: palette.sciStyle ? 100 : 120,
+            },
+            keepNext: true,
           },
         },
         {
@@ -970,10 +1193,14 @@ export async function generateDocxBuffer(
             size: palette.heading2Size ?? 24,
             bold: true,
             color: palette.text,
-            font,
+            font: headingFontFor(palette),
           },
           paragraph: {
-            spacing: { before: 260, after: 100 },
+            spacing: {
+              before: palette.sciStyle ? 200 : 260,
+              after: palette.sciStyle ? 80 : 100,
+            },
+            keepNext: true,
           },
         },
         {
@@ -986,10 +1213,48 @@ export async function generateDocxBuffer(
             size: palette.heading3Size ?? 22,
             bold: true,
             color: palette.text,
+            font: headingFontFor(palette),
+          },
+          paragraph: {
+            spacing: {
+              before: palette.sciStyle ? 160 : 220,
+              after: palette.sciStyle ? 60 : 80,
+            },
+            keepNext: true,
+          },
+        },
+        {
+          id: "Caption",
+          name: "Caption",
+          basedOn: "Normal",
+          next: "Normal",
+          quickFormat: true,
+          run: {
+            size: palette.sciStyle ? 17 : 18,
+            color: palette.muted,
+            font: palette.captionFont ?? font,
+          },
+          paragraph: {
+            spacing: { line: 240, after: 60 },
+          },
+        },
+        {
+          id: "Reference",
+          name: "Reference",
+          basedOn: "Normal",
+          next: "Reference",
+          quickFormat: true,
+          run: {
+            size: palette.sciStyle ? 17 : bodySizeFor(palette),
+            color: palette.text,
             font,
           },
           paragraph: {
-            spacing: { before: 220, after: 80 },
+            spacing: {
+              line: palette.sciStyle ? 240 : 300,
+              after: palette.sciStyle ? 60 : 90,
+            },
+            indent: { hanging: palette.sciStyle ? 283 : 360 },
           },
         },
       ],
@@ -998,7 +1263,14 @@ export async function generateDocxBuffer(
       {
         properties: {
           page: {
-            margin: pageMargins,
+            size: palette.sciStyle
+              ? { width: 11906, height: 16838 }
+              : undefined,
+            margin: {
+              ...pageMargins,
+              header: palette.sciStyle ? 567 : undefined,
+              footer: palette.sciStyle ? 567 : undefined,
+            },
           },
         },
         children: buildDocxChildren(spec, palette, figures),

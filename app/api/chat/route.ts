@@ -17,6 +17,27 @@ import {
 import { createExport } from "@/lib/export/service";
 import type { ArtifactTemplateId } from "@/lib/export/artifact-planner";
 import type { ExportFormat } from "@/lib/export/types";
+import {
+  documentLanguageInstruction,
+  resolveDocumentLanguage,
+  type DocumentLanguage,
+} from "@/lib/export/document-language";
+import {
+  applySemanticDocumentPlan,
+  createDocumentPlan,
+  documentSpecPrompt,
+  documentSpecToMarkdown,
+  parseDocumentSpec,
+  semanticDocumentPlanPrompt,
+  validateDocumentSpec,
+  type DocumentPlan,
+  type DocumentSpec,
+  type FinalImageAsset,
+} from "@/lib/export/document-spec";
+import {
+  resolveDocumentTemplate,
+  type ResolvedDocumentTemplate,
+} from "@/lib/export/document-templates";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
 import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
@@ -482,23 +503,41 @@ function shouldUseDedicatedArtifactMode(
 function artifactTemplateInstruction(
   format: ExportFormat,
   templateId: ArtifactTemplateId,
+  language: DocumentLanguage,
 ): string {
   if (format !== "docx" || templateId !== "nature") return "";
 
+  const structure =
+    language === "zh-CN"
+      ? [
+          "# <根据主题提炼的简洁中文学术标题>",
+          "## 摘要",
+          "<一个完整中文段落，概述背景、核心论点、证据与意义>",
+          "关键词：<4-8 个专业术语，以分号分隔>",
+          "## 1. 引言",
+          "<研究背景、综述范围与核心科学问题>",
+          "## 2. <主要证据章节>",
+          "## 3. <机制、比较或分析章节>",
+          "## 4. 结论与展望",
+          "## 参考文献",
+        ]
+      : [
+          "# <concise scientific title derived from the subject>",
+          "## Abstract",
+          "<one paragraph, 120-180 words, focused on background, core argument, evidence, and implication>",
+          "Keywords: <4-8 professional terms separated by semicolons>",
+          "## 1. Introduction",
+          "<research background, scope, and core scientific question>",
+          "## 2. <main evidence section>",
+          "## 3. <mechanism/comparison/analysis section>",
+          "## 4. Conclusions and Outlook",
+          "## References",
+        ];
   return [
     "Template track: Nature/top-journal manuscript.",
     "Plan the manuscript internally first, then output only the final markdown source.",
-    "Required manuscript structure, using these exact markdown slots:",
-    "# <concise scientific title derived from the subject>",
-    "## Abstract",
-    "<one paragraph, 120-180 words, focused on background, core argument, evidence, and implication>",
-    "Keywords: <4-8 professional terms separated by semicolons>",
-    "## 1. Introduction",
-    "<research background, scope, and core scientific question>",
-    "## 2. <main evidence section>",
-    "## 3. <mechanism/comparison/analysis section>",
-    "## 4. Conclusions and Outlook",
-    "## References",
+    "Required manuscript structure, using these exact localized markdown slots:",
+    ...structure,
     "<reference entries or a clear placeholder that references must be completed from source literature>",
     "Do not omit Abstract, Keywords, Introduction, Conclusions, or References.",
     "Use evidence-focused paragraphs, not chat-style bullets unless the user explicitly requests bullets.",
@@ -518,7 +557,16 @@ function artifactTemplateInstruction(
 function artifactFormatInstruction(
   format: ExportFormat,
   templateId: ArtifactTemplateId,
+  language: DocumentLanguage,
 ): string {
+  if (format === "docx") {
+    return [
+      "Target format: DOCX.",
+      "Return a mature structured DocumentSpec JSON object following the separate schema contract.",
+      "Do not return Markdown or visible placeholders.",
+    ].join("\n");
+  }
+
   if (format === "xlsx") {
     return [
       "Target format: XLSX.",
@@ -529,7 +577,7 @@ function artifactFormatInstruction(
     ].join("\n");
   }
 
-  if (format === "docx" || format === "pdf" || format === "md") {
+  if (format === "pdf" || format === "md") {
     return [
       `Target format: ${format.toUpperCase()}.`,
       "Return only one fenced markdown code block.",
@@ -542,7 +590,7 @@ function artifactFormatInstruction(
       "If the document normally requires citations but no verified source is available, do not fabricate references and do not fail file generation. Generate an explicitly labeled no-reference draft and make the limitation visible inside the document.",
       "Do not use the user's command as the title. Derive the title from the actual subject.",
       "Do not include instructions such as 'click Generate file' or 'copy this markdown'.",
-      artifactTemplateInstruction(format, templateId),
+      artifactTemplateInstruction(format, templateId, language),
     ]
       .filter(Boolean)
       .join("\n");
@@ -586,7 +634,13 @@ function buildDedicatedArtifactMessages(
   format: ExportFormat,
   query: string,
   templateId: ArtifactTemplateId,
+  suppliedPlan?: DocumentPlan,
 ): ChatMessage[] {
+  const language = resolveDocumentLanguage({ query });
+  const documentPlan =
+    format === "docx"
+      ? suppliedPlan ?? createDocumentPlan({ query, templateId, maxVisuals: 3 })
+      : null;
   return [
     {
       role: "system",
@@ -600,7 +654,9 @@ function buildDedicatedArtifactMessages(
         "Ask follow-up questions only when the file cannot be generated at all.",
         "Use the conversation, project context, uploaded files, retrieved context, and the user's latest request as the content source.",
         "If the user asked for multiple files, this pass creates exactly one format; optimize for that format.",
-        artifactFormatInstruction(format, templateId),
+        documentLanguageInstruction(language),
+        artifactFormatInstruction(format, templateId, language),
+        documentPlan ? documentSpecPrompt(documentPlan) : "",
       ].join("\n\n"),
     },
     ...baseMessages,
@@ -624,6 +680,11 @@ function buildArtifactContinuationMessages(
   partialSource: string,
   report: ArtifactCompletenessReport,
 ): ChatMessage[] {
+  const language = resolveDocumentLanguage({ query });
+  const documentPlan =
+    format === "docx"
+      ? createDocumentPlan({ query, templateId, maxVisuals: 3 })
+      : null;
   const issueSummary =
     report.issues.map((issue) => issue.message).join("\n") ||
     "The previous artifact source is incomplete.";
@@ -638,7 +699,9 @@ function buildArtifactContinuationMessages(
         "Do not restart the document. Do not repeat existing sections.",
         "Start exactly from the point where the partial source stopped.",
         "Return only continuation artifact source content. No chat explanation.",
-        artifactFormatInstruction(format, templateId),
+        documentLanguageInstruction(language),
+        artifactFormatInstruction(format, templateId, language),
+        documentPlan ? documentSpecPrompt(documentPlan) : "",
       ].join("\n\n"),
     },
     ...baseMessages,
@@ -678,6 +741,11 @@ function buildArtifactRepairMessages(
   incompleteSource: string,
   report: ArtifactCompletenessReport,
 ): ChatMessage[] {
+  const language = resolveDocumentLanguage({ query });
+  const documentPlan =
+    format === "docx"
+      ? createDocumentPlan({ query, templateId, maxVisuals: 3 })
+      : null;
   const issueSummary =
     report.issues.map((issue) => issue.message).join("\n") ||
     "The previous artifact source is incomplete.";
@@ -692,7 +760,9 @@ function buildArtifactRepairMessages(
         "Do not merely continue from the end. Rebuild the whole artifact with the required structure.",
         "Preserve useful substance from the failed source, but output a complete, export-ready document.",
         "Return only final artifact source content. No chat explanation.",
-        artifactFormatInstruction(format, templateId),
+        documentLanguageInstruction(language),
+        artifactFormatInstruction(format, templateId, language),
+        documentPlan ? documentSpecPrompt(documentPlan) : "",
       ].join("\n\n"),
     },
     ...baseMessages,
@@ -715,6 +785,102 @@ function buildArtifactRepairMessages(
   ];
 }
 
+function buildDocumentSpecRepairMessages(
+  baseMessages: ChatMessage[],
+  query: string,
+  templateId: ArtifactTemplateId,
+  failedSource: string,
+  plan: DocumentPlan,
+  issues: Array<{ path: string; message: string }>,
+): ChatMessage[] {
+  return [
+    {
+      role: "system",
+      content: [
+        "You are ResearchGPT Structured Document Builder.",
+        "Rewrite the complete DocumentSpec. Do not return a partial patch.",
+        documentLanguageInstruction(plan.language),
+        documentSpecPrompt(plan),
+      ].join("\n\n"),
+    },
+    ...baseMessages,
+    {
+      role: "assistant",
+      content: failedSource.slice(-20_000),
+    },
+    {
+      role: "user",
+      content: [
+        `The structured DOCX content for this request failed validation: ${query}`,
+        "",
+        ...issues.map((issue) => `- ${issue.path}: ${issue.message}`),
+        "",
+        "Return a complete corrected DocumentSpec JSON object now.",
+        `Template: ${templateId}.`,
+      ].join("\n"),
+    },
+  ];
+}
+
+async function generateDocumentImageAssets(
+  spec: DocumentSpec,
+  userId: string,
+  signal?: AbortSignal,
+): Promise<FinalImageAsset[]> {
+  const assets: FinalImageAsset[] = [];
+  const sharp = (await import("sharp")).default;
+  const placementOrder = spec.sections.flatMap((section) =>
+    section.blocks.flatMap((block) =>
+      block.type === "visual" ? [block.visualRequestId] : [],
+    ),
+  );
+  const orderedRequests = [
+    ...placementOrder.flatMap((id) =>
+      spec.visualRequests.filter((request) => request.id === id),
+    ),
+    ...spec.visualRequests.filter((request) => !placementOrder.includes(request.id)),
+  ];
+
+  for (const request of orderedRequests) {
+    const image = await generateResearchImage(
+      [
+        {
+          role: "user",
+          content: [
+            `Generate the final ${request.type} image for a formal research document.`,
+            `Document language: ${spec.language}.`,
+            `Purpose: ${request.purpose}`,
+            `Content brief: ${request.contentBrief}`,
+            `Required elements: ${request.requiredElements.join("; ")}`,
+            `Final caption: ${request.caption}`,
+            `Evidence basis: ${request.evidenceKind}.`,
+            "Return a polished, publication-ready image. Do not show prompts, JSON, evidenceType, raw data objects, placeholders, or internal instructions in the image.",
+          ].join("\n"),
+        },
+      ],
+      userId,
+      signal,
+    );
+    const metadata = await sharp(image.buffer).metadata();
+    if (!metadata.width || !metadata.height || metadata.width < 640 || metadata.height < 360) {
+      throw new Error(`生成图片 ${request.id} 的分辨率不足，未进入文档排版。`);
+    }
+    assets.push({
+      id: `asset-${request.id}`,
+      requestId: request.id,
+      mimeType: image.mimeType,
+      dataBase64: image.buffer.toString("base64"),
+      width: metadata.width,
+      height: metadata.height,
+      caption: request.caption,
+      source: request.sourceStatement,
+      altText: request.contentBrief,
+    });
+  }
+
+  return assets;
+}
+
 function createArtifactExportTitle(query: string, content: string): string {
   const withoutFence = content
     .replace(/^```[a-z]*\s*/i, "")
@@ -722,7 +888,17 @@ function createArtifactExportTitle(query: string, content: string): string {
     .trim();
   const markdownHeading = withoutFence.match(/^#\s+(.+)$/m)?.[1]?.trim();
   const jsonSheetName = withoutFence.match(/"name"\s*:\s*"([^"]+)"/)?.[1]?.trim();
-  const title = markdownHeading || jsonSheetName || query;
+  const structuralHeading = markdownHeading
+    ?.replace(/^\d+(?:\.\d+)*[.)、]?\s*/, "")
+    .trim();
+  const usableMarkdownHeading =
+    markdownHeading &&
+    !/^(abstract|摘要|keywords?|关键词|introduction|引言|references?|参考文献|conclusions?(?: and outlook)?|结论(?:与展望)?)$/i.test(
+      structuralHeading ?? "",
+    )
+      ? markdownHeading
+      : "";
+  const title = usableMarkdownHeading || jsonSheetName || query;
   return createCleanExportTitle(
     title
       .replace(/\b(generate|create|export|download|make)\b/gi, "")
@@ -1485,6 +1661,11 @@ export async function POST(request: Request) {
                     metadata: {
                       source: "chat-follow-up-export",
                       templateId: selectExportTemplateId(query, format),
+                      documentLanguage: resolveDocumentLanguage({
+                        query,
+                        content: previousAssistantExportSource,
+                      }),
+                      requestQuery: query,
                     },
                   },
                   user.id,
@@ -1557,18 +1738,89 @@ export async function POST(request: Request) {
             return wasIncomplete;
           };
 
+          const generateSemanticPlan = async (
+            queryText: string,
+            template: ResolvedDocumentTemplate,
+            option: ChatModelOption,
+            tier: ChatModelTier,
+          ): Promise<DocumentPlan> => {
+            const basePlan = createDocumentPlan({
+              query: queryText,
+              template,
+              maxVisuals: option.maxVisuals,
+            });
+            let planSource = "";
+            for await (const event of openResponsesChatStream({
+              messages: [
+                {
+                  role: "system",
+                  content: semanticDocumentPlanPrompt(basePlan),
+                },
+                {
+                  role: "user",
+                  content: queryText,
+                },
+              ],
+              signal: request.signal,
+              model: option.model,
+              provider: option.provider,
+              reasoningEffort: option.reasoningEffort,
+              webSearch: false,
+              codeInterpreter: false,
+              maxOutputTokens: Math.min(3000, option.maxOutputTokens),
+              promptCacheKey: buildPromptCacheKey(
+                "document-plan",
+                user.id,
+                tier,
+                "docx",
+                0,
+              ),
+            })) {
+              if (event.type === "text") {
+                planSource += event.delta;
+              } else if (event.type === "usage") {
+                await recordAiUsage(supabase, {
+                  userId: user.id,
+                  feature: "artifact-planning",
+                  taskKind: taskRoute.kind,
+                  projectName: effectiveProjectName,
+                  modelTier: tier,
+                  usage: event,
+                });
+                controller.enqueue(encodeChatStreamEvent(event));
+              }
+            }
+            return applySemanticDocumentPlan(basePlan, planSource);
+          };
+
           const generateArtifactSource = async (
             format: ExportFormat,
             option: ChatModelOption,
             tier: ChatModelTier,
             templateId: ArtifactTemplateId,
+            documentTemplate?: ResolvedDocumentTemplate,
           ) => {
             let source = "";
+            const structuredPlan =
+              format === "docx"
+                ? await generateSemanticPlan(
+                    query,
+                    documentTemplate ??
+                      resolveDocumentTemplate({
+                        query,
+                        format,
+                        legacyTemplateId: templateId,
+                      }),
+                    option,
+                    tier,
+                  )
+                : null;
             let artifactMessages = buildDedicatedArtifactMessages(
               messages,
               format,
               query,
               templateId,
+              structuredPlan ?? undefined,
             );
             let latestReport: ArtifactCompletenessReport | null = null;
             for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -1622,6 +1874,42 @@ export async function POST(request: Request) {
 
               }
 
+              if (structuredPlan) {
+                source = chunk.trim();
+                const parsedSpec = parseDocumentSpec(source);
+                const validation = parsedSpec
+                  ? validateDocumentSpec(parsedSpec, structuredPlan)
+                  : {
+                      passed: false,
+                      issues: [
+                        {
+                          code: "invalid_document_spec",
+                          path: "root",
+                          message: "The response was not a valid DocumentSpec JSON object.",
+                        },
+                      ],
+                    };
+                if (!streamWasIncomplete && validation.passed) {
+                  return { source, structuredPlan };
+                }
+                if (attempt >= 3) break;
+                artifactMessages = buildDocumentSpecRepairMessages(
+                  messages,
+                  query,
+                  templateId,
+                  source,
+                  structuredPlan,
+                  validation.issues,
+                );
+                controller.enqueue(
+                  encodeChatStreamEvent({
+                    type: "status",
+                    message: `DOCX 结构化内容未通过校验，正在进行第 ${attempt + 2} 次完整重写。`,
+                  }),
+                );
+                continue;
+              }
+
               source = [source.trim(), chunk.trim()].filter(Boolean).join("\n\n");
               latestReport = inspectArtifactContentCompleteness({
                 format,
@@ -1667,7 +1955,7 @@ export async function POST(request: Request) {
                 }),
               );
             }
-            return source.trim();
+            return { source: source.trim(), structuredPlan };
           };
 
           const useDedicatedArtifactMode = shouldUseDedicatedArtifactMode(
@@ -1688,32 +1976,85 @@ export async function POST(request: Request) {
 
             for (const format of requestedExportFormats) {
               try {
-                const templateId = selectExportTemplateId(query, format);
+                const legacyTemplateId = selectExportTemplateId(query, format);
+                const documentTemplate =
+                  format === "docx"
+                    ? resolveDocumentTemplate({
+                        query,
+                        format,
+                        legacyTemplateId,
+                      })
+                    : undefined;
+                const templateId =
+                  documentTemplate?.rendererTemplateId ?? legacyTemplateId;
                 controller.enqueue(
                   encodeChatStreamEvent({
                     type: "status",
                     message: `正在生成 ${format.toUpperCase()} 文件内容并排版。`,
                   }),
                 );
-                const artifactSource = await generateArtifactSource(
+                const generatedArtifact = await generateArtifactSource(
                   format,
                   modelOption,
                   modelTier,
                   templateId,
+                  documentTemplate,
                 );
+                const artifactSource = generatedArtifact.source;
                 if (!artifactSource) {
                   throw new Error("文件内容为空，未创建下载文件。");
+                }
+                let exportContent = artifactSource;
+                let exportTitle = createArtifactExportTitle(query, artifactSource);
+                let structuredDocument: DocumentSpec | undefined;
+                let imageAssets: FinalImageAsset[] = [];
+                const documentPlan = generatedArtifact.structuredPlan;
+                if (format === "docx") {
+                  if (!documentPlan) {
+                    throw new Error("DOCX 模板规划缺失，未进入排版。");
+                  }
+                  structuredDocument = parseDocumentSpec(artifactSource) ?? undefined;
+                  if (!structuredDocument) {
+                    throw new Error("模型未交付有效的结构化文档，未进入排版。");
+                  }
+                  const validation = validateDocumentSpec(
+                    structuredDocument,
+                    documentPlan,
+                  );
+                  if (!validation.passed) {
+                    throw new Error(
+                      `结构化文档未通过最终校验：${validation.issues
+                        .map((issue) => issue.message)
+                        .join("；")}`,
+                    );
+                  }
+                  imageAssets = await generateDocumentImageAssets(
+                    structuredDocument,
+                    user.id,
+                    request.signal,
+                  );
+                  exportContent = documentSpecToMarkdown(structuredDocument);
+                  exportTitle = structuredDocument.title;
                 }
                 const created = await createExport(
                   {
                     format,
-                    title: createArtifactExportTitle(query, artifactSource),
-                    content: artifactSource,
+                    title: exportTitle,
+                    content: exportContent,
                     metadata: {
                       source: "chat-dedicated-artifact-mode",
                       templateId,
+                      documentTemplateId: documentPlan?.templateId,
+                      documentTemplateVersion: documentPlan?.templateVersion,
+                      documentTemplateSource: documentPlan?.templateSource,
                       artifactOnly: true,
                       requestQuery: query,
+                      documentSpec: structuredDocument,
+                      imageAssets,
+                      documentLanguage: resolveDocumentLanguage({
+                        query,
+                        content: exportContent,
+                      }),
                     },
                   },
                   user.id,
@@ -1947,6 +2288,11 @@ export async function POST(request: Request) {
                     metadata: {
                       source: "chat-auto-export",
                       templateId: selectExportTemplateId(query, format),
+                      documentLanguage: resolveDocumentLanguage({
+                        query,
+                        content: assistantText,
+                      }),
+                      requestQuery: query,
                     },
                   },
                   user.id,

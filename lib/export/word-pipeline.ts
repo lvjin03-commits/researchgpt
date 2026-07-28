@@ -5,6 +5,10 @@ import {
   type InlineSpan,
   type MarkdownBlock,
 } from "@/lib/export/markdown-blocks";
+import {
+  resolveDocumentLanguage,
+  type DocumentLanguage,
+} from "@/lib/export/document-language";
 
 export type WordDocumentKind =
   | "sci_review"
@@ -28,6 +32,7 @@ export type WordListBlock = {
 export type WordTableBlock = {
   type: "table";
   caption: string;
+  source?: string;
   headers: InlineSpan[][];
   rows: InlineSpan[][][];
 };
@@ -52,6 +57,7 @@ export type WordSection = {
 export type WordDocumentSpec = {
   title: string;
   kind: WordDocumentKind;
+  language: DocumentLanguage;
   abstract?: string;
   keywords: string[];
   sections: WordSection[];
@@ -59,7 +65,9 @@ export type WordDocumentSpec = {
   warnings: string[];
 };
 
-const DEFAULT_TITLE = "ResearchGPT Generated Document";
+function defaultTitle(language: DocumentLanguage): string {
+  return language === "zh-CN" ? "ResearchGPT 生成文档" : "ResearchGPT Generated Document";
+}
 
 const COMMAND_LINE_PATTERNS: RegExp[] = [
   /generate\s+file/i,
@@ -134,6 +142,11 @@ function isBadTitleCandidate(value: string): boolean {
   if (title.length > 140) return true;
   if (lineLooksLikeCommand(title)) return true;
   if (isGenericDocumentHeading(title)) return true;
+  if (/^(摘要|关键词|参考文献|正文|目录|引言|结论|结论与展望)$/i.test(stripHeadingNumber(title))) {
+    return true;
+  }
+  if (/^(keywords?|关键词)\s*[:：]/i.test(title)) return true;
+  if (/^\d+(?:\.\d+)*[.)、]?\s+/.test(title)) return true;
   if (/^(word|excel|pdf|ppt|docx|xlsx|markdown|csv)\b/i.test(title)) return true;
   return false;
 }
@@ -226,9 +239,17 @@ function createSection(title: string, level: 1 | 2 | 3): WordSection {
   };
 }
 
-function tableCaptionFor(section: WordSection, tableIndex: number): string {
-  const base = section.title || "Table";
-  return `Table ${tableIndex}. ${base}`;
+function tableCaptionFor(
+  section: WordSection,
+  tableIndex: number,
+  language: DocumentLanguage,
+): string {
+  const base =
+    stripHeadingNumber(section.title) ||
+    (language === "zh-CN" ? "数据表" : "Table");
+  return language === "zh-CN"
+    ? `表 ${tableIndex}. ${base}`
+    : `Table ${tableIndex}. ${base}`;
 }
 
 type StructuredVisualSpec = {
@@ -335,6 +356,7 @@ function appendBlock(
   section: WordSection,
   block: MarkdownBlock,
   tableIndex: number,
+  language: DocumentLanguage,
 ): number {
   switch (block.type) {
     case "paragraph": {
@@ -374,7 +396,7 @@ function appendBlock(
       const nextIndex = tableIndex + 1;
       section.blocks.push({
         type: "table",
-        caption: tableCaptionFor(section, nextIndex),
+        caption: tableCaptionFor(section, nextIndex, language),
         headers: block.headers,
         rows: block.rows,
       });
@@ -427,13 +449,16 @@ function ensureSciReviewShape(spec: WordDocumentSpec): WordDocumentSpec {
   );
   const firstTitle = compactHeading(sections[0]?.title ?? "");
   if (firstTitle !== "introduction" && firstTitle !== "引言") {
+    const chinese = spec.language === "zh-CN";
     sections.unshift(
-      createSection("1. Introduction", 1),
+      createSection(chinese ? "1. 引言" : "1. Introduction", 1),
     );
     sections[0].blocks.push({
       type: "paragraph",
       inlines: parseInlineMarkdown(
-        "This section introduces the research background, scope, and the main scientific questions addressed in this review.",
+        chinese
+          ? "本节介绍研究背景、综述范围及需要讨论的核心科学问题。"
+          : "This section introduces the research background, scope, and the main scientific questions addressed in this review.",
       ),
     });
   }
@@ -444,6 +469,7 @@ function ensureSciReviewShape(spec: WordDocumentSpec): WordDocumentSpec {
 function titleFromContent(
   requestedTitle: string,
   blocks: MarkdownBlock[],
+  language: DocumentLanguage,
 ): string {
   if (!isBadTitleCandidate(requestedTitle)) {
     return normalizeTitle(requestedTitle);
@@ -455,29 +481,29 @@ function titleFromContent(
     if (!isBadTitleCandidate(candidate)) return normalizeTitle(candidate);
   }
 
-  for (const block of blocks) {
-    const candidate = blockToParagraphText(block);
-    if (!isBadTitleCandidate(candidate)) return normalizeTitle(candidate);
-  }
-
   return isBadTitleCandidate(requestedTitle)
-    ? DEFAULT_TITLE
+    ? defaultTitle(language)
     : normalizeTitle(requestedTitle);
 }
 
 export function buildWordDocumentSpec(input: {
   title: string;
   content: string;
+  language?: DocumentLanguage;
+  context?: string;
 }): WordDocumentSpec {
   const content = normalizeText(input.content);
   const blocks = parseMarkdownBlocks(content);
-  const kind = inferDocumentKind(`${input.title}\n${content}`);
-  const title = titleFromContent(input.title, blocks);
+  const language =
+    input.language ??
+    resolveDocumentLanguage({ title: input.title, content });
+  const kind = inferDocumentKind(`${input.context ?? ""}\n${input.title}\n${content}`);
+  const title = titleFromContent(input.title, blocks, language);
   const warnings: string[] = [];
   const keywords: string[] = [];
   const references: string[] = [];
   let abstract: string | undefined;
-  let current = createSection("Content", 1);
+  let current = createSection(language === "zh-CN" ? "正文" : "Content", 1);
   const sections: WordSection[] = [current];
   let tableIndex = 0;
   let captureReferences = false;
@@ -529,7 +555,7 @@ export function buildWordDocumentSpec(input: {
       continue;
     }
 
-    tableIndex = appendBlock(current, block, tableIndex);
+    tableIndex = appendBlock(current, block, tableIndex, language);
   }
 
   let meaningfulSections = removeEmptySections(sections).filter(
@@ -560,17 +586,30 @@ export function buildWordDocumentSpec(input: {
   if (meaningfulSections.length === 0) {
     meaningfulSections = [
       {
-        title: kind === "sci_review" ? "1. Introduction" : "Content",
+        title:
+          kind === "sci_review"
+            ? language === "zh-CN"
+              ? "1. 引言"
+              : "1. Introduction"
+            : language === "zh-CN"
+              ? "正文"
+              : "Content",
         level: 1,
         blocks: [
           {
             type: "paragraph",
-            inlines: parseInlineMarkdown(content || "No content provided."),
+            inlines: parseInlineMarkdown(
+              content || (language === "zh-CN" ? "未提供正文内容。" : "No content provided."),
+            ),
           },
         ],
       },
     ];
-    warnings.push("The source content had no clear document structure.");
+    warnings.push(
+      language === "zh-CN"
+        ? "源内容缺少清晰的文档结构。"
+        : "The source content had no clear document structure.",
+    );
   }
 
   for (const section of meaningfulSections) {
@@ -582,6 +621,7 @@ export function buildWordDocumentSpec(input: {
   const spec = ensureSciReviewShape({
     title,
     kind,
+    language,
     abstract,
     keywords: [...new Set(keywords)],
     sections: meaningfulSections.filter(
