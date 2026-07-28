@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 export async function GET(
   _request: Request,
-  context: RouteContext<"/api/document-jobs/[id]">,
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const user = await requireChatUser();

@@ -22,5 +22,6 @@ jobs:
       - run: npm run test:document-v2-templates
       - run: npm run test:document-v2-generation
       - run: npm run test:document-v2-orchestrator
+      - run: npm run test:document-v2-runtime
       - run: npm run typecheck
       - run: npm run build
