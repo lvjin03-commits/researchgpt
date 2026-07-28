@@ -1,3 +1,8 @@
+/**
+ * @legacy Existing production compatibility behavior.
+ * Do not add new document-generation capabilities here.
+ * Migration is tracked by TECH_DEBT.md items TD-003 and TD-004.
+ */
 import {
   inlineSpansToPlainText,
   parseInlineMarkdown,

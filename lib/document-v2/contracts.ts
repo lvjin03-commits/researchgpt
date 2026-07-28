@@ -1,0 +1,384 @@
+import { z } from "zod";
+import { FigureAssetSchema } from "./assets/contracts.ts";
+
+const IdentifierSchema = z.string().min(1).max(120);
+
+export const ResolvedTemplateSnapshotSchema = z
+  .object({
+    templateId: IdentifierSchema,
+    templateVersion: z.string().min(1).max(40),
+    checksum: z.string().regex(/^[a-f0-9]{64}$/i),
+    origin: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("system") }).strict(),
+      z
+        .object({
+          kind: z.literal("user_upload"),
+          uploadId: IdentifierSchema,
+          analysisVersion: z.string().min(1).max(40),
+        })
+        .strict(),
+    ]),
+    renderingProfile: z.literal("sci_word_v1"),
+    contentProfile: z.literal("sci_review_v1"),
+    typography: z
+      .object({
+        titleStyle: IdentifierSchema,
+        heading1Style: IdentifierSchema,
+        heading2Style: IdentifierSchema,
+        heading3Style: IdentifierSchema,
+        bodyStyle: IdentifierSchema,
+        captionStyle: IdentifierSchema,
+        referenceStyle: IdentifierSchema,
+      })
+      .strict(),
+    layout: z
+      .object({
+        pageSize: z.literal("A4"),
+        orientation: z.literal("portrait"),
+        columns: z.literal(1),
+      })
+      .strict(),
+    rules: z
+      .object({
+        headingDepth: z.literal(3),
+        figureCaptionPosition: z.literal("below"),
+        tableCaptionPosition: z.literal("above"),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type ResolvedTemplateSnapshot = z.infer<
+  typeof ResolvedTemplateSnapshotSchema
+>;
+
+export const DocumentRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    schemaVersion: z.literal(1),
+    action: z.enum(["generate", "export", "transform"]),
+    source: z
+      .object({
+        kind: z.enum([
+          "prompt",
+          "previous_message",
+          "attachments",
+          "existing_document",
+        ]),
+        sourceIds: z.array(IdentifierSchema).max(100),
+      })
+      .strict(),
+    outputFormat: z.literal("docx"),
+    language: z.enum(["zh", "en"]),
+    templateIntent: z.literal("sci_review"),
+    userRequirements: z
+      .object({
+        topic: z.string().trim().min(1).max(500).optional(),
+        targetLength: z.number().int().min(100).max(100_000).optional(),
+        specialInstructions: z
+          .array(z.string().trim().min(1).max(500))
+          .max(20)
+          .optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    if (
+      request.source.kind !== "prompt" &&
+      request.source.sourceIds.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["source", "sourceIds"],
+        message: `${request.source.kind} requires at least one source ID.`,
+      });
+    }
+    if (
+      request.action === "generate" &&
+      request.source.kind === "prompt" &&
+      !request.userRequirements.topic
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["userRequirements", "topic"],
+        message: "Prompt-based generation requires a topic.",
+      });
+    }
+  });
+
+export type DocumentRequest = z.infer<typeof DocumentRequestSchema>;
+
+export const DocumentPlanSchema = z
+  .object({
+    requestId: z.uuid(),
+    schemaVersion: z.literal(1),
+    templateSnapshot: ResolvedTemplateSnapshotSchema,
+    components: z
+      .array(
+        z
+          .object({
+            componentKey: IdentifierSchema,
+            type: z.enum([
+              "title",
+              "abstract",
+              "keywords",
+              "section",
+              "conclusion",
+              "reference_list",
+            ]),
+            purpose: z.string().trim().min(1).max(1000),
+            heading: z.string().trim().min(1).max(500).optional(),
+            targetLength: z.number().int().min(1).max(100_000).optional(),
+            requiredEvidenceIds: z.array(IdentifierSchema).max(500).optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .superRefine((components, context) => {
+        const keys = new Set<string>();
+        for (const [index, component] of components.entries()) {
+          if (keys.has(component.componentKey)) {
+            context.addIssue({
+              code: "custom",
+              path: [index, "componentKey"],
+              message: "Component keys must be unique.",
+            });
+          }
+          keys.add(component.componentKey);
+          if (
+            (component.type === "section" ||
+              component.type === "conclusion") &&
+            !component.heading
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: [index, "heading"],
+              message: `${component.type} components require a planned heading.`,
+            });
+          }
+          if (
+            component.type !== "section" &&
+            component.type !== "conclusion" &&
+            component.heading
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: [index, "heading"],
+              message: `${component.type} components cannot define a heading.`,
+            });
+          }
+        }
+      }),
+    evidenceRequirements: z.array(
+      z
+        .object({
+          claimType: IdentifierSchema,
+          required: z.boolean(),
+          allowedSourceIds: z.array(IdentifierSchema).max(500),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type DocumentPlan = z.infer<typeof DocumentPlanSchema>;
+
+export const VerifiedReferenceSchema = z
+  .object({
+    id: IdentifierSchema,
+    title: z.string().trim().min(1).max(1000),
+    authors: z.array(z.string().trim().min(1).max(300)).min(1).max(100),
+    year: z.number().int().min(1000).max(3000).optional(),
+    venue: z.string().trim().min(1).max(500).optional(),
+    doi: z.string().trim().min(1).max(300).optional(),
+    url: z.url().optional(),
+    verifiedBy: z.enum(["user_material", "literature_service"]),
+    sourceId: IdentifierSchema,
+  })
+  .strict();
+
+export type VerifiedReference = z.infer<typeof VerifiedReferenceSchema>;
+
+export const ApprovedDocumentBlockSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      id: IdentifierSchema,
+      type: z.literal("heading"),
+      level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      text: z.string().trim().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      id: IdentifierSchema,
+      type: z.literal("paragraph"),
+      role: z.enum(["abstract", "body", "conclusion"]),
+      text: z.string().trim().min(1),
+      citationIds: z.array(IdentifierSchema),
+      figureAssetIds: z.array(IdentifierSchema).default([]),
+    })
+    .strict(),
+  z
+    .object({
+      id: IdentifierSchema,
+      type: z.literal("keywords"),
+      values: z.array(z.string().trim().min(1).max(100)).min(3).max(8),
+    })
+    .strict(),
+  z
+    .object({
+      id: IdentifierSchema,
+      type: z.literal("table"),
+      caption: z.string().trim().min(1),
+      columns: z.array(z.string().trim().min(1)).min(1),
+      rows: z.array(z.array(z.string())).min(1),
+    })
+    .strict()
+    .superRefine((table, context) => {
+      table.rows.forEach((row, index) => {
+        if (row.length !== table.columns.length) {
+          context.addIssue({
+            code: "custom",
+            path: ["rows", index],
+            message: "Every table row must match the column count.",
+          });
+        }
+      });
+    }),
+  z
+    .object({
+      id: IdentifierSchema,
+      type: z.literal("figure"),
+      caption: z.string().trim().min(1),
+      assetId: IdentifierSchema,
+    })
+    .strict(),
+]);
+
+export type ApprovedDocumentBlock = z.infer<
+  typeof ApprovedDocumentBlockSchema
+>;
+
+export const FinalDocumentSpecSchema = z
+  .object({
+    requestId: z.uuid(),
+    schemaVersion: z.literal(1),
+    templateSnapshot: ResolvedTemplateSnapshotSchema,
+    metadata: z
+      .object({
+        title: z.string().trim().min(1).max(500),
+        language: z.enum(["zh", "en"]),
+        documentType: z.literal("sci_review"),
+        referencesStatus: z.enum(["verified", "not_available"]),
+      })
+      .strict(),
+    blocks: z.array(ApprovedDocumentBlockSchema).min(1),
+    references: z.array(VerifiedReferenceSchema),
+    assets: z.array(FigureAssetSchema).max(500).default([]),
+  })
+  .strict()
+  .superRefine((spec, context) => {
+    const blockIds = new Set<string>();
+    const referenceIds = new Set(spec.references.map((reference) => reference.id));
+    const assetIds = new Set<string>();
+    for (const [index, asset] of spec.assets.entries()) {
+      if (assetIds.has(asset.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["assets", index, "id"],
+          message: "Figure asset IDs must be unique.",
+        });
+      }
+      assetIds.add(asset.id);
+    }
+    const usedAssetIds = new Set<string>();
+    for (const [index, block] of spec.blocks.entries()) {
+      if (blockIds.has(block.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["blocks", index, "id"],
+          message: "Block IDs must be unique.",
+        });
+      }
+      blockIds.add(block.id);
+      if (block.type === "paragraph") {
+        for (const citationId of block.citationIds) {
+          if (!referenceIds.has(citationId)) {
+            context.addIssue({
+              code: "custom",
+              path: ["blocks", index, "citationIds"],
+              message: `Citation ${citationId} has no verified reference.`,
+            });
+          }
+        }
+        for (const figureAssetId of block.figureAssetIds) {
+          if (!assetIds.has(figureAssetId)) {
+            context.addIssue({
+              code: "custom",
+              path: ["blocks", index, "figureAssetIds"],
+              message: `Figure reference ${figureAssetId} has no mature asset.`,
+            });
+          }
+        }
+      }
+      if (block.type === "figure") {
+        if (!assetIds.has(block.assetId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["blocks", index, "assetId"],
+            message: `Figure asset ${block.assetId} is missing.`,
+          });
+        }
+        usedAssetIds.add(block.assetId);
+      }
+    }
+    for (const [index, asset] of spec.assets.entries()) {
+      if (!usedAssetIds.has(asset.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["assets", index, "id"],
+          message: `Figure asset ${asset.id} is not used by a figure block.`,
+        });
+      }
+    }
+    const figureBlockAssetIds = new Set(
+      spec.blocks
+        .filter((block) => block.type === "figure")
+        .map((block) => block.assetId),
+    );
+    for (const [index, block] of spec.blocks.entries()) {
+      if (block.type !== "paragraph") continue;
+      for (const figureAssetId of block.figureAssetIds) {
+        if (!figureBlockAssetIds.has(figureAssetId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["blocks", index, "figureAssetIds"],
+            message: `Figure reference ${figureAssetId} has no figure block.`,
+          });
+        }
+      }
+    }
+    if (
+      spec.metadata.referencesStatus === "verified" &&
+      spec.references.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["references"],
+        message: "Verified reference status requires at least one reference.",
+      });
+    }
+    if (
+      spec.metadata.referencesStatus === "not_available" &&
+      spec.references.length > 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["references"],
+        message: "References must be empty when references are unavailable.",
+      });
+    }
+  });
+
+export type FinalDocumentSpec = z.infer<typeof FinalDocumentSpecSchema>;

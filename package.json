@@ -16,7 +16,15 @@
     "start": "next start",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:mojibake": "node scripts/check-encoding.mjs",
+    "check:document-architecture": "node scripts/check-document-v2-imports.mjs",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test:document-contracts": "node --experimental-strip-types scripts/verify-document-v2-contracts.ts",
+    "test:document-v2-templates": "node scripts/verify-document-v2-templates.cjs",
+    "test:document-v2-generation": "node scripts/verify-document-v2-generation.cjs",
+    "test:document-v2-orchestrator": "node scripts/verify-document-v2-orchestrator.cjs",
+    "test:document-v2-runtime": "node scripts/verify-document-v2-runtime.cjs",
+    "test:document-v2-docx": "node scripts/verify-document-v2-docx.cjs",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "test:word-visuals": "node scripts/verify-word-visuals.cjs",
     "qa": "npm run check:encoding && npm run build"
@@ -78,7 +86,8 @@
     "remark-gfm": "^4.0.1",
     "sharp": "^0.34.5",
     "unpdf": "^1.6.2",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

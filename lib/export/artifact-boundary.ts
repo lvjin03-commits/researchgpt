@@ -1,3 +1,8 @@
+/**
+ * @legacy Existing visual-spec compatibility behavior.
+ * Do not add new document-generation capabilities here.
+ * Migration is tracked by TECH_DEBT.md item TD-005.
+ */
 import type { ExportFormat } from "@/lib/export/types";
 
 export type ExportVisualSpec = {

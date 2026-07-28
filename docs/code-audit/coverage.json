@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-07-28T16:04:54.928Z",
+  "files": 296,
+  "lines": 57122,
+  "symbols": 4412,
+  "excludedDirectories": [
+    ".git",
+    ".next",
+    "node_modules",
+    "release",
+    "release-installer",
+    "release-local",
+    "release-local-v2",
+    "tmp",
+    ".tmp"
+  ],
+  "excludedSensitiveFiles": [
+    ".env.local"
+  ]
+}
