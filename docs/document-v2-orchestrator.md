@@ -82,6 +82,12 @@ feedback to its next attempt.
 - Exactly one reference-list component exists and is the final component.
 - Request and plan IDs match.
 - Component keys are unique and execution-state order matches plan order.
+- Component dependencies reference existing keys, cannot reference themselves,
+  and must form an acyclic graph.
+
+The component array remains in final Word display order. The orchestrator
+selects the next pending component whose dependencies are all approved; it
+does not assume array order is generation order.
 
 Invalid plans are rejected before generation starts.
 

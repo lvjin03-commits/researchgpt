@@ -89,11 +89,12 @@ Step 8 adds:
 ## Production worker
 
 The production executor is deliberately separate from the user-facing chat
-request. A protected scheduled request to
-`/api/internal/document-v2-worker` atomically claims one queued job, generates
-at most one planned component, saves the checkpoint, releases the lease, and
-continues on a later tick. The final tick renders and validates the DOCX and
-stores it in the existing authenticated download channel.
+request. A protected execution request atomically claims one queued job and
+continuously advances ready components within a bounded wall-clock budget.
+Every approved component is checkpointed immediately. The worker yields and
+releases its lease only when the job completes, is cancelled, fails, or
+approaches its execution deadline. The final phase renders and validates the
+DOCX and stores it in the existing authenticated download channel.
 
 Required server-only environment variables:
 
@@ -101,6 +102,8 @@ Required server-only environment variables:
 - `CRON_SECRET` for the internal worker endpoint;
 - `OPENAI_API_KEY` for structured component and final figure generation;
 - optional `OPENAI_DOCUMENT_MODEL` and `OPENAI_IMAGE_MODEL` overrides.
+- optional `DOCUMENT_V2_WORKER_BUDGET_MS` wall-clock budget (45 seconds by
+  default, capped at 240 seconds).
 
 Migration `014_document_v2_worker.sql` installs the service-role-only atomic
 claim function. Vercel Hobby permits only a daily cron, which is configured as

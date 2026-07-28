@@ -253,6 +253,27 @@ async function verifyBoundedTicksResumeFromCheckpoint() {
   assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
 }
 
+async function verifyTimeBudgetYieldsAfterCheckpoint() {
+  const repository = new InMemoryDocumentJobRepository();
+  const calls = {};
+  const service = makeService(repository, calls);
+  const created = await service.create({
+    ownerId: "user-1",
+    request,
+    plan,
+    verifiedReferences: references,
+  });
+  const yielded = await service.run(created.job.jobId, "worker-budget", {
+    maxDurationMs: 1,
+  });
+  assert.equal(yielded.job.status, "queued");
+  assert.equal(yielded.job.completedComponents, 1);
+  assert.equal(yielded.job.leaseOwner, undefined);
+  const completed = await service.run(created.job.jobId, "worker-resume");
+  assert.equal(completed.job.status, "completed");
+  assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
+}
+
 async function verifyFinalizerFailureIsVisible() {
   const repository = new InMemoryDocumentJobRepository();
   const service = makeService(repository, {}, {
@@ -285,6 +306,7 @@ async function main() {
   await verifyCancelResumeAndCompletion();
   await verifyLeaseBlocksDuplicateWorker();
   await verifyBoundedTicksResumeFromCheckpoint();
+  await verifyTimeBudgetYieldsAfterCheckpoint();
   await verifyFinalizerFailureIsVisible();
   const previousFlag = process.env.DOCUMENT_V2_RUNTIME_ENABLED;
   delete process.env.DOCUMENT_V2_RUNTIME_ENABLED;

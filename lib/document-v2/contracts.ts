@@ -131,6 +131,7 @@ export const DocumentPlanSchema = z
             heading: z.string().trim().min(1).max(500).optional(),
             targetLength: z.number().int().min(1).max(100_000).optional(),
             requiredEvidenceIds: z.array(IdentifierSchema).max(500).optional(),
+            dependsOnComponentKeys: z.array(IdentifierSchema).max(100).default([]),
           })
           .strict(),
       )
@@ -167,6 +168,25 @@ export const DocumentPlanSchema = z
               path: [index, "heading"],
               message: `${component.type} components cannot define a heading.`,
             });
+          }
+        }
+        for (const [index, component] of components.entries()) {
+          const dependencies = new Set(component.dependsOnComponentKeys);
+          if (dependencies.size !== component.dependsOnComponentKeys.length) {
+            context.addIssue({
+              code: "custom",
+              path: [index, "dependsOnComponentKeys"],
+              message: "Component dependencies must be unique.",
+            });
+          }
+          for (const dependency of dependencies) {
+            if (!keys.has(dependency) || dependency === component.componentKey) {
+              context.addIssue({
+                code: "custom",
+                path: [index, "dependsOnComponentKeys"],
+                message: `Invalid component dependency "${dependency}".`,
+              });
+            }
           }
         }
       }),

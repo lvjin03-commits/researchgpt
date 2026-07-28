@@ -122,6 +122,22 @@ function assertPlanInvariants(
       "A document plan must contain exactly one reference list as its final component.",
     );
   }
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const byKey = new Map(plan.components.map((component) => [component.componentKey, component]));
+  const visit = (key: string) => {
+    if (visiting.has(key)) {
+      throw new DocumentPlanInvariantError("Document component dependencies contain a cycle.");
+    }
+    if (visited.has(key)) return;
+    visiting.add(key);
+    for (const dependency of byKey.get(key)?.dependsOnComponentKeys ?? []) {
+      visit(dependency);
+    }
+    visiting.delete(key);
+    visited.add(key);
+  };
+  plan.components.forEach((component) => visit(component.componentKey));
 }
 
 export function createDocumentOrchestrationState(input: {
@@ -140,7 +156,12 @@ export function createDocumentOrchestrationState(input: {
     plan,
     verifiedReferences: input.verifiedReferences ?? [],
     status: "pending",
-    currentComponentIndex: 0,
+    currentComponentIndex: Math.max(
+      0,
+      plan.components.findIndex(
+        (component) => component.dependsOnComponentKeys.length === 0,
+      ),
+    ),
     components: plan.components.map((component) => ({
       componentKey: component.componentKey,
       status: "pending",
@@ -458,17 +479,34 @@ async function materializeFigures(input: {
   return { kind: "blocks", blocks, assets };
 }
 
-function approvedBefore(
+function listApprovedComponents(
   state: DocumentOrchestrationState,
-  componentIndex: number,
 ): Array<{ componentKey: string; content: ApprovedComponent }> {
   return state.components
-    .slice(0, componentIndex)
     .flatMap((component) =>
       component.approved
         ? [{ componentKey: component.componentKey, content: component.approved }]
         : [],
     );
+}
+
+function nextRunnableComponentIndex(
+  state: DocumentOrchestrationState,
+): number | undefined {
+  const approvedKeys = new Set(
+    state.components
+      .filter((component) => component.status === "approved")
+      .map((component) => component.componentKey),
+  );
+  const index = state.plan.components.findIndex((component, componentIndex) => {
+    const execution = state.components[componentIndex];
+    return (
+      execution.status !== "approved" &&
+      execution.status !== "failed" &&
+      component.dependsOnComponentKeys.every((key) => approvedKeys.has(key))
+    );
+  });
+  return index >= 0 ? index : undefined;
 }
 
 function failJob(
@@ -576,17 +614,31 @@ export async function runDocumentOrchestration(
   state.status = "running";
   let approvedThisRun = 0;
 
-  while (state.currentComponentIndex < state.plan.components.length) {
+  while (state.components.some((component) => component.status !== "approved")) {
     if (approvedThisRun >= maxComponents) {
       state.status = "paused";
       appendEvent(state, { type: "job_paused" });
       return DocumentOrchestrationStateSchema.parse(state);
     }
 
-    const componentIndex = state.currentComponentIndex;
+    const componentIndex = nextRunnableComponentIndex(state);
+    if (componentIndex === undefined) {
+      state.status = "failed";
+      state.failure = {
+        code: "component_dependency_deadlock",
+        message: "No pending document component has satisfied dependencies.",
+      };
+      appendEvent(state, {
+        type: "job_failed",
+        code: state.failure.code,
+        message: state.failure.message,
+      });
+      return DocumentOrchestrationStateSchema.parse(state);
+    }
+    state.currentComponentIndex = componentIndex;
     const component = state.plan.components[componentIndex];
     const componentState = state.components[componentIndex];
-    const approvedComponents = approvedBefore(state, componentIndex);
+    const approvedComponents = listApprovedComponents(state);
 
     componentState.status = "running";
     componentState.attempts += 1;
@@ -762,7 +814,8 @@ export async function runDocumentOrchestration(
       componentKey: component.componentKey,
       attempt: componentState.attempts,
     });
-    state.currentComponentIndex += 1;
+    state.currentComponentIndex =
+      nextRunnableComponentIndex(state) ?? state.plan.components.length;
     approvedThisRun += 1;
   }
 

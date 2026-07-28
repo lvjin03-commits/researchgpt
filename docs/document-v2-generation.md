@@ -22,7 +22,7 @@ It cannot decide:
 - evidence IDs outside the supplied pool;
 - system IDs.
 
-The program expands the approved template blueprint into this order:
+The program preserves this final Word display order:
 
 ```text
 title
@@ -32,6 +32,12 @@ title
 -> conclusion
 -> references
 ```
+
+Display order is not generation order. The planner adds immutable component
+dependencies so that body sections run first, followed by the conclusion,
+abstract, keywords, final title, and reference selection. Abstract generation
+therefore receives the approved body and conclusion; keywords receive the
+approved abstract; the final title receives the completed semantic core.
 
 The program allocates ten percent of the requested length to the abstract, ten
 percent to the conclusion, and the remaining budget across sections according

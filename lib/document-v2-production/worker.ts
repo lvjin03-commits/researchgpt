@@ -119,9 +119,14 @@ export async function executeOneDocumentV2Tick() {
       },
     },
   );
-  const snapshot = await service.run(job.jobId, workerId, {
-    maxComponents: 1,
-  });
+  const configuredBudget = Number(
+    process.env.DOCUMENT_V2_WORKER_BUDGET_MS ?? "45000",
+  );
+  const maxDurationMs =
+    Number.isFinite(configuredBudget) && configuredBudget >= 5_000
+      ? Math.min(configuredBudget, 240_000)
+      : 45_000;
+  const snapshot = await service.run(job.jobId, workerId, { maxDurationMs });
   return {
     state: snapshot.job.status,
     jobId: snapshot.job.jobId,

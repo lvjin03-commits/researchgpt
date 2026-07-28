@@ -130,6 +130,7 @@ export async function createDocumentPlanFromTemplate(input: {
             section.requiredEvidenceIds.length > 0
               ? section.requiredEvidenceIds
               : undefined,
+          dependsOnComponentKeys: [],
         });
       });
       continue;
@@ -149,14 +150,37 @@ export async function createDocumentPlanFromTemplate(input: {
           : blueprint.type === "conclusion"
             ? conclusionLength
             : undefined,
+      dependsOnComponentKeys: [],
     });
   }
+
+  const sectionKeys = components
+    .filter((component) => component.type === "section")
+    .map((component) => component.componentKey);
+  const allContentKeys = components
+    .filter((component) => component.type !== "reference_list")
+    .map((component) => component.componentKey);
+  const componentsWithDependencies = components.map((component) => ({
+    ...component,
+    dependsOnComponentKeys:
+      component.type === "section"
+        ? []
+        : component.type === "conclusion"
+          ? sectionKeys
+          : component.type === "abstract"
+            ? [...sectionKeys, "conclusion"]
+            : component.type === "keywords"
+              ? ["abstract"]
+              : component.type === "title"
+                ? ["abstract", "keywords", "conclusion"]
+                : allContentKeys,
+  }));
 
   return DocumentPlanSchema.parse({
     requestId: request.requestId,
     schemaVersion: 1,
     templateSnapshot: template.snapshot,
-    components,
+    components: componentsWithDependencies,
     evidenceRequirements: availableEvidenceIds.map((evidenceId) => ({
       claimType: `evidence-${evidenceId}`,
       required: proposal.sections.some((section) =>

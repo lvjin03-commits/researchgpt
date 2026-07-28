@@ -145,13 +145,18 @@ export class DocumentV2JobService {
   async run(
     jobId: string,
     workerId: string,
-    options: { maxComponents?: number } = {},
+    options: { maxComponents?: number; maxDurationMs?: number } = {},
   ): Promise<DocumentJobSnapshot> {
+    const runStartedAt = this.clock().getTime();
+    const maxDurationMs = options.maxDurationMs ?? Number.POSITIVE_INFINITY;
     const leasedJob = await this.repository.acquireLease({
       jobId,
       workerId,
       now: this.clock(),
-      leaseMs: 60_000,
+      leaseMs:
+        maxDurationMs === Number.POSITIVE_INFINITY
+          ? 5 * 60_000
+          : Math.max(60_000, maxDurationMs + 30_000),
     });
     if (!leasedJob) throw new DocumentJobLeaseUnavailableError();
     let job: DocumentJob = leasedJob;
@@ -247,7 +252,8 @@ export class DocumentV2JobService {
       );
       processedComponents += 1;
       if (
-        processedComponents >= maxComponents &&
+        (processedComponents >= maxComponents ||
+          this.clock().getTime() - runStartedAt >= maxDurationMs) &&
         orchestration.status !== "completed"
       ) {
         const queuedAt = this.clock().toISOString();

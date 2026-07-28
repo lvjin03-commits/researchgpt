@@ -304,6 +304,8 @@ async function verifyCompleteGenerationFlow() {
   );
 
   const modelCalls = {};
+  const generationOrder = [];
+  let abstractApprovedContext = [];
   let figureGeneratorCalls = 0;
   const lowResolutionPng = await sharp({
     create: {
@@ -359,6 +361,14 @@ async function verifyCompleteGenerationFlow() {
       assert.match(systemInstruction, /publication-ready/);
       const instruction = JSON.parse(componentInstruction);
       const heading = instruction.component.heading ?? instruction.component.type;
+      generationOrder.push(instruction.component.type === "section"
+        ? instruction.component.heading
+        : instruction.component.type);
+      if (instruction.component.type === "abstract") {
+        abstractApprovedContext = instruction.approvedComponents.map(
+          (approved) => approved.componentKey,
+        );
+      }
       modelCalls[heading] = (modelCalls[heading] ?? 0) + 1;
       return maturePayload(
         instruction.component,
@@ -380,6 +390,24 @@ async function verifyCompleteGenerationFlow() {
   });
 
   assert.equal(completed.status, "completed");
+  assert.deepEqual(
+    generationOrder.filter((value, index, values) => index === 0 || value !== values[index - 1]),
+    [
+      "1 Introduction",
+      "2 Preparation Routes",
+      "conclusion",
+      "abstract",
+      "keywords",
+      "title",
+      "reference_list",
+    ],
+    "Generation must follow semantic dependencies, not Word display order.",
+  );
+  assert.deepEqual(
+    abstractApprovedContext,
+    ["section-01", "section-02", "conclusion"],
+    "The abstract must receive the approved body and conclusion.",
+  );
   assert.equal(modelCalls.title, 1);
   assert.equal(modelCalls["1 Introduction"], 1);
   assert.equal(
