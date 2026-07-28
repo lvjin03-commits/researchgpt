@@ -103,9 +103,12 @@ Required server-only environment variables:
 - optional `OPENAI_DOCUMENT_MODEL` and `OPENAI_IMAGE_MODEL` overrides.
 
 Migration `014_document_v2_worker.sql` installs the service-role-only atomic
-claim function. The five-minute Vercel schedule advances one component per
-invocation. The user-facing creation route remains behind the existing rollout
-switch and is not changed by this worker step.
+claim function. Vercel Hobby permits only a daily cron, which is configured as
+a deployment-safe fallback. Before production traffic is enabled, the project
+must use a minute-level scheduler (Vercel Pro or an external/Supabase
+scheduler) so queued components advance promptly. The user-facing creation
+route remains behind the existing rollout switch and is not changed by this
+worker step.
 
 ## Step 10 creation boundary
 
