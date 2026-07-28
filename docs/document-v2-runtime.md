@@ -86,8 +86,10 @@ Step 8 adds:
   cancel/resume controls;
 - the server-side `DOCUMENT_V2_RUNTIME_ENABLED` rollout switch.
 
-The migration is intentionally not applied automatically. Database changes
-remain an authorized production operation.
+Migration `013_document_v2_runtime.sql` was applied to the production
+ResearchGPT Supabase project on 2026-07-28 after a dry run confirmed it was the
+only pending migration. Remote migration history now matches local versions
+001 through 013. The production feature flag remains disabled.
 
 ## Not yet connected
 
