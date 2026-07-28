@@ -15,6 +15,10 @@ import {
   type ArtifactCompletenessReport,
 } from "@/lib/export/completeness";
 import { createExport } from "@/lib/export/service";
+import {
+  createDocumentGenerationTrace,
+  type DocumentGenerationTrace,
+} from "@/lib/export/document-trace";
 import type { ArtifactTemplateId } from "@/lib/export/artifact-planner";
 import type { ExportFormat } from "@/lib/export/types";
 import {
@@ -826,6 +830,7 @@ async function generateDocumentImageAssets(
   spec: DocumentSpec,
   userId: string,
   signal?: AbortSignal,
+  trace?: DocumentGenerationTrace,
 ): Promise<FinalImageAsset[]> {
   const assets: FinalImageAsset[] = [];
   const sharp = (await import("sharp")).default;
@@ -841,8 +846,22 @@ async function generateDocumentImageAssets(
     ...spec.visualRequests.filter((request) => !placementOrder.includes(request.id)),
   ];
 
-  for (const request of orderedRequests) {
-    const image = await generateResearchImage(
+  for (const [index, request] of orderedRequests.entries()) {
+    const startedAt = Date.now();
+    await trace?.event({
+      stage: "figure_generation",
+      componentId: request.id,
+      attempt: 1,
+      status: "started",
+      details: {
+        index: index + 1,
+        total: orderedRequests.length,
+        type: request.type,
+        evidenceKind: request.evidenceKind,
+      },
+    });
+    try {
+      const image = await generateResearchImage(
       [
         {
           role: "user",
@@ -860,22 +879,53 @@ async function generateDocumentImageAssets(
       ],
       userId,
       signal,
-    );
-    const metadata = await sharp(image.buffer).metadata();
-    if (!metadata.width || !metadata.height || metadata.width < 640 || metadata.height < 360) {
-      throw new Error(`生成图片 ${request.id} 的分辨率不足，未进入文档排版。`);
+      );
+      const metadata = await sharp(image.buffer).metadata();
+      if (
+        !metadata.width ||
+        !metadata.height ||
+        metadata.width < 640 ||
+        metadata.height < 360
+      ) {
+        throw new Error(
+          `生成图片 ${request.id} 的分辨率不足，未进入文档排版。`,
+        );
+      }
+      assets.push({
+        id: `asset-${request.id}`,
+        requestId: request.id,
+        mimeType: image.mimeType,
+        dataBase64: image.buffer.toString("base64"),
+        width: metadata.width,
+        height: metadata.height,
+        caption: request.caption,
+        source: request.sourceStatement,
+        altText: request.contentBrief,
+      });
+      await trace?.event({
+        stage: "figure_generation",
+        componentId: request.id,
+        attempt: 1,
+        status: "succeeded",
+        durationMs: Date.now() - startedAt,
+        details: {
+          model: image.model,
+          mimeType: image.mimeType,
+          width: metadata.width,
+          height: metadata.height,
+        },
+      });
+    } catch (error) {
+      await trace?.event({
+        stage: "figure_generation",
+        componentId: request.id,
+        attempt: 1,
+        status: "failed",
+        durationMs: Date.now() - startedAt,
+        error,
+      });
+      throw error;
     }
-    assets.push({
-      id: `asset-${request.id}`,
-      requestId: request.id,
-      mimeType: image.mimeType,
-      dataBase64: image.buffer.toString("base64"),
-      width: metadata.width,
-      height: metadata.height,
-      caption: request.caption,
-      source: request.sourceStatement,
-      altText: request.contentBrief,
-    });
   }
 
   return assets;
@@ -1398,15 +1448,66 @@ export async function POST(request: Request) {
     const effectiveToolPlan = shouldUsePreviousAssistantSource
       ? toolPlanUsingConversationSource(toolPlan)
       : toolPlan;
-    const toolExecution = await executeToolPlan({
-      intentPlan,
-      toolPlan: effectiveToolPlan,
-      projectContext,
-      selectedFolderIds,
+    const documentTrace =
+      requestedExportFormats.length > 0
+        ? createDocumentGenerationTrace(supabase, user.id, {
+            query,
+            requestedFormats: requestedExportFormats,
+            pipelineVersion: "legacy-chat-v1",
+          })
+        : null;
+    await documentTrace?.start({
+      intent: intentPlan.intent,
+      inputScope: intentPlan.inputScope,
+      outputType: intentPlan.outputType,
+      planner: intentPlan.planner,
+      confidence: intentPlan.confidence,
+      shouldUsePreviousAssistantSource,
+      shouldExportPreviousAssistant,
       contextMode,
-      projectName: effectiveProjectName,
-      allowConversationSource: shouldUsePreviousAssistantSource,
+      webSearchRequested: webSearch,
+      libraryRequested: useLibrary,
     });
+    const toolExecutionStartedAt = Date.now();
+    await documentTrace?.event({
+      stage: "tool_execution",
+      status: "started",
+      details: {
+        tools: Array.from(
+          new Set(effectiveToolPlan.steps.flatMap((step) => step.tools)),
+        ),
+        needsUserDecision: effectiveToolPlan.needsUserDecision,
+      },
+    });
+    let toolExecution;
+    try {
+      toolExecution = await executeToolPlan({
+        intentPlan,
+        toolPlan: effectiveToolPlan,
+        projectContext,
+        selectedFolderIds,
+        contextMode,
+        projectName: effectiveProjectName,
+        allowConversationSource: shouldUsePreviousAssistantSource,
+      });
+      await documentTrace?.event({
+        stage: "tool_execution",
+        status: "succeeded",
+        durationMs: Date.now() - toolExecutionStartedAt,
+        details: {
+          statusCount: toolExecution.statuses.length,
+          contextMessageCount: toolExecution.contextMessages.length,
+          blocked: Boolean(toolExecution.blockingMessage),
+        },
+      });
+    } catch (error) {
+      await documentTrace?.fail({
+        stage: "tool_execution",
+        error,
+        details: { durationMs: Date.now() - toolExecutionStartedAt },
+      });
+      throw error;
+    }
     const taskRoute = chatRouteFromIntent(intentPlan);
     const projectReferencePattern =
       /(这些|上述|本项目|当前项目|文件夹|文献|论文|数据|实验|分析|比较|矩阵|大纲|汇报|PPT|综述|this project|these papers|folder|literature|paper|dataset|analysis)/i;
@@ -1514,6 +1615,14 @@ export async function POST(request: Request) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
+          if (documentTrace) {
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "status",
+                message: `文件任务编号：${documentTrace.jobId}`,
+              }),
+            );
+          }
           for (const status of toolExecution.statuses) {
             controller.enqueue(
               encodeChatStreamEvent({ type: "status", message: status }),
@@ -1543,6 +1652,10 @@ export async function POST(request: Request) {
             }),
           );
           if (toolExecution.blockingMessage) {
+            await documentTrace?.cancel("tool_execution_blocked", {
+              reasonCode: "tool_execution_returned_blocking_message",
+              messageChars: toolExecution.blockingMessage.length,
+            });
             controller.enqueue(
               encodeChatStreamEvent({
                 type: "text",
@@ -1560,6 +1673,10 @@ export async function POST(request: Request) {
             effectiveToolPlan.needsUserDecision &&
             effectiveToolPlan.confirmationQuestion
           ) {
+            await documentTrace?.cancel("waiting_for_user_decision", {
+              reasonCode: "tool_plan_requires_user_decision",
+              questionChars: effectiveToolPlan.confirmationQuestion.length,
+            });
             controller.enqueue(
               encodeChatStreamEvent({
                 type: "text",
@@ -1639,6 +1756,7 @@ export async function POST(request: Request) {
 
           if (shouldExportPreviousAssistant) {
             const links: string[] = [];
+            const artifactIds: string[] = [];
             const title = createCleanExportTitle(
               previousAssistantExportSource.split("\n").find((line) => line.trim()) ||
                 query,
@@ -1650,9 +1768,25 @@ export async function POST(request: Request) {
                 message: "已读取上一条回答，正在生成可下载文件。",
               }),
             );
+            await documentTrace?.event({
+              stage: "pipeline_selection",
+              status: "info",
+              details: {
+                selectedPipeline: "legacy_previous_assistant_export",
+                reason: "previous_assistant_output_selected_as_source",
+              },
+            });
 
             for (const format of requestedExportFormats) {
+              const exportStartedAt = Date.now();
               try {
+                await documentTrace?.event({
+                  stage: "artifact_render_and_store",
+                  componentId: format,
+                  attempt: 1,
+                  status: "started",
+                  details: { source: "previous_assistant_output" },
+                });
                 const created = await createExport(
                   {
                     format,
@@ -1670,12 +1804,45 @@ export async function POST(request: Request) {
                   },
                   user.id,
                 );
+                const artifactId = created.downloadUrl.split("/").at(-1);
+                if (artifactId) artifactIds.push(artifactId);
+                await documentTrace?.event({
+                  stage: "artifact_render_and_store",
+                  componentId: format,
+                  attempt: 1,
+                  status: "succeeded",
+                  durationMs: Date.now() - exportStartedAt,
+                  details: { filename: created.filename, artifactId },
+                });
                 links.push(`- [${created.filename}](${created.downloadUrl})`);
               } catch (exportError) {
+                await documentTrace?.event({
+                  stage: "artifact_render_and_store",
+                  componentId: format,
+                  attempt: 1,
+                  status: "failed",
+                  durationMs: Date.now() - exportStartedAt,
+                  error: exportError,
+                });
                 const message =
                   exportError instanceof Error ? exportError.message : "未知错误";
                 links.push(buildRecoverableExportFailureLine(format, message));
               }
+            }
+            if (artifactIds.length > 0) {
+              await documentTrace?.complete({
+                artifactIds,
+                details: {
+                  selectedPipeline: "legacy_previous_assistant_export",
+                  succeededFormats: artifactIds.length,
+                  requestedFormats: requestedExportFormats.length,
+                },
+              });
+            } else {
+              await documentTrace?.fail({
+                stage: "artifact_render_and_store",
+                error: new Error("所有请求格式均未生成可下载文件。"),
+              });
             }
 
             controller.enqueue(
@@ -1744,6 +1911,17 @@ export async function POST(request: Request) {
             option: ChatModelOption,
             tier: ChatModelTier,
           ): Promise<DocumentPlan> => {
+            const planningStartedAt = Date.now();
+            await documentTrace?.event({
+              stage: "document_planning",
+              status: "started",
+              attempt: 1,
+              details: {
+                templateId: template.id,
+                templateVersion: template.version,
+                model: option.model,
+              },
+            });
             const basePlan = createDocumentPlan({
               query: queryText,
               template,
@@ -1790,7 +1968,21 @@ export async function POST(request: Request) {
                 controller.enqueue(encodeChatStreamEvent(event));
               }
             }
-            return applySemanticDocumentPlan(basePlan, planSource);
+            const plan = applySemanticDocumentPlan(basePlan, planSource);
+            await documentTrace?.event({
+              stage: "document_planning",
+              status: "succeeded",
+              attempt: 1,
+              durationMs: Date.now() - planningStartedAt,
+              details: {
+                templateId: plan.templateId,
+                templateVersion: plan.templateVersion,
+                componentCount: plan.componentTasks.length,
+                visualBudget: plan.maxVisuals,
+                responseChars: planSource.length,
+              },
+            });
+            return plan;
           };
 
           const generateArtifactSource = async (
@@ -1824,6 +2016,18 @@ export async function POST(request: Request) {
             );
             let latestReport: ArtifactCompletenessReport | null = null;
             for (let attempt = 0; attempt < 4; attempt += 1) {
+              const generationStartedAt = Date.now();
+              await documentTrace?.event({
+                stage: "content_generation",
+                componentId: format,
+                attempt: attempt + 1,
+                status: attempt === 0 ? "started" : "retrying",
+                details: {
+                  structured: Boolean(structuredPlan),
+                  model: option.model,
+                  fullDocumentRewrite: Boolean(structuredPlan && attempt > 0),
+                },
+              });
               let streamWasIncomplete = false;
               let chunk = "";
 
@@ -1890,8 +2094,35 @@ export async function POST(request: Request) {
                       ],
                     };
                 if (!streamWasIncomplete && validation.passed) {
+                  await documentTrace?.event({
+                    stage: "content_generation",
+                    componentId: format,
+                    attempt: attempt + 1,
+                    status: "succeeded",
+                    durationMs: Date.now() - generationStartedAt,
+                    details: {
+                      responseChars: source.length,
+                      validationIssueCount: 0,
+                    },
+                  });
                   return { source, structuredPlan };
                 }
+                await documentTrace?.event({
+                  stage: "content_validation",
+                  componentId: format,
+                  attempt: attempt + 1,
+                  status: "failed",
+                  durationMs: Date.now() - generationStartedAt,
+                  details: {
+                    streamWasIncomplete,
+                    responseChars: source.length,
+                    validationIssues: validation.issues.map((issue) => ({
+                      code: issue.code,
+                      path: issue.path,
+                      message: issue.message,
+                    })),
+                  },
+                });
                 if (attempt >= 3) break;
                 artifactMessages = buildDocumentSpecRepairMessages(
                   messages,
@@ -1924,8 +2155,31 @@ export async function POST(request: Request) {
               });
 
               if (!streamWasIncomplete && latestReport.passed) {
+                await documentTrace?.event({
+                  stage: "content_generation",
+                  componentId: format,
+                  attempt: attempt + 1,
+                  status: "succeeded",
+                  durationMs: Date.now() - generationStartedAt,
+                  details: {
+                    responseChars: source.length,
+                    validationIssueCount: 0,
+                  },
+                });
                 break;
               }
+              await documentTrace?.event({
+                stage: "content_validation",
+                componentId: format,
+                attempt: attempt + 1,
+                status: "failed",
+                durationMs: Date.now() - generationStartedAt,
+                details: {
+                  streamWasIncomplete,
+                  responseChars: source.length,
+                  issues: latestReport.issues,
+                },
+              });
 
               if (attempt >= 3) {
                 break;
@@ -1966,6 +2220,15 @@ export async function POST(request: Request) {
 
           if (useDedicatedArtifactMode) {
             const links: string[] = [];
+            const artifactIds: string[] = [];
+            await documentTrace?.event({
+              stage: "pipeline_selection",
+              status: "info",
+              details: {
+                selectedPipeline: "legacy_dedicated_artifact",
+                reason: "dedicated_artifact_mode_matched",
+              },
+            });
             controller.enqueue(
               encodeChatStreamEvent({
                 type: "status",
@@ -1975,6 +2238,8 @@ export async function POST(request: Request) {
             );
 
             for (const format of requestedExportFormats) {
+              let activeStage = "template_resolution";
+              const formatStartedAt = Date.now();
               try {
                 const legacyTemplateId = selectExportTemplateId(query, format);
                 const documentTemplate =
@@ -1987,12 +2252,19 @@ export async function POST(request: Request) {
                     : undefined;
                 const templateId =
                   documentTemplate?.rendererTemplateId ?? legacyTemplateId;
+                await documentTrace?.setTemplate(
+                  documentTemplate?.id ?? templateId,
+                  documentTemplate?.version === undefined
+                    ? undefined
+                    : String(documentTemplate.version),
+                );
                 controller.enqueue(
                   encodeChatStreamEvent({
                     type: "status",
                     message: `正在生成 ${format.toUpperCase()} 文件内容并排版。`,
                   }),
                 );
+                activeStage = "content_generation";
                 const generatedArtifact = await generateArtifactSource(
                   format,
                   modelOption,
@@ -2010,6 +2282,7 @@ export async function POST(request: Request) {
                 let imageAssets: FinalImageAsset[] = [];
                 const documentPlan = generatedArtifact.structuredPlan;
                 if (format === "docx") {
+                  activeStage = "document_validation";
                   if (!documentPlan) {
                     throw new Error("DOCX 模板规划缺失，未进入排版。");
                   }
@@ -2022,20 +2295,56 @@ export async function POST(request: Request) {
                     documentPlan,
                   );
                   if (!validation.passed) {
+                    await documentTrace?.event({
+                      stage: "document_validation",
+                      componentId: format,
+                      status: "failed",
+                      attempt: 1,
+                      details: {
+                        validationIssues: validation.issues,
+                      },
+                    });
                     throw new Error(
                       `结构化文档未通过最终校验：${validation.issues
                         .map((issue) => issue.message)
                         .join("；")}`,
                     );
                   }
+                  await documentTrace?.event({
+                    stage: "document_validation",
+                    componentId: format,
+                    status: "succeeded",
+                    attempt: 1,
+                    details: {
+                      sectionCount: structuredDocument.sections.length,
+                      visualRequestCount:
+                        structuredDocument.visualRequests.length,
+                      referenceCount: structuredDocument.references.length,
+                    },
+                  });
+                  activeStage = "figure_generation";
                   imageAssets = await generateDocumentImageAssets(
                     structuredDocument,
                     user.id,
                     request.signal,
+                    documentTrace ?? undefined,
                   );
                   exportContent = documentSpecToMarkdown(structuredDocument);
                   exportTitle = structuredDocument.title;
                 }
+                activeStage = "artifact_render_and_store";
+                const renderStartedAt = Date.now();
+                await documentTrace?.event({
+                  stage: activeStage,
+                  componentId: format,
+                  attempt: 1,
+                  status: "started",
+                  details: {
+                    templateId,
+                    hasStructuredDocument: Boolean(structuredDocument),
+                    imageAssetCount: imageAssets.length,
+                  },
+                });
                 const created = await createExport(
                   {
                     format,
@@ -2059,12 +2368,49 @@ export async function POST(request: Request) {
                   },
                   user.id,
                 );
+                const artifactId = created.downloadUrl.split("/").at(-1);
+                if (artifactId) artifactIds.push(artifactId);
+                await documentTrace?.event({
+                  stage: activeStage,
+                  componentId: format,
+                  attempt: 1,
+                  status: "succeeded",
+                  durationMs: Date.now() - renderStartedAt,
+                  details: {
+                    filename: created.filename,
+                    artifactId,
+                    totalFormatDurationMs: Date.now() - formatStartedAt,
+                  },
+                });
                 links.push(`- [${created.filename}](${created.downloadUrl})`);
               } catch (exportError) {
+                await documentTrace?.event({
+                  stage: activeStage,
+                  componentId: format,
+                  attempt: 1,
+                  status: "failed",
+                  durationMs: Date.now() - formatStartedAt,
+                  error: exportError,
+                });
                 const message =
                   exportError instanceof Error ? exportError.message : "未知错误";
                 links.push(buildRecoverableExportFailureLine(format, message));
               }
+            }
+            if (artifactIds.length > 0) {
+              await documentTrace?.complete({
+                artifactIds,
+                details: {
+                  selectedPipeline: "legacy_dedicated_artifact",
+                  succeededFormats: artifactIds.length,
+                  requestedFormats: requestedExportFormats.length,
+                },
+              });
+            } else {
+              await documentTrace?.fail({
+                stage: "document_generation",
+                error: new Error("所有请求格式均未生成可下载文件。"),
+              });
             }
 
             controller.enqueue(
@@ -2276,10 +2622,27 @@ export async function POST(request: Request) {
 
           if (requestedFormats.length > 0 && assistantText.trim()) {
             const links: string[] = [];
+            const artifactIds: string[] = [];
             const title = createCleanExportTitle(query);
+            await documentTrace?.event({
+              stage: "pipeline_selection",
+              status: "info",
+              details: {
+                selectedPipeline: "legacy_chat_auto_export",
+                reason: "chat_response_completed_with_requested_formats",
+              },
+            });
 
             for (const format of requestedFormats) {
+              const exportStartedAt = Date.now();
               try {
+                await documentTrace?.event({
+                  stage: "artifact_render_and_store",
+                  componentId: format,
+                  attempt: 1,
+                  status: "started",
+                  details: { source: "generated_chat_response" },
+                });
                 const created = await createExport(
                   {
                     format,
@@ -2297,8 +2660,26 @@ export async function POST(request: Request) {
                   },
                   user.id,
                 );
+                const artifactId = created.downloadUrl.split("/").at(-1);
+                if (artifactId) artifactIds.push(artifactId);
+                await documentTrace?.event({
+                  stage: "artifact_render_and_store",
+                  componentId: format,
+                  attempt: 1,
+                  status: "succeeded",
+                  durationMs: Date.now() - exportStartedAt,
+                  details: { filename: created.filename, artifactId },
+                });
                 links.push(`- [${created.filename}](${created.downloadUrl})`);
               } catch (exportError) {
+                await documentTrace?.event({
+                  stage: "artifact_render_and_store",
+                  componentId: format,
+                  attempt: 1,
+                  status: "failed",
+                  durationMs: Date.now() - exportStartedAt,
+                  error: exportError,
+                });
                 const message =
                   exportError instanceof Error
                     ? exportError.message
@@ -2315,9 +2696,34 @@ export async function POST(request: Request) {
                 }),
               );
             }
+            if (artifactIds.length > 0) {
+              await documentTrace?.complete({
+                artifactIds,
+                details: {
+                  selectedPipeline: "legacy_chat_auto_export",
+                  succeededFormats: artifactIds.length,
+                  requestedFormats: requestedFormats.length,
+                },
+              });
+            } else {
+              await documentTrace?.fail({
+                stage: "artifact_render_and_store",
+                error: new Error("所有请求格式均未生成可下载文件。"),
+              });
+            }
+          } else if (requestedFormats.length > 0) {
+            await documentTrace?.fail({
+              stage: "content_generation",
+              error: streamFailure ?? new Error("模型没有生成可导出的正文。"),
+              details: { assistantTextChars: assistantText.trim().length },
+            });
           }
           controller.close();
         } catch (error) {
+          await documentTrace?.fail({
+            stage: "unhandled_pipeline_error",
+            error,
+          });
           const mapped = toChatApiErrorResponse(error);
           controller.enqueue(
             encodeChatStreamEvent({
