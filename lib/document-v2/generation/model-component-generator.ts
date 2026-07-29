@@ -6,6 +6,7 @@ import type {
   ComponentGenerationContext,
   DocumentComponentGenerator,
 } from "../orchestration/orchestrator";
+import type { ApprovedComponent } from "../orchestration/contracts";
 
 export interface StructuredComponentModel {
   generate(input: {
@@ -15,14 +16,130 @@ export interface StructuredComponentModel {
   }): Promise<unknown>;
 }
 
+const MAX_APPROVED_CONTEXT_CHARS = 18_000;
+const MAX_DEPENDENCY_CONTEXT_CHARS = 4_000;
+const MAX_AUTHORIZED_EVIDENCE_CHARS = 24_000;
+const MAX_EVIDENCE_EXCERPT_CHARS = 4_000;
+
+function compactApprovedComponent(
+  content: ApprovedComponent,
+  characterBudget: number,
+) {
+  if (content.kind === "title") {
+    return { kind: "title", title: content.title.slice(0, characterBudget) };
+  }
+  if (content.kind === "references") {
+    return {
+      kind: "references",
+      referenceIds: content.referenceIds.slice(0, 100),
+    };
+  }
+
+  let remaining = characterBudget;
+  const blocks = [];
+  for (const block of content.blocks) {
+    if (remaining <= 0) break;
+    if (block.type === "heading") {
+      const text = block.text.slice(0, Math.min(remaining, 500));
+      blocks.push({ type: "heading", level: block.level, text });
+      remaining -= text.length;
+      continue;
+    }
+    if (block.type === "paragraph") {
+      const text = block.text.slice(0, Math.min(remaining, 1_500));
+      blocks.push({
+        type: "paragraph",
+        role: block.role,
+        text,
+        citationIds: block.citationIds.slice(0, 20),
+      });
+      remaining -= text.length;
+      continue;
+    }
+    if (block.type === "keywords") {
+      const values = block.values.slice(0, 8);
+      blocks.push({ type: "keywords", values });
+      remaining -= values.join("; ").length;
+      continue;
+    }
+    if (block.type === "figure") {
+      const caption = block.caption.slice(0, Math.min(remaining, 500));
+      blocks.push({
+        type: "figure",
+        caption,
+        assetId: block.assetId,
+      });
+      remaining -= caption.length;
+      continue;
+    }
+    const caption = block.caption.slice(0, Math.min(remaining, 500));
+    blocks.push({
+      type: "table",
+      caption,
+      columns: block.columns.slice(0, 20),
+      rows: block.rows.slice(0, 3).map((row) => row.slice(0, 20)),
+    });
+    remaining -= caption.length;
+  }
+
+  return {
+    kind: "blocks",
+    blocks,
+    assetSummaries: content.assets.map((asset) => ({
+      assetId: asset.id,
+      format: asset.format,
+      pixelWidth: asset.pixelWidth,
+      pixelHeight: asset.pixelHeight,
+      dpi: asset.dpi,
+      title: asset.title,
+      altText: asset.altText,
+    })),
+  };
+}
+
 function approvedContext(context: ComponentGenerationContext) {
   const directDependencies = new Set(context.component.dependsOnComponentKeys);
-  return context.approvedComponents
+  const dependencies = context.approvedComponents
     .filter((component) => directDependencies.has(component.componentKey))
-    .map((component) => ({
+    .slice(0, 20);
+  const perDependencyBudget = Math.min(
+    MAX_DEPENDENCY_CONTEXT_CHARS,
+    Math.max(
+      800,
+      Math.floor(MAX_APPROVED_CONTEXT_CHARS / Math.max(1, dependencies.length)),
+    ),
+  );
+  return dependencies.map((component) => ({
     componentKey: component.componentKey,
-    content: component.content,
-    }));
+    content: compactApprovedComponent(
+      component.content,
+      perDependencyBudget,
+    ),
+  }));
+}
+
+function authorizedEvidence(context: ComponentGenerationContext) {
+  const requiredEvidenceIds = new Set(
+    context.component.requiredEvidenceIds ?? [],
+  );
+  let remaining = MAX_AUTHORIZED_EVIDENCE_CHARS;
+  const evidenceItems = [];
+  for (const evidence of context.evidenceBundle) {
+    if (!requiredEvidenceIds.has(evidence.evidenceId) || remaining <= 0) {
+      continue;
+    }
+    const excerpt = evidence.excerpt.slice(
+      0,
+      Math.min(remaining, MAX_EVIDENCE_EXCERPT_CHARS),
+    );
+    evidenceItems.push({
+      evidenceId: evidence.evidenceId,
+      excerpt,
+      locator: evidence.locator,
+    });
+    remaining -= excerpt.length;
+  }
+  return evidenceItems;
 }
 
 export function buildComponentGenerationInstructions(
@@ -61,17 +178,7 @@ export function buildComponentGenerationInstructions(
       year: reference.year,
       venue: reference.venue,
     })),
-    authorizedEvidence: context.evidenceBundle
-      .filter(
-        (evidence) =>
-          context.component.requiredEvidenceIds?.includes(evidence.evidenceId) ??
-          false,
-      )
-      .map((evidence) => ({
-        evidenceId: evidence.evidenceId,
-        excerpt: evidence.excerpt,
-        locator: evidence.locator,
-      })),
+    authorizedEvidence: authorizedEvidence(context),
     outputRules: {
       title: "Use kind=title and provide only the final title.",
       abstract:

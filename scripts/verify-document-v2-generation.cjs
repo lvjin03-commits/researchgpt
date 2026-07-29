@@ -313,6 +313,7 @@ async function verifyCompleteGenerationFlow() {
   const modelCalls = {};
   const generationOrder = [];
   let abstractApprovedContext = [];
+  let conclusionInstruction = "";
   let figureGeneratorCalls = 0;
   const lowResolutionPng = await sharp({
     create: {
@@ -376,6 +377,9 @@ async function verifyCompleteGenerationFlow() {
           (approved) => approved.componentKey,
         );
       }
+      if (instruction.component.type === "conclusion") {
+        conclusionInstruction = componentInstruction;
+      }
       modelCalls[heading] = (modelCalls[heading] ?? 0) + 1;
       return maturePayload(
         instruction.component,
@@ -432,6 +436,15 @@ async function verifyCompleteGenerationFlow() {
     abstractApprovedContext,
     ["section-01", "section-02", "conclusion"],
     "The abstract must receive the approved body and conclusion.",
+  );
+  assert(
+    conclusionInstruction.length < 60_000,
+    "Approved dependency context must stay within a bounded prompt budget.",
+  );
+  assert.doesNotMatch(
+    conclusionInstruction,
+    /dataBase64|fallbackPngBase64|PHN2Zy/,
+    "Generated image bytes must never be copied into later model prompts.",
   );
   assert.equal(modelCalls.title, 1);
   assert.equal(modelCalls["1 Introduction"], 1);
