@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   DocumentJobNotFoundError,
@@ -140,6 +141,24 @@ export async function PATCH(
         current.revision,
       );
       snapshot = await getDocumentJobSnapshot(authorized.repository, id);
+    }
+    if (snapshot.job.status === "queued") {
+      const workerUrl = new URL("/api/internal/document-v2-worker", request.url);
+      after(async () => {
+        const secret = process.env.CRON_SECRET;
+        if (!secret) return;
+        try {
+          await fetch(workerUrl, {
+            headers: { Authorization: `Bearer ${secret}` },
+            cache: "no-store",
+          });
+        } catch (dispatchError) {
+          console.error(
+            "[document-v2-control-dispatch] Immediate dispatch failed",
+            dispatchError,
+          );
+        }
+      });
     }
     return Response.json(snapshot, {
       headers: {
