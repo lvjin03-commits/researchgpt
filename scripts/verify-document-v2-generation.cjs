@@ -44,6 +44,9 @@ const {
   ModelDocumentComponentGenerator,
 } = require("../lib/document-v2/generation/model-component-generator.ts");
 const {
+  OpenAIStructuredComponentModel,
+} = require("../lib/document-v2-production/openai-adapters.ts");
+const {
   FigureAssetQualityError,
   ValidatedFigureAssetPipeline,
 } = require("../lib/document-v2/assets/figure-pipeline.ts");
@@ -559,7 +562,31 @@ async function verifyUnsafeSvgIsRejected() {
   );
 }
 
+async function verifyOpenAiComponentSchemaHasObjectRoot() {
+  const adapter = new OpenAIStructuredComponentModel({
+    responses: {
+      async parse() {
+        return {
+          output_parsed: {
+            payload: {
+              kind: "title",
+              title: "Validated object-root schema",
+            },
+          },
+        };
+      },
+    },
+  });
+  const result = await adapter.generate({
+    schemaName: "document_component_payload_v1",
+    systemInstruction: "test",
+    componentInstruction: "test",
+  });
+  assert.equal(result.kind, "title");
+}
+
 async function main() {
+  await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyCompleteGenerationFlow();
   await verifyPlannerRejectsInvalidOutline();
   await verifyUnsafeSvgIsRejected();

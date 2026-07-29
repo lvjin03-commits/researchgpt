@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import sharp from "sharp";
+import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { GeneratedComponentPayloadSchema } from "@/lib/document-v2/orchestration/contracts";
 import type { StructuredComponentModel } from "@/lib/document-v2/generation/model-component-generator";
@@ -8,6 +9,12 @@ import type {
   GeneratedFigureBinary,
 } from "@/lib/document-v2/assets/figure-pipeline";
 import type { FigureRequest } from "@/lib/document-v2/assets/contracts";
+
+const GeneratedComponentEnvelopeSchema = z
+  .object({
+    payload: GeneratedComponentPayloadSchema,
+  })
+  .strict();
 
 export class OpenAIStructuredComponentModel implements StructuredComponentModel {
   constructor(
@@ -26,7 +33,7 @@ export class OpenAIStructuredComponentModel implements StructuredComponentModel 
       input: input.componentInstruction,
       text: {
         format: zodTextFormat(
-          GeneratedComponentPayloadSchema,
+          GeneratedComponentEnvelopeSchema,
           input.schemaName,
         ),
       },
@@ -34,7 +41,7 @@ export class OpenAIStructuredComponentModel implements StructuredComponentModel 
     if (!response.output_parsed) {
       throw new Error("The document model returned no structured component.");
     }
-    return response.output_parsed;
+    return response.output_parsed.payload;
   }
 }
 
