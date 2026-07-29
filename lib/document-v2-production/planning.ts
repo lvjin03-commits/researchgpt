@@ -130,6 +130,24 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
   constructor(private readonly client: OpenAI) {}
 
   async propose(input: Parameters<SemanticOutlinePlanner["propose"]>[0]) {
+    const OutlineResponseSchema = z
+      .object({
+        sections: z
+          .array(
+            z
+              .object({
+                heading: z.string().trim().min(1).max(500),
+                purpose: z.string().trim().min(1).max(1_000),
+                relativeWeight: z.number().positive().max(100),
+                requiredEvidenceIds: z.array(z.string().min(1).max(120)).max(500),
+              })
+              .strict(),
+          )
+          .min(input.minimumSections)
+          .max(input.maximumSections),
+        conclusionHeading: z.string().trim().min(1).max(500),
+      })
+      .strict();
     const response = await this.client.responses.parse({
       model: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
       instructions: [
@@ -150,12 +168,12 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
       }),
       text: {
         format: zodTextFormat(
-          SemanticOutlineProposalSchema,
+          OutlineResponseSchema,
           "document_outline_v1",
         ),
       },
     });
     if (!response.output_parsed) throw new Error("No document outline returned.");
-    return response.output_parsed;
+    return SemanticOutlineProposalSchema.parse(response.output_parsed);
   }
 }

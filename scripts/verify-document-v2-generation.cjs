@@ -47,6 +47,9 @@ const {
   OpenAIStructuredComponentModel,
 } = require("../lib/document-v2-production/openai-adapters.ts");
 const {
+  OpenAISemanticOutlinePlanner,
+} = require("../lib/document-v2-production/planning.ts");
+const {
   FigureAssetQualityError,
   ValidatedFigureAssetPipeline,
 } = require("../lib/document-v2/assets/figure-pipeline.ts");
@@ -585,8 +588,48 @@ async function verifyOpenAiComponentSchemaHasObjectRoot() {
   assert.equal(result.kind, "title");
 }
 
+async function verifyOutlineSchemaUsesTemplateBounds() {
+  const planner = new OpenAISemanticOutlinePlanner({
+    responses: {
+      async parse(input) {
+        const sectionSchema =
+          input.text.format.schema.properties.sections;
+        assert.equal(sectionSchema.minItems, 1);
+        assert.equal(sectionSchema.maxItems, 2);
+        return {
+          output_parsed: {
+            sections: [
+              {
+                heading: "Mechanism",
+                purpose: "Explain the mechanism.",
+                relativeWeight: 1,
+                requiredEvidenceIds: [],
+              },
+            ],
+            conclusionHeading: "Conclusion",
+          },
+        };
+      },
+    },
+  });
+  const proposal = await planner.propose({
+    request: {
+      userRequirements: {
+        topic: "Physical gels",
+        specialInstructions: [],
+      },
+    },
+    template: { componentBlueprints: [] },
+    minimumSections: 1,
+    maximumSections: 2,
+    availableEvidenceIds: [],
+  });
+  assert.equal(proposal.sections.length, 1);
+}
+
 async function main() {
   await verifyOpenAiComponentSchemaHasObjectRoot();
+  await verifyOutlineSchemaUsesTemplateBounds();
   await verifyCompleteGenerationFlow();
   await verifyPlannerRejectsInvalidOutline();
   await verifyUnsafeSvgIsRejected();
