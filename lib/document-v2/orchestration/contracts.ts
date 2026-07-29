@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   FigureAssetSchema,
+  FigureRequestSchema,
   FigureRequestDraftSchema,
 } from "../assets/contracts";
 import {
@@ -209,6 +210,49 @@ export type ComponentExecutionState = z.infer<
   typeof ComponentExecutionStateSchema
 >;
 
+export const FigureExecutionStateSchema = z
+  .object({
+    request: FigureRequestSchema,
+    status: z.enum(["pending", "running", "approved", "failed"]),
+    attempts: z.number().int().min(0).max(10).default(0),
+    placementAfterBlockId: IdentifierSchema,
+    paragraphBlockIds: z.array(IdentifierSchema).default([]),
+    asset: FigureAssetSchema.optional(),
+    lastError: z
+      .object({
+        code: IdentifierSchema,
+        message: z.string().trim().min(1).max(4_000),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((figure, context) => {
+    if (figure.status === "approved" && !figure.asset) {
+      context.addIssue({
+        code: "custom",
+        path: ["asset"],
+        message: "Approved figure state requires an asset.",
+      });
+    }
+    if (figure.status !== "approved" && figure.asset) {
+      context.addIssue({
+        code: "custom",
+        path: ["asset"],
+        message: "Only approved figure state may contain an asset.",
+      });
+    }
+    if (figure.status === "failed" && !figure.lastError) {
+      context.addIssue({
+        code: "custom",
+        path: ["lastError"],
+        message: "Failed figure state requires an error.",
+      });
+    }
+  });
+
+export type FigureExecutionState = z.infer<typeof FigureExecutionStateSchema>;
+
 export const OrchestrationEventSchema = z
   .object({
     sequence: z.number().int().min(1),
@@ -217,6 +261,9 @@ export const OrchestrationEventSchema = z
       "component_started",
       "component_rejected",
       "component_approved",
+      "figure_started",
+      "figure_rejected",
+      "figure_approved",
       "job_paused",
       "job_failed",
       "job_completed",
@@ -241,6 +288,7 @@ export const DocumentOrchestrationStateSchema = z
     status: z.enum(["pending", "running", "paused", "completed", "failed"]),
     currentComponentIndex: z.number().int().min(0),
     components: z.array(ComponentExecutionStateSchema).min(1),
+    figures: z.array(FigureExecutionStateSchema).max(100).default([]),
     events: z.array(OrchestrationEventSchema),
     finalSpec: FinalDocumentSpecSchema.optional(),
     failure: z

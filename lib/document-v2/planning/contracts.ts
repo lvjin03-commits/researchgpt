@@ -18,6 +18,24 @@ export const SemanticOutlineProposalSchema = z
       .min(1)
       .max(100),
     conclusionHeading: z.string().trim().min(1).max(500),
+    figures: z
+      .array(
+        z
+          .object({
+            sectionIndex: z.number().int().min(0).max(99),
+            figureType: z.enum([
+              "mechanism_diagram",
+              "process_flow",
+              "conceptual_framework",
+              "comparison_diagram",
+              "data_plot",
+            ]),
+            purpose: z.string().trim().min(1).max(1_000),
+          })
+          .strict(),
+      )
+      .max(4)
+      .default([]),
   })
   .strict()
   .superRefine((proposal, context) => {
@@ -32,6 +50,15 @@ export const SemanticOutlineProposalSchema = z
         });
       }
       normalizedHeadings.add(normalized);
+    });
+    proposal.figures.forEach((figure, index) => {
+      if (figure.sectionIndex >= proposal.sections.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["figures", index, "sectionIndex"],
+          message: "Figure sectionIndex must reference a planned body section.",
+        });
+      }
     });
   });
 

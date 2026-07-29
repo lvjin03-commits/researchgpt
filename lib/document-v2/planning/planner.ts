@@ -244,6 +244,13 @@ export async function createDocumentPlanFromTemplate(input: {
     schemaVersion: 1,
     templateSnapshot: template.snapshot,
     components: componentsWithDependencies,
+    figureSlots: proposal.figures.map((figure, index) => ({
+      slotId: `figure-slot-${String(index + 1).padStart(2, "0")}`,
+      componentKey: `section-${String(figure.sectionIndex + 1).padStart(2, "0")}`,
+      figureType: figure.figureType,
+      purpose: figure.purpose,
+    })),
+    figurePlanningCompleted: true,
     evidenceRequirements: availableEvidenceIds.map((evidenceId) => ({
       claimType: `evidence-${evidenceId}`,
       required: proposal.sections.some((section) =>

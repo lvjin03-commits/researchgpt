@@ -23,7 +23,10 @@ export interface FinalFigureGenerator {
 }
 
 export interface FigureAssetMaterializer {
-  materialize(request: FigureRequest): Promise<FigureAsset>;
+  materialize(
+    request: FigureRequest,
+    context?: { onProviderCall?(): void },
+  ): Promise<FigureAsset>;
 }
 
 export class FigureAssetQualityError extends Error {
@@ -95,11 +98,15 @@ export class ValidatedFigureAssetPipeline
     }
   }
 
-  async materialize(input: FigureRequest): Promise<FigureAsset> {
+  async materialize(
+    input: FigureRequest,
+    context?: { onProviderCall?(): void },
+  ): Promise<FigureAsset> {
     const request = FigureRequestSchema.parse(input);
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       try {
+        context?.onProviderCall?.();
         return await this.generateAndValidate(request);
       } catch (error) {
         lastError = error;

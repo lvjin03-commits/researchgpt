@@ -33,10 +33,12 @@ export const DocumentJobBudgetSchema = z
   .object({
     maxModelCalls: z.number().int().positive(),
     maxImageCalls: z.number().int().nonnegative(),
+    maxImageAssets: z.number().int().nonnegative().default(0),
     maxRepairAttempts: z.number().int().nonnegative(),
     maxExecutionMs: z.number().int().positive(),
     usedModelCalls: z.number().int().nonnegative(),
     usedImageCalls: z.number().int().nonnegative(),
+    completedImageAssets: z.number().int().nonnegative().default(0),
     usedRepairAttempts: z.number().int().nonnegative(),
     usedExecutionMs: z.number().int().nonnegative(),
   })

@@ -33,6 +33,7 @@ export interface ComponentGenerationContext {
   plan: DocumentPlan;
   component: PlannedComponent;
   componentIndex: number;
+  figureSlots: ReadonlyArray<DocumentPlan["figureSlots"][number]>;
   attempt: number;
   repairFeedback?: {
     code: string;
@@ -79,6 +80,9 @@ export interface RunDocumentOrchestrationOptions {
   maxAttemptsPerComponent?: number;
   maxTransientFailuresPerComponent?: number;
   maxComponentsPerRun?: number;
+  maxFigureAttempts?: number;
+  maxFigureAssetsPerDocument?: number;
+  onFigureProviderCall?: () => void;
 }
 
 export class DocumentPlanInvariantError extends Error {
@@ -180,6 +184,7 @@ export function createDocumentOrchestrationState(input: {
       attempts: 0,
       transientFailures: 0,
     })),
+    figures: [],
     events: [],
   });
 }
@@ -239,6 +244,7 @@ function validateBlockRoles(
 }
 
 function structurallyApprovePayload(input: {
+  plan: DocumentPlan;
   component: PlannedComponent;
   payload: GeneratedComponentPayload;
   approvedComponents: ReadonlyArray<{
@@ -337,6 +343,46 @@ function structurallyApprovePayload(input: {
       `Component "${input.component.componentKey}" cannot request figures.`,
     );
   }
+  const plannedSlots = input.plan.figureSlots.filter(
+    (slot) => slot.componentKey === input.component.componentKey,
+  );
+  if (plannedSlots.length > 0) {
+    const plannedSlotById = new Map(
+      plannedSlots.map((slot) => [slot.slotId, slot]),
+    );
+    const returnedSlotIds = new Set<string>();
+    for (const [index, draft] of blockPayload.figureRequests.entries()) {
+      if (!draft.slotId || !plannedSlotById.has(draft.slotId)) {
+        throw new DocumentPlanInvariantError(
+          `Figure ${index + 1} must complete a figure slot planned for component "${input.component.componentKey}".`,
+        );
+      }
+      if (returnedSlotIds.has(draft.slotId)) {
+        throw new DocumentPlanInvariantError(
+          `Figure slot "${draft.slotId}" was returned more than once.`,
+        );
+      }
+      const plannedSlot = plannedSlotById.get(draft.slotId)!;
+      if (draft.figureType !== plannedSlot.figureType) {
+        throw new DocumentPlanInvariantError(
+          `Figure slot "${draft.slotId}" must use type "${plannedSlot.figureType}".`,
+        );
+      }
+      returnedSlotIds.add(draft.slotId);
+    }
+    if (returnedSlotIds.size !== plannedSlots.length) {
+      throw new DocumentPlanInvariantError(
+        `Component "${input.component.componentKey}" must complete all ${plannedSlots.length} planned figure slots.`,
+      );
+    }
+  } else if (
+    blockPayload.figureRequests.length > 0 &&
+    input.plan.figurePlanningCompleted
+  ) {
+    throw new DocumentPlanInvariantError(
+      `Component "${input.component.componentKey}" cannot add unplanned figures.`,
+    );
+  }
   const figureRequests = blockPayload.figureRequests.map(
     (draft, index): FigureRequest => {
       if (draft.placementAfterBlockIndex >= blockPayload.blocks.length) {
@@ -361,10 +407,9 @@ function structurallyApprovePayload(input: {
       }
       return FigureRequestSchema.parse({
         ...draft,
-        requestId: stableFigureRequestId(
-          input.component.componentKey,
-          index,
-        ),
+        requestId: draft.slotId
+          ? stableFigureRequestId(draft.slotId, 0)
+          : stableFigureRequestId(input.component.componentKey, index),
         componentKey: input.component.componentKey,
       });
     },
@@ -420,76 +465,116 @@ function stableFigureRequestId(componentKey: string, index: number): string {
   return `figure-${digest}`;
 }
 
-async function materializeFigures(input: {
-  approved: ApprovedComponent;
-  requests: FigureRequest[];
+function enqueueFigureRequests(
+  state: DocumentOrchestrationState,
+  requests: FigureRequest[],
   paragraphFigureRefs: Array<{
     blockIndex: number;
     requestIndexes: number[];
-  }>;
-  materializer?: FigureAssetMaterializer;
-}): Promise<ApprovedComponent> {
-  if (input.requests.length === 0) return input.approved;
-  if (input.approved.kind !== "blocks") {
-    throw new DocumentPlanInvariantError(
-      "Only block components can materialize figures.",
+  }>,
+): void {
+  const existingIds = new Set(state.figures.map((figure) => figure.request.requestId));
+  for (const [requestIndex, request] of requests.entries()) {
+    if (existingIds.has(request.requestId)) continue;
+    const component = state.components.find(
+      (item) => item.componentKey === request.componentKey,
     );
-  }
-  if (!input.materializer) {
-    throw new DocumentPlanInvariantError(
-      "Figure requests require a configured figure asset materializer.",
-    );
-  }
-  const assets = [];
-  for (const request of input.requests) {
-    const asset = await input.materializer.materialize(request);
-    if (asset.requestId !== request.requestId) {
+    if (!component?.approved || component.approved.kind !== "blocks") {
       throw new DocumentPlanInvariantError(
-        `Figure asset request ID "${asset.requestId}" does not match "${request.requestId}".`,
+        `Figure component "${request.componentKey}" has no approved blocks.`,
       );
     }
-    assets.push(asset);
+    const approvedBlocks = component.approved.blocks;
+    const placementBlock =
+      approvedBlocks[request.placementAfterBlockIndex];
+    if (!placementBlock) {
+      throw new DocumentPlanInvariantError(
+        `Figure "${request.requestId}" has no valid placement block.`,
+      );
+    }
+    state.figures.push({
+      request,
+      status: "pending",
+      attempts: 0,
+      placementAfterBlockId: placementBlock.id,
+      paragraphBlockIds: paragraphFigureRefs
+        .filter((reference) => reference.requestIndexes.includes(requestIndex))
+        .map((reference) => approvedBlocks[reference.blockIndex]?.id)
+        .filter((blockId): blockId is string => Boolean(blockId)),
+    });
+    existingIds.add(request.requestId);
   }
-  const requestsByPlacement = new Map<number, FigureRequest[]>();
-  for (const request of input.requests) {
-    const requests = requestsByPlacement.get(
-      request.placementAfterBlockIndex,
+}
+
+function attachFigureAsset(
+  state: DocumentOrchestrationState,
+  request: FigureRequest,
+  placementAfterBlockId: string,
+  paragraphBlockIds: string[],
+  asset: Awaited<ReturnType<FigureAssetMaterializer["materialize"]>>,
+): void {
+  const componentState = state.components.find(
+    (component) => component.componentKey === request.componentKey,
+  );
+  if (!componentState?.approved || componentState.approved.kind !== "blocks") {
+    throw new DocumentPlanInvariantError(
+      `Figure component "${request.componentKey}" has no approved block content.`,
     );
-    if (requests) requests.push(request);
-    else requestsByPlacement.set(request.placementAfterBlockIndex, [request]);
   }
-  const assetByRequest = new Map(
-    assets.map((asset) => [asset.requestId, asset]),
-  );
-  const paragraphRefsByBlock = new Map(
-    input.paragraphFigureRefs.map((reference) => [
-      reference.blockIndex,
-      reference.requestIndexes,
-    ]),
-  );
-  const blocks = input.approved.blocks.flatMap((originalBlock, index) => {
-    const requestIndexes = paragraphRefsByBlock.get(index) ?? [];
-    const block =
-      originalBlock.type === "paragraph"
+  const paragraphIds = new Set(paragraphBlockIds);
+  const blocks = componentState.approved.blocks.map((block) =>
+      block.type === "paragraph" && paragraphIds.has(block.id)
         ? {
-            ...originalBlock,
-            figureAssetIds: requestIndexes.map(
-              (requestIndex) =>
-                assetByRequest.get(input.requests[requestIndex].requestId)!.id,
-            ),
+            ...block,
+            figureAssetIds: [...new Set([...block.figureAssetIds, asset.id])],
           }
-        : originalBlock;
-    return [
-      block,
-    ...(requestsByPlacement.get(index) ?? []).map((request) => ({
-      id: `${request.requestId}-block`,
-      type: "figure" as const,
-      caption: request.caption,
-      assetId: assetByRequest.get(request.requestId)!.id,
-    })),
-    ];
+        : block,
+  );
+  const placementIndex = blocks.findIndex(
+    (block) => block.id === placementAfterBlockId,
+  );
+  if (placementIndex < 0) {
+    throw new DocumentPlanInvariantError(
+      `Figure placement block "${placementAfterBlockId}" is missing.`,
+    );
+  }
+  const siblingAssetIds = new Set(
+    state.figures
+      .filter(
+        (figure) =>
+          figure.placementAfterBlockId === placementAfterBlockId &&
+          figure.asset,
+      )
+      .map((figure) => figure.asset!.id),
+  );
+  let insertionIndex = placementIndex + 1;
+  while (blocks[insertionIndex]?.type === "figure") {
+    const sibling = blocks[insertionIndex];
+    if (sibling.type !== "figure" || !siblingAssetIds.has(sibling.assetId)) {
+      break;
+    }
+    insertionIndex += 1;
+  }
+  blocks.splice(insertionIndex, 0, {
+    id: `${request.requestId}-block`,
+    type: "figure",
+    caption: request.caption,
+    assetId: asset.id,
   });
-  return { kind: "blocks", blocks, assets };
+  componentState.approved = {
+    kind: "blocks",
+    blocks,
+    assets: [...componentState.approved.assets, asset],
+  };
+  const approvedRevision = componentState.revisions.find(
+    (revision) => revision.status === "approved",
+  );
+  if (approvedRevision) {
+    approvedRevision.content = componentState.approved;
+    approvedRevision.outputHash = createHash("sha256")
+      .update(JSON.stringify(componentState.approved))
+      .digest("hex");
+  }
 }
 
 function listApprovedComponents(
@@ -584,6 +669,9 @@ export function invalidateDocumentComponent(
     component.status =
       component.componentKey === componentKey ? "pending" : "stale";
   }
+  state.figures = state.figures.filter(
+    (figure) => !invalidated.has(figure.request.componentKey),
+  );
   state.status = "paused";
   state.finalSpec = undefined;
   state.failure = undefined;
@@ -720,6 +808,24 @@ export async function runDocumentOrchestration(
   ) {
     throw new RangeError("maxComponentsPerRun must be a positive integer.");
   }
+  const maxFigureAssets =
+    options.maxFigureAssetsPerDocument ?? Number.POSITIVE_INFINITY;
+  if (
+    maxFigureAssets !== Number.POSITIVE_INFINITY &&
+    (!Number.isInteger(maxFigureAssets) || maxFigureAssets < 0)
+  ) {
+    throw new RangeError(
+      "maxFigureAssetsPerDocument must be a non-negative integer.",
+    );
+  }
+  const maxFigureAttempts = options.maxFigureAttempts ?? 1;
+  if (
+    !Number.isInteger(maxFigureAttempts) ||
+    maxFigureAttempts < 1 ||
+    maxFigureAttempts > 5
+  ) {
+    throw new RangeError("maxFigureAttempts must be between 1 and 5.");
+  }
 
   if (state.events.length === 0) {
     appendEvent(state, { type: "job_started" });
@@ -769,6 +875,9 @@ export async function runDocumentOrchestration(
           plan: state.plan,
           component,
           componentIndex,
+          figureSlots: state.plan.figureSlots.filter(
+            (slot) => slot.componentKey === component.componentKey,
+          ),
           attempt: contentAttempt,
           repairFeedback:
             componentState.lastError &&
@@ -848,6 +957,7 @@ export async function runDocumentOrchestration(
     };
     try {
       structuralApproval = structurallyApprovePayload({
+        plan: state.plan,
         component,
         payload,
         approvedComponents,
@@ -931,24 +1041,33 @@ export async function runDocumentOrchestration(
       continue;
     }
 
-    let approved: ApprovedComponent;
-    try {
-      approved = await materializeFigures({
-        approved: structuralApproval.approved,
-        requests: structuralApproval.figureRequests,
-        paragraphFigureRefs: structuralApproval.paragraphFigureRefs,
-        materializer: options.figureAssetMaterializer,
+    const approved = structuralApproval.approved;
+    const remainingFigureCapacity = Math.max(
+      0,
+      maxFigureAssets - state.figures.length,
+    );
+    if (structuralApproval.figureRequests.length > remainingFigureCapacity) {
+      componentState.lastError = {
+        code: "figure_budget_exceeded",
+        message: `Component requested ${structuralApproval.figureRequests.length} figures but only ${remainingFigureCapacity} planned figure slots remain.`,
+      };
+      appendEvent(state, {
+        type: "component_rejected",
+        componentKey: component.componentKey,
+        attempt: componentState.attempts,
+        code: componentState.lastError.code,
+        message: componentState.lastError.message,
       });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Figure asset generation failed.";
-      failJob(
-        state,
-        componentState,
-        "figure_asset_generation_failed",
-        message,
-      );
-      return DocumentOrchestrationStateSchema.parse(state);
+      if (componentState.attempts >= maxAttempts) {
+        failJob(
+          state,
+          componentState,
+          componentState.lastError.code,
+          componentState.lastError.message,
+        );
+        return DocumentOrchestrationStateSchema.parse(state);
+      }
+      continue;
     }
 
     componentState.status = "approved";
@@ -975,6 +1094,11 @@ export async function runDocumentOrchestration(
       },
     ];
     componentState.lastError = undefined;
+    enqueueFigureRequests(
+      state,
+      structuralApproval.figureRequests,
+      structuralApproval.paragraphFigureRefs,
+    );
     appendEvent(state, {
       type: "component_approved",
       componentKey: component.componentKey,
@@ -983,6 +1107,107 @@ export async function runDocumentOrchestration(
     state.currentComponentIndex =
       nextRunnableComponentIndex(state) ?? state.plan.components.length;
     approvedThisRun += 1;
+    if (approvedThisRun >= maxComponents) {
+      state.status = "paused";
+      appendEvent(state, { type: "job_paused" });
+      return DocumentOrchestrationStateSchema.parse(state);
+    }
+  }
+
+  const pendingFigure = state.figures.find(
+    (figure) => figure.status !== "approved" && figure.status !== "failed",
+  );
+  if (pendingFigure) {
+    if (!options.figureAssetMaterializer) {
+      state.status = "failed";
+      state.failure = {
+        code: "figure_asset_materializer_missing",
+        message: "Planned figures require a configured figure asset materializer.",
+        componentKey: pendingFigure.request.componentKey,
+      };
+      appendEvent(state, {
+        type: "job_failed",
+        componentKey: pendingFigure.request.componentKey,
+        code: state.failure.code,
+        message: state.failure.message,
+      });
+      return DocumentOrchestrationStateSchema.parse(state);
+    }
+    pendingFigure.status = "running";
+    pendingFigure.attempts += 1;
+    appendEvent(state, {
+      type: "figure_started",
+      componentKey: pendingFigure.request.componentKey,
+      attempt: pendingFigure.attempts,
+      message: pendingFigure.request.title,
+    });
+    try {
+      const asset = await options.figureAssetMaterializer.materialize(
+        pendingFigure.request,
+        { onProviderCall: options.onFigureProviderCall },
+      );
+      if (asset.requestId !== pendingFigure.request.requestId) {
+        throw new DocumentPlanInvariantError(
+          `Figure asset request ID "${asset.requestId}" does not match "${pendingFigure.request.requestId}".`,
+        );
+      }
+      attachFigureAsset(
+        state,
+        pendingFigure.request,
+        pendingFigure.placementAfterBlockId,
+        pendingFigure.paragraphBlockIds,
+        asset,
+      );
+      pendingFigure.status = "approved";
+      pendingFigure.asset = asset;
+      pendingFigure.lastError = undefined;
+      appendEvent(state, {
+        type: "figure_approved",
+        componentKey: pendingFigure.request.componentKey,
+        attempt: pendingFigure.attempts,
+        message: pendingFigure.request.title,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Figure asset generation failed.";
+      pendingFigure.lastError = {
+        code: "figure_asset_generation_failed",
+        message,
+      };
+      appendEvent(state, {
+        type: "figure_rejected",
+        componentKey: pendingFigure.request.componentKey,
+        attempt: pendingFigure.attempts,
+        code: pendingFigure.lastError.code,
+        message,
+      });
+      if (pendingFigure.attempts >= maxFigureAttempts) {
+        pendingFigure.status = "failed";
+        state.status = "failed";
+        state.failure = {
+          code: pendingFigure.lastError.code,
+          message,
+          componentKey: pendingFigure.request.componentKey,
+        };
+        appendEvent(state, {
+          type: "job_failed",
+          componentKey: pendingFigure.request.componentKey,
+          attempt: pendingFigure.attempts,
+          code: state.failure.code,
+          message,
+        });
+        return DocumentOrchestrationStateSchema.parse(state);
+      }
+      pendingFigure.status = "pending";
+    }
+    state.status = "paused";
+    appendEvent(state, { type: "job_paused" });
+    return DocumentOrchestrationStateSchema.parse(state);
+  }
+
+  if (state.figures.some((figure) => figure.status === "failed")) {
+    state.status = "failed";
+    return DocumentOrchestrationStateSchema.parse(state);
   }
 
   try {

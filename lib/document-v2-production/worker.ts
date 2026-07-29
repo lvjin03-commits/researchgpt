@@ -250,11 +250,13 @@ async function prepareIntake(input: {
         },
         budget: {
           maxModelCalls: 24,
-          maxImageCalls: 4,
+          maxImageCalls: 8,
+          maxImageAssets: 4,
           maxRepairAttempts: 8,
           maxExecutionMs: 15 * 60_000,
           usedModelCalls: 2,
           usedImageCalls: 0,
+          completedImageAssets: 0,
           usedRepairAttempts: 0,
           usedExecutionMs: 0,
         },
@@ -388,7 +390,10 @@ export async function executeOneDocumentV2Tick() {
     Number.isFinite(configuredBudget) && configuredBudget >= 5_000
       ? Math.min(configuredBudget, 240_000)
       : 45_000;
-  const snapshot = await service.run(preparedJob.jobId, workerId, { maxDurationMs });
+  const snapshot = await service.run(preparedJob.jobId, workerId, {
+    maxComponents: 1,
+    maxDurationMs,
+  });
   return {
     state: snapshot.job.status,
     jobId: snapshot.job.jobId,

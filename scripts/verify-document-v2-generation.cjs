@@ -150,6 +150,14 @@ async function createPlan(template) {
             },
           ],
           conclusionHeading: "3 Conclusion",
+          figures: [
+            {
+              sectionIndex: 1,
+              figureType: "process_flow",
+              purpose:
+                "Explain how preparation routes create different network structures.",
+            },
+          ],
         };
       },
     },
@@ -199,6 +207,22 @@ function maturePayload(component, repairFeedback) {
               role: "body",
               text: "TODO: insert raw evidenceType=aistructure here.",
               citationIds: ["ref-1"],
+              figureRequestIndexes: [0],
+            },
+          ],
+          figureRequests: [
+            {
+              slotId: "figure-slot-01",
+              figureType: "process_flow",
+              title: "Preparation route to network structure",
+              caption:
+                "Preparation routes create distinct physical junction domains",
+              altText:
+                "Flow diagram connecting preparation routes to gel network structures.",
+              contentBrief:
+                "Show preparation routes converging on distinct junction-domain structures.",
+              placementAfterBlockIndex: 1,
+              sourceEvidenceIds: ["ref-1"],
             },
           ],
         };
@@ -246,6 +270,7 @@ function maturePayload(component, repairFeedback) {
           component.heading === "2 Preparation Routes"
             ? [
                 {
+                  slotId: "figure-slot-01",
                   figureType: "process_flow",
                   title: "Preparation route to network structure",
                   caption:
@@ -393,12 +418,45 @@ async function verifyCompleteGenerationFlow() {
     plan,
     verifiedReferences,
   });
-  const completed = await runDocumentOrchestration(state, {
+  const orchestrationOptions = {
     generator,
     validator: new MatureDocumentComponentValidator(),
     figureAssetMaterializer,
     maxAttemptsPerComponent: 2,
-  });
+    maxComponentsPerRun: 1,
+  };
+  let completed = state;
+  for (let index = 0; index < plan.components.length; index += 1) {
+    completed = await runDocumentOrchestration(
+      completed,
+      orchestrationOptions,
+    );
+    assert.equal(completed.status, "paused");
+  }
+  assert.equal(
+    completed.components.filter((component) => component.status === "approved")
+      .length,
+    plan.components.length,
+    "all mature text components must be checkpointed before asset generation",
+  );
+  assert.equal(figureGeneratorCalls, 0);
+  assert.equal(completed.figures.length, 1);
+  assert.equal(completed.figures[0].status, "pending");
+
+  completed = await runDocumentOrchestration(
+    completed,
+    orchestrationOptions,
+  );
+  assert.equal(completed.status, "paused");
+  assert.equal(figureGeneratorCalls, 2);
+  assert.equal(completed.figures[0].status, "approved");
+
+  while (completed.status === "paused") {
+    completed = await runDocumentOrchestration(
+      completed,
+      orchestrationOptions,
+    );
+  }
 
   assert.equal(completed.status, "completed");
   const invalidated = invalidateDocumentComponent(completed, "section-02");

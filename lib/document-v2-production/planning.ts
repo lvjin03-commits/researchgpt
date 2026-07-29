@@ -146,6 +146,23 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
           .min(input.minimumSections)
           .max(input.maximumSections),
         conclusionHeading: z.string().trim().min(1).max(500),
+        figures: z
+          .array(
+            z
+              .object({
+                sectionIndex: z.number().int().min(0).max(99),
+                figureType: z.enum([
+                  "mechanism_diagram",
+                  "process_flow",
+                  "conceptual_framework",
+                  "comparison_diagram",
+                  "data_plot",
+                ]),
+                purpose: z.string().trim().min(1).max(1_000),
+              })
+              .strict(),
+          )
+          .max(4),
       })
       .strict();
     const response = await this.client.responses.parse({
@@ -161,6 +178,7 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
         "Stay within the supplied section limits.",
         "Use only availableEvidenceIds; never invent evidence.",
         "Choose section order and relative weights from scientific logic.",
+        "Plan at most four essential figures for the whole document. Each figure must belong to one body section and state its scientific purpose. Do not plan decorative or redundant figures.",
         input.repairFeedback
           ? `The previous outline was rejected. Correct all of these issues: ${input.repairFeedback}`
           : "",
@@ -177,6 +195,10 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
         bodySectionContract: {
           minimumCount: input.minimumSections,
           maximumCount: input.maximumSections,
+        },
+        figureContract: {
+          maximumCount: 4,
+          plannedBeforeContentGeneration: true,
         },
       }),
       text: {

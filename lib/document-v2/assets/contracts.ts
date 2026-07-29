@@ -4,6 +4,7 @@ const IdentifierSchema = z.string().min(1).max(120);
 
 export const FigureRequestDraftSchema = z
   .object({
+    slotId: IdentifierSchema.nullable().default(null),
     figureType: z.enum([
       "mechanism_diagram",
       "process_flow",

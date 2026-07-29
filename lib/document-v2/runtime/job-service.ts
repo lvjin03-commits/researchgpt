@@ -55,20 +55,30 @@ function completedCount(job: DocumentJob): number {
 
 function progressFor(job: DocumentJob, stage = job.stage): number {
   if (stage === "completed") return 100;
-  const contentShare =
-    (completedCount(job) / Math.max(1, job.totalComponents)) * 75;
+  const contentRatio =
+    completedCount(job) / Math.max(1, job.totalComponents);
+  const figures = job.checkpoint.orchestration?.figures ?? [];
+  const assetRatio =
+    figures.length === 0
+      ? 1
+      : figures.filter((figure) => figure.status === "approved").length /
+        figures.length;
+  if (stage === "content_generation") {
+    return Math.min(70, Math.round(8 + contentRatio * 62));
+  }
+  if (stage === "asset_generation") {
+    return Math.min(85, Math.round(70 + assetRatio * 15));
+  }
   const stageBonus: Partial<Record<DocumentJobStage, number>> = {
     queued: 0,
     template_resolution: 3,
     planning: 8,
-    content_generation: 10,
-    asset_generation: 70,
     document_assembly: 85,
     docx_rendering: 90,
     quality_check: 95,
     artifact_storage: 98,
   };
-  return Math.min(99, Math.round((stageBonus[stage] ?? 10) + contentShare));
+  return Math.min(99, stageBonus[stage] ?? 10);
 }
 
 function userErrorMessage(code: string): string {
@@ -238,9 +248,22 @@ export class DocumentV2JobService {
     while (job.checkpoint.orchestration?.status !== "completed") {
       if (await this.cancelRequested(job.jobId)) return this.cancel(job);
       const budget = job.checkpoint.budget;
+      const orchestrationForBudget = job.checkpoint.orchestration;
+      const imageBudgetExhausted = Boolean(
+        budget &&
+          orchestrationForBudget &&
+          orchestrationForBudget.components.every(
+            (component) => component.status === "approved",
+          ) &&
+          orchestrationForBudget.figures.some(
+            (figure) => figure.status !== "approved",
+          ) &&
+          budget.usedImageCalls >= budget.maxImageCalls,
+      );
       if (
         budget &&
         (budget.usedModelCalls >= budget.maxModelCalls ||
+          imageBudgetExhausted ||
           budget.usedRepairAttempts >= budget.maxRepairAttempts ||
           budget.usedExecutionMs >= budget.maxExecutionMs)
       ) {
@@ -273,12 +296,35 @@ export class DocumentV2JobService {
       const before = orchestrationState.currentComponentIndex;
       const component =
         orchestrationState.plan.components[before];
+      const contentPending = orchestrationState.components.some(
+        (item) => item.status !== "approved",
+      );
+      const activeStage: DocumentJobStage = contentPending
+        ? "content_generation"
+        : "asset_generation";
+      const pendingFigure = contentPending
+        ? undefined
+        : orchestrationState.figures.find(
+            (figure) =>
+              figure.status !== "approved" && figure.status !== "failed",
+          );
+      const activeComponentKey =
+        pendingFigure?.request.componentKey ?? component?.componentKey;
+      const activePurpose =
+        pendingFigure?.request.title ??
+        component?.purpose ??
+        "组装已批准的文档内容";
+      if (job.stage !== activeStage) {
+        job = await this.changeStage(job, activeStage);
+      }
       await this.event(
         job,
-        "content_generation",
+        activeStage,
         "started",
-        `正在生成：${component.purpose}`,
-        component.componentKey,
+        activeStage === "asset_generation"
+          ? `正在生成图片：${activePurpose}`
+          : `正在生成：${activePurpose}`,
+        activeComponentKey,
       );
       const started = this.clock().getTime();
       const attemptsBefore = orchestrationState.components.reduce(
@@ -293,11 +339,22 @@ export class DocumentV2JobService {
         (sum, item) => sum + Math.max(0, item.attempts - 1),
         0,
       );
+      let imageCallsUsed = 0;
       const orchestration = await runDocumentOrchestration(
         orchestrationState,
-        { ...this.orchestrationOptions, maxComponentsPerRun: 1 },
+        {
+          ...this.orchestrationOptions,
+          maxComponentsPerRun: 1,
+          maxFigureAssetsPerDocument:
+            budget?.maxImageAssets ?? Number.POSITIVE_INFINITY,
+          onFigureProviderCall: () => {
+            imageCallsUsed += 1;
+          },
+        },
       );
-      const current = orchestration.components[before];
+      const current = component
+        ? orchestration.components[before]
+        : undefined;
       const attemptsAfter = orchestration.components.reduce(
         (sum, item) => sum + item.attempts,
         0,
@@ -318,15 +375,24 @@ export class DocumentV2JobService {
           transientFailuresBefore,
       );
       const repairsUsed = Math.max(0, repairsAfter - repairsBefore);
+      const completedImageAssets = orchestration.figures.filter(
+        (figure) => figure.status === "approved",
+      ).length;
       const savedAt = this.clock().toISOString();
       job = await this.repository.save(
         DocumentJobSchema.parse({
           ...job,
           status:
             orchestration.status === "failed" ? "failed" : "running",
-          stage: "content_generation",
-          progress: progressFor(job, "content_generation"),
-          currentComponentKey: component.componentKey,
+          stage: activeStage,
+          progress: progressFor(
+            {
+              ...job,
+              checkpoint: { ...job.checkpoint, orchestration },
+            },
+            activeStage,
+          ),
+          currentComponentKey: activeComponentKey,
           completedComponents: orchestration.components.filter(
             (item) => item.status === "approved",
           ).length,
@@ -338,6 +404,9 @@ export class DocumentV2JobService {
                   ...job.checkpoint.budget,
                   usedModelCalls:
                     job.checkpoint.budget.usedModelCalls + modelCallsUsed,
+                  usedImageCalls:
+                    job.checkpoint.budget.usedImageCalls + imageCallsUsed,
+                  completedImageAssets,
                   usedRepairAttempts:
                     job.checkpoint.budget.usedRepairAttempts + repairsUsed,
                   usedExecutionMs:
@@ -353,7 +422,7 @@ export class DocumentV2JobService {
                   code: orchestration.failure!.code,
                   userMessage: userErrorMessage(orchestration.failure!.code),
                   technicalMessage: orchestration.failure!.message,
-                  failedStage: "content_generation",
+                  failedStage: activeStage,
                   componentKey: orchestration.failure!.componentKey,
                 }
               : undefined,
@@ -366,11 +435,11 @@ export class DocumentV2JobService {
       if (orchestration.status === "failed") {
         await this.event(
           job,
-          "content_generation",
+          activeStage,
           "failed",
           job.error!.userMessage,
-          component.componentKey,
-          current.attempts || undefined,
+          activeComponentKey,
+          current?.attempts || pendingFigure?.attempts || undefined,
           job.error!.code,
           job.error!.technicalMessage,
         );
@@ -378,11 +447,13 @@ export class DocumentV2JobService {
       }
       await this.event(
         job,
-        "content_generation",
+        activeStage,
         "succeeded",
-        `已完成：${component.purpose}`,
-        component.componentKey,
-        current.attempts || undefined,
+        activeStage === "asset_generation"
+          ? `图片已保存：${activePurpose}`
+          : `已完成：${activePurpose}`,
+        activeComponentKey,
+        current?.attempts || pendingFigure?.attempts || undefined,
         undefined,
         undefined,
         this.clock().getTime() - started,
@@ -406,9 +477,11 @@ export class DocumentV2JobService {
         );
         await this.event(
           job,
-          "content_generation",
+          activeStage,
           "progress",
-          "本轮内容已保存，任务将在下一轮从断点继续。",
+          activeStage === "asset_generation"
+            ? "本轮图片已保存，任务将在下一轮生成下一张图片。"
+            : "本轮内容已保存，任务将在下一轮从下一个文档部分继续。",
         );
         return this.snapshot(jobId);
       }
@@ -603,6 +676,8 @@ export class DocumentV2JobService {
           ? {
               usedModelCalls: job.checkpoint.budget.usedModelCalls,
               usedImageCalls: job.checkpoint.budget.usedImageCalls,
+              completedImageAssets:
+                job.checkpoint.budget.completedImageAssets,
               usedRepairAttempts:
                 job.checkpoint.budget.usedRepairAttempts,
               usedExecutionMs: job.checkpoint.budget.usedExecutionMs,

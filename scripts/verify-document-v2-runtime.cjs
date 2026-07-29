@@ -280,7 +280,13 @@ async function verifyBoundedTicksResumeFromCheckpoint() {
   assert.equal(second.job.status, "queued");
   assert.equal(second.job.completedComponents, 2);
 
-  const completed = await service.run(created.job.jobId, "worker-3", {
+  const third = await service.run(created.job.jobId, "worker-3", {
+    maxComponents: 1,
+  });
+  assert.equal(third.job.status, "queued");
+  assert.equal(third.job.completedComponents, 3);
+
+  const completed = await service.run(created.job.jobId, "worker-4", {
     maxComponents: 1,
   });
   assert.equal(completed.job.status, "completed");
@@ -306,6 +312,129 @@ async function verifyTimeBudgetYieldsAfterCheckpoint() {
   const completed = await service.run(created.job.jobId, "worker-resume");
   assert.equal(completed.job.status, "completed");
   assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
+}
+
+async function verifyImageCallsAndAssetsUseSeparateBudgets() {
+  const repository = new InMemoryDocumentJobRepository();
+  const calls = {};
+  const planWithFigure = {
+    ...plan,
+    figureSlots: [
+      {
+        slotId: "figure-slot-01",
+        componentKey: "introduction",
+        figureType: "process_flow",
+        purpose: "Show the preparation workflow.",
+      },
+    ],
+  };
+  let tick = Date.parse("2026-07-28T12:30:00.000Z");
+  const service = new DocumentV2JobService(
+    repository,
+    {
+      generator: {
+        async generate({ component }) {
+          calls[component.componentKey] =
+            (calls[component.componentKey] ?? 0) + 1;
+          if (component.componentKey !== "introduction") {
+            return payload(component.componentKey);
+          }
+          return {
+            kind: "blocks",
+            blocks: [
+              { type: "heading", level: 1, text: "1 Introduction" },
+              {
+                type: "paragraph",
+                role: "body",
+                text: "Physical gels depend on reversible junctions.",
+                citationIds: ["ref-1"],
+                figureRequestIndexes: [0],
+              },
+            ],
+            figureRequests: [
+              {
+                slotId: "figure-slot-01",
+                figureType: "process_flow",
+                title: "Preparation workflow",
+                caption: "Preparation routes and reversible junction formation.",
+                altText: "A workflow for physical gel preparation.",
+                contentBrief: "Show preparation followed by junction formation.",
+                placementAfterBlockIndex: 1,
+                sourceEvidenceIds: ["ref-1"],
+              },
+            ],
+          };
+        },
+      },
+      validator: { async validate() { return { accepted: true }; } },
+      figureAssetMaterializer: {
+        async materialize(request, context) {
+          context.onProviderCall();
+          context.onProviderCall();
+          return {
+            id: `${request.requestId}-asset`,
+            requestId: request.requestId,
+            format: "png",
+            dataBase64: "cG5n",
+            pixelWidth: 1536,
+            pixelHeight: 1024,
+            dpi: 300,
+            displayWidthPx: 491,
+            displayHeightPx: 327,
+            sha256: "b".repeat(64),
+            title: request.title,
+            altText: request.altText,
+          };
+        },
+      },
+    },
+    {
+      async renderAndStore() {
+        return { artifactId: "artifact-with-figure" };
+      },
+    },
+    () => new Date((tick += 100)),
+  );
+  const created = await service.create({
+    ownerId: "user-1",
+    request,
+    plan: planWithFigure,
+    verifiedReferences: references,
+  });
+  let stored = await repository.get(created.job.jobId);
+  stored = await repository.save(
+    {
+      ...stored,
+      checkpoint: {
+        ...stored.checkpoint,
+        budget: {
+          maxModelCalls: 10,
+          maxImageCalls: 4,
+          maxImageAssets: 1,
+          maxRepairAttempts: 4,
+          maxExecutionMs: 600_000,
+          usedModelCalls: 0,
+          usedImageCalls: 0,
+          completedImageAssets: 0,
+          usedRepairAttempts: 0,
+          usedExecutionMs: 0,
+        },
+      },
+    },
+    stored.revision,
+  );
+  let snapshot;
+  for (let index = 0; index < 6; index += 1) {
+    snapshot = await service.run(created.job.jobId, `figure-worker-${index}`, {
+      maxComponents: 1,
+    });
+    if (snapshot.job.status === "completed") break;
+  }
+  assert.equal(snapshot.job.status, "completed");
+  const completed = await repository.get(created.job.jobId);
+  assert.equal(completed.checkpoint.budget.usedImageCalls, 2);
+  assert.equal(completed.checkpoint.budget.completedImageAssets, 1);
+  assert.equal(completed.checkpoint.orchestration.figures[0].status, "approved");
 }
 
 async function verifyFinalizerFailureIsVisible() {
@@ -487,6 +616,7 @@ async function main() {
   await verifyLeaseBlocksDuplicateWorker();
   await verifyBoundedTicksResumeFromCheckpoint();
   await verifyTimeBudgetYieldsAfterCheckpoint();
+  await verifyImageCallsAndAssetsUseSeparateBudgets();
   await verifyFinalizerFailureIsVisible();
   await verifyDispatchChecksHttpStatus();
   const previousFlag = process.env.DOCUMENT_V2_RUNTIME_ENABLED;

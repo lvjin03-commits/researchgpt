@@ -190,6 +190,26 @@ export const DocumentPlanSchema = z
           }
         }
       }),
+    figureSlots: z
+      .array(
+        z
+          .object({
+            slotId: IdentifierSchema,
+            componentKey: IdentifierSchema,
+            figureType: z.enum([
+              "mechanism_diagram",
+              "process_flow",
+              "conceptual_framework",
+              "comparison_diagram",
+              "data_plot",
+            ]),
+            purpose: z.string().trim().min(1).max(1_000),
+          })
+          .strict(),
+      )
+      .max(4)
+      .default([]),
+    figurePlanningCompleted: z.boolean().default(false),
     evidenceRequirements: z.array(
       z
         .object({
@@ -200,7 +220,31 @@ export const DocumentPlanSchema = z
         .strict(),
     ),
   })
-  .strict();
+  .strict()
+  .superRefine((plan, context) => {
+    const componentByKey = new Map(
+      plan.components.map((component) => [component.componentKey, component]),
+    );
+    const slotIds = new Set<string>();
+    plan.figureSlots.forEach((slot, index) => {
+      if (slotIds.has(slot.slotId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["figureSlots", index, "slotId"],
+          message: "Figure slot IDs must be unique.",
+        });
+      }
+      slotIds.add(slot.slotId);
+      const component = componentByKey.get(slot.componentKey);
+      if (!component || component.type !== "section") {
+        context.addIssue({
+          code: "custom",
+          path: ["figureSlots", index, "componentKey"],
+          message: "Figure slots must reference a planned body section.",
+        });
+      }
+    });
+  });
 
 export type DocumentPlan = z.infer<typeof DocumentPlanSchema>;
 
