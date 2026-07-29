@@ -11,23 +11,18 @@ import type { DocumentTemplateMatcher } from "@/lib/document-v2/templates/resolv
 import type { SemanticOutlinePlanner } from "@/lib/document-v2/planning/planner";
 import { SemanticOutlineProposalSchema } from "@/lib/document-v2/planning/contracts";
 
-const UnderstoodRequestSchema = z.discriminatedUnion("ready", [
-  z
-    .object({
-      ready: z.literal(true),
-      topic: z.string().trim().min(1).max(500),
-      language: z.enum(["zh", "en"]),
-      specialInstructions: z.array(z.string().trim().min(1).max(500)).max(20),
-    })
-    .strict(),
-  z
-    .object({
-      ready: z.literal(false),
-      question: z.string().trim().min(1).max(500),
-      reason: z.string().trim().min(1).max(500),
-    })
-    .strict(),
-]);
+const UnderstoodRequestSchema = z
+  .object({
+    ready: z.boolean(),
+    topic: z.string().trim().min(1).max(500).nullable(),
+    language: z.enum(["zh", "en"]).nullable(),
+    specialInstructions: z
+      .array(z.string().trim().min(1).max(500))
+      .max(20),
+    question: z.string().trim().min(1).max(500).nullable(),
+    reason: z.string().trim().min(1).max(500).nullable(),
+  })
+  .strict();
 
 export class DocumentClarificationNeededError extends Error {
   constructor(
@@ -76,10 +71,16 @@ export async function understandDocumentRequest(
   }
   const understood = response.output_parsed;
   if (!understood.ready) {
+    if (!understood.question || !understood.reason) {
+      throw new Error("The clarification response is incomplete.");
+    }
     throw new DocumentClarificationNeededError(
       understood.question,
       understood.reason,
     );
+  }
+  if (!understood.topic || !understood.language) {
+    throw new Error("The understood document request is incomplete.");
   }
   return DocumentRequestSchema.parse({
     requestId: input.idempotencyKey ?? randomUUID(),
