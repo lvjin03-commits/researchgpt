@@ -23,6 +23,10 @@ export type ChatStreamEvent =
         model: string;
       };
     }
+  | {
+      type: "document_job";
+      jobId: string;
+    }
   | { type: "incomplete"; reason: string }
   | { type: "error"; message: string; code?: string }
   | {

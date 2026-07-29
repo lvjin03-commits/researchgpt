@@ -76,6 +76,14 @@ export function DocumentV2JobProgress({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
+        {job.status === "completed" && job.artifactId ? (
+          <a
+            href={`/api/download/${job.artifactId}`}
+            className="inline-flex items-center rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-medium text-white"
+          >
+            下载 Word 文档
+          </a>
+        ) : null}
         {active && onCancel ? (
           <button
             type="button"

@@ -9,10 +9,17 @@ import { DocumentV2JobProgress } from "./document-v2-job-progress";
 
 type Props = {
   jobId: string;
-  initialSnapshot: DocumentJobSnapshot;
+  initialSnapshot?: DocumentJobSnapshot;
 };
 
-const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+const TERMINAL_STATUSES = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "dead_letter",
+  "budget_exhausted",
+  "awaiting_user_input",
+]);
 
 export function DocumentV2JobMonitor({
   jobId,
@@ -20,6 +27,7 @@ export function DocumentV2JobMonitor({
 }: Props) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [busy, setBusy] = useState(false);
+  const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [connectionMessage, setConnectionMessage] = useState<string>();
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -69,12 +77,12 @@ export function DocumentV2JobMonitor({
         }
       }, delay);
     };
-    if (!TERMINAL_STATUSES.has(snapshot.job.status)) schedule(1_500);
+    if (!snapshot || !TERMINAL_STATUSES.has(snapshot.job.status)) schedule(0);
     return () => {
       disposed = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [refresh, snapshot.job.status]);
+  }, [refresh, snapshot?.job.status]);
 
   const control = async (action: "cancel" | "resume") => {
     setBusy(true);
@@ -98,6 +106,42 @@ export function DocumentV2JobMonitor({
     }
   };
 
+  const clarify = async () => {
+    if (!snapshot?.job.clarification || !clarificationAnswer.trim()) return;
+    setBusy(true);
+    setConnectionMessage(undefined);
+    try {
+      const response = await fetch(`/api/document-v2/jobs/${jobId}`, {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "clarify",
+          questionId: snapshot.job.clarification.questionId,
+          answer: clarificationAnswer.trim(),
+        }),
+      });
+      setSnapshot(await readResponse(response));
+      setClarificationAnswer("");
+    } catch (error) {
+      setConnectionMessage(
+        error instanceof Error ? error.message : "提交补充信息失败。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!snapshot) {
+    return (
+      <div className="my-3 rounded-2xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600 shadow-sm">
+        正在读取文档任务状态……
+      </div>
+    );
+  }
+
   return (
     <div>
       <DocumentV2JobProgress
@@ -106,6 +150,30 @@ export function DocumentV2JobMonitor({
         onCancel={() => void control("cancel")}
         onResume={() => void control("resume")}
       />
+      {snapshot.job.status === "awaiting_user_input" &&
+      snapshot.job.clarification ? (
+        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-medium text-amber-950">
+            {snapshot.job.clarification.question}
+          </p>
+          <textarea
+            value={clarificationAnswer}
+            onChange={(event) => setClarificationAnswer(event.target.value)}
+            disabled={busy}
+            rows={3}
+            className="mt-3 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-500"
+            placeholder="请补充主题或范围"
+          />
+          <button
+            type="button"
+            disabled={busy || !clarificationAnswer.trim()}
+            onClick={() => void clarify()}
+            className="mt-2 rounded-lg bg-amber-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            提交并继续生成
+          </button>
+        </div>
+      ) : null}
       {connectionMessage ? (
         <p className="mt-2 text-sm text-amber-700" role="status">
           {connectionMessage}

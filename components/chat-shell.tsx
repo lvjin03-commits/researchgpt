@@ -1237,6 +1237,9 @@ export function ChatShell() {
               ].join("\n"),
             );
           },
+          onDocumentJob: (jobId) => {
+            appendToAssistant(`[[RESEARCHGPT_DOCUMENT_JOB:${jobId}]]`);
+          },
           onAttachmentsPrepared: (context) => {
             streamingMessages = streamingMessages.map((message, index) => {
               if (index !== history.length || message.role !== "user") {

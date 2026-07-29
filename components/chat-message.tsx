@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { MessageExportMenu } from "@/components/message-export-menu";
 import type { DisplayChatMessage } from "@/lib/chat/types";
 import { DocumentIcon, ImageIcon } from "@/components/icons";
+import { DocumentV2JobMonitor } from "@/components/document-v2-job-monitor";
 
 type ChatMessageProps = {
   message: DisplayChatMessage;
@@ -35,9 +36,11 @@ type PlanDisclosurePayload = {
 
 type MessagePart =
   | { type: "markdown"; value: string }
-  | { type: "plan"; value: PlanDisclosurePayload };
+  | { type: "plan"; value: PlanDisclosurePayload }
+  | { type: "document_job"; value: string };
 
-const PLAN_DISCLOSURE_PATTERN = /\[\[RESEARCHGPT_PLAN:([^\]]+)\]\]/g;
+const MESSAGE_CONTROL_PATTERN =
+  /\[\[RESEARCHGPT_(PLAN|DOCUMENT_JOB):([^\]]+)\]\]/g;
 
 function parsePlanDisclosurePayload(value: string): PlanDisclosurePayload | null {
   try {
@@ -63,15 +66,19 @@ function splitPlanDisclosures(content: string): MessagePart[] {
   const parts: MessagePart[] = [];
   let cursor = 0;
 
-  for (const match of content.matchAll(PLAN_DISCLOSURE_PATTERN)) {
+  for (const match of content.matchAll(MESSAGE_CONTROL_PATTERN)) {
     const index = match.index ?? 0;
     if (index > cursor) {
       parts.push({ type: "markdown", value: content.slice(cursor, index) });
     }
 
-    const payload = parsePlanDisclosurePayload(match[1] ?? "");
-    if (payload) {
-      parts.push({ type: "plan", value: payload });
+    if (match[1] === "PLAN") {
+      const payload = parsePlanDisclosurePayload(match[2] ?? "");
+      if (payload) {
+        parts.push({ type: "plan", value: payload });
+      }
+    } else {
+      parts.push({ type: "document_job", value: match[2] ?? "" });
     }
     cursor = index + match[0].length;
   }
@@ -814,6 +821,11 @@ function AssistantMarkdown({ content }: { content: string }) {
           <PlanDisclosure
             key={`plan-${partIndex}-${part.value.summary}`}
             payload={part.value}
+          />
+        ) : part.type === "document_job" ? (
+          <DocumentV2JobMonitor
+            key={`document-job-${part.value}`}
+            jobId={part.value}
           />
         ) : (
           <ReactMarkdown

@@ -1,6 +1,7 @@
 import { validateChatMessages } from "@/lib/ai/provider";
 import { openResponsesChatStream } from "@/lib/ai/openai";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { after } from "next/server";
 import type { ChatMessage } from "@/lib/ai/types";
 import { getTextFromMessageContent } from "@/lib/ai/types";
 import {
@@ -84,6 +85,8 @@ import { getToolLabel } from "@/lib/chat/tool-registry";
 import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 import { createClient } from "@/lib/supabase/server";
 import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/uploads/storage-constants";
+import { SupabaseDocumentJobRepository } from "@/lib/document-v2/runtime/supabase-repository";
+import { DocumentV2JobService } from "@/lib/document-v2/runtime/job-service";
 
 export const runtime = "nodejs";
 
@@ -2217,6 +2220,103 @@ export async function POST(request: Request) {
             requestedExportFormats,
             shouldExportPreviousAssistant,
           );
+
+          const useDocumentV2 =
+            process.env.DOCUMENT_V2_RUNTIME_ENABLED === "true" &&
+            useDedicatedArtifactMode &&
+            requestedExportFormats.length === 1 &&
+            requestedExportFormats[0] === "docx";
+
+          if (useDocumentV2) {
+            const previousAssistant = shouldExportPreviousAssistant
+              ? [...messages]
+                  .reverse()
+                  .find((message) => message.role === "assistant")
+              : undefined;
+            const previousContent = previousAssistant
+              ? getTextFromMessageContent(previousAssistant.content).trim()
+              : "";
+            const instruction = [
+              query,
+              previousContent
+                ? "以下是本次请求承接的上一轮助手内容。请将它作为待完善的内容来源，而不是直接复制聊天文本："
+                : "",
+              previousContent.slice(0, 6_000),
+            ]
+              .filter(Boolean)
+              .join("\n\n")
+              .slice(0, 8_000);
+            const jobId = randomUUID();
+            const repository = new SupabaseDocumentJobRepository(
+              supabase,
+              user.id,
+            );
+            const service = new DocumentV2JobService(
+              repository,
+              {
+                generator: {
+                  async generate() {
+                    throw new Error("Chat intake does not execute components.");
+                  },
+                },
+                validator: {
+                  async validate() {
+                    return { accepted: true };
+                  },
+                },
+              },
+              {
+                async renderAndStore() {
+                  throw new Error("Chat intake does not render documents.");
+                },
+              },
+            );
+            await service.createIntake({
+              ownerId: user.id,
+              jobId,
+              instruction,
+              source: {
+                kind: previousContent ? "previous_message" : "prompt",
+                sourceIds: previousContent ? ["previous-assistant-message"] : [],
+              },
+            });
+            await documentTrace?.event({
+              stage: "pipeline_selection",
+              status: "info",
+              details: {
+                selectedPipeline: "document_v2",
+                jobId,
+                reason: "dedicated_docx_request",
+              },
+            });
+            const workerUrl = new URL(
+              "/api/internal/document-v2-worker",
+              request.url,
+            );
+            after(async () => {
+              const secret = process.env.CRON_SECRET;
+              if (!secret) return;
+              try {
+                await fetch(workerUrl, {
+                  headers: { Authorization: `Bearer ${secret}` },
+                  cache: "no-store",
+                });
+              } catch (dispatchError) {
+                console.error(
+                  "[document-v2-chat-dispatch] Immediate dispatch failed",
+                  dispatchError,
+                );
+              }
+            });
+            controller.enqueue(
+              encodeChatStreamEvent({
+                type: "document_job",
+                jobId,
+              }),
+            );
+            controller.close();
+            return;
+          }
 
           if (useDedicatedArtifactMode) {
             const links: string[] = [];
