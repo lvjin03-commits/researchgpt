@@ -3,6 +3,7 @@ import { DocumentOrchestrationStateSchema } from "../orchestration/contracts";
 import { VerifiedReferenceSchema } from "../contracts";
 
 const IdentifierSchema = z.string().trim().min(1).max(120);
+const DateTimeSchema = z.iso.datetime({ offset: true });
 
 export const DocumentEvidenceItemSchema = z
   .object({
@@ -113,7 +114,7 @@ export const DocumentJobEventSchema = z
     durationMs: z.number().int().nonnegative().optional(),
     errorCode: IdentifierSchema.optional(),
     technicalMessage: z.string().trim().min(1).max(2_000).optional(),
-    createdAt: z.iso.datetime(),
+    createdAt: DateTimeSchema,
   })
   .strict();
 
@@ -152,7 +153,7 @@ export const DocumentJobCheckpointSchema = z
     executionSnapshot: DocumentExecutionSnapshotSchema.optional(),
     budget: DocumentJobBudgetSchema.optional(),
     renderedArtifactId: IdentifierSchema.optional(),
-    savedAt: z.iso.datetime(),
+    savedAt: DateTimeSchema,
   })
   .strict();
 
@@ -171,10 +172,10 @@ export const DocumentJobSchema = z
     currentComponentKey: IdentifierSchema.optional(),
     completedComponents: z.number().int().nonnegative(),
     totalComponents: z.number().int().nonnegative(),
-    cancelRequestedAt: z.iso.datetime().optional(),
+    cancelRequestedAt: DateTimeSchema.optional(),
     resumable: z.boolean(),
     leaseOwner: IdentifierSchema.optional(),
-    leaseExpiresAt: z.iso.datetime().optional(),
+    leaseExpiresAt: DateTimeSchema.optional(),
     error: z
       .object({
         code: IdentifierSchema,
@@ -197,10 +198,10 @@ export const DocumentJobSchema = z
       .optional(),
     artifactId: IdentifierSchema.optional(),
     checkpoint: DocumentJobCheckpointSchema,
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-    startedAt: z.iso.datetime().optional(),
-    finishedAt: z.iso.datetime().optional(),
+    createdAt: DateTimeSchema,
+    updatedAt: DateTimeSchema,
+    startedAt: DateTimeSchema.optional(),
+    finishedAt: DateTimeSchema.optional(),
     revision: z.number().int().nonnegative(),
   })
   .strict()
