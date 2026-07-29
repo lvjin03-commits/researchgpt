@@ -589,6 +589,9 @@ export class DocumentV2JobService {
                 job.checkpoint.executionSnapshot.generatorPromptVersion,
             }
           : {}),
+        ...(job.checkpoint.intake?.source.kind
+          ? { sourceKind: job.checkpoint.intake.source.kind }
+          : {}),
       },
       componentKey,
       attempt,

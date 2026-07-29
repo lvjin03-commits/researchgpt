@@ -483,8 +483,8 @@ function routeContextBundleFastPath(input: IntentRouterInput): IntentPlan | null
   if (!query || !bundle) return null;
 
   const shouldUsePrevious =
-    bundle.contentSource === "previous_assistant_output" ||
-    (hasReusablePreviousOutput(input) && queryUsesPreviousOutputAsSource(query));
+    hasReusablePreviousOutput(input) &&
+    queryUsesPreviousOutputAsSource(query);
 
   if (
     bundle.taskTypeHint === "critique_existing_output" &&
@@ -574,33 +574,6 @@ function routeFastPath(input: IntentRouterInput): IntentPlan | null {
         inputScope: "current_message",
         outputType: "chat_answer",
         tools: ["chat_model"],
-      },
-    );
-  }
-
-  if (
-    input.contextBundle?.taskTypeHint === "create_artifact" &&
-    input.contextBundle.contentSource === "previous_assistant_output"
-  ) {
-    const outputType: IntentPlan["outputType"] =
-      /\bexcel\b|xlsx|表格/i.test(query) &&
-      !/\bword\b|docx|pdf|ppt|pptx/i.test(query)
-        ? "excel"
-        : /pdf/i.test(query) && !/\bword\b|docx|excel|xlsx|ppt|pptx/i.test(query)
-          ? "pdf"
-          : /ppt|pptx/i.test(query) &&
-              !/\bword\b|docx|excel|xlsx|pdf/i.test(query)
-            ? "ppt"
-            : "word";
-    return createLocalPlan(
-      input,
-      "create_artifact",
-      "User is continuing from the previous assistant output and wants downloadable files.",
-      {
-        confidence: 0.93,
-        inputScope: "current_message",
-        outputType,
-        tools: ["document_pipeline", "quality_checker"],
       },
     );
   }

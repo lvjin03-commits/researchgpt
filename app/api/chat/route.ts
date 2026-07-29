@@ -372,61 +372,6 @@ function previousAssistantTextBeforeLastUser(messages: ChatMessage[]): string {
   return "";
 }
 
-function queryLooksLikeFollowUpTransformRequest(query: string): boolean {
-  const compactQuery = query.replace(/\s+/g, " ").trim().toLowerCase();
-  if (!compactQuery || compactQuery.length > 180) return false;
-
-  const followUpReference =
-    /\b(previous|above|last answer|last response|this|that|same content|it)\b/i.test(
-      compactQuery,
-    ) ||
-    /(\u4e0a\u9762|\u521a\u624d|\u4e0a\u4e00\u6761|\u4e4b\u524d|\u524d\u9762|\u8fd9\u4e2a|\u8fd9\u4efd|\u8fd9\u7bc7|\u8be5|\u5b83|\u5176|\u540c\u6837\u5185\u5bb9|\u5176\u4ed6\u5185\u5bb9\u4e0d\u53d8)/u.test(
-      query,
-    );
-  const transformAction =
-    /\b(translate|rephrase|rewrite|export|download|make|create|generate|version|english|chinese|bilingual)\b/i.test(
-      compactQuery,
-    ) ||
-    /(\u8f93\u51fa|\u751f\u6210|\u5bfc\u51fa|\u4e0b\u8f7d|\u4fdd\u5b58|\u6539\u6210|\u6539\u5199|\u91cd\u5199|\u7ffb\u8bd1|\u7248\u672c|\u5168\u82f1\u6587|\u5168\u4e2d\u6587|\u82f1\u6587|\u4e2d\u6587|\u4e2d\u82f1|\u53cc\u8bed)/u.test(
-      query,
-    );
-
-  return followUpReference || transformAction;
-}
-
-function queryRequiresFreshExternalSource(query: string): boolean {
-  return /(\u641c\u7d22|\u68c0\u7d22|\u8bfb\u53d6|\u5206\u6790.*(\u9879\u76ee|\u6587\u4ef6\u5939|\u6587\u732e|pdf)|\u4e0a\u4f20|\u65b0\u6587\u4ef6|\u672c\u5730\u6587\u4ef6|search|retrieve|read .*file|analy[sz]e .*file|project|folder|uploaded file)/iu.test(
-    query,
-  );
-}
-
-function isFollowUpExportRequest(query: string, formats: ExportFormat[]): boolean {
-  if (formats.length === 0) return false;
-  const normalizedQuery = query.replace(/\s+/g, "").toLowerCase();
-  if (normalizedQuery.length > 180) return false;
-  const requestedFormat =
-    /(excel|xlsx|word|docx|pdf|ppt|pptx|\u8868\u683c|\u6587\u6863|\u5e7b\u706f\u7247)/iu.test(
-      normalizedQuery,
-    );
-  return requestedFormat && queryLooksLikeFollowUpTransformRequest(query);
-  const compactQuery = query.replace(/\s+/g, "").toLowerCase();
-  if (compactQuery.length > 80) return false;
-  return /^(帮我|请|直接|把|将|再)?(生成|输出|导出|制作|保存|下载|做成|转成)?(excel|xlsx|word|docx|pdf|ppt|pptx|、|，|,|和|及|以及|\+)+文件?$/.test(
-    compactQuery,
-  );
-}
-
-function shouldUsePreviousAssistantAsSource(
-  query: string,
-  source: string,
-  formats: ExportFormat[],
-): boolean {
-  if (source.length < 80) return false;
-  if (isFollowUpExportRequest(query, formats)) return true;
-  if (!queryLooksLikeFollowUpTransformRequest(query)) return false;
-  return !queryRequiresFreshExternalSource(query);
-}
-
 function buildPreviousAssistantSourceMessage(source: string): ChatMessage {
   return {
     role: "system",
@@ -492,9 +437,7 @@ function isDedicatedArtifactFormat(format: ExportFormat): boolean {
 function shouldUseDedicatedArtifactMode(
   plan: IntentPlan,
   formats: ExportFormat[],
-  exportingPreviousAssistant: boolean,
 ): boolean {
-  if (exportingPreviousAssistant) return false;
   if (formats.length === 0) return false;
   if (!formats.every(isDedicatedArtifactFormat)) return false;
   if (formats.some((format) => ["docx", "xlsx", "pptx", "pdf"].includes(format))) {
@@ -1441,11 +1384,8 @@ export async function POST(request: Request) {
     );
     const previousAssistantExportSource =
       previousAssistantTextBeforeLastUser(messages);
-    const shouldUsePreviousAssistantSource = shouldUsePreviousAssistantAsSource(
-      query,
-      previousAssistantExportSource,
-      requestedExportFormats,
-    ) || intentPlan.inputScope === "previous_assistant_output";
+    const shouldUsePreviousAssistantSource =
+      intentPlan.inputScope === "previous_assistant_output";
     const shouldExportPreviousAssistant =
       requestedExportFormats.length > 0 && shouldUsePreviousAssistantSource;
     const effectiveToolPlan = shouldUsePreviousAssistantSource
@@ -1751,110 +1691,6 @@ export async function POST(request: Request) {
                 webSearchCalls: 0,
                 codeInterpreterCalls: 0,
                 estimatedCostUsd: 0,
-              }),
-            );
-            controller.close();
-            return;
-          }
-
-          if (shouldExportPreviousAssistant) {
-            const links: string[] = [];
-            const artifactIds: string[] = [];
-            const title = createCleanExportTitle(
-              previousAssistantExportSource.split("\n").find((line) => line.trim()) ||
-                query,
-            );
-
-            controller.enqueue(
-              encodeChatStreamEvent({
-                type: "status",
-                message: "已读取上一条回答，正在生成可下载文件。",
-              }),
-            );
-            await documentTrace?.event({
-              stage: "pipeline_selection",
-              status: "info",
-              details: {
-                selectedPipeline: "legacy_previous_assistant_export",
-                reason: "previous_assistant_output_selected_as_source",
-              },
-            });
-
-            for (const format of requestedExportFormats) {
-              const exportStartedAt = Date.now();
-              try {
-                await documentTrace?.event({
-                  stage: "artifact_render_and_store",
-                  componentId: format,
-                  attempt: 1,
-                  status: "started",
-                  details: { source: "previous_assistant_output" },
-                });
-                const created = await createExport(
-                  {
-                    format,
-                    title,
-                    content: previousAssistantExportSource,
-                    metadata: {
-                      source: "chat-follow-up-export",
-                      templateId: selectExportTemplateId(query, format),
-                      documentLanguage: resolveDocumentLanguage({
-                        query,
-                        content: previousAssistantExportSource,
-                      }),
-                      requestQuery: query,
-                    },
-                  },
-                  user.id,
-                );
-                const artifactId = created.downloadUrl.split("/").at(-1);
-                if (artifactId) artifactIds.push(artifactId);
-                await documentTrace?.event({
-                  stage: "artifact_render_and_store",
-                  componentId: format,
-                  attempt: 1,
-                  status: "succeeded",
-                  durationMs: Date.now() - exportStartedAt,
-                  details: { filename: created.filename, artifactId },
-                });
-                links.push(`- [${created.filename}](${created.downloadUrl})`);
-              } catch (exportError) {
-                await documentTrace?.event({
-                  stage: "artifact_render_and_store",
-                  componentId: format,
-                  attempt: 1,
-                  status: "failed",
-                  durationMs: Date.now() - exportStartedAt,
-                  error: exportError,
-                });
-                const message =
-                  exportError instanceof Error ? exportError.message : "未知错误";
-                links.push(buildRecoverableExportFailureLine(format, message));
-              }
-            }
-            if (artifactIds.length > 0) {
-              await documentTrace?.complete({
-                artifactIds,
-                details: {
-                  selectedPipeline: "legacy_previous_assistant_export",
-                  succeededFormats: artifactIds.length,
-                  requestedFormats: requestedExportFormats.length,
-                },
-              });
-            } else {
-              await documentTrace?.fail({
-                stage: "artifact_render_and_store",
-                error: new Error("所有请求格式均未生成可下载文件。"),
-              });
-            }
-
-            controller.enqueue(
-              encodeChatStreamEvent({
-                type: "text",
-                delta: [
-                  "我已按上一条回答的内容生成文件，不需要你再补充主题。",
-                  buildExportLinksMessage(links),
-                ].join("\n"),
               }),
             );
             controller.close();
@@ -2218,23 +2054,54 @@ export async function POST(request: Request) {
           const useDedicatedArtifactMode = shouldUseDedicatedArtifactMode(
             intentPlan,
             requestedExportFormats,
-            shouldExportPreviousAssistant,
           );
 
+          const requestsDocx = requestedExportFormats.includes("docx");
+          const isSingleDocxRequest =
+            requestedExportFormats.length === 1 &&
+            requestedExportFormats[0] === "docx";
           const useDocumentV2 =
             process.env.DOCUMENT_V2_RUNTIME_ENABLED === "true" &&
             useDedicatedArtifactMode &&
-            requestedExportFormats.length === 1 &&
-            requestedExportFormats[0] === "docx";
+            isSingleDocxRequest;
+
+          if (requestsDocx && !isSingleDocxRequest) {
+            const error = new Error(
+              "Word 文档必须由新版文档主链单独生成。请将 DOCX 与其他文件格式拆分为不同请求。",
+            );
+            await documentTrace?.fail({
+              stage: "pipeline_selection",
+              error,
+              details: {
+                selectedPipeline: "document_v2_required",
+                requestedFormats: requestedExportFormats,
+                reason: "mixed_docx_formats_are_not_supported",
+              },
+            });
+            throw error;
+          }
+
+          if (
+            requestsDocx &&
+            process.env.DOCUMENT_V2_RUNTIME_ENABLED !== "true"
+          ) {
+            const error = new Error(
+              "新版 Word 文档生成主链当前未启用，系统不会回退到旧版聊天文本导出。",
+            );
+            await documentTrace?.fail({
+              stage: "pipeline_selection",
+              error,
+              details: {
+                selectedPipeline: "document_v2_required",
+                reason: "document_v2_runtime_disabled",
+              },
+            });
+            throw error;
+          }
 
           if (useDocumentV2) {
-            const previousAssistant = shouldExportPreviousAssistant
-              ? [...messages]
-                  .reverse()
-                  .find((message) => message.role === "assistant")
-              : undefined;
-            const previousContent = previousAssistant
-              ? getTextFromMessageContent(previousAssistant.content).trim()
+            const previousContent = shouldExportPreviousAssistant
+              ? previousAssistantExportSource.trim()
               : "";
             const instruction = [
               query,

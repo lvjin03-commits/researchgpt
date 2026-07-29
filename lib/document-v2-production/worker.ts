@@ -313,7 +313,11 @@ export async function executeOneDocumentV2Tick() {
   const job = await claimNext(supabase, workerId);
   if (!job) return { state: "idle" as const };
 
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    timeout: 75_000,
+    maxRetries: 0,
+  });
   const repository = new SupabaseDocumentJobRepository(supabase, job.ownerId);
   await repository.appendEvent({
     eventId: randomUUID(),

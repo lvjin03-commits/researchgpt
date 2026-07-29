@@ -349,6 +349,48 @@ async function main() {
     /result\.state\s*!==\s*"idle"/,
     "The worker must immediately drain the next dispatch until the queue is idle.",
   );
+  const chatRouteSource = fs.readFileSync(
+    path.join(projectRoot, "app/api/chat/route.ts"),
+    "utf8",
+  );
+  assert.match(
+    chatRouteSource,
+    /const shouldUsePreviousAssistantSource\s*=\s*\n?\s*intentPlan\.inputScope === "previous_assistant_output"/,
+    "Conversation source selection must come from the semantic router decision.",
+  );
+  assert.doesNotMatch(
+    chatRouteSource,
+    /legacy_previous_assistant_export/,
+    "The previous-assistant direct export pipeline must be removed.",
+  );
+  assert.match(
+    chatRouteSource,
+    /Word 文档必须由新版文档主链单独生成/,
+    "Mixed DOCX requests must not fall back to a legacy exporter.",
+  );
+  assert.match(
+    chatRouteSource,
+    /系统不会回退到旧版聊天文本导出/,
+    "A disabled V2 runtime must fail explicitly instead of exporting chat text.",
+  );
+  const intentRouterSource = fs.readFileSync(
+    path.join(projectRoot, "lib/chat/intent-router.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    intentRouterSource,
+    /const shouldUsePrevious\s*=\s*\n?\s*bundle\.contentSource === "previous_assistant_output"/,
+    "A stale context bundle must not override the current user message.",
+  );
+  const productionWorkerSource = fs.readFileSync(
+    path.join(projectRoot, "lib/document-v2-production/worker.ts"),
+    "utf8",
+  );
+  assert.match(
+    productionWorkerSource,
+    /timeout:\s*75_000/,
+    "Model calls must finish before the worker platform timeout.",
+  );
   await verifyIntakeExistsBeforePlanning();
   await verifyCancelResumeAndCompletion();
   await verifyLeaseBlocksDuplicateWorker();
