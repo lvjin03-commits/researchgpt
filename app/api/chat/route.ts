@@ -87,6 +87,14 @@ import { createClient } from "@/lib/supabase/server";
 import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/uploads/storage-constants";
 import { SupabaseDocumentJobRepository } from "@/lib/document-v2/runtime/supabase-repository";
 import { DocumentV2JobService } from "@/lib/document-v2/runtime/job-service";
+import {
+  dispatchDocumentV2Worker,
+  logDocumentV2DispatchFailure,
+} from "@/lib/document-v2-production/dispatch";
+import {
+  inspectDocumentV2Runtime,
+  requireDocumentV2PublicRuntime,
+} from "@/lib/document-v2-production/runtime-config";
 
 export const runtime = "nodejs";
 
@@ -2060,8 +2068,9 @@ export async function POST(request: Request) {
           const isSingleDocxRequest =
             requestedExportFormats.length === 1 &&
             requestedExportFormats[0] === "docx";
+          const documentV2Readiness = inspectDocumentV2Runtime();
           const useDocumentV2 =
-            process.env.DOCUMENT_V2_RUNTIME_ENABLED === "true" &&
+            documentV2Readiness.publicEnabled &&
             useDedicatedArtifactMode &&
             isSingleDocxRequest;
 
@@ -2083,7 +2092,7 @@ export async function POST(request: Request) {
 
           if (
             requestsDocx &&
-            process.env.DOCUMENT_V2_RUNTIME_ENABLED !== "true"
+            !documentV2Readiness.publicEnabled
           ) {
             const error = new Error(
               "新版 Word 文档生成主链当前未启用，系统不会回退到旧版聊天文本导出。",
@@ -2100,6 +2109,7 @@ export async function POST(request: Request) {
           }
 
           if (useDocumentV2) {
+            requireDocumentV2PublicRuntime();
             const previousContent = shouldExportPreviousAssistant
               ? previousAssistantExportSource.trim()
               : "";
@@ -2156,23 +2166,19 @@ export async function POST(request: Request) {
                 reason: "dedicated_docx_request",
               },
             });
-            const workerUrl = new URL(
-              "/api/internal/document-v2-worker",
-              request.url,
-            );
             after(async () => {
-              const secret = process.env.CRON_SECRET;
-              if (!secret) return;
               try {
-                await fetch(workerUrl, {
-                  headers: { Authorization: `Bearer ${secret}` },
-                  cache: "no-store",
+                await dispatchDocumentV2Worker({
+                  cause: "job_created",
+                  requestUrl: request.url,
+                  jobId,
                 });
               } catch (dispatchError) {
-                console.error(
-                  "[document-v2-chat-dispatch] Immediate dispatch failed",
-                  dispatchError,
-                );
+                logDocumentV2DispatchFailure({
+                  cause: "job_created",
+                  jobId,
+                  error: dispatchError,
+                });
               }
             });
             controller.enqueue(

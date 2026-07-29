@@ -105,6 +105,33 @@ Required server-only environment variables:
 - optional `DOCUMENT_V2_WORKER_BUDGET_MS` wall-clock budget (45 seconds by
   default, capped at 240 seconds).
 
+`lib/document-v2-production/runtime-config.ts` is the single source of truth
+for this contract. Public intake is allowed only when the public rollout flag
+is enabled and every required worker variable is present and valid. New
+deployments may use `DOCUMENT_V2_PUBLIC_ENABLED`; when it is absent, the legacy
+`DOCUMENT_V2_RUNTIME_ENABLED` flag remains a compatibility fallback.
+
+All immediate and continuation dispatches go through
+`lib/document-v2-production/dispatch.ts`. A non-2xx worker response is a failed
+dispatch even when `fetch()` itself resolves. Missing configuration returns
+503, while an invalid caller credential returns 401. Dispatch failures never
+delete the durable job or outbox entry.
+
+The authenticated read-only probe is
+`GET /api/internal/document-v2-worker/probe`. It checks configuration,
+database access, migration 016's health RPC, and the export storage bucket. It
+does not claim jobs or invoke a model.
+
+Production rollout order:
+
+1. deploy with public intake disabled;
+2. apply all database migrations, including
+   `016_document_v2_runtime_health.sql`;
+3. configure the worker secret and remaining required variables;
+4. call the authenticated probe;
+5. run `npm run smoke:document-v2` with a dedicated test account;
+6. open public intake only after the downloaded DOCX passes validation.
+
 Migration `014_document_v2_worker.sql` installs the service-role-only atomic
 claim function. Vercel Hobby permits only a daily cron, which is configured as
 a deployment-safe fallback. Before production traffic is enabled, the project

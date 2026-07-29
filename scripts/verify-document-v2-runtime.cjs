@@ -336,6 +336,53 @@ async function verifyFinalizerFailureIsVisible() {
   );
 }
 
+async function verifyDispatchChecksHttpStatus() {
+  const {
+    DocumentV2DispatchError,
+    dispatchDocumentV2Worker,
+  } = require("../lib/document-v2-production/dispatch.ts");
+  const previous = {
+    CRON_SECRET: process.env.CRON_SECRET,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  };
+  const previousFetch = global.fetch;
+  process.env.CRON_SECRET = "a".repeat(32);
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
+  process.env.OPENAI_API_KEY = "openai";
+
+  try {
+    global.fetch = async () =>
+      new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    await assert.rejects(
+      () =>
+        dispatchDocumentV2Worker({
+          cause: "job_created",
+          requestUrl: "https://example.com/api/chat",
+          jobId: requestId,
+        }),
+      (error) =>
+        error instanceof DocumentV2DispatchError && error.status === 401,
+    );
+
+    global.fetch = async () =>
+      Response.json({ state: "idle" }, { status: 200 });
+    const result = await dispatchDocumentV2Worker({
+      cause: "recovery",
+      requestUrl: "https://example.com/api/chat",
+    });
+    assert.deepEqual(result, { state: "idle" });
+  } finally {
+    global.fetch = previousFetch;
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
 async function main() {
   const workerRouteSource = fs.readFileSync(
     path.join(
@@ -348,6 +395,50 @@ async function main() {
     workerRouteSource,
     /result\.state\s*!==\s*"idle"/,
     "The worker must immediately drain the next dispatch until the queue is idle.",
+  );
+  assert.match(
+    workerRouteSource,
+    /export const POST = handleWorker/,
+    "The worker must support authenticated POST recovery dispatches.",
+  );
+  for (const sourcePath of [
+    "app/api/chat/route.ts",
+    "app/api/document-v2/jobs/route.ts",
+    "app/api/document-v2/jobs/[id]/route.ts",
+    "app/api/internal/document-v2-worker/route.ts",
+  ]) {
+    const source = fs.readFileSync(path.join(projectRoot, sourcePath), "utf8");
+    assert.doesNotMatch(
+      source,
+      /if\s*\(\s*!secret\s*\)\s*return/,
+      `${sourcePath} must not silently skip document worker dispatch.`,
+    );
+  }
+  const dispatchSource = fs.readFileSync(
+    path.join(projectRoot, "lib/document-v2-production/dispatch.ts"),
+    "utf8",
+  );
+  assert.match(
+    dispatchSource,
+    /if\s*\(\s*!response\.ok\s*\)/,
+    "Document worker dispatch must reject non-success HTTP responses.",
+  );
+  const healthMigrationSource = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/016_document_v2_runtime_health.sql",
+    ),
+    "utf8",
+  );
+  assert.match(
+    healthMigrationSource,
+    /document_v2_runtime_health/,
+    "The runtime must expose a service-role-only health snapshot.",
+  );
+  assert.match(
+    healthMigrationSource,
+    /overdueOutbox/,
+    "The runtime health snapshot must report overdue outbox entries.",
   );
   const chatRouteSource = fs.readFileSync(
     path.join(projectRoot, "app/api/chat/route.ts"),
@@ -397,6 +488,7 @@ async function main() {
   await verifyBoundedTicksResumeFromCheckpoint();
   await verifyTimeBudgetYieldsAfterCheckpoint();
   await verifyFinalizerFailureIsVisible();
+  await verifyDispatchChecksHttpStatus();
   const previousFlag = process.env.DOCUMENT_V2_RUNTIME_ENABLED;
   delete process.env.DOCUMENT_V2_RUNTIME_ENABLED;
   const route = require("../app/api/document-v2/jobs/[id]/route.ts");

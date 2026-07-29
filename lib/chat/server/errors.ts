@@ -3,6 +3,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { AIProviderError } from "@/lib/ai/errors";
 import { UploadError } from "@/lib/uploads/errors";
+import {
+  DocumentV2ConfigurationError,
+  DocumentV2PublicRuntimeDisabledError,
+} from "@/lib/document-v2-production/runtime-config";
 
 type ChatApiErrorBody = {
   error: string;
@@ -26,6 +30,26 @@ export async function requireChatUser() {
 export function toChatApiErrorResponse(
   error: unknown,
 ): { body: ChatApiErrorBody; status: number } {
+  if (error instanceof DocumentV2ConfigurationError) {
+    return {
+      status: 503,
+      body: {
+        error: "文档服务暂时不可用，任务尚未开始。",
+        code: "DOCUMENT_V2_RUNTIME_NOT_READY",
+      },
+    };
+  }
+
+  if (error instanceof DocumentV2PublicRuntimeDisabledError) {
+    return {
+      status: 503,
+      body: {
+        error: "新版文档生成服务当前未开放。",
+        code: "DOCUMENT_V2_RUNTIME_DISABLED",
+      },
+    };
+  }
+
   if (error instanceof AIProviderError) {
     const raw = error.message.toLowerCase();
     let message = error.message;

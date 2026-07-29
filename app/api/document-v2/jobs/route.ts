@@ -7,6 +7,15 @@ import { SupabaseDocumentJobRepository } from "@/lib/document-v2/runtime/supabas
 import { DocumentV2JobService } from "@/lib/document-v2/runtime/job-service";
 import { DocumentJobConflictError } from "@/lib/document-v2/runtime/repository";
 import { getDocumentJobSnapshot } from "@/lib/document-v2/runtime/controls";
+import {
+  dispatchDocumentV2Worker,
+  logDocumentV2DispatchFailure,
+} from "@/lib/document-v2-production/dispatch";
+import {
+  DocumentV2ConfigurationError,
+  DocumentV2PublicRuntimeDisabledError,
+  requireDocumentV2PublicRuntime,
+} from "@/lib/document-v2-production/runtime-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -30,8 +39,30 @@ const CreateJobSchema = z
   .strict();
 
 export async function POST(request: Request) {
-  if (process.env.DOCUMENT_V2_RUNTIME_ENABLED !== "true") {
-    return Response.json({ error: "新的文档生成主线尚未开放。" }, { status: 404 });
+  try {
+    requireDocumentV2PublicRuntime();
+  } catch (error) {
+    if (error instanceof DocumentV2PublicRuntimeDisabledError) {
+      return Response.json({ error: "新的文档生成主线尚未开放。" }, { status: 404 });
+    }
+    if (error instanceof DocumentV2ConfigurationError) {
+      console.error("[document-v2-create]", {
+        operation: "intake.configuration.invalid",
+        missing: error.missing,
+        invalid: error.invalid,
+      });
+      return Response.json(
+        {
+          error: "文档服务暂时不可用，任务尚未开始。",
+          code: "document_v2_runtime_not_ready",
+        },
+        {
+          status: 503,
+          headers: { "Retry-After": "60", "Cache-Control": "no-store" },
+        },
+      );
+    }
+    throw error;
   }
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -83,17 +114,19 @@ export async function POST(request: Request) {
         input.idempotencyKey,
       );
     }
-    const workerUrl = new URL("/api/internal/document-v2-worker", request.url);
     after(async () => {
-      const secret = process.env.CRON_SECRET;
-      if (!secret) return;
       try {
-        await fetch(workerUrl, {
-          headers: { Authorization: `Bearer ${secret}` },
-          cache: "no-store",
+        await dispatchDocumentV2Worker({
+          cause: "job_created",
+          requestUrl: request.url,
+          jobId: snapshot.job.jobId,
         });
       } catch (dispatchError) {
-        console.error("[document-v2-dispatch] Immediate dispatch failed", dispatchError);
+        logDocumentV2DispatchFailure({
+          cause: "job_created",
+          jobId: snapshot.job.jobId,
+          error: dispatchError,
+        });
       }
     });
     return Response.json(snapshot, {

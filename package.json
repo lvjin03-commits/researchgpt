@@ -12,11 +12,12 @@
     "desktop:portable": "electron-builder --win portable --x64",
     "desktop:installer": "electron-builder --win nsis --x64",
     "desktop:publish-installer": "npm run desktop:installer && powershell -NoProfile -ExecutionPolicy Bypass -Command \"New-Item -ItemType Directory -Force public/downloads | Out-Null; Copy-Item -Force release-installer/ResearchGPT-Local-Connector-Setup.exe public/downloads/ResearchGPT-Local-Connector-Setup.exe\"",
-    "build": "next build",
+    "build": "npm run check:document-v2-env && next build",
     "start": "next start",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:mojibake": "node scripts/check-encoding.mjs",
     "check:document-architecture": "node scripts/check-document-v2-imports.mjs",
+    "check:document-v2-env": "node scripts/check-document-v2-env.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:document-contracts": "node --experimental-strip-types scripts/verify-document-v2-contracts.ts",
@@ -27,7 +28,8 @@
     "test:document-v2-docx": "node scripts/verify-document-v2-docx.cjs",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "test:word-visuals": "node scripts/verify-word-visuals.cjs",
-    "qa": "npm run check:encoding && npm run build"
+    "smoke:document-v2": "node scripts/smoke-document-v2.mjs",
+    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-v2-runtime && npm run check:document-architecture && npm run build"
   },
   "build": {
     "appId": "com.researchgpt.localconnector",

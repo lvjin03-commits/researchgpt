@@ -9,6 +9,13 @@ import {
 } from "@/lib/document-v2/runtime/controls";
 import { SupabaseDocumentJobRepository } from "@/lib/document-v2/runtime/supabase-repository";
 import { DocumentJobConflictError } from "@/lib/document-v2/runtime/repository";
+import {
+  dispatchDocumentV2Worker,
+  logDocumentV2DispatchFailure,
+} from "@/lib/document-v2-production/dispatch";
+import {
+  inspectDocumentV2Runtime,
+} from "@/lib/document-v2-production/runtime-config";
 
 export const runtime = "nodejs";
 
@@ -29,6 +36,10 @@ function disabledResponse() {
     { error: "新的文档任务系统尚未对当前环境开放。" },
     { status: 404 },
   );
+}
+
+function publicRuntimeEnabled() {
+  return inspectDocumentV2Runtime().publicEnabled;
 }
 
 async function authorizedRepository() {
@@ -67,7 +78,7 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  if (process.env.DOCUMENT_V2_RUNTIME_ENABLED !== "true") {
+  if (!publicRuntimeEnabled()) {
     return disabledResponse();
   }
   const authorized = await authorizedRepository();
@@ -95,7 +106,7 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  if (process.env.DOCUMENT_V2_RUNTIME_ENABLED !== "true") {
+  if (!publicRuntimeEnabled()) {
     return disabledResponse();
   }
   const authorized = await authorizedRepository();
@@ -143,20 +154,21 @@ export async function PATCH(
       snapshot = await getDocumentJobSnapshot(authorized.repository, id);
     }
     if (snapshot.job.status === "queued") {
-      const workerUrl = new URL("/api/internal/document-v2-worker", request.url);
       after(async () => {
-        const secret = process.env.CRON_SECRET;
-        if (!secret) return;
+        const cause =
+          control.action === "clarify" ? "clarification" : "resume";
         try {
-          await fetch(workerUrl, {
-            headers: { Authorization: `Bearer ${secret}` },
-            cache: "no-store",
+          await dispatchDocumentV2Worker({
+            cause,
+            requestUrl: request.url,
+            jobId: id,
           });
         } catch (dispatchError) {
-          console.error(
-            "[document-v2-control-dispatch] Immediate dispatch failed",
-            dispatchError,
-          );
+          logDocumentV2DispatchFailure({
+            cause,
+            jobId: id,
+            error: dispatchError,
+          });
         }
       });
     }

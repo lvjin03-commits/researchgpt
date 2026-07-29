@@ -1,22 +1,62 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
 import { executeOneDocumentV2Tick } from "@/lib/document-v2-production/worker";
+import {
+  dispatchDocumentV2Worker,
+  logDocumentV2DispatchFailure,
+} from "@/lib/document-v2-production/dispatch";
+import {
+  DocumentV2ConfigurationError,
+  requireDocumentV2WorkerConfig,
+} from "@/lib/document-v2-production/runtime-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function authorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
+function authorized(expected: string, request: Request): boolean {
   const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!secret || !supplied) return false;
-  const left = Buffer.from(secret);
+  if (!supplied) return false;
+  const left = Buffer.from(expected);
   const right = Buffer.from(supplied);
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export async function GET(request: Request) {
-  if (!authorized(request)) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+async function handleWorker(request: Request) {
+  let config;
+  try {
+    config = requireDocumentV2WorkerConfig();
+  } catch (error) {
+    if (!(error instanceof DocumentV2ConfigurationError)) throw error;
+    console.error("[document-v2-worker]", {
+      operation: "worker.configuration.invalid",
+      missing: error.missing,
+      invalid: error.invalid,
+    });
+    return Response.json(
+      {
+        error: "Document worker is unavailable.",
+        code: error.code,
+      },
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": "60",
+        },
+      },
+    );
+  }
+  if (!authorized(config.cronSecret, request)) {
+    console.warn("[document-v2-worker]", {
+      operation: "worker.authorization.rejected",
+    });
+    return Response.json(
+      {
+        error: "Unauthorized",
+        code: "document_v2_worker_unauthorized",
+      },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
+    );
   }
   const invocationId = randomUUID();
   const startedAt = Date.now();
@@ -34,15 +74,19 @@ export async function GET(request: Request) {
     });
     if (result.state !== "idle") {
       after(async () => {
-        const secret = process.env.CRON_SECRET;
-        if (!secret) return;
         try {
-          await fetch(request.url, {
-            headers: { Authorization: `Bearer ${secret}` },
-            cache: "no-store",
+          await dispatchDocumentV2Worker({
+            cause: "continuation",
+            requestUrl: request.url,
+            jobId: "jobId" in result ? result.jobId : undefined,
           });
         } catch (error) {
-          console.error("[document-v2-worker] Continuation dispatch failed", error);
+          logDocumentV2DispatchFailure({
+            operation: "worker.continuation_dispatch.failed",
+            cause: "continuation",
+            jobId: "jobId" in result ? result.jobId : undefined,
+            error,
+          });
         }
       });
     }
@@ -60,3 +104,6 @@ export async function GET(request: Request) {
     return Response.json({ error: "Worker tick failed." }, { status: 500 });
   }
 }
+
+export const GET = handleWorker;
+export const POST = handleWorker;

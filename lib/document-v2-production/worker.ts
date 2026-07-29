@@ -15,6 +15,7 @@ import {
   OpenAIFinalFigureGenerator,
   OpenAIStructuredComponentModel,
 } from "./openai-adapters";
+import { requireDocumentV2WorkerConfig } from "./runtime-config";
 import {
   OpenAISemanticOutlinePlanner,
   DocumentClarificationNeededError,
@@ -28,10 +29,8 @@ const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 function adminClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Background worker database credentials are missing.");
-  return createClient(url, key, {
+  const config = requireDocumentV2WorkerConfig();
+  return createClient(config.supabaseUrl, config.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -308,13 +307,14 @@ async function storeDocx(
 }
 
 export async function executeOneDocumentV2Tick() {
+  const config = requireDocumentV2WorkerConfig();
   const supabase = adminClient();
   const workerId = `vercel-${randomUUID()}`;
   const job = await claimNext(supabase, workerId);
   if (!job) return { state: "idle" as const };
 
   const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: config.openAiApiKey,
     timeout: 75_000,
     maxRetries: 0,
   });
