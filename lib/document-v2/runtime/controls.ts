@@ -71,7 +71,27 @@ export async function resumeDocumentJob(
   if (!["paused", "failed", "cancelled"].includes(job.status)) {
     return getDocumentJobSnapshot(repository, jobId);
   }
-  const orchestration = structuredClone(job.checkpoint.orchestration);
+  const orchestration = job.checkpoint.orchestration
+    ? structuredClone(job.checkpoint.orchestration)
+    : undefined;
+  if (!orchestration) {
+    const now = clock().toISOString();
+    job = await repository.save(
+      DocumentJobSchema.parse({
+        ...job,
+        status: "queued",
+        error: undefined,
+        cancelRequestedAt: undefined,
+        finishedAt: undefined,
+        leaseOwner: undefined,
+        leaseExpiresAt: undefined,
+        updatedAt: now,
+      }),
+      job.revision,
+    );
+    await controlEvent(repository, jobId, job.stage, "任务已恢复并重新排队。");
+    return getDocumentJobSnapshot(repository, jobId);
+  }
   if (orchestration.status === "failed") {
     const failedIndex = orchestration.components.findIndex(
       (component) => component.status === "failed",
@@ -84,6 +104,7 @@ export async function resumeDocumentJob(
         componentKey: orchestration.components[failedIndex].componentKey,
         status: "pending",
         attempts: 0,
+        revisions: orchestration.components[failedIndex].revisions,
       };
     }
   }

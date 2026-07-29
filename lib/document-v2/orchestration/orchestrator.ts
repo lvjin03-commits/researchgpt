@@ -43,6 +43,11 @@ export interface ComponentGenerationContext {
     content: ApprovedComponent;
   }>;
   verifiedReferences: ReadonlyArray<VerifiedReference>;
+  evidenceBundle: ReadonlyArray<{
+    evidenceId: string;
+    excerpt: string;
+    locator?: { page?: number; section?: string };
+  }>;
 }
 
 export interface DocumentComponentGenerator {
@@ -145,6 +150,11 @@ export function createDocumentOrchestrationState(input: {
   request: DocumentRequest;
   plan: DocumentPlan;
   verifiedReferences?: VerifiedReference[];
+  evidenceBundle?: Array<{
+    evidenceId: string;
+    excerpt: string;
+    locator?: { page?: number; section?: string };
+  }>;
 }): DocumentOrchestrationState {
   const request = DocumentRequestSchema.parse(input.request);
   const plan = DocumentPlanSchema.parse(input.plan);
@@ -155,6 +165,7 @@ export function createDocumentOrchestrationState(input: {
     request,
     plan,
     verifiedReferences: input.verifiedReferences ?? [],
+    evidenceBundle: input.evidenceBundle ?? [],
     status: "pending",
     currentComponentIndex: Math.max(
       0,
@@ -509,6 +520,75 @@ function nextRunnableComponentIndex(
   return index >= 0 ? index : undefined;
 }
 
+function componentInputHash(
+  state: DocumentOrchestrationState,
+  componentIndex: number,
+): {
+  inputHash: string;
+  dependencyVersions: Record<string, number>;
+} {
+  const component = state.plan.components[componentIndex];
+  const dependencyVersions = Object.fromEntries(
+    component.dependsOnComponentKeys.map((key) => {
+      const dependency = state.components.find((item) => item.componentKey === key);
+      const current = dependency?.revisions.find((revision) => revision.status === "approved");
+      return [key, current?.revision ?? 1];
+    }),
+  );
+  return {
+    dependencyVersions,
+    inputHash: createHash("sha256")
+      .update(
+        JSON.stringify({
+          request: state.request,
+          component,
+          dependencyVersions,
+          evidenceIds: state.verifiedReferences.map((reference) => reference.id),
+        }),
+      )
+      .digest("hex"),
+  };
+}
+
+export function invalidateDocumentComponent(
+  inputState: DocumentOrchestrationState,
+  componentKey: string,
+): DocumentOrchestrationState {
+  const state = DocumentOrchestrationStateSchema.parse(structuredClone(inputState));
+  const invalidated = new Set([componentKey]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    state.plan.components.forEach((component) => {
+      if (
+        !invalidated.has(component.componentKey) &&
+        component.dependsOnComponentKeys.some((dependency) => invalidated.has(dependency))
+      ) {
+        invalidated.add(component.componentKey);
+        changed = true;
+      }
+    });
+  }
+  for (const component of state.components) {
+    if (!invalidated.has(component.componentKey)) continue;
+    component.revisions = component.revisions.map((revision) => ({
+      ...revision,
+      status: "superseded" as const,
+    }));
+    component.approved = undefined;
+    component.lastError = undefined;
+    component.attempts = 0;
+    component.status =
+      component.componentKey === componentKey ? "pending" : "stale";
+  }
+  state.status = "paused";
+  state.finalSpec = undefined;
+  state.failure = undefined;
+  state.currentComponentIndex =
+    nextRunnableComponentIndex(state) ?? state.plan.components.length;
+  return DocumentOrchestrationStateSchema.parse(state);
+}
+
 function failJob(
   state: DocumentOrchestrationState,
   componentState: ComponentExecutionState,
@@ -665,6 +745,7 @@ export async function runDocumentOrchestration(
             : undefined,
           approvedComponents,
           verifiedReferences: state.verifiedReferences,
+          evidenceBundle: state.evidenceBundle,
         }),
       );
     } catch (error) {
@@ -808,6 +889,27 @@ export async function runDocumentOrchestration(
 
     componentState.status = "approved";
     componentState.approved = approved;
+    const { inputHash, dependencyVersions } = componentInputHash(
+      state,
+      componentIndex,
+    );
+    componentState.revisions = [
+      ...componentState.revisions.map((revision) => ({
+        ...revision,
+        status: "superseded" as const,
+      })),
+      {
+        revision:
+          Math.max(0, ...componentState.revisions.map((revision) => revision.revision)) + 1,
+        status: "approved",
+        content: approved,
+        dependencyVersions,
+        inputHash,
+        outputHash: createHash("sha256")
+          .update(JSON.stringify(approved))
+          .digest("hex"),
+      },
+    ];
     componentState.lastError = undefined;
     appendEvent(state, {
       type: "component_approved",

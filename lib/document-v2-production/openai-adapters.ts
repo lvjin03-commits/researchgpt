@@ -10,7 +10,10 @@ import type {
 import type { FigureRequest } from "@/lib/document-v2/assets/contracts";
 
 export class OpenAIStructuredComponentModel implements StructuredComponentModel {
-  constructor(private readonly client: OpenAI) {}
+  constructor(
+    private readonly client: OpenAI,
+    private readonly model = process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+  ) {}
 
   async generate(input: {
     schemaName: "document_component_payload_v1";
@@ -18,7 +21,7 @@ export class OpenAIStructuredComponentModel implements StructuredComponentModel 
     componentInstruction: string;
   }): Promise<unknown> {
     const response = await this.client.responses.parse({
-      model: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+      model: this.model,
       instructions: input.systemInstruction,
       input: input.componentInstruction,
       text: {
@@ -36,11 +39,14 @@ export class OpenAIStructuredComponentModel implements StructuredComponentModel 
 }
 
 export class OpenAIFinalFigureGenerator implements FinalFigureGenerator {
-  constructor(private readonly client: OpenAI) {}
+  constructor(
+    private readonly client: OpenAI,
+    private readonly model = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5",
+  ) {}
 
   async generate(request: FigureRequest): Promise<GeneratedFigureBinary> {
     const response = await this.client.images.generate({
-      model: process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5",
+      model: this.model,
       size: "1536x1024",
       quality: "high",
       output_format: "png",

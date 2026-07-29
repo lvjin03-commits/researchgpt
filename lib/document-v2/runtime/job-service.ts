@@ -48,7 +48,7 @@ export { DocumentJobNotFoundError };
 export class DocumentJobLeaseUnavailableError extends Error {}
 
 function completedCount(job: DocumentJob): number {
-  return job.checkpoint.orchestration.components.filter(
+  return (job.checkpoint.orchestration?.components ?? []).filter(
     (component) => component.status === "approved",
   ).length;
 }
@@ -87,6 +87,53 @@ export class DocumentV2JobService {
     private readonly finalizer: DocumentFinalizer,
     private readonly clock: Clock = () => new Date(),
   ) {}
+
+  async createIntake(input: {
+    ownerId: string;
+    jobId: string;
+    instruction: string;
+    source: DocumentRequest["source"];
+    language?: "zh" | "en";
+    targetLength?: number;
+    verifiedReferences?: VerifiedReference[];
+    evidence?: Array<{
+      evidenceId: string;
+      reference: VerifiedReference;
+      excerpt: string;
+      locator?: { page?: number; section?: string };
+    }>;
+  }): Promise<DocumentJobSnapshot> {
+    const now = this.clock().toISOString();
+    const job = DocumentJobSchema.parse({
+      jobId: input.jobId,
+      ownerId: input.ownerId,
+      pipelineVersion: "document-v2",
+      status: "queued",
+      stage: "intake",
+      progress: 0,
+      completedComponents: 0,
+      totalComponents: 0,
+      resumable: true,
+      checkpoint: {
+        schemaVersion: 1,
+        intake: {
+          instruction: input.instruction,
+          source: input.source,
+          language: input.language,
+          targetLength: input.targetLength,
+          verifiedReferences: input.verifiedReferences ?? [],
+          evidence: input.evidence ?? [],
+        },
+        savedAt: now,
+      },
+      createdAt: now,
+      updatedAt: now,
+      revision: 0,
+    });
+    await this.repository.create(job);
+    await this.event(job, "intake", "progress", "任务已创建，正在准备执行。");
+    return this.snapshot(job.jobId);
+  }
 
   async create(input: {
     ownerId: string;
@@ -160,6 +207,9 @@ export class DocumentV2JobService {
     });
     if (!leasedJob) throw new DocumentJobLeaseUnavailableError();
     let job: DocumentJob = leasedJob;
+    if (!job.checkpoint.orchestration) {
+      throw new Error("Document intake must be prepared before content execution.");
+    }
     if (["completed", "cancelled"].includes(job.status)) {
       return this.snapshot(jobId);
     }
@@ -179,11 +229,44 @@ export class DocumentV2JobService {
 
     const maxComponents = options.maxComponents ?? Number.POSITIVE_INFINITY;
     let processedComponents = 0;
-    while (job.checkpoint.orchestration.status !== "completed") {
+    while (job.checkpoint.orchestration?.status !== "completed") {
       if (await this.cancelRequested(job.jobId)) return this.cancel(job);
-      const before = job.checkpoint.orchestration.currentComponentIndex;
+      const budget = job.checkpoint.budget;
+      if (
+        budget &&
+        (budget.usedModelCalls >= budget.maxModelCalls ||
+          budget.usedRepairAttempts >= budget.maxRepairAttempts ||
+          budget.usedExecutionMs >= budget.maxExecutionMs)
+      ) {
+        const exhaustedAt = this.clock().toISOString();
+        job = await this.repository.save(
+          DocumentJobSchema.parse({
+            ...job,
+            status: "budget_exhausted",
+            leaseOwner: undefined,
+            leaseExpiresAt: undefined,
+            updatedAt: exhaustedAt,
+          }),
+          job.revision,
+        );
+        await this.event(
+          job,
+          job.stage,
+          "paused",
+          "任务已达到生成预算，已保存当前进度。",
+          job.currentComponentKey,
+          undefined,
+          "job_budget_exhausted",
+        );
+        return this.snapshot(jobId);
+      }
+      const orchestrationState = job.checkpoint.orchestration;
+      if (!orchestrationState) {
+        throw new Error("Document orchestration checkpoint disappeared.");
+      }
+      const before = orchestrationState.currentComponentIndex;
       const component =
-        job.checkpoint.orchestration.plan.components[before];
+        orchestrationState.plan.components[before];
       await this.event(
         job,
         "content_generation",
@@ -192,11 +275,21 @@ export class DocumentV2JobService {
         component.componentKey,
       );
       const started = this.clock().getTime();
+      const attemptsBefore = orchestrationState.components.reduce(
+        (sum, item) => sum + item.attempts,
+        0,
+      );
       const orchestration = await runDocumentOrchestration(
-        job.checkpoint.orchestration,
+        orchestrationState,
         { ...this.orchestrationOptions, maxComponentsPerRun: 1 },
       );
       const current = orchestration.components[before];
+      const attemptsAfter = orchestration.components.reduce(
+        (sum, item) => sum + item.attempts,
+        0,
+      );
+      const modelCallsUsed = Math.max(0, attemptsAfter - attemptsBefore);
+      const repairsUsed = Math.max(0, modelCallsUsed - 1);
       const savedAt = this.clock().toISOString();
       job = await this.repository.save(
         DocumentJobSchema.parse({
@@ -209,7 +302,23 @@ export class DocumentV2JobService {
           completedComponents: orchestration.components.filter(
             (item) => item.status === "approved",
           ).length,
-          checkpoint: { ...job.checkpoint, orchestration, savedAt },
+          checkpoint: {
+            ...job.checkpoint,
+            orchestration,
+            budget: job.checkpoint.budget
+              ? {
+                  ...job.checkpoint.budget,
+                  usedModelCalls:
+                    job.checkpoint.budget.usedModelCalls + modelCallsUsed,
+                  usedRepairAttempts:
+                    job.checkpoint.budget.usedRepairAttempts + repairsUsed,
+                  usedExecutionMs:
+                    job.checkpoint.budget.usedExecutionMs +
+                    (this.clock().getTime() - started),
+                }
+              : undefined,
+            savedAt,
+          },
           error:
             orchestration.status === "failed"
               ? {
@@ -278,7 +387,8 @@ export class DocumentV2JobService {
     }
 
     job = await this.changeStage(job, "document_assembly");
-    const spec = job.checkpoint.orchestration.finalSpec!;
+    const spec = job.checkpoint.orchestration?.finalSpec;
+    if (!spec) throw new Error("Completed orchestration has no final document spec.");
     let artifact: FinalDocumentArtifact;
     try {
       artifact = await this.finalizer.renderAndStore({

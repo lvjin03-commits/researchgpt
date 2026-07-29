@@ -1,9 +1,67 @@
 import { z } from "zod";
 import { DocumentOrchestrationStateSchema } from "../orchestration/contracts";
+import { VerifiedReferenceSchema } from "../contracts";
 
 const IdentifierSchema = z.string().trim().min(1).max(120);
 
+export const DocumentEvidenceItemSchema = z
+  .object({
+    evidenceId: IdentifierSchema,
+    reference: VerifiedReferenceSchema,
+    excerpt: z.string().trim().min(1).max(20_000),
+    locator: z
+      .object({
+        page: z.number().int().positive().optional(),
+        section: z.string().trim().min(1).max(500).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((item, context) => {
+    if (item.evidenceId !== item.reference.id) {
+      context.addIssue({
+        code: "custom",
+        path: ["evidenceId"],
+        message: "Evidence ID must equal its verified reference ID.",
+      });
+    }
+  });
+
+export const DocumentJobBudgetSchema = z
+  .object({
+    maxModelCalls: z.number().int().positive(),
+    maxImageCalls: z.number().int().nonnegative(),
+    maxRepairAttempts: z.number().int().nonnegative(),
+    maxExecutionMs: z.number().int().positive(),
+    usedModelCalls: z.number().int().nonnegative(),
+    usedImageCalls: z.number().int().nonnegative(),
+    usedRepairAttempts: z.number().int().nonnegative(),
+    usedExecutionMs: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const DocumentExecutionSnapshotSchema = z
+  .object({
+    requestSchemaVersion: z.literal("1"),
+    planSchemaVersion: z.literal("1"),
+    finalSpecSchemaVersion: z.literal("1"),
+    intentPromptVersion: IdentifierSchema,
+    plannerPromptVersion: IdentifierSchema,
+    generatorPromptVersion: IdentifierSchema,
+    validatorVersion: IdentifierSchema,
+    modelProvider: IdentifierSchema,
+    modelId: IdentifierSchema,
+    rendererVersion: IdentifierSchema,
+    templateChecksum: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+    evidenceSnapshotId: IdentifierSchema.optional(),
+  })
+  .strict();
+
 export const DocumentJobStageSchema = z.enum([
+  "intake",
+  "understanding",
+  "evidence_acquisition",
   "queued",
   "template_resolution",
   "planning",
@@ -22,6 +80,10 @@ export const DocumentJobStatusSchema = z.enum([
   "queued",
   "running",
   "paused",
+  "awaiting_user_input",
+  "retry_wait",
+  "budget_exhausted",
+  "dead_letter",
   "cancelling",
   "cancelled",
   "failed",
@@ -60,7 +122,35 @@ export type DocumentJobEvent = z.infer<typeof DocumentJobEventSchema>;
 export const DocumentJobCheckpointSchema = z
   .object({
     schemaVersion: z.literal(1),
-    orchestration: DocumentOrchestrationStateSchema,
+    intake: z
+      .object({
+        instruction: z.string().trim().min(1).max(8_000),
+        source: z
+          .object({
+            kind: z.enum(["prompt", "previous_message", "attachments", "existing_document"]),
+            sourceIds: z.array(IdentifierSchema).max(100),
+          })
+          .strict(),
+        language: z.enum(["zh", "en"]).optional(),
+        targetLength: z.number().int().min(100).max(100_000).optional(),
+        verifiedReferences: z.array(VerifiedReferenceSchema).max(500),
+        evidence: z.array(DocumentEvidenceItemSchema).max(2_000).default([]),
+      })
+      .strict()
+      .optional(),
+    orchestration: DocumentOrchestrationStateSchema.optional(),
+    clarification: z
+      .object({
+        questionId: z.uuid(),
+        field: IdentifierSchema,
+        question: z.string().trim().min(1).max(500),
+        reason: z.string().trim().min(1).max(500),
+        required: z.boolean(),
+      })
+      .strict()
+      .optional(),
+    executionSnapshot: DocumentExecutionSnapshotSchema.optional(),
+    budget: DocumentJobBudgetSchema.optional(),
     renderedArtifactId: IdentifierSchema.optional(),
     savedAt: z.iso.datetime(),
   })
@@ -80,7 +170,7 @@ export const DocumentJobSchema = z
     progress: z.number().int().min(0).max(100),
     currentComponentKey: IdentifierSchema.optional(),
     completedComponents: z.number().int().nonnegative(),
-    totalComponents: z.number().int().positive(),
+    totalComponents: z.number().int().nonnegative(),
     cancelRequestedAt: z.iso.datetime().optional(),
     resumable: z.boolean(),
     leaseOwner: IdentifierSchema.optional(),
@@ -92,6 +182,16 @@ export const DocumentJobSchema = z
         technicalMessage: z.string().trim().min(1).max(2_000),
         failedStage: DocumentJobStageSchema,
         componentKey: IdentifierSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    clarification: z
+      .object({
+        questionId: z.uuid(),
+        field: IdentifierSchema,
+        question: z.string().trim().min(1).max(500),
+        reason: z.string().trim().min(1).max(500),
+        required: z.boolean(),
       })
       .strict()
       .optional(),
@@ -110,6 +210,13 @@ export const DocumentJobSchema = z
         code: "custom",
         path: ["completedComponents"],
         message: "Completed components cannot exceed total components.",
+      });
+    }
+    if (!job.checkpoint.intake && !job.checkpoint.orchestration) {
+      context.addIssue({
+        code: "custom",
+        path: ["checkpoint"],
+        message: "A job requires intake data or an orchestration checkpoint.",
       });
     }
     if (job.status === "completed" && !job.artifactId) {
@@ -150,6 +257,9 @@ export const DocumentJobSnapshotSchema = z
 export type DocumentJobSnapshot = z.infer<typeof DocumentJobSnapshotSchema>;
 
 export const STAGE_LABELS: Record<DocumentJobStage, string> = {
+  intake: "任务已创建",
+  understanding: "正在理解文档要求",
+  evidence_acquisition: "正在准备可信资料",
   queued: "等待开始",
   template_resolution: "正在选择文档模板",
   planning: "正在规划文档结构",

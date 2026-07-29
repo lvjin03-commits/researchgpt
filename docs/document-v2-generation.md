@@ -58,6 +58,10 @@ contains only one planned component plus:
 The model returns one `GeneratedComponentPayload` without final block IDs.
 The orchestrator assigns those IDs only after acceptance.
 
+The generator receives only direct approved dependencies and evidence excerpts
+explicitly authorized for the current component. It does not repeatedly inject
+the entire approved document or the complete evidence pool.
+
 The model must return mature content. It must not return:
 
 - Markdown or code fences;

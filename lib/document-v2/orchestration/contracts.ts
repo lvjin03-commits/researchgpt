@@ -13,6 +13,20 @@ import {
 
 const IdentifierSchema = z.string().min(1).max(120);
 
+export const EvidenceSnippetSchema = z
+  .object({
+    evidenceId: IdentifierSchema,
+    excerpt: z.string().trim().min(1).max(20_000),
+    locator: z
+      .object({
+        page: z.number().int().positive().optional(),
+        section: z.string().trim().min(1).max(500).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 export const GeneratedBlockDraftSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -129,10 +143,21 @@ const ApprovedComponentSchema = z.discriminatedUnion("kind", [
 
 export type ApprovedComponent = z.infer<typeof ApprovedComponentSchema>;
 
+const ComponentRevisionSchema = z
+  .object({
+    revision: z.number().int().positive(),
+    status: z.enum(["approved", "superseded"]),
+    content: ApprovedComponentSchema,
+    dependencyVersions: z.record(IdentifierSchema, z.number().int().positive()),
+    inputHash: z.string().regex(/^[a-f0-9]{64}$/i),
+    outputHash: z.string().regex(/^[a-f0-9]{64}$/i),
+  })
+  .strict();
+
 export const ComponentExecutionStateSchema = z
   .object({
     componentKey: IdentifierSchema,
-    status: z.enum(["pending", "running", "approved", "failed"]),
+    status: z.enum(["pending", "running", "approved", "stale", "failed"]),
     attempts: z.number().int().min(0).max(100),
     lastError: z
       .object({
@@ -142,6 +167,7 @@ export const ComponentExecutionStateSchema = z
       .strict()
       .optional(),
     approved: ApprovedComponentSchema.optional(),
+    revisions: z.array(ComponentRevisionSchema).default([]),
   })
   .strict()
   .superRefine((state, context) => {
@@ -157,6 +183,16 @@ export const ComponentExecutionStateSchema = z
         code: "custom",
         path: ["approved"],
         message: "Only approved component state may contain approved content.",
+      });
+    }
+    const approvedRevisions = state.revisions.filter(
+      (revision) => revision.status === "approved",
+    );
+    if (approvedRevisions.length > 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["revisions"],
+        message: "Only one component revision may be current.",
       });
     }
     if (state.status === "failed" && !state.lastError) {
@@ -200,6 +236,7 @@ export const DocumentOrchestrationStateSchema = z
     request: DocumentRequestSchema,
     plan: DocumentPlanSchema,
     verifiedReferences: z.array(VerifiedReferenceSchema).max(500),
+    evidenceBundle: z.array(EvidenceSnippetSchema).max(2_000).default([]),
     status: z.enum(["pending", "running", "paused", "completed", "failed"]),
     currentComponentIndex: z.number().int().min(0),
     components: z.array(ComponentExecutionStateSchema).min(1),

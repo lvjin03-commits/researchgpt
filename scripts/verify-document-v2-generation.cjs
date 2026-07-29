@@ -52,6 +52,7 @@ const {
 } = require("../lib/document-v2/generation/mature-content-validator.ts");
 const {
   createDocumentOrchestrationState,
+  invalidateDocumentComponent,
   runDocumentOrchestration,
 } = require("../lib/document-v2/orchestration/orchestrator.ts");
 const {
@@ -390,6 +391,24 @@ async function verifyCompleteGenerationFlow() {
   });
 
   assert.equal(completed.status, "completed");
+  const invalidated = invalidateDocumentComponent(completed, "section-02");
+  assert.equal(
+    invalidated.components.find((item) => item.componentKey === "section-02").status,
+    "pending",
+  );
+  for (const dependentKey of [
+    "conclusion",
+    "abstract",
+    "keywords",
+    "title",
+    "references",
+  ]) {
+    assert.equal(
+      invalidated.components.find((item) => item.componentKey === dependentKey).status,
+      "stale",
+      `${dependentKey} must become stale after an upstream section revision.`,
+    );
+  }
   assert.deepEqual(
     generationOrder.filter((value, index, values) => index === 0 || value !== values[index - 1]),
     [

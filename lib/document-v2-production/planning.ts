@@ -11,13 +11,33 @@ import type { DocumentTemplateMatcher } from "@/lib/document-v2/templates/resolv
 import type { SemanticOutlinePlanner } from "@/lib/document-v2/planning/planner";
 import { SemanticOutlineProposalSchema } from "@/lib/document-v2/planning/contracts";
 
-const UnderstoodRequestSchema = z
-  .object({
-    topic: z.string().trim().min(1).max(500),
-    language: z.enum(["zh", "en"]),
-    specialInstructions: z.array(z.string().trim().min(1).max(500)).max(20),
-  })
-  .strict();
+const UnderstoodRequestSchema = z.discriminatedUnion("ready", [
+  z
+    .object({
+      ready: z.literal(true),
+      topic: z.string().trim().min(1).max(500),
+      language: z.enum(["zh", "en"]),
+      specialInstructions: z.array(z.string().trim().min(1).max(500)).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      ready: z.literal(false),
+      question: z.string().trim().min(1).max(500),
+      reason: z.string().trim().min(1).max(500),
+    })
+    .strict(),
+]);
+
+export class DocumentClarificationNeededError extends Error {
+  constructor(
+    readonly question: string,
+    readonly reason: string,
+  ) {
+    super(reason);
+    this.name = "DocumentClarificationNeededError";
+  }
+}
 
 export type DocumentCreationInput = {
   idempotencyKey?: string;
@@ -42,6 +62,8 @@ export async function understandDocumentRequest(
       "Understand the user's complete document request semantically.",
       "A continuation such as 'generate it' must be interpreted from the supplied instruction/context, never by keyword routing.",
       "Extract the actual scientific topic, requested output language, and content requirements.",
+      "Set ready=false only when the scientific topic or document scope cannot be determined without changing the requested document.",
+      "Do not ask about optional language, length, figures, authors, or formatting when safe defaults exist.",
       "Do not write document content yet.",
     ].join(" "),
     input: instruction,
@@ -53,6 +75,12 @@ export async function understandDocumentRequest(
     throw new Error("The model could not understand the document request.");
   }
   const understood = response.output_parsed;
+  if (!understood.ready) {
+    throw new DocumentClarificationNeededError(
+      understood.question,
+      understood.reason,
+    );
+  }
   return DocumentRequestSchema.parse({
     requestId: input.idempotencyKey ?? randomUUID(),
     schemaVersion: 1,

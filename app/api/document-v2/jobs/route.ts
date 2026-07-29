@@ -1,18 +1,12 @@
-import OpenAI from "openai";
 import { z } from "zod";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { VerifiedReferenceSchema } from "@/lib/document-v2/contracts";
-import { resolveDocumentTemplate } from "@/lib/document-v2/templates/resolver";
-import { createDocumentPlanFromTemplate } from "@/lib/document-v2/planning/planner";
+import { DocumentEvidenceItemSchema } from "@/lib/document-v2/runtime/contracts";
 import { SupabaseDocumentJobRepository } from "@/lib/document-v2/runtime/supabase-repository";
 import { DocumentV2JobService } from "@/lib/document-v2/runtime/job-service";
 import { DocumentJobConflictError } from "@/lib/document-v2/runtime/repository";
 import { getDocumentJobSnapshot } from "@/lib/document-v2/runtime/controls";
-import {
-  OpenAISemanticOutlinePlanner,
-  OpenAITemplateMatcher,
-  understandDocumentRequest,
-} from "@/lib/document-v2-production/planning";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -31,6 +25,7 @@ const CreateJobSchema = z
     language: z.enum(["zh", "en"]).optional(),
     targetLength: z.number().int().min(100).max(100_000).optional(),
     verifiedReferences: z.array(VerifiedReferenceSchema).max(500).optional(),
+    evidence: z.array(DocumentEvidenceItemSchema).max(2_000).optional(),
   })
   .strict();
 
@@ -60,19 +55,7 @@ export async function POST(request: Request) {
         },
       });
     }
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const documentRequest = await understandDocumentRequest(openai, input);
-    const template = await resolveDocumentTemplate({
-      request: documentRequest,
-      matcher: new OpenAITemplateMatcher(openai),
-    });
     const references = input.verifiedReferences ?? [];
-    const plan = await createDocumentPlanFromTemplate({
-      request: documentRequest,
-      template,
-      outlinePlanner: new OpenAISemanticOutlinePlanner(openai),
-      availableEvidenceIds: references.map((reference) => reference.id),
-    });
     const service = new DocumentV2JobService(
       repository,
       {
@@ -83,19 +66,36 @@ export async function POST(request: Request) {
     );
     let snapshot;
     try {
-      snapshot = await service.create({
+      snapshot = await service.createIntake({
         ownerId: user.id,
-        request: documentRequest,
-        plan,
+        jobId: input.idempotencyKey,
+        instruction: input.instruction,
+        source: input.source ?? { kind: "prompt", sourceIds: [] },
+        language: input.language,
+        targetLength: input.targetLength,
         verifiedReferences: references,
+        evidence: input.evidence,
       });
     } catch (creationError) {
       if (!(creationError instanceof DocumentJobConflictError)) throw creationError;
       snapshot = await getDocumentJobSnapshot(
         repository,
-        documentRequest.requestId,
+        input.idempotencyKey,
       );
     }
+    const workerUrl = new URL("/api/internal/document-v2-worker", request.url);
+    after(async () => {
+      const secret = process.env.CRON_SECRET;
+      if (!secret) return;
+      try {
+        await fetch(workerUrl, {
+          headers: { Authorization: `Bearer ${secret}` },
+          cache: "no-store",
+        });
+      } catch (dispatchError) {
+        console.error("[document-v2-dispatch] Immediate dispatch failed", dispatchError);
+      }
+    });
     return Response.json(snapshot, {
       status: 202,
       headers: {

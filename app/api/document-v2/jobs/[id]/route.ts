@@ -11,9 +11,17 @@ import { DocumentJobConflictError } from "@/lib/document-v2/runtime/repository";
 
 export const runtime = "nodejs";
 
-const ControlSchema = z
-  .object({ action: z.enum(["cancel", "resume"]) })
-  .strict();
+const ControlSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("cancel") }).strict(),
+  z.object({ action: z.literal("resume") }).strict(),
+  z
+    .object({
+      action: z.literal("clarify"),
+      questionId: z.uuid(),
+      answer: z.string().trim().min(1).max(4_000),
+    })
+    .strict(),
+]);
 
 function disabledResponse() {
   return Response.json(
@@ -96,10 +104,43 @@ export async function PATCH(
   try {
     const { id } = await context.params;
     const control = ControlSchema.parse(await request.json());
-    const snapshot =
-      control.action === "cancel"
-        ? await requestDocumentJobCancellation(authorized.repository, id)
-        : await resumeDocumentJob(authorized.repository, id);
+    let snapshot;
+    if (control.action === "cancel") {
+      snapshot = await requestDocumentJobCancellation(authorized.repository, id);
+    } else if (control.action === "resume") {
+      snapshot = await resumeDocumentJob(authorized.repository, id);
+    } else {
+      const current = await authorized.repository.get(id);
+      if (
+        !current ||
+        current.status !== "awaiting_user_input" ||
+        current.clarification?.questionId !== control.questionId ||
+        !current.checkpoint.intake
+      ) {
+        return Response.json({ error: "补充问题已失效，请刷新任务状态。" }, { status: 409 });
+      }
+      const now = new Date().toISOString();
+      await authorized.repository.save(
+        {
+          ...current,
+          status: "queued",
+          stage: "intake",
+          clarification: undefined,
+          checkpoint: {
+            ...current.checkpoint,
+            intake: {
+              ...current.checkpoint.intake,
+              instruction: `${current.checkpoint.intake.instruction}\n\n用户补充：${control.answer}`,
+            },
+            clarification: undefined,
+            savedAt: now,
+          },
+          updatedAt: now,
+        },
+        current.revision,
+      );
+      snapshot = await getDocumentJobSnapshot(authorized.repository, id);
+    }
     return Response.json(snapshot, {
       headers: {
         "Cache-Control": "no-store, private",

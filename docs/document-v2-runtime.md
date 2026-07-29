@@ -115,14 +115,17 @@ worker step.
 
 ## Step 10 creation boundary
 
-`POST /api/document-v2/jobs` is the authenticated creation boundary. It does
-not render a document inside the request. It performs, in order:
+`POST /api/document-v2/jobs` is the authenticated intake boundary. It performs
+only authentication, schema validation, idempotency lookup, and durable intake
+creation before returning a public job snapshot. Understanding, template
+resolution, evidence preparation, and planning run inside the worker and are
+therefore observable and recoverable job stages.
 
-1. semantic understanding of the complete user instruction;
-2. compatible template resolution;
-3. AI outline planning within the template component limits;
-4. deterministic component-key and length allocation;
-5. durable job creation for the background worker.
+The job insert and every later transition back to `queued` create a unique
+transactional outbox record in the same database transaction. The API uses
+Next.js `after()` to request immediate delivery after returning the job card.
+An unfinished worker slice persists a continuation event and immediately
+requests another worker invocation. Cron is only the recovery path.
 
 The caller supplies a UUID `idempotencyKey`. That key becomes both the
 document request ID and job ID. Repeating the same request returns the existing
@@ -132,6 +135,24 @@ content, references, and checkpoints remain server-side.
 
 This endpoint remains protected by `DOCUMENT_V2_RUNTIME_ENABLED`. Step 10 does
 not connect the legacy chat route or switch production traffic.
+
+## Evidence and reproducibility boundary
+
+Verified citation metadata alone does not authorize a citation. Only evidence
+items containing a verified reference, bounded excerpt, and optional
+page/section locator enter the orchestration evidence bundle. A component sees
+only evidence IDs assigned to it by the plan. Evidence text is explicitly
+treated as untrusted data, never as model instructions.
+
+Before content generation, the private checkpoint freezes model, prompt,
+validator, renderer, template, and evidence versions together with a bounded
+job budget. Model calls, repair attempts, and execution time are charged
+against that budget. Exhaustion saves the checkpoint and changes the public
+state to `budget_exhausted`.
+
+Approved component outputs carry immutable revision metadata, input/output
+hashes, and dependency versions. Revising an upstream component marks all
+transitive dependents `stale` so they must be regenerated or revalidated.
 
 Migration `013_document_v2_runtime.sql` was applied to the production
 ResearchGPT Supabase project on 2026-07-28 after a dry run confirmed it was the

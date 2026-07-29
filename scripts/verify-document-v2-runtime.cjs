@@ -201,6 +201,25 @@ async function verifyCancelResumeAndCompletion() {
   assert.match(markup, /已完成 3\/3 个文档部分/);
 }
 
+async function verifyIntakeExistsBeforePlanning() {
+  const repository = new InMemoryDocumentJobRepository();
+  const service = makeService(repository, {});
+  const snapshot = await service.createIntake({
+    ownerId: "user-1",
+    jobId: requestId,
+    instruction: "Generate an SCI review about physical gels.",
+    source: { kind: "prompt", sourceIds: [] },
+    language: "en",
+  });
+  assert.equal(snapshot.job.stage, "intake");
+  assert.equal(snapshot.job.status, "queued");
+  assert.equal(snapshot.job.totalComponents, 0);
+  assert.equal("checkpoint" in snapshot.job, false);
+  const stored = await repository.get(requestId);
+  assert.equal(stored.checkpoint.orchestration, undefined);
+  assert.match(stored.checkpoint.intake.instruction, /physical gels/);
+}
+
 async function verifyLeaseBlocksDuplicateWorker() {
   const repository = new InMemoryDocumentJobRepository();
   const service = makeService(repository, {});
@@ -303,6 +322,7 @@ async function verifyFinalizerFailureIsVisible() {
 }
 
 async function main() {
+  await verifyIntakeExistsBeforePlanning();
   await verifyCancelResumeAndCompletion();
   await verifyLeaseBlocksDuplicateWorker();
   await verifyBoundedTicksResumeFromCheckpoint();
