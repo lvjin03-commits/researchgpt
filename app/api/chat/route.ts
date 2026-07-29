@@ -90,6 +90,7 @@ import { DocumentV2JobService } from "@/lib/document-v2/runtime/job-service";
 import {
   dispatchDocumentV2Worker,
   logDocumentV2DispatchFailure,
+  recordDocumentV2DispatchFailure,
 } from "@/lib/document-v2-production/dispatch";
 import {
   inspectDocumentV2Runtime,
@@ -2166,21 +2167,25 @@ export async function POST(request: Request) {
                 reason: "dedicated_docx_request",
               },
             });
-            after(async () => {
-              try {
-                await dispatchDocumentV2Worker({
-                  cause: "job_created",
-                  requestUrl: request.url,
-                  jobId,
-                });
-              } catch (dispatchError) {
-                logDocumentV2DispatchFailure({
-                  cause: "job_created",
-                  jobId,
-                  error: dispatchError,
-                });
-              }
-            });
+            try {
+              await dispatchDocumentV2Worker({
+                cause: "job_created",
+                requestUrl: request.url,
+                jobId,
+              });
+            } catch (dispatchError) {
+              logDocumentV2DispatchFailure({
+                cause: "job_created",
+                jobId,
+                error: dispatchError,
+              });
+              await recordDocumentV2DispatchFailure({
+                repository,
+                cause: "job_created",
+                jobId,
+                error: dispatchError,
+              });
+            }
             controller.enqueue(
               encodeChatStreamEvent({
                 type: "document_job",

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { VerifiedReferenceSchema } from "@/lib/document-v2/contracts";
 import { DocumentEvidenceItemSchema } from "@/lib/document-v2/runtime/contracts";
@@ -10,6 +9,7 @@ import { getDocumentJobSnapshot } from "@/lib/document-v2/runtime/controls";
 import {
   dispatchDocumentV2Worker,
   logDocumentV2DispatchFailure,
+  recordDocumentV2DispatchFailure,
 } from "@/lib/document-v2-production/dispatch";
 import {
   DocumentV2ConfigurationError,
@@ -114,21 +114,25 @@ export async function POST(request: Request) {
         input.idempotencyKey,
       );
     }
-    after(async () => {
-      try {
-        await dispatchDocumentV2Worker({
-          cause: "job_created",
-          requestUrl: request.url,
-          jobId: snapshot.job.jobId,
-        });
-      } catch (dispatchError) {
-        logDocumentV2DispatchFailure({
-          cause: "job_created",
-          jobId: snapshot.job.jobId,
-          error: dispatchError,
-        });
-      }
-    });
+    try {
+      await dispatchDocumentV2Worker({
+        cause: "job_created",
+        requestUrl: request.url,
+        jobId: snapshot.job.jobId,
+      });
+    } catch (dispatchError) {
+      logDocumentV2DispatchFailure({
+        cause: "job_created",
+        jobId: snapshot.job.jobId,
+        error: dispatchError,
+      });
+      await recordDocumentV2DispatchFailure({
+        repository,
+        cause: "job_created",
+        jobId: snapshot.job.jobId,
+        error: dispatchError,
+      });
+    }
     return Response.json(snapshot, {
       status: 202,
       headers: {

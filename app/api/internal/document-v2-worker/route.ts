@@ -59,50 +59,68 @@ async function handleWorker(request: Request) {
     );
   }
   const invocationId = randomUUID();
-  const startedAt = Date.now();
+  let requestedJobId: string | undefined;
+  if (request.method === "POST") {
+    try {
+      const body = (await request.json()) as { jobId?: unknown };
+      requestedJobId =
+        typeof body.jobId === "string" && body.jobId.length > 0
+          ? body.jobId
+          : undefined;
+    } catch {
+      return Response.json(
+        { error: "Invalid worker request.", code: "invalid_worker_request" },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+  }
   console.info("[document-v2-worker]", {
     invocationId,
-    operation: "worker.tick.started",
+    operation: "worker.tick.accepted",
+    jobId: requestedJobId,
   });
-  try {
-    const result = await executeOneDocumentV2Tick();
-    console.info("[document-v2-worker]", {
-      invocationId,
-      operation: "worker.tick.finished",
-      durationMs: Date.now() - startedAt,
-      ...result,
-    });
-    if (result.state !== "idle") {
-      after(async () => {
+  after(async () => {
+    const startedAt = Date.now();
+    try {
+      const result = await executeOneDocumentV2Tick(requestedJobId);
+      console.info("[document-v2-worker]", {
+        invocationId,
+        operation: "worker.tick.finished",
+        durationMs: Date.now() - startedAt,
+        requestedJobId,
+        ...result,
+      });
+      if (result.state === "queued") {
         try {
           await dispatchDocumentV2Worker({
             cause: "continuation",
             requestUrl: request.url,
-            jobId: "jobId" in result ? result.jobId : undefined,
+            jobId: result.jobId,
           });
         } catch (error) {
           logDocumentV2DispatchFailure({
             operation: "worker.continuation_dispatch.failed",
             cause: "continuation",
-            jobId: "jobId" in result ? result.jobId : undefined,
+            jobId: result.jobId,
             error,
           });
         }
+      }
+    } catch (error) {
+      console.error("[document-v2-worker]", {
+        invocationId,
+        operation: "worker.tick.failed",
+        durationMs: Date.now() - startedAt,
+        requestedJobId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
       });
     }
-    return Response.json(result, {
-      headers: { "Cache-Control": "no-store" },
-    });
-  } catch (error) {
-    console.error("[document-v2-worker]", {
-      invocationId,
-      operation: "worker.tick.failed",
-      durationMs: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
-    return Response.json({ error: "Worker tick failed." }, { status: 500 });
-  }
+  });
+  return Response.json(
+    { state: "accepted", invocationId, jobId: requestedJobId ?? null },
+    { status: 202, headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export const GET = handleWorker;

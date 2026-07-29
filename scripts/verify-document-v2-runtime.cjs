@@ -522,8 +522,18 @@ async function main() {
   );
   assert.match(
     workerRouteSource,
-    /result\.state\s*!==\s*"idle"/,
-    "The worker must immediately drain the next dispatch until the queue is idle.",
+    /result\.state\s*===\s*"queued"/,
+    "The worker must continue a job only while more work is queued.",
+  );
+  assert.match(
+    workerRouteSource,
+    /status:\s*202/,
+    "The worker endpoint must acknowledge dispatch before background execution.",
+  );
+  assert.match(
+    workerRouteSource,
+    /executeOneDocumentV2Tick\(requestedJobId\)/,
+    "A direct wakeup must process the requested job instead of an arbitrary queue item.",
   );
   assert.match(
     workerRouteSource,
@@ -543,6 +553,37 @@ async function main() {
       `${sourcePath} must not silently skip document worker dispatch.`,
     );
   }
+  for (const sourcePath of [
+    "app/api/chat/route.ts",
+    "app/api/document-v2/jobs/route.ts",
+  ]) {
+    const source = fs.readFileSync(path.join(projectRoot, sourcePath), "utf8");
+    const dispatchIndex = source.indexOf("cause: \"job_created\"");
+    assert.ok(dispatchIndex >= 0, `${sourcePath} must dispatch newly created jobs.`);
+    const nearbySource = source.slice(Math.max(0, dispatchIndex - 250), dispatchIndex);
+    assert.doesNotMatch(
+      nearbySource,
+      /after\s*\(/,
+      `${sourcePath} must await the fast worker acknowledgement in its active request lifecycle.`,
+    );
+  }
+  const targetedDispatchMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/017_document_v2_targeted_dispatch.sql",
+    ),
+    "utf8",
+  );
+  assert.match(
+    targetedDispatchMigration,
+    /claim_document_v2_dispatch/,
+    "Direct wakeups require a targeted atomic claim function.",
+  );
+  assert.match(
+    targetedDispatchMigration,
+    /WHERE job_id = target_job_id/,
+    "Targeted claims must be scoped to the dispatched job.",
+  );
   const dispatchSource = fs.readFileSync(
     path.join(projectRoot, "lib/document-v2-production/dispatch.ts"),
     "utf8",

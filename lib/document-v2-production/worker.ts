@@ -38,13 +38,20 @@ function adminClient(): SupabaseClient {
 async function claimNext(
   supabase: SupabaseClient,
   workerId: string,
+  jobId?: string,
 ): Promise<DocumentJob | null> {
   const now = new Date();
-  const { data, error } = await supabase.rpc("claim_next_document_v2_dispatch", {
+  const lease = {
     target_worker_id: workerId,
     lease_now: now.toISOString(),
     lease_expires: new Date(now.getTime() + 4 * 60_000).toISOString(),
-  });
+  };
+  const { data, error } = jobId
+    ? await supabase.rpc("claim_document_v2_dispatch", {
+        ...lease,
+        target_job_id: jobId,
+      })
+    : await supabase.rpc("claim_next_document_v2_dispatch", lease);
   if (error) throw error;
   return data ? DocumentJobSchema.parse(data) : null;
 }
@@ -308,11 +315,11 @@ async function storeDocx(
   return id;
 }
 
-export async function executeOneDocumentV2Tick() {
+export async function executeOneDocumentV2Tick(jobId?: string) {
   const config = requireDocumentV2WorkerConfig();
   const supabase = adminClient();
   const workerId = `vercel-${randomUUID()}`;
-  const job = await claimNext(supabase, workerId);
+  const job = await claimNext(supabase, workerId, jobId);
   if (!job) return { state: "idle" as const };
 
   const openai = new OpenAI({
