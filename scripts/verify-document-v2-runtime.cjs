@@ -322,6 +322,18 @@ async function verifyFinalizerFailureIsVisible() {
 }
 
 async function main() {
+  const workerRouteSource = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "app/api/internal/document-v2-worker/route.ts",
+    ),
+    "utf8",
+  );
+  assert.match(
+    workerRouteSource,
+    /result\.state\s*!==\s*"idle"/,
+    "The worker must immediately drain the next dispatch until the queue is idle.",
+  );
   await verifyIntakeExistsBeforePlanning();
   await verifyCancelResumeAndCompletion();
   await verifyLeaseBlocksDuplicateWorker();

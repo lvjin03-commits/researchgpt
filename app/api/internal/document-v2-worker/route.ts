@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   }
   try {
     const result = await executeOneDocumentV2Tick();
-    if (result.state === "queued") {
+    if (result.state !== "idle") {
       after(async () => {
         const secret = process.env.CRON_SECRET;
         if (!secret) return;
