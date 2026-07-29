@@ -112,7 +112,7 @@ export async function resumeDocumentJob(
   job = await repository.save(
     DocumentJobSchema.parse({
       ...job,
-      status: "paused",
+      status: "queued",
       stage: "content_generation",
       error: undefined,
       cancelRequestedAt: undefined,
