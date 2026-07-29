@@ -62,6 +62,7 @@ async function prepareIntake(input: {
     stage: "understanding" | "template_resolution" | "evidence_acquisition" | "planning",
     progress: number,
     message: string,
+    operation = `stage.${stage}`,
   ) => {
     const now = new Date().toISOString();
     job = await input.repository.save(
@@ -81,10 +82,18 @@ async function prepareIntake(input: {
       stage,
       status: "started",
       message,
+      category: stage === "evidence_acquisition" ? "validation" : "model",
+      operation,
+      correlationId: job.jobId,
+      metadata: {
+        jobRevision: job.revision,
+        modelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+      },
       createdAt: now,
     });
   };
   await advance("understanding", 2, "正在理解您的文档要求。");
+  const understandingStartedAt = Date.now();
   let understood;
   try {
     understood = await understandDocumentRequest(input.openai, {
@@ -125,10 +134,31 @@ async function prepareIntake(input: {
       stage: "understanding",
       status: "paused",
       message: error.question,
+      category: "validation",
+      operation: "request.clarification_required",
+      correlationId: job.jobId,
+      metadata: { reason: error.reason },
       createdAt: now,
     });
     return job;
   }
+  await input.repository.appendEvent({
+    eventId: randomUUID(),
+    jobId: job.jobId,
+    stage: "understanding",
+    status: "succeeded",
+    message: "文档要求理解完成。",
+    category: "model",
+    operation: "request.understand",
+    correlationId: job.jobId,
+    durationMs: Date.now() - understandingStartedAt,
+    metadata: {
+      modelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+      language: understood.language,
+      topicLength: understood.userRequirements.topic?.length ?? 0,
+    },
+    createdAt: new Date().toISOString(),
+  });
   await advance("template_resolution", 4, "正在根据文档意图解析模板。");
   const template = await resolveDocumentTemplate({
     request: understood,
@@ -150,11 +180,30 @@ async function prepareIntake(input: {
       intake.evidence.map((item) => [item.reference.id, item.reference]),
     ).values(),
   ];
+  const planningStartedAt = Date.now();
   const plan = await createDocumentPlanFromTemplate({
     request: understood,
     template,
     outlinePlanner: new OpenAISemanticOutlinePlanner(input.openai),
     availableEvidenceIds: evidenceReferences.map((reference) => reference.id),
+  });
+  await input.repository.appendEvent({
+    eventId: randomUUID(),
+    jobId: job.jobId,
+    stage: "planning",
+    status: "succeeded",
+    message: "文档结构规划完成。",
+    category: "model",
+    operation: "outline.plan",
+    correlationId: job.jobId,
+    durationMs: Date.now() - planningStartedAt,
+    metadata: {
+      modelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+      componentCount: plan.components.length,
+      evidenceCount: evidenceReferences.length,
+      templateId: template.snapshot.templateId,
+    },
+    createdAt: new Date().toISOString(),
   });
   await advance("planning", 8, "文档结构已经规划完成。");
   const orchestration = createDocumentOrchestrationState({
@@ -266,6 +315,21 @@ export async function executeOneDocumentV2Tick() {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const repository = new SupabaseDocumentJobRepository(supabase, job.ownerId);
+  await repository.appendEvent({
+    eventId: randomUUID(),
+    jobId: job.jobId,
+    stage: job.stage,
+    status: "started",
+    message: "后台工作器已领取任务。",
+    category: "dispatch",
+    operation: "dispatch.claimed",
+    correlationId: workerId,
+    metadata: {
+      jobRevision: job.revision,
+      leaseExpiresAt: job.leaseExpiresAt ?? null,
+    },
+    createdAt: new Date().toISOString(),
+  });
   const preparedJob = job.checkpoint.orchestration
     ? job
     : await prepareIntake({ job, repository, openai });

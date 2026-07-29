@@ -185,6 +185,21 @@ async function verifyCancelResumeAndCompletion() {
   assert.ok(
     completed.events.some((event) => event.stage === "quality_check"),
   );
+  assert.ok(
+    completed.events.some(
+      (event) =>
+        event.category === "model" &&
+        event.operation === "component.started" &&
+        event.metadata?.componentType,
+    ),
+  );
+  assert.ok(
+    completed.events.some(
+      (event) =>
+        event.category === "render" &&
+        event.operation === "stage.docx_rendering.started",
+    ),
+  );
   completed.events.forEach((event, index) => {
     assert.equal(event.sequence, index + 1);
   });

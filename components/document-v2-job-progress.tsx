@@ -141,6 +141,27 @@ export function DocumentV2JobProgress({
                     ? ` · ${(event.durationMs / 1000).toFixed(1)} 秒`
                     : ""}
                 </p>
+                <p className="mt-0.5 text-xs text-neutral-400">
+                  {new Date(event.createdAt).toLocaleString("zh-CN")}
+                  {event.category ? ` · ${event.category}` : ""}
+                  {event.operation ? ` · ${event.operation}` : ""}
+                  {event.correlationId
+                    ? ` · 关联 ${event.correlationId}`
+                    : ""}
+                </p>
+                {event.metadata &&
+                Object.keys(event.metadata).length > 0 ? (
+                  <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 text-xs text-neutral-500">
+                    {Object.entries(event.metadata).map(([key, value]) => (
+                      <div key={key} className="contents">
+                        <dt className="font-medium">{key}</dt>
+                        <dd className="min-w-0 break-all font-mono">
+                          {String(value)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
                 {event.technicalMessage ? (
                   <details className="mt-1 text-xs text-neutral-500">
                     <summary className="cursor-pointer">技术信息</summary>

@@ -523,12 +523,73 @@ export class DocumentV2JobService {
     technicalMessage?: string,
     durationMs?: number,
   ): Promise<void> {
+    const orchestration = job.checkpoint.orchestration;
+    const componentPlan = componentKey
+      ? orchestration?.plan.components.find(
+          (component) => component.componentKey === componentKey,
+        )
+      : undefined;
+    const componentState = componentKey
+      ? orchestration?.components.find(
+          (component) => component.componentKey === componentKey,
+        )
+      : undefined;
+    const assetCount =
+      componentState?.approved?.kind === "blocks"
+        ? componentState.approved.assets.length
+        : 0;
+    const category: NonNullable<DocumentJobEvent["category"]> =
+      stage === "content_generation"
+        ? status === "started"
+          ? "model"
+          : "validation"
+        : stage === "asset_generation"
+          ? "image"
+          : stage === "docx_rendering" || stage === "quality_check"
+            ? "render"
+            : stage === "artifact_storage"
+              ? "storage"
+              : "lifecycle";
     await this.repository.appendEvent({
       eventId: randomUUID(),
       jobId: job.jobId,
       stage,
       status,
       message,
+      category,
+      operation: componentKey
+        ? `component.${status}`
+        : `stage.${stage}.${status}`,
+      correlationId: componentKey
+        ? `${job.jobId}:${componentKey}`
+        : job.jobId,
+      metadata: {
+        jobRevision: job.revision,
+        ...(attempt === undefined ? {} : { attempt }),
+        ...(componentPlan ? { componentType: componentPlan.type } : {}),
+        ...(componentState
+          ? { componentStatus: componentState.status, assetCount }
+          : {}),
+        ...(errorCode === undefined ? {} : { errorCode }),
+        ...(job.checkpoint.budget
+          ? {
+              usedModelCalls: job.checkpoint.budget.usedModelCalls,
+              usedImageCalls: job.checkpoint.budget.usedImageCalls,
+              usedRepairAttempts:
+                job.checkpoint.budget.usedRepairAttempts,
+              usedExecutionMs: job.checkpoint.budget.usedExecutionMs,
+            }
+          : {}),
+        ...(job.checkpoint.executionSnapshot?.modelId
+          ? { modelId: job.checkpoint.executionSnapshot.modelId }
+          : {}),
+        ...(job.checkpoint.executionSnapshot?.generatorPromptVersion
+          ? {
+              promptVersion:
+                job.checkpoint.executionSnapshot.generatorPromptVersion,
+            }
+          : {}),
+      },
       componentKey,
       attempt,
       errorCode,

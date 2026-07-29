@@ -109,6 +109,31 @@ export const DocumentJobEventSchema = z
       "cancelled",
     ]),
     message: z.string().trim().min(1).max(500),
+    category: z
+      .enum([
+        "lifecycle",
+        "dispatch",
+        "model",
+        "validation",
+        "image",
+        "render",
+        "storage",
+        "recovery",
+      ])
+      .optional(),
+    operation: IdentifierSchema.optional(),
+    correlationId: IdentifierSchema.optional(),
+    metadata: z
+      .record(
+        z.string().min(1).max(120),
+        z.union([
+          z.string().max(2_000),
+          z.number(),
+          z.boolean(),
+          z.null(),
+        ]),
+      )
+      .optional(),
     componentKey: IdentifierSchema.optional(),
     attempt: z.number().int().positive().optional(),
     durationMs: z.number().int().nonnegative().optional(),
