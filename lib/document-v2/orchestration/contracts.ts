@@ -159,6 +159,7 @@ export const ComponentExecutionStateSchema = z
     componentKey: IdentifierSchema,
     status: z.enum(["pending", "running", "approved", "stale", "failed"]),
     attempts: z.number().int().min(0).max(100),
+    transientFailures: z.number().int().min(0).max(100).default(0),
     lastError: z
       .object({
         code: IdentifierSchema,

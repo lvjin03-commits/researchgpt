@@ -153,10 +153,17 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
       instructions: [
         "Plan the mature semantic structure of one SCI review document.",
         "Return only an outline; do not write paragraphs.",
+        "Plan body sections only. Title, abstract, keywords, conclusion, and references are fixed template components created separately.",
+        "Never turn user instructions such as generating a title, abstract, keywords, figures, tables, or references into body sections.",
+        "Each section purpose must be a concise scientific scope, not a production checklist, numbered figure/table specification, or list of many subsection directives.",
+        "Split scientifically dense material across body sections while staying within the supplied limits.",
         "Use the requested language for headings.",
         "Stay within the supplied section limits.",
         "Use only availableEvidenceIds; never invent evidence.",
         "Choose section order and relative weights from scientific logic.",
+        input.repairFeedback
+          ? `The previous outline was rejected. Correct all of these issues: ${input.repairFeedback}`
+          : "",
       ].join(" "),
       input: JSON.stringify({
         topic: input.request.userRequirements.topic,
@@ -164,7 +171,13 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
         minimumSections: input.minimumSections,
         maximumSections: input.maximumSections,
         availableEvidenceIds: input.availableEvidenceIds,
-        templateComponents: input.template.componentBlueprints,
+        fixedComponentsHandledByTemplate: input.template.componentBlueprints
+          .filter((component) => component.type !== "section")
+          .map((component) => component.type),
+        bodySectionContract: {
+          minimumCount: input.minimumSections,
+          maximumCount: input.maximumSections,
+        },
       }),
       text: {
         format: zodTextFormat(

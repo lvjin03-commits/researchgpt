@@ -77,6 +77,7 @@ export interface RunDocumentOrchestrationOptions {
   validator: DocumentComponentValidator;
   figureAssetMaterializer?: FigureAssetMaterializer;
   maxAttemptsPerComponent?: number;
+  maxTransientFailuresPerComponent?: number;
   maxComponentsPerRun?: number;
 }
 
@@ -177,6 +178,7 @@ export function createDocumentOrchestrationState(input: {
       componentKey: component.componentKey,
       status: "pending",
       attempts: 0,
+      transientFailures: 0,
     })),
     events: [],
   });
@@ -578,6 +580,7 @@ export function invalidateDocumentComponent(
     component.approved = undefined;
     component.lastError = undefined;
     component.attempts = 0;
+    component.transientFailures = 0;
     component.status =
       component.componentKey === componentKey ? "pending" : "stale";
   }
@@ -610,6 +613,25 @@ function failJob(
     code,
     message,
   });
+}
+
+function isTransientGenerationFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const candidate = error as Error & {
+    status?: number;
+    code?: string;
+  };
+  if (
+    candidate.status === 408 ||
+    candidate.status === 409 ||
+    candidate.status === 429 ||
+    (candidate.status !== undefined && candidate.status >= 500)
+  ) {
+    return true;
+  }
+  return /(?:request timed out|timeout|timed out|econnreset|etimedout|rate limit|temporarily unavailable|connection reset|bad gateway|service unavailable|gateway timeout)/i.test(
+    `${candidate.code ?? ""} ${candidate.message}`,
+  );
 }
 
 function buildFinalSpec(state: DocumentOrchestrationState) {
@@ -680,6 +702,17 @@ export async function runDocumentOrchestration(
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) {
     throw new RangeError("maxAttemptsPerComponent must be between 1 and 10.");
   }
+  const maxTransientFailures =
+    options.maxTransientFailuresPerComponent ?? 2;
+  if (
+    !Number.isInteger(maxTransientFailures) ||
+    maxTransientFailures < 1 ||
+    maxTransientFailures > 10
+  ) {
+    throw new RangeError(
+      "maxTransientFailuresPerComponent must be between 1 and 10.",
+    );
+  }
   const maxComponents = options.maxComponentsPerRun ?? Number.POSITIVE_INFINITY;
   if (
     maxComponents !== Number.POSITIVE_INFINITY &&
@@ -721,11 +754,11 @@ export async function runDocumentOrchestration(
     const approvedComponents = listApprovedComponents(state);
 
     componentState.status = "running";
-    componentState.attempts += 1;
+    const contentAttempt = componentState.attempts + 1;
     appendEvent(state, {
       type: "component_started",
       componentKey: component.componentKey,
-      attempt: componentState.attempts,
+      attempt: contentAttempt,
     });
 
     let payload: GeneratedComponentPayload;
@@ -736,8 +769,10 @@ export async function runDocumentOrchestration(
           plan: state.plan,
           component,
           componentIndex,
-          attempt: componentState.attempts,
-          repairFeedback: componentState.lastError
+          attempt: contentAttempt,
+          repairFeedback:
+            componentState.lastError &&
+            componentState.lastError.code !== "component_generation_transient"
             ? {
                 code: componentState.lastError.code,
                 message: componentState.lastError.message,
@@ -751,6 +786,34 @@ export async function runDocumentOrchestration(
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown generation failure.";
+      if (isTransientGenerationFailure(error)) {
+        componentState.transientFailures += 1;
+        componentState.lastError = {
+          code: "component_generation_transient",
+          message,
+        };
+        appendEvent(state, {
+          type: "component_rejected",
+          componentKey: component.componentKey,
+          attempt: contentAttempt,
+          code: componentState.lastError.code,
+          message,
+        });
+        if (componentState.transientFailures >= maxTransientFailures) {
+          const terminalCode = /timed out|timeout/i.test(message)
+            ? "component_generation_timeout"
+            : "component_generation_unavailable";
+          failJob(
+            state,
+            componentState,
+            terminalCode,
+            message,
+          );
+          return DocumentOrchestrationStateSchema.parse(state);
+        }
+        continue;
+      }
+      componentState.attempts = contentAttempt;
       componentState.lastError = {
         code: "component_generation_failed",
         message,
@@ -773,6 +836,7 @@ export async function runDocumentOrchestration(
       }
       continue;
     }
+    componentState.attempts = contentAttempt;
 
     let structuralApproval: {
       approved: ApprovedComponent;

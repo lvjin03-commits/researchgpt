@@ -20,6 +20,7 @@ export interface SemanticOutlinePlanner {
     minimumSections: number;
     maximumSections: number;
     availableEvidenceIds: ReadonlyArray<string>;
+    repairFeedback?: string;
   }): Promise<SemanticOutlineProposal>;
 }
 
@@ -28,6 +29,52 @@ export class DocumentPlanningError extends Error {
     super(message);
     this.name = "DocumentPlanningError";
   }
+}
+
+const FIXED_COMPONENT_HEADING_PATTERN =
+  /^(?:title|abstract|keywords?|references?|标题|摘要|关键词|参考文献)$/i;
+const FIXED_COMPONENT_DIRECTIVE_PATTERN =
+  /(?:(?:生成|给出|撰写|编写|提取|列出|创建|决定).{0,16}(?:标题|摘要|关键词|参考文献)|(?:generate|write|create|provide|extract|select).{0,32}(?:title|abstract|keywords?|reference list))/i;
+const ASSET_SPECIFICATION_PATTERN =
+  /(?:^|\n)\s*(?:图|表|fig(?:ure)?|table)\s*\d+\s*[（(:：]/im;
+const MAX_SECTION_PURPOSE_CHARACTERS = 650;
+const MAX_SUBSECTION_MARKERS_PER_SECTION = 4;
+const MAX_OUTLINE_ATTEMPTS = 2;
+
+function outlineSemanticErrors(
+  proposal: SemanticOutlineProposal,
+): string[] {
+  const errors: string[] = [];
+  proposal.sections.forEach((section, index) => {
+    const label = `Section ${index + 1}`;
+    if (
+      FIXED_COMPONENT_HEADING_PATTERN.test(section.heading) ||
+      FIXED_COMPONENT_DIRECTIVE_PATTERN.test(section.heading) ||
+      FIXED_COMPONENT_DIRECTIVE_PATTERN.test(section.purpose)
+    ) {
+      errors.push(
+        `${label} assigns title, abstract, keywords, or references work to a body section.`,
+      );
+    }
+    if (section.purpose.length > MAX_SECTION_PURPOSE_CHARACTERS) {
+      errors.push(
+        `${label} purpose is too detailed; keep it under ${MAX_SECTION_PURPOSE_CHARACTERS} characters and split the scientific scope across sections.`,
+      );
+    }
+    if (ASSET_SPECIFICATION_PATTERN.test(section.purpose)) {
+      errors.push(
+        `${label} contains numbered figure or table production instructions; the outline may describe scientific scope but not asset specifications.`,
+      );
+    }
+    const subsectionMarkers =
+      section.purpose.match(/(?:^|\s)\d+\.\d+(?:\s|$)/g)?.length ?? 0;
+    if (subsectionMarkers > MAX_SUBSECTION_MARKERS_PER_SECTION) {
+      errors.push(
+        `${label} contains ${subsectionMarkers} subsection directives; split it into smaller body sections.`,
+      );
+    }
+  });
+  return errors;
 }
 
 function allocateByWeight(
@@ -77,15 +124,31 @@ export async function createDocumentPlanFromTemplate(input: {
   }
   const availableEvidenceIds = [...new Set(input.availableEvidenceIds ?? [])];
   const availableEvidenceSet = new Set(availableEvidenceIds);
-  const proposal = SemanticOutlineProposalSchema.parse(
-    await input.outlinePlanner.propose({
-      request,
-      template,
-      minimumSections: sectionBlueprint.minimumCount,
-      maximumSections: sectionBlueprint.maximumCount,
-      availableEvidenceIds,
-    }),
-  );
+  let proposal: SemanticOutlineProposal | undefined;
+  let repairFeedback: string | undefined;
+  for (let attempt = 1; attempt <= MAX_OUTLINE_ATTEMPTS; attempt += 1) {
+    const candidate = SemanticOutlineProposalSchema.parse(
+      await input.outlinePlanner.propose({
+        request,
+        template,
+        minimumSections: sectionBlueprint.minimumCount,
+        maximumSections: sectionBlueprint.maximumCount,
+        availableEvidenceIds,
+        repairFeedback,
+      }),
+    );
+    const semanticErrors = outlineSemanticErrors(candidate);
+    if (semanticErrors.length === 0) {
+      proposal = candidate;
+      break;
+    }
+    repairFeedback = semanticErrors.join(" ");
+  }
+  if (!proposal) {
+    throw new DocumentPlanningError(
+      `Outline does not contain valid body sections. ${repairFeedback ?? ""}`.trim(),
+    );
+  }
   if (
     proposal.sections.length < sectionBlueprint.minimumCount ||
     proposal.sections.length > sectionBlueprint.maximumCount

@@ -536,6 +536,99 @@ async function verifyPlannerRejectsInvalidOutline() {
   );
 }
 
+async function verifyPlannerRepairsTemplateComponentLeakage() {
+  const template = await resolveTemplate();
+  let calls = 0;
+  let receivedRepairFeedback;
+  const plan = await createDocumentPlanFromTemplate({
+    request,
+    template,
+    availableEvidenceIds: ["ref-1"],
+    outlinePlanner: {
+      async propose(input) {
+        calls += 1;
+        receivedRepairFeedback = input.repairFeedback ?? receivedRepairFeedback;
+        if (calls === 1) {
+          return {
+            sections: [
+              {
+                heading: "Generate the review title",
+                purpose:
+                  "Write the final title, abstract, and keywords requested by the user.",
+                relativeWeight: 1,
+                requiredEvidenceIds: [],
+              },
+            ],
+            conclusionHeading: "Conclusion",
+          };
+        }
+        return {
+          sections: [
+            {
+              heading: "Preparation mechanisms",
+              purpose:
+                "Explain how processing routes establish reversible physical junctions.",
+              relativeWeight: 1,
+              requiredEvidenceIds: ["ref-1"],
+            },
+          ],
+          conclusionHeading: "Conclusion",
+        };
+      },
+    },
+  });
+
+  assert.equal(calls, 2, "An invalid body outline must be repaired once.");
+  assert.match(receivedRepairFeedback, /body section/i);
+  assert.deepEqual(
+    plan.components.map((component) => component.type),
+    [
+      "title",
+      "abstract",
+      "keywords",
+      "section",
+      "conclusion",
+      "reference_list",
+    ],
+    "Template-owned components must remain distinct from AI-planned body sections.",
+  );
+  assert.equal(
+    plan.components.find((component) => component.type === "section").heading,
+    "Preparation mechanisms",
+  );
+}
+
+async function verifyPlannerRejectsOverloadedSection() {
+  const template = await resolveTemplate();
+  let calls = 0;
+  await assert.rejects(
+    createDocumentPlanFromTemplate({
+      request,
+      template,
+      availableEvidenceIds: [],
+      outlinePlanner: {
+        async propose() {
+          calls += 1;
+          return {
+            sections: [
+              {
+                heading: "Physical crosslinking mechanisms",
+                purpose:
+                  "Cover all mechanisms. Figure 1: mechanism overview. Table 1: six-column comparison. Subsections 2.1 Hydrogen bonding 2.2 Hydrophobic association 2.3 Ionic coordination 2.4 Crystallization 2.5 Host-guest chemistry 2.6 Topological constraints.",
+                relativeWeight: 1,
+                requiredEvidenceIds: [],
+              },
+            ],
+            conclusionHeading: "Conclusion",
+          };
+        },
+      },
+    }),
+    DocumentPlanningError,
+  );
+  assert.equal(calls, 2, "An overloaded outline receives one bounded repair attempt.");
+}
+
 async function verifyUnsafeSvgIsRejected() {
   const fallbackPng = await sharp({
     create: {
@@ -645,6 +738,8 @@ async function main() {
   await verifyOutlineSchemaUsesTemplateBounds();
   await verifyCompleteGenerationFlow();
   await verifyPlannerRejectsInvalidOutline();
+  await verifyPlannerRepairsTemplateComponentLeakage();
+  await verifyPlannerRejectsOverloadedSection();
   await verifyUnsafeSvgIsRejected();
   console.log("Document v2 mature generation tests passed.");
 }

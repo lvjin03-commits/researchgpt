@@ -72,6 +72,12 @@ function progressFor(job: DocumentJob, stage = job.stage): number {
 }
 
 function userErrorMessage(code: string): string {
+  if (code.includes("timeout")) {
+    return "模型响应超时，系统已完成技术重试，请稍后从保存进度继续。";
+  }
+  if (code.includes("unavailable")) {
+    return "模型服务暂时不可用，当前进度已保存，请稍后继续。";
+  }
   if (code.includes("figure_asset")) return "图片生成未通过质量检查。";
   if (code.includes("validation") || code.includes("structure")) {
     return "当前部分的内容未通过质量检查。";
@@ -279,6 +285,14 @@ export class DocumentV2JobService {
         (sum, item) => sum + item.attempts,
         0,
       );
+      const transientFailuresBefore = orchestrationState.components.reduce(
+        (sum, item) => sum + item.transientFailures,
+        0,
+      );
+      const repairsBefore = orchestrationState.components.reduce(
+        (sum, item) => sum + Math.max(0, item.attempts - 1),
+        0,
+      );
       const orchestration = await runDocumentOrchestration(
         orchestrationState,
         { ...this.orchestrationOptions, maxComponentsPerRun: 1 },
@@ -288,8 +302,22 @@ export class DocumentV2JobService {
         (sum, item) => sum + item.attempts,
         0,
       );
-      const modelCallsUsed = Math.max(0, attemptsAfter - attemptsBefore);
-      const repairsUsed = Math.max(0, modelCallsUsed - 1);
+      const transientFailuresAfter = orchestration.components.reduce(
+        (sum, item) => sum + item.transientFailures,
+        0,
+      );
+      const repairsAfter = orchestration.components.reduce(
+        (sum, item) => sum + Math.max(0, item.attempts - 1),
+        0,
+      );
+      const modelCallsUsed = Math.max(
+        0,
+        attemptsAfter -
+          attemptsBefore +
+          transientFailuresAfter -
+          transientFailuresBefore,
+      );
+      const repairsUsed = Math.max(0, repairsAfter - repairsBefore);
       const savedAt = this.clock().toISOString();
       job = await this.repository.save(
         DocumentJobSchema.parse({

@@ -391,6 +391,51 @@ async function verifyStructuralFailureIsLocal() {
   );
 }
 
+async function verifyTransientFailureDoesNotConsumeContentRepair() {
+  const callCounts = {};
+  const initial = createDocumentOrchestrationState({
+    jobId: "b8c9b498-0c1e-46ad-94e5-7cfb5a6b9c7c",
+    request,
+    plan,
+    verifiedReferences,
+  });
+  const completed = await runDocumentOrchestration(initial, {
+    generator: {
+      async generate(context) {
+        callCounts[context.component.componentKey] =
+          (callCounts[context.component.componentKey] ?? 0) + 1;
+        if (
+          context.component.componentKey === "abstract" &&
+          callCounts.abstract === 1
+        ) {
+          throw new Error("Request timed out.");
+        }
+        return payloadFor(context.component.componentKey);
+      },
+    },
+    validator: { async validate() { return { accepted: true }; } },
+    maxAttemptsPerComponent: 2,
+    maxTransientFailuresPerComponent: 2,
+  });
+
+  assert.equal(completed.status, "completed");
+  assert.equal(callCounts.abstract, 2);
+  assert.equal(
+    completed.components[1].attempts,
+    1,
+    "A transport timeout must not consume a content-repair attempt.",
+  );
+  assert.equal(completed.components[1].transientFailures, 1);
+  assert.equal(
+    completed.events.find(
+      (event) =>
+        event.type === "component_rejected" &&
+        event.componentKey === "abstract",
+    ).code,
+    "component_generation_transient",
+  );
+}
+
 function verifyPlanInvariants() {
   assert.throws(
     () =>
@@ -412,6 +457,7 @@ async function main() {
   await verifyPauseAndResume();
   await verifyRetryLimitStopsJob();
   await verifyStructuralFailureIsLocal();
+  await verifyTransientFailureDoesNotConsumeContentRepair();
   verifyPlanInvariants();
   console.log("Document v2 orchestrator tests passed.");
 }

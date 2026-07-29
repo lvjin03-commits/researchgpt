@@ -104,6 +104,7 @@ export async function resumeDocumentJob(
         componentKey: orchestration.components[failedIndex].componentKey,
         status: "pending",
         attempts: 0,
+        transientFailures: 0,
         revisions: orchestration.components[failedIndex].revisions,
       };
     }

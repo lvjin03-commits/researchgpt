@@ -186,7 +186,7 @@ export function buildComponentGenerationInstructions(
       keywords:
         "Use kind=blocks with exactly one keywords block containing 3-8 values.",
       section:
-        "Use kind=blocks. The first block must be a heading equal to the planned heading, followed by mature paragraphs and justified tables when useful. Add figureRequests only for figures that materially improve comprehension.",
+        "Use kind=blocks. The first block must be a heading equal to the planned heading. Every paragraph must use role=body; never return abstract or keywords blocks. Follow with mature paragraphs and justified tables when useful. Add figureRequests only for figures that materially improve comprehension.",
       conclusion:
         "Use kind=blocks. The first block must equal the planned heading and at least one paragraph must have role=conclusion.",
       reference_list:
