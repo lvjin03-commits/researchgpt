@@ -38,9 +38,6 @@ const {
   InMemoryDocumentJobRepository,
 } = require("../lib/document-v2/runtime/repository.ts");
 const {
-  normalizeGeneratedComponentPayload,
-} = require("../lib/document-v2/generation/normalize-component-payload.ts");
-const {
   canonicalize,
   sha256Canonical,
 } = require("../lib/document-v2/runtime/canonical-hash.ts");
@@ -340,43 +337,7 @@ async function verifyTimeBudgetYieldsAfterCheckpoint() {
   assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
 }
 
-async function verifyDeterministicNormalizationAndPreciseResume() {
-  const normalized = normalizeGeneratedComponentPayload({
-    kind: "blocks",
-    blocks: [
-      {
-        type: "paragraph",
-        role: "abstract",
-        text: "```text\nAbstract: Mature abstract content.\n```",
-        caption: "This unknown field must not reject valid prose.",
-        citationIds: [],
-        figureRequestIndexes: [],
-      },
-      {
-        type: "table",
-        caption: "Table 2 | Comparison",
-        columns: ["Method"],
-        rows: [["A"]],
-      },
-    ],
-    figureRequests: [
-      {
-        slotId: null,
-        figureType: "process_flow",
-        title: "Process",
-        caption: "Fig. 3 | Processing route.",
-        altText: "Route",
-        contentBrief: "Route",
-        placementAfterBlockIndex: 0,
-        sourceEvidenceIds: [],
-      },
-    ],
-  });
-  assert.equal(normalized.blocks[0].text, "Mature abstract content.");
-  assert.equal("caption" in normalized.blocks[0], false);
-  assert.equal(normalized.blocks[1].caption, "Comparison");
-  assert.equal(normalized.figureRequests[0].caption, "Processing route.");
-
+async function verifyPreciseResume() {
   const repository = new InMemoryDocumentJobRepository();
   const service = makeService(repository, {});
   const created = await service.create({
@@ -943,7 +904,7 @@ async function main() {
   await verifyLeaseBlocksDuplicateWorker();
   await verifyBoundedTicksResumeFromCheckpoint();
   await verifyTimeBudgetYieldsAfterCheckpoint();
-  await verifyDeterministicNormalizationAndPreciseResume();
+  await verifyPreciseResume();
   await verifyImageCallsAndAssetsUseSeparateBudgets();
   await verifyFinalizerFailureIsVisible();
   await verifyDispatchChecksHttpStatus();

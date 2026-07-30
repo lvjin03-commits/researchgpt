@@ -55,8 +55,23 @@ contains only one planned component plus:
 - verified reference metadata;
 - repair feedback from the previous local attempt.
 
-The model returns one `GeneratedComponentPayload` without final block IDs.
-The orchestrator assigns those IDs only after acceptance.
+The selected `ComponentContractDefinition` is the authoritative boundary for
+each component type. It owns the model-output schema, contract version, legal
+example, field ownership, and deterministic assembly into the existing
+`GeneratedComponentPayload`.
+
+The model returns semantic variables only:
+
+- final prose and keyword text;
+- verified citation IDs;
+- planned figure-slot references;
+- justified table and figure descriptions where the component contract allows
+  them.
+
+The model does not return `kind`, component or block IDs, revisions, planned
+headings, heading levels, block discriminators, paragraph roles, figure types,
+numbering, storage fields, or rendering metadata. The program injects those
+values from the frozen plan and contract after model-output validation.
 
 The generator receives only direct approved dependencies and evidence excerpts
 explicitly authorized for the current component. It does not repeatedly inject
@@ -75,16 +90,18 @@ The model must return mature content. It must not return:
 ## Validation order
 
 ```text
-model payload
--> payload schema
+model semantic payload
+-> component-specific model-output schema
+-> deterministic contract assembly
 -> orchestrator structural rules
 -> mature-content deterministic rules
 -> optional semantic reviewer
 -> approved component
 ```
 
-A rejection returns a machine-readable code and repair feedback to the same
-component. Earlier approved components remain unchanged.
+A rejection returns a machine-readable code and bounded repair feedback to the
+same component. A component receives at most one repair attempt under the
+current runtime budget. Earlier approved components remain unchanged.
 
 ## Implemented deterministic mature-content checks
 

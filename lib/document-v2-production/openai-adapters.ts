@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import sharp from "sharp";
 import { z } from "zod";
-import { GeneratedComponentPayloadSchema } from "@/lib/document-v2/orchestration/contracts";
 import type { StructuredComponentModel } from "@/lib/document-v2/generation/model-component-generator";
 import type {
   FinalFigureGenerator,
@@ -10,36 +9,24 @@ import type {
 import type { FigureRequest } from "@/lib/document-v2/assets/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
 
-const GeneratedComponentEnvelopeSchema = z
-  .object({
-    payload: GeneratedComponentPayloadSchema,
-  })
-  .strict();
-const RawComponentEnvelopeSchema = z
-  .object({
-    payload: z.record(z.string(), z.unknown()),
-  })
-  .passthrough();
-
 export class OpenAIStructuredComponentModel implements StructuredComponentModel {
   constructor(
     private readonly executor: DocumentStructuredTextExecutor,
   ) {}
 
   async generate(input: {
-    schemaName: "document_component_payload_v1";
+    schemaName: string;
+    schema: z.ZodType;
     systemInstruction: string;
     componentInstruction: string;
     componentKey?: string;
   }): Promise<unknown> {
+    const envelopeSchema = z.object({ payload: input.schema }).strict();
     const response = await this.executor.generate({
       operation: "component.generate",
       componentKey: input.componentKey,
       schemaName: input.schemaName,
-      schema:
-        this.executor.profile?.provider === "deepseek"
-          ? RawComponentEnvelopeSchema
-          : GeneratedComponentEnvelopeSchema,
+      schema: envelopeSchema,
       systemInstruction: input.systemInstruction,
       userInstruction: input.componentInstruction,
     });

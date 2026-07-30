@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const swc = require("next/dist/build/swc");
 const sharp = require("sharp");
+const { z } = require("zod");
 
 const projectRoot = path.resolve(__dirname, "..");
 const originalResolveFilename = Module._resolveFilename;
@@ -43,9 +44,6 @@ require.extensions[".ts"] = function compileTypeScript(module, filename) {
 const {
   ModelDocumentComponentGenerator,
 } = require("../lib/document-v2/generation/model-component-generator.ts");
-const {
-  normalizeGeneratedComponentPayload,
-} = require("../lib/document-v2/generation/normalize-component-payload.ts");
 const {
   OpenAIStructuredComponentModel,
 } = require("../lib/document-v2-production/openai-adapters.ts");
@@ -171,16 +169,12 @@ function maturePayload(component, repairFeedback) {
   switch (component.type) {
     case "title":
       return {
-        kind: "title",
         title: "Physical Gel Preparation and Structural Control",
       };
     case "abstract":
       return {
-        kind: "blocks",
-        blocks: [
+        paragraphs: [
           {
-            type: "paragraph",
-            role: "abstract",
             text: "This review examines preparation-dependent structure formation in physical gels.",
             citationIds: ["ref-1"],
           },
@@ -188,13 +182,7 @@ function maturePayload(component, repairFeedback) {
       };
     case "keywords":
       return {
-        kind: "blocks",
-        blocks: [
-          {
-            type: "keywords",
-            values: ["physical gels", "preparation", "network structure"],
-          },
-        ],
+        keywords: ["physical gels", "preparation", "network structure"],
       };
     case "section":
       if (
@@ -202,21 +190,17 @@ function maturePayload(component, repairFeedback) {
         !repairFeedback
       ) {
         return {
-          kind: "blocks",
-          blocks: [
-            { type: "heading", level: 1, text: component.heading },
+          paragraphs: [
             {
-              type: "paragraph",
-              role: "body",
               text: "TODO: insert raw evidenceType=aistructure here.",
               citationIds: ["ref-1"],
-              figureRequestIndexes: [0],
+              figureReferenceIds: ["figure-slot-01"],
             },
           ],
+          tables: [],
           figureRequests: [
             {
               slotId: "figure-slot-01",
-              figureType: "process_flow",
               title: "Preparation route to network structure",
               caption:
                 "Preparation routes create distinct physical junction domains",
@@ -224,32 +208,31 @@ function maturePayload(component, repairFeedback) {
                 "Flow diagram connecting preparation routes to gel network structures.",
               contentBrief:
                 "Show preparation routes converging on distinct junction-domain structures.",
-              placementAfterBlockIndex: 1,
+              placementAfterParagraphIndex: 0,
               sourceEvidenceIds: ["ref-1"],
             },
           ],
         };
       }
       return {
-        kind: "blocks",
-        blocks: [
-          { type: "heading", level: 1, text: component.heading },
+        paragraphs: [
           {
-            type: "paragraph",
-            role: "body",
             text:
               component.heading === "1 Introduction"
                 ? "Physical gels rely on reversible junctions whose topology depends on processing history."
                 : "Freeze-thaw cycling and solvent exchange create distinct junction domains and network morphologies.",
             citationIds:
               component.heading === "1 Introduction" ? ["ref-1"] : ["ref-2"],
-            figureRequestIndexes:
-              component.heading === "2 Preparation Routes" ? [0] : [],
+            figureReferenceIds:
+              component.heading === "2 Preparation Routes"
+                ? ["figure-slot-01"]
+                : [],
           },
-          ...(component.heading === "2 Preparation Routes"
+        ],
+        tables:
+          component.heading === "2 Preparation Routes"
             ? [
                 {
-                  type: "table",
                   caption:
                     "Representative routes and their structural consequences",
                   columns: ["Route", "Dominant process", "Network outcome"],
@@ -265,16 +248,15 @@ function maturePayload(component, repairFeedback) {
                       "Aggregated network",
                     ],
                   ],
+                  placementAfterParagraphIndex: 0,
                 },
               ]
-            : []),
-        ],
+            : [],
         figureRequests:
           component.heading === "2 Preparation Routes"
             ? [
                 {
                   slotId: "figure-slot-01",
-                  figureType: "process_flow",
                   title: "Preparation route to network structure",
                   caption:
                     "Preparation routes create distinct physical junction domains",
@@ -282,7 +264,7 @@ function maturePayload(component, repairFeedback) {
                     "Flow diagram connecting freeze-thaw and solvent exchange routes to different physical gel network structures.",
                   contentBrief:
                     "Draw two preparation routes converging on distinct junction-domain structures; use publication-ready labels and no raw data.",
-                  placementAfterBlockIndex: 2,
+                  placementAfterParagraphIndex: 0,
                   sourceEvidenceIds: ["ref-1"],
                 },
               ]
@@ -290,19 +272,15 @@ function maturePayload(component, repairFeedback) {
       };
     case "conclusion":
       return {
-        kind: "blocks",
-        blocks: [
-          { type: "heading", level: 1, text: component.heading },
+        paragraphs: [
           {
-            type: "paragraph",
-            role: "conclusion",
             text: "Future studies should quantify links among processing, topology, and performance.",
             citationIds: [],
           },
         ],
       };
     case "reference_list":
-      return { kind: "references", referenceIds: ["ref-2", "ref-1"] };
+      return { referenceIds: ["ref-2", "ref-1"] };
     default:
       throw new Error(`Unsupported component type ${component.type}`);
   }
@@ -392,10 +370,16 @@ async function verifyCompleteGenerationFlow() {
     },
   });
   const generator = new ModelDocumentComponentGenerator({
-    async generate({ schemaName, systemInstruction, componentInstruction }) {
-      assert.equal(schemaName, "document_component_payload_v1");
+    async generate({ schemaName, schema, systemInstruction, componentInstruction }) {
+      assert.match(schemaName, /^document_.+_v2$/);
       assert.match(systemInstruction, /publication-ready/);
       const instruction = JSON.parse(componentInstruction);
+      assert.equal(instruction.componentContract.contractVersion, 2);
+      assert.equal(
+        instruction.componentContract.modelOwnedFields.includes("kind"),
+        false,
+        "Internal discriminators must not remain part of the model contract.",
+      );
       const heading = instruction.component.heading ?? instruction.component.type;
       generationOrder.push(instruction.component.type === "section"
         ? instruction.component.heading
@@ -409,9 +393,11 @@ async function verifyCompleteGenerationFlow() {
         conclusionInstruction = componentInstruction;
       }
       modelCalls[heading] = (modelCalls[heading] ?? 0) + 1;
-      return maturePayload(
-        instruction.component,
-        instruction.repairFeedback,
+      return schema.parse(
+        maturePayload(
+          instruction.component,
+          instruction.repairFeedback,
+        ),
       );
     },
   });
@@ -737,18 +723,18 @@ async function verifyOpenAiComponentSchemaHasObjectRoot() {
     async generate(input) {
       return input.schema.parse({
         payload: {
-          kind: "title",
           title: "Validated object-root schema",
         },
       });
     },
   });
   const result = await adapter.generate({
-    schemaName: "document_component_payload_v1",
+    schemaName: "document_title_v2",
+    schema: z.object({ title: z.string() }).strict(),
     systemInstruction: "test",
     componentInstruction: "test",
   });
-  assert.equal(result.kind, "title");
+  assert.equal(result.title, "Validated object-root schema");
 }
 
 async function verifyOutlineSchemaUsesTemplateBounds() {
@@ -791,44 +777,7 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
   assert.equal(proposal.sections.length, 1);
 }
 
-function verifyPlanOwnedKindInjection() {
-  const section = normalizeGeneratedComponentPayload(
-    {
-      blocks: [
-        { type: "heading", level: 1, text: "1 Introduction" },
-        {
-          type: "paragraph",
-          role: "body",
-          text: "Mature section prose.",
-          citationIds: [],
-          figureRequestIndexes: [],
-        },
-      ],
-      figureRequests: [],
-    },
-    "blocks",
-  );
-  assert.equal(section.kind, "blocks");
-
-  const title = normalizeGeneratedComponentPayload(
-    { title: "A mature title" },
-    "title",
-  );
-  assert.deepEqual(title, { kind: "title", title: "A mature title" });
-
-  const conflict = normalizeGeneratedComponentPayload(
-    { kind: "title", title: "Wrong component kind" },
-    "blocks",
-  );
-  assert.equal(
-    conflict.kind,
-    "title",
-    "A conflicting model-provided kind must not be silently overwritten.",
-  );
-}
-
 async function main() {
-  verifyPlanOwnedKindInjection();
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
   await verifyCompleteGenerationFlow();
