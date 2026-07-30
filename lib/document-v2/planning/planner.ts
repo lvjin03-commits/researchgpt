@@ -43,6 +43,7 @@ const MAX_OUTLINE_ATTEMPTS = 2;
 
 function outlineSemanticErrors(
   proposal: SemanticOutlineProposal,
+  availableEvidenceIds: ReadonlySet<string>,
 ): string[] {
   const errors: string[] = [];
   proposal.sections.forEach((section, index) => {
@@ -73,6 +74,21 @@ function outlineSemanticErrors(
         `${label} contains ${subsectionMarkers} subsection directives; split it into smaller body sections.`,
       );
     }
+  });
+  proposal.figures.forEach((figure, index) => {
+    const label = `Figure ${index + 1}`;
+    if (figure.figureType === "data_plot") {
+      errors.push(
+        `${label} selects data_plot, but no verified dataset asset is available. Choose a permitted non-quantitative figure type only when it preserves the purpose, otherwise omit the figure.`,
+      );
+    }
+    figure.requiredEvidenceIds.forEach((evidenceId) => {
+      if (!availableEvidenceIds.has(evidenceId)) {
+        errors.push(
+          `${label} references unavailable evidence "${evidenceId}".`,
+        );
+      }
+    });
   });
   return errors;
 }
@@ -137,7 +153,10 @@ export async function createDocumentPlanFromTemplate(input: {
         repairFeedback,
       }),
     );
-    const semanticErrors = outlineSemanticErrors(candidate);
+    const semanticErrors = outlineSemanticErrors(
+      candidate,
+      availableEvidenceSet,
+    );
     if (semanticErrors.length === 0) {
       proposal = candidate;
       break;
@@ -249,6 +268,7 @@ export async function createDocumentPlanFromTemplate(input: {
       componentKey: `section-${String(figure.sectionIndex + 1).padStart(2, "0")}`,
       figureType: figure.figureType,
       purpose: figure.purpose,
+      requiredEvidenceIds: figure.requiredEvidenceIds,
     })),
     figurePlanningCompleted: true,
     evidenceRequirements: availableEvidenceIds.map((evidenceId) => ({

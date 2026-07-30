@@ -52,7 +52,6 @@ const SemanticFigureRequestSchema = z
     altText: z.string().trim().min(1).max(1_000),
     contentBrief: z.string().trim().min(1).max(4_000),
     placementAfterParagraphIndex: z.number().int().min(0).max(499),
-    sourceEvidenceIds: z.array(IdentifierSchema).max(500).default([]),
   })
   .strict();
 
@@ -216,7 +215,7 @@ function assembleBody(
       altText: request.altText,
       contentBrief: request.contentBrief,
       placementAfterBlockIndex,
-      sourceEvidenceIds: request.sourceEvidenceIds,
+      sourceEvidenceIds: slot.requiredEvidenceIds,
     };
   });
 
@@ -327,7 +326,6 @@ const contracts: Record<
       "figureRequests[].altText",
       "figureRequests[].contentBrief",
       "figureRequests[].placementAfterParagraphIndex",
-      "figureRequests[].sourceEvidenceIds",
     ],
     programOwnedFields: [
       ...sharedProgramOwnedFields,

@@ -259,7 +259,7 @@ async function prepareIntake(input: {
           planSchemaVersion: "1",
           finalSpecSchemaVersion: "1",
           intentPromptVersion: "document-request-v1",
-          plannerPromptVersion: "document-outline-v1",
+          plannerPromptVersion: "document-outline-figure-contract-v2",
           generatorPromptVersion: "document-component-contract-v2",
           validatorVersion: "mature-content-v1",
           modelProvider: input.textExecutor.profile.provider,

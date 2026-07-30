@@ -204,6 +204,10 @@ export const DocumentPlanSchema = z
               "data_plot",
             ]),
             purpose: z.string().trim().min(1).max(1_000),
+            requiredEvidenceIds: z
+              .array(IdentifierSchema)
+              .max(500)
+              .default([]),
           })
           .strict(),
       )
@@ -243,6 +247,18 @@ export const DocumentPlanSchema = z
           message: "Figure slots must reference a planned body section.",
         });
       }
+      slot.requiredEvidenceIds.forEach((evidenceId) => {
+        const requirement = plan.evidenceRequirements.find((candidate) =>
+          candidate.allowedSourceIds.includes(evidenceId),
+        );
+        if (!requirement) {
+          context.addIssue({
+            code: "custom",
+            path: ["figureSlots", index, "requiredEvidenceIds"],
+            message: `Figure slot references unavailable evidence "${evidenceId}".`,
+          });
+        }
+      });
     });
   });
 

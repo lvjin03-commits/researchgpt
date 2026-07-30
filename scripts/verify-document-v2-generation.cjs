@@ -157,6 +157,7 @@ async function createPlan(template) {
               figureType: "process_flow",
               purpose:
                 "Explain how preparation routes create different network structures.",
+              requiredEvidenceIds: ["ref-1"],
             },
           ],
         };
@@ -209,7 +210,6 @@ function maturePayload(component, repairFeedback) {
               contentBrief:
                 "Show preparation routes converging on distinct junction-domain structures.",
               placementAfterParagraphIndex: 0,
-              sourceEvidenceIds: ["ref-1"],
             },
           ],
         };
@@ -265,7 +265,6 @@ function maturePayload(component, repairFeedback) {
                   contentBrief:
                     "Draw two preparation routes converging on distinct junction-domain structures; use publication-ready labels and no raw data.",
                   placementAfterParagraphIndex: 0,
-                  sourceEvidenceIds: ["ref-1"],
                 },
               ]
             : [],
@@ -439,6 +438,11 @@ async function verifyCompleteGenerationFlow() {
   assert.equal(completed.status, "paused");
   assert.equal(figureGeneratorCalls, 2);
   assert.equal(completed.figures[0].status, "approved");
+  assert.deepEqual(
+    completed.figures[0].request.sourceEvidenceIds,
+    ["ref-1"],
+    "Figure evidence bindings must come from the frozen Figure Plan.",
+  );
 
   while (completed.status === "paused") {
     completed = await runDocumentOrchestration(
@@ -676,6 +680,66 @@ async function verifyPlannerRejectsOverloadedSection() {
   assert.equal(calls, 2, "An overloaded outline receives one bounded repair attempt.");
 }
 
+async function verifyPlannerRepairsUnsupportedDataPlotBeforeGeneration() {
+  const template = await resolveTemplate();
+  let calls = 0;
+  let receivedRepairFeedback = "";
+  const plan = await createDocumentPlanFromTemplate({
+    request,
+    template,
+    availableEvidenceIds: ["ref-1"],
+    outlinePlanner: {
+      async propose(input) {
+        calls += 1;
+        receivedRepairFeedback =
+          input.repairFeedback ?? receivedRepairFeedback;
+        const base = {
+          sections: [
+            {
+              heading: "Quantitative interpretation",
+              purpose:
+                "Explain what verified evidence can and cannot establish about preparation outcomes.",
+              relativeWeight: 1,
+              requiredEvidenceIds: ["ref-1"],
+            },
+          ],
+          conclusionHeading: "Conclusion",
+        };
+        if (calls === 1) {
+          return {
+            ...base,
+            figures: [
+              {
+                sectionIndex: 0,
+                figureType: "data_plot",
+                purpose: "Plot a quantitative preparation trend.",
+                requiredEvidenceIds: ["ref-1"],
+              },
+            ],
+          };
+        }
+        return {
+          ...base,
+          figures: [
+            {
+              sectionIndex: 0,
+              figureType: "conceptual_framework",
+              purpose:
+                "Summarize the evidence boundaries without asserting quantitative values.",
+              requiredEvidenceIds: ["ref-1"],
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  assert.equal(calls, 2, "An unsupported data plot receives one plan repair.");
+  assert.match(receivedRepairFeedback, /no verified dataset asset/i);
+  assert.equal(plan.figureSlots[0].figureType, "conceptual_framework");
+  assert.deepEqual(plan.figureSlots[0].requiredEvidenceIds, ["ref-1"]);
+}
+
 async function verifyUnsafeSvgIsRejected() {
   const fallbackPng = await sharp({
     create: {
@@ -784,6 +848,7 @@ async function main() {
   await verifyPlannerRejectsInvalidOutline();
   await verifyPlannerRepairsTemplateComponentLeakage();
   await verifyPlannerRejectsOverloadedSection();
+  await verifyPlannerRepairsUnsupportedDataPlotBeforeGeneration();
   await verifyUnsafeSvgIsRejected();
   console.log("Document v2 mature generation tests passed.");
 }

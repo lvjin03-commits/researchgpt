@@ -152,6 +152,9 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
                   "data_plot",
                 ]),
                 purpose: z.string().trim().min(1).max(1_000),
+                requiredEvidenceIds: z
+                  .array(z.string().min(1).max(120))
+                  .max(500),
               })
               .strict(),
           )
@@ -174,6 +177,8 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
         "Use only availableEvidenceIds; never invent evidence.",
         "Choose section order and relative weights from scientific logic.",
         "Plan at most four essential figures for the whole document. Each figure must belong to one body section and state its scientific purpose. Do not plan decorative or redundant figures.",
+        "The runtime currently has no verified dataset assets, so data_plot is unavailable. Never plan data_plot. Omit the figure when no allowed figure type preserves its scientific purpose.",
+        "Bind each scientific figure only to relevant IDs from availableEvidenceIds through requiredEvidenceIds. Use an empty list only for a clearly conceptual, non-quantitative schematic.",
         input.repairFeedback
           ? `The previous outline was rejected. Correct all of these issues: ${input.repairFeedback}`
           : "",
@@ -194,6 +199,14 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
         figureContract: {
           maximumCount: 4,
           plannedBeforeContentGeneration: true,
+          verifiedDatasetIds: [],
+          allowedFigureTypes: [
+            "mechanism_diagram",
+            "process_flow",
+            "conceptual_framework",
+            "comparison_diagram",
+          ],
+          dataPlotPolicy: "forbidden_without_verified_dataset",
         },
       }),
     });

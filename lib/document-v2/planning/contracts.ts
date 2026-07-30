@@ -31,6 +31,7 @@ export const SemanticOutlineProposalSchema = z
               "data_plot",
             ]),
             purpose: z.string().trim().min(1).max(1_000),
+            requiredEvidenceIds: z.array(IdentifierSchema).max(500).default([]),
           })
           .strict(),
       )

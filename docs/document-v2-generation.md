@@ -12,6 +12,8 @@ The semantic outline planner may decide:
 - relative section weights;
 - required evidence from the provided evidence pool;
 - the conclusion heading.
+- essential non-quantitative figure purposes and their verified evidence
+  bindings.
 
 It cannot decide:
 
@@ -21,6 +23,7 @@ It cannot decide:
 - section count outside template bounds;
 - evidence IDs outside the supplied pool;
 - system IDs.
+- a `data_plot` until a verified Dataset asset exists.
 
 The program preserves this final Word display order:
 
@@ -43,6 +46,19 @@ The program allocates ten percent of the requested length to the abstract, ten
 percent to the conclusion, and the remaining budget across sections according
 to semantic relative weights. Component keys and exact target lengths are
 deterministic.
+
+## Figure planning boundary
+
+The Figure Plan is validated before content generation. Each released slot
+freezes its section, allowed figure type, scientific purpose, and evidence IDs.
+The component model may write the caption, accessibility text, and visual
+content description, but it cannot change the figure type or evidence binding.
+
+The current runtime has no verified Dataset asset layer. Therefore `data_plot`
+is not an executable figure type and must be rejected during planning. The
+outline planner receives one bounded repair opportunity to choose an allowed
+non-quantitative type without changing the scientific purpose, or to omit the
+figure. A Figure Plan error must never trigger a chapter rewrite.
 
 ## Component generation boundary
 
