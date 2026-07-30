@@ -29,6 +29,8 @@ import {
 import { resolveDocumentTemplate } from "@/lib/document-v2/templates/resolver";
 import { createDocumentPlanFromTemplate } from "@/lib/document-v2/planning/planner";
 import { createDocumentOrchestrationState } from "@/lib/document-v2/orchestration/orchestrator";
+import type { FigureAsset } from "@/lib/document-v2/assets/contracts";
+import type { FinalDocumentSpec } from "@/lib/document-v2/contracts";
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -323,6 +325,84 @@ async function storeDocx(
   return id;
 }
 
+async function storeFigureAsset(
+  supabase: SupabaseClient,
+  ownerId: string,
+  jobId: string,
+  asset: FigureAsset,
+): Promise<FigureAsset> {
+  if (!asset.dataBase64) return asset;
+  const basePath = `${ownerId}/document-v2/${jobId}/figures/${asset.requestId}/${asset.sha256}`;
+  const storagePath = `${basePath}.${asset.format}`;
+  const fallbackStoragePath =
+    asset.format === "svg" ? `${basePath}.fallback.png` : undefined;
+  const bucket = supabase.storage.from(CHAT_ATTACHMENTS_BUCKET);
+  const data = Buffer.from(asset.dataBase64, "base64");
+  const uploaded = await bucket.upload(storagePath, data, {
+    contentType: asset.format === "svg" ? "image/svg+xml" : "image/png",
+    upsert: false,
+  });
+  if (uploaded.error && !/already exists/i.test(uploaded.error.message)) {
+    throw uploaded.error;
+  }
+  if (fallbackStoragePath && asset.fallbackPngBase64) {
+    const fallback = await bucket.upload(
+      fallbackStoragePath,
+      Buffer.from(asset.fallbackPngBase64, "base64"),
+      { contentType: "image/png", upsert: false },
+    );
+    if (fallback.error && !/already exists/i.test(fallback.error.message)) {
+      throw fallback.error;
+    }
+  }
+  return {
+    ...asset,
+    dataBase64: undefined,
+    fallbackPngBase64: undefined,
+    storageBucket: CHAT_ATTACHMENTS_BUCKET,
+    storagePath,
+    fallbackStoragePath,
+    byteSize: data.byteLength,
+  };
+}
+
+async function hydrateFigureAssets(
+  supabase: SupabaseClient,
+  spec: FinalDocumentSpec,
+): Promise<FinalDocumentSpec> {
+  const assets = await Promise.all(
+    spec.assets.map(async (asset) => {
+      if (asset.dataBase64) return asset;
+      if (!asset.storageBucket || !asset.storagePath) {
+        throw new Error(`Figure asset "${asset.id}" has no storage reference.`);
+      }
+      const bucket = supabase.storage.from(asset.storageBucket);
+      const downloaded = await bucket.download(asset.storagePath);
+      if (downloaded.error || !downloaded.data) {
+        throw downloaded.error ?? new Error(`Figure asset "${asset.id}" is missing.`);
+      }
+      let fallbackPngBase64: string | undefined;
+      if (asset.fallbackStoragePath) {
+        const fallback = await bucket.download(asset.fallbackStoragePath);
+        if (fallback.error || !fallback.data) {
+          throw fallback.error ?? new Error(`Figure fallback "${asset.id}" is missing.`);
+        }
+        fallbackPngBase64 = Buffer.from(
+          await fallback.data.arrayBuffer(),
+        ).toString("base64");
+      }
+      return {
+        ...asset,
+        dataBase64: Buffer.from(await downloaded.data.arrayBuffer()).toString(
+          "base64",
+        ),
+        fallbackPngBase64,
+      };
+    }),
+  );
+  return { ...spec, assets };
+}
+
 export async function executeOneDocumentV2Tick(jobId?: string) {
   const config = requireDocumentV2WorkerConfig();
   const supabase = adminClient();
@@ -408,7 +488,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
     },
     createdAt: new Date().toISOString(),
   });
-  const preparedJob = job.checkpoint.orchestration
+  let preparedJob = job.checkpoint.orchestration
     ? job
     : await prepareIntake({ job, repository, textExecutor });
   if (preparedJob.status === "awaiting_user_input") {
@@ -419,8 +499,44 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       progress: preparedJob.progress,
     };
   }
+  const orchestration = preparedJob.checkpoint.orchestration;
+  if (
+    orchestration?.figures.some(
+      (figure) => figure.asset?.dataBase64,
+    )
+  ) {
+    const figures = await Promise.all(
+      orchestration.figures.map(async (figure) => ({
+        ...figure,
+        asset: figure.asset
+          ? await storeFigureAsset(
+              supabase,
+              preparedJob.ownerId,
+              preparedJob.jobId,
+              figure.asset,
+            )
+          : undefined,
+      })),
+    );
+    const savedAt = new Date().toISOString();
+    preparedJob = await repository.save(
+      DocumentJobSchema.parse({
+        ...preparedJob,
+        checkpoint: {
+          ...preparedJob.checkpoint,
+          orchestration: { ...orchestration, figures },
+          savedAt,
+        },
+        updatedAt: savedAt,
+      }),
+      preparedJob.revision,
+    );
+  }
   const imageModel =
     process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5";
+  const validatedFigurePipeline = new ValidatedFigureAssetPipeline(
+    new OpenAIFinalFigureGenerator(openai, imageModel),
+  );
   const service = new DocumentV2JobService(
     repository,
     {
@@ -428,18 +544,27 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
         new OpenAIStructuredComponentModel(textExecutor),
       ),
       validator: new MatureDocumentComponentValidator(),
-      figureAssetMaterializer: new ValidatedFigureAssetPipeline(
-        new OpenAIFinalFigureGenerator(openai, imageModel),
-      ),
+      figureAssetMaterializer: {
+        async materialize(request, context) {
+          const asset = await validatedFigurePipeline.materialize(
+            request,
+            context,
+          );
+          return storeFigureAsset(
+            supabase,
+            preparedJob.ownerId,
+            preparedJob.jobId,
+            asset,
+          );
+        },
+      },
       maxAttemptsPerComponent: 2,
     },
     {
-      async renderAndStore({ jobId, spec, onStage, shouldCancel }) {
-        await onStage("docx_rendering");
-        const buffer = await renderFinalDocumentSpecToDocx(spec);
+      async renderAndStore({ jobId, spec, shouldCancel }) {
+        const hydratedSpec = await hydrateFigureAssets(supabase, spec);
+        const buffer = await renderFinalDocumentSpecToDocx(hydratedSpec);
         if (await shouldCancel()) throw new Error("Document job was cancelled.");
-        await onStage("quality_check");
-        await onStage("artifact_storage");
         return {
           artifactId: await storeDocx(
             supabase,
@@ -448,6 +573,31 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
             buffer,
           ),
         };
+      },
+      async validateArtifact({ artifactId, shouldCancel }) {
+        if (await shouldCancel()) throw new Error("Document job was cancelled.");
+        const metaPath = `${job.ownerId}/exports/${artifactId}.meta.json`;
+        const metadata = await supabase.storage
+          .from(CHAT_ATTACHMENTS_BUCKET)
+          .download(metaPath);
+        if (metadata.error || !metadata.data) {
+          throw metadata.error ?? new Error("Rendered DOCX metadata is missing.");
+        }
+        const record = JSON.parse(await metadata.data.text()) as ExportRecord;
+        if (!record.storageBucket || !record.storagePath) {
+          throw new Error("Rendered DOCX metadata is incomplete.");
+        }
+        const file = await supabase.storage
+          .from(record.storageBucket)
+          .download(record.storagePath);
+        if (file.error || !file.data) {
+          throw file.error ?? new Error("Rendered DOCX is missing.");
+        }
+        const buffer = Buffer.from(await file.data.arrayBuffer());
+        const zip = await JSZip.loadAsync(buffer);
+        if (!zip.file("word/document.xml")) {
+          throw new Error("Rendered DOCX is invalid.");
+        }
       },
     },
   );

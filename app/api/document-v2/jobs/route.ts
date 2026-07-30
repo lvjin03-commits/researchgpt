@@ -104,7 +104,14 @@ export async function POST(request: Request) {
         generator: { async generate() { throw new Error("Creation API does not execute jobs."); } },
         validator: { async validate() { return { accepted: true }; } },
       },
-      { async renderAndStore() { throw new Error("Creation API does not finalize jobs."); } },
+      {
+        async renderAndStore() {
+          throw new Error("Creation API does not finalize jobs.");
+        },
+        async validateArtifact() {
+          throw new Error("Creation API does not validate artifacts.");
+        },
+      },
     );
     let snapshot;
     try {

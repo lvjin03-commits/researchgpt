@@ -2147,6 +2147,9 @@ export async function POST(request: Request) {
                 async renderAndStore() {
                   throw new Error("Chat intake does not render documents.");
                 },
+                async validateArtifact() {
+                  throw new Error("Chat intake does not validate artifacts.");
+                },
               },
             );
             await service.createIntake({

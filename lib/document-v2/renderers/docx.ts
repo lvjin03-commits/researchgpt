@@ -125,6 +125,11 @@ function finalCaption(caption: string): string {
 function figureImageRun(
   asset: FinalDocumentSpec["assets"][number],
 ): ImageRun {
+  if (!asset.dataBase64) {
+    throw new DocumentV2RenderError(
+      `Figure asset "${asset.id}" was not hydrated before rendering.`,
+    );
+  }
   const data = Buffer.from(asset.dataBase64, "base64");
   const fallback = asset.fallbackPngBase64
     ? Buffer.from(asset.fallbackPngBase64, "base64")

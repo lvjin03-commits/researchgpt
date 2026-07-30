@@ -141,16 +141,12 @@ function makeService(repository, calls, finalizerOverride) {
       validator: { async validate() { return { accepted: true }; } },
     },
     finalizerOverride ?? {
-      async renderAndStore({ onStage, shouldCancel }) {
-        for (const stage of [
-          "docx_rendering",
-          "quality_check",
-          "artifact_storage",
-        ]) {
-          assert.equal(await shouldCancel(), false);
-          await onStage(stage);
-        }
+      async renderAndStore({ shouldCancel }) {
+        assert.equal(await shouldCancel(), false);
         return { artifactId: "artifact-1" };
+      },
+      async validateArtifact({ shouldCancel }) {
+        assert.equal(await shouldCancel(), false);
       },
     },
     () => new Date((tick += 100)),
@@ -176,7 +172,11 @@ async function verifyCancelResumeAndCompletion() {
   assert.equal(cancelled.job.resumable, true);
 
   await service.resume(created.job.jobId);
-  const completed = await service.run(created.job.jobId, "worker-1");
+  let completed;
+  for (let index = 0; index < 8; index += 1) {
+    completed = await service.run(created.job.jobId, `worker-${index + 1}`);
+    if (completed.job.status === "completed") break;
+  }
   assert.equal(completed.job.status, "completed");
   assert.equal(completed.job.progress, 100);
   assert.equal(completed.job.artifactId, "artifact-1");
@@ -294,9 +294,13 @@ async function verifyBoundedTicksResumeFromCheckpoint() {
   assert.equal(third.job.status, "queued");
   assert.equal(third.job.completedComponents, 3);
 
-  const completed = await service.run(created.job.jobId, "worker-4", {
-    maxComponents: 1,
-  });
+  let completed;
+  for (let index = 4; index <= 7; index += 1) {
+    completed = await service.run(created.job.jobId, `worker-${index}`, {
+      maxComponents: 1,
+    });
+    if (completed.job.status === "completed") break;
+  }
   assert.equal(completed.job.status, "completed");
   assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
 }
@@ -317,7 +321,14 @@ async function verifyTimeBudgetYieldsAfterCheckpoint() {
   assert.equal(yielded.job.status, "queued");
   assert.equal(yielded.job.completedComponents, 1);
   assert.equal(yielded.job.leaseOwner, undefined);
-  const completed = await service.run(created.job.jobId, "worker-resume");
+  let completed;
+  for (let index = 0; index < 8; index += 1) {
+    completed = await service.run(
+      created.job.jobId,
+      `worker-resume-${index}`,
+    );
+    if (completed.job.status === "completed") break;
+  }
   assert.equal(completed.job.status, "completed");
   assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
 }
@@ -400,6 +411,7 @@ async function verifyImageCallsAndAssetsUseSeparateBudgets() {
       async renderAndStore() {
         return { artifactId: "artifact-with-figure" };
       },
+      async validateArtifact() {},
     },
     () => new Date((tick += 100)),
   );
@@ -432,7 +444,7 @@ async function verifyImageCallsAndAssetsUseSeparateBudgets() {
     stored.revision,
   );
   let snapshot;
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 10; index += 1) {
     snapshot = await service.run(created.job.jobId, `figure-worker-${index}`, {
       maxComponents: 1,
     });
@@ -448,10 +460,10 @@ async function verifyImageCallsAndAssetsUseSeparateBudgets() {
 async function verifyFinalizerFailureIsVisible() {
   const repository = new InMemoryDocumentJobRepository();
   const service = makeService(repository, {}, {
-    async renderAndStore({ onStage }) {
-      await onStage("docx_rendering");
+    async renderAndStore() {
       throw new Error("Renderer process exited with code 17.");
     },
+    async validateArtifact() {},
   });
   const created = await service.create({
     ownerId: "user-1",
@@ -459,7 +471,11 @@ async function verifyFinalizerFailureIsVisible() {
     plan,
     verifiedReferences: references,
   });
-  const failed = await service.run(created.job.jobId, "worker-1");
+  let failed;
+  for (let index = 0; index < 6; index += 1) {
+    failed = await service.run(created.job.jobId, `worker-${index + 1}`);
+    if (failed.job.status === "failed") break;
+  }
   assert.equal(failed.job.status, "failed");
   assert.equal(failed.job.error.failedStage, "docx_rendering");
   assert.equal(failed.job.error.code, "document_finalization_failed");

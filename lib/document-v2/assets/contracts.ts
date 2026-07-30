@@ -35,8 +35,12 @@ export const FigureAssetSchema = z
     id: IdentifierSchema,
     requestId: IdentifierSchema,
     format: z.enum(["png", "svg"]),
-    dataBase64: z.string().min(1).max(70_000_000),
+    dataBase64: z.string().min(1).max(70_000_000).optional(),
     fallbackPngBase64: z.string().min(1).max(70_000_000).optional(),
+    storageBucket: IdentifierSchema.optional(),
+    storagePath: z.string().min(1).max(1_000).optional(),
+    fallbackStoragePath: z.string().min(1).max(1_000).optional(),
+    byteSize: z.number().int().positive().optional(),
     pixelWidth: z.number().int().min(1).max(100_000),
     pixelHeight: z.number().int().min(1).max(100_000),
     dpi: z.number().int().min(300).max(2_400),
@@ -48,14 +52,28 @@ export const FigureAssetSchema = z
   })
   .strict()
   .superRefine((asset, context) => {
-    if (asset.format === "svg" && !asset.fallbackPngBase64) {
+    if (!asset.dataBase64 && !(asset.storageBucket && asset.storagePath)) {
+      context.addIssue({
+        code: "custom",
+        path: ["storagePath"],
+        message: "Figure assets require inline data or a storage reference.",
+      });
+    }
+    if (
+      asset.format === "svg" &&
+      !asset.fallbackPngBase64 &&
+      !asset.fallbackStoragePath
+    ) {
       context.addIssue({
         code: "custom",
         path: ["fallbackPngBase64"],
         message: "SVG assets require a PNG fallback for Word compatibility.",
       });
     }
-    if (asset.format === "png" && asset.fallbackPngBase64) {
+    if (
+      asset.format === "png" &&
+      (asset.fallbackPngBase64 || asset.fallbackStoragePath)
+    ) {
       context.addIssue({
         code: "custom",
         path: ["fallbackPngBase64"],

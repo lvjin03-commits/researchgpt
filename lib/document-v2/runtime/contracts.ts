@@ -196,6 +196,7 @@ export const DocumentJobCheckpointSchema = z
     dispatchToken: z.string().min(32).max(200).optional(),
     budget: DocumentJobBudgetSchema.optional(),
     renderedArtifactId: IdentifierSchema.optional(),
+    recoveryAttempt: z.number().int().nonnegative().default(0),
     savedAt: DateTimeSchema,
   })
   .strict();

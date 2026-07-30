@@ -35,12 +35,12 @@ export interface DocumentFinalizer {
   renderAndStore(input: {
     jobId: string;
     spec: FinalDocumentSpec;
-    onStage(stage: Extract<
-      DocumentJobStage,
-      "docx_rendering" | "quality_check" | "artifact_storage"
-    >): Promise<void>;
     shouldCancel(): Promise<boolean>;
   }): Promise<FinalDocumentArtifact>;
+  validateArtifact(input: {
+    artifactId: string;
+    shouldCancel(): Promise<boolean>;
+  }): Promise<void>;
 }
 
 type Clock = () => Date;
@@ -236,11 +236,19 @@ export class DocumentV2JobService {
     if (job.cancelRequestedAt) return this.cancel(job);
 
     const now = this.clock().toISOString();
+    const initialStage: DocumentJobStage =
+      job.checkpoint.orchestration.status === "completed"
+        ? job.checkpoint.renderedArtifactId
+          ? "quality_check"
+          : "docx_rendering"
+        : job.stage === "document_assembly"
+          ? "document_assembly"
+          : "content_generation";
     job = await this.repository.save(
       {
         ...job,
         status: "running",
-        stage: "content_generation",
+        stage: initialStage,
         startedAt: job.startedAt ?? now,
         updatedAt: now,
       },
@@ -303,15 +311,17 @@ export class DocumentV2JobService {
       const contentPending = orchestrationState.components.some(
         (item) => item.status !== "approved",
       );
-      const activeStage: DocumentJobStage = contentPending
-        ? "content_generation"
-        : "asset_generation";
       const pendingFigure = contentPending
         ? undefined
         : orchestrationState.figures.find(
             (figure) =>
               figure.status !== "approved" && figure.status !== "failed",
           );
+      const activeStage: DocumentJobStage = contentPending
+        ? "content_generation"
+        : pendingFigure
+          ? "asset_generation"
+          : "document_assembly";
       const activeComponentKey =
         pendingFigure?.request.componentKey ?? component?.componentKey;
       const activePurpose =
@@ -462,11 +472,37 @@ export class DocumentV2JobService {
         undefined,
         this.clock().getTime() - started,
       );
+      if (orchestration.status === "completed") {
+        const queuedAt = this.clock().toISOString();
+        job = await this.repository.save(
+          DocumentJobSchema.parse({
+            ...job,
+            status: "queued",
+            stage: "docx_rendering",
+            progress: progressFor(job, "docx_rendering"),
+            currentComponentKey: undefined,
+            leaseOwner: undefined,
+            leaseExpiresAt: undefined,
+            checkpoint: {
+              ...job.checkpoint,
+              savedAt: queuedAt,
+            },
+            updatedAt: queuedAt,
+          }),
+          job.revision,
+        );
+        await this.event(
+          job,
+          "document_assembly",
+          "succeeded",
+          "文档内容已组装并保存，下一步将排版 Word 文档。",
+        );
+        return this.snapshot(jobId);
+      }
       processedComponents += 1;
       if (
         (processedComponents >= maxComponents ||
-          this.clock().getTime() - runStartedAt >= maxDurationMs) &&
-        orchestration.status !== "completed"
+          this.clock().getTime() - runStartedAt >= maxDurationMs)
       ) {
         const queuedAt = this.clock().toISOString();
         job = await this.repository.save(
@@ -491,19 +527,80 @@ export class DocumentV2JobService {
       }
     }
 
-    job = await this.changeStage(job, "document_assembly");
     const spec = job.checkpoint.orchestration?.finalSpec;
     if (!spec) throw new Error("Completed orchestration has no final document spec.");
-    let artifact: FinalDocumentArtifact;
+    let artifact: FinalDocumentArtifact | undefined;
     try {
-      artifact = await this.finalizer.renderAndStore({
-        jobId,
-        spec,
-        onStage: async (stage) => {
-          job = await this.changeStage(job, stage);
-        },
+      const existingArtifactId = job.checkpoint.renderedArtifactId;
+      if (!existingArtifactId) {
+        if (job.stage !== "docx_rendering") {
+          job = await this.changeStage(job, "docx_rendering");
+        } else {
+          await this.event(
+            job,
+            "docx_rendering",
+            "started",
+            STAGE_LABELS.docx_rendering,
+          );
+        }
+        const renderStartedAt = this.clock().getTime();
+        artifact = await this.finalizer.renderAndStore({
+          jobId,
+          spec,
+          shouldCancel: () => this.cancelRequested(jobId),
+        });
+        const savedAt = this.clock().toISOString();
+        job = await this.repository.save(
+          DocumentJobSchema.parse({
+            ...job,
+            status: "queued",
+            stage: "quality_check",
+            progress: progressFor(job, "quality_check"),
+            leaseOwner: undefined,
+            leaseExpiresAt: undefined,
+            checkpoint: {
+              ...job.checkpoint,
+              renderedArtifactId: artifact.artifactId,
+              savedAt,
+            },
+            updatedAt: savedAt,
+          }),
+          job.revision,
+        );
+        await this.event(
+          job,
+          "docx_rendering",
+          "succeeded",
+          "Word 文档已排版并保存，下一步将验证文件。",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          this.clock().getTime() - renderStartedAt,
+        );
+        return this.snapshot(jobId);
+      }
+      if (job.stage !== "quality_check") {
+        job = await this.changeStage(job, "quality_check");
+      } else {
+        await this.event(
+          job,
+          "quality_check",
+          "started",
+          STAGE_LABELS.quality_check,
+        );
+      }
+      await this.finalizer.validateArtifact({
+        artifactId: existingArtifactId,
         shouldCancel: () => this.cancelRequested(jobId),
       });
+      await this.event(
+        job,
+        "quality_check",
+        "succeeded",
+        "Word 文档结构和存储状态检查通过。",
+      );
+      artifact = { artifactId: existingArtifactId };
     } catch (error) {
       const failedAt = this.clock().toISOString();
       const technicalMessage =
@@ -546,14 +643,14 @@ export class DocumentV2JobService {
         status: "completed",
         stage: "completed",
         progress: 100,
-        artifactId: artifact.artifactId,
+        artifactId: artifact!.artifactId,
         currentComponentKey: undefined,
         resumable: false,
         leaseOwner: undefined,
         leaseExpiresAt: undefined,
         checkpoint: {
           ...job.checkpoint,
-          renderedArtifactId: artifact.artifactId,
+          renderedArtifactId: artifact!.artifactId,
           savedAt: finishedAt,
         },
         updatedAt: finishedAt,
