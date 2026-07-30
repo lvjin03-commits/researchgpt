@@ -617,5 +617,8 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
     jobId: snapshot.job.jobId,
     stage: snapshot.job.stage,
     progress: snapshot.job.progress,
+    failureCode: snapshot.job.error?.code,
+    failedComponentKey: snapshot.job.error?.componentKey,
+    failureMessage: snapshot.job.error?.technicalMessage.slice(0, 500),
   };
 }
