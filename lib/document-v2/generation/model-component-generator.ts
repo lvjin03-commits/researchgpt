@@ -7,6 +7,7 @@ import type {
   DocumentComponentGenerator,
 } from "../orchestration/orchestrator";
 import type { ApprovedComponent } from "../orchestration/contracts";
+import { normalizeGeneratedComponentPayload } from "./normalize-component-payload";
 
 export interface StructuredComponentModel {
   generate(input: {
@@ -170,6 +171,7 @@ export function buildComponentGenerationInstructions(
       targetLength: context.component.targetLength,
       requiredEvidenceIds: context.component.requiredEvidenceIds ?? [],
     },
+    generationRevision: context.generationRevision,
     figureSlots: context.figureSlots,
     figurePlanningCompleted: context.plan.figurePlanningCompleted,
     repairFeedback: context.repairFeedback,
@@ -210,11 +212,13 @@ export class ModelDocumentComponentGenerator
   ): Promise<GeneratedComponentPayload> {
     const instructions = buildComponentGenerationInstructions(context);
     return GeneratedComponentPayloadSchema.parse(
-      await this.model.generate({
+      normalizeGeneratedComponentPayload(
+        await this.model.generate({
         schemaName: "document_component_payload_v1",
         componentKey: context.component.componentKey,
         ...instructions,
-      }),
+        }),
+      ),
     );
   }
 }

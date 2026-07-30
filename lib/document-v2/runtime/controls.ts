@@ -20,6 +20,7 @@ async function controlEvent(
   jobId: string,
   stage: Parameters<DocumentJobRepository["appendEvent"]>[0]["stage"],
   message: string,
+  metadata?: Parameters<DocumentJobRepository["appendEvent"]>[0]["metadata"],
 ) {
   await repository.appendEvent({
     eventId: randomUUID(),
@@ -27,6 +28,9 @@ async function controlEvent(
     stage,
     status: "progress",
     message,
+    category: "recovery",
+    operation: "recovery.resume_point.resolved",
+    metadata,
     createdAt: new Date().toISOString(),
   });
 }
@@ -92,21 +96,48 @@ export async function resumeDocumentJob(
     await controlEvent(repository, jobId, job.stage, "任务已恢复并重新排队。");
     return getDocumentJobSnapshot(repository, jobId);
   }
+  let resumeStage = job.stage;
+  let resumeScope = "saved_stage";
+  let validationCode = job.error?.code;
   if (orchestration.status === "failed") {
     const failedIndex = orchestration.components.findIndex(
       (component) => component.status === "failed",
     );
     if (failedIndex >= 0) {
+      const failedComponent = orchestration.components[failedIndex];
+      validationCode = failedComponent.lastError?.code ?? validationCode;
       orchestration.status = "paused";
       orchestration.failure = undefined;
       orchestration.currentComponentIndex = failedIndex;
       orchestration.components[failedIndex] = {
-        componentKey: orchestration.components[failedIndex].componentKey,
+        componentKey: failedComponent.componentKey,
         status: "pending",
+        generationRevision: failedComponent.generationRevision + 1,
         attempts: 0,
         transientFailures: 0,
-        revisions: orchestration.components[failedIndex].revisions,
+        lastError: failedComponent.lastError,
+        revisions: failedComponent.revisions,
       };
+      resumeStage = "content_generation";
+      resumeScope = "component_revision";
+    } else {
+      const failedFigureIndex = orchestration.figures.findIndex(
+        (figure) => figure.status === "failed",
+      );
+      if (failedFigureIndex >= 0) {
+        const failedFigure = orchestration.figures[failedFigureIndex];
+        validationCode = failedFigure.lastError?.code ?? validationCode;
+        orchestration.status = "paused";
+        orchestration.failure = undefined;
+        orchestration.figures[failedFigureIndex] = {
+          ...failedFigure,
+          status: "pending",
+          attempts: 0,
+          lastError: failedFigure.lastError,
+        };
+        resumeStage = "asset_generation";
+        resumeScope = "figure_retry";
+      }
     }
   }
   const now = clock().toISOString();
@@ -114,7 +145,7 @@ export async function resumeDocumentJob(
     DocumentJobSchema.parse({
       ...job,
       status: "queued",
-      stage: "content_generation",
+      stage: resumeStage,
       error: undefined,
       cancelRequestedAt: undefined,
       finishedAt: undefined,
@@ -129,7 +160,15 @@ export async function resumeDocumentJob(
     repository,
     jobId,
     job.stage,
-    "已从上次保存的位置恢复。",
+    resumeScope === "component_revision"
+      ? "已创建失败内容的新修订，仅重新处理该内容。"
+      : resumeScope === "figure_retry"
+        ? "已从失败图片恢复，不会重新生成正文。"
+        : "已从上次保存的阶段恢复。",
+    {
+      resumeScope,
+      validationCode: validationCode ?? null,
+    },
   );
   return getDocumentJobSnapshot(repository, jobId);
 }

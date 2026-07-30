@@ -37,6 +37,9 @@ const {
 const {
   InMemoryDocumentJobRepository,
 } = require("../lib/document-v2/runtime/repository.ts");
+const {
+  normalizeGeneratedComponentPayload,
+} = require("../lib/document-v2/generation/normalize-component-payload.ts");
 
 const requestId = "23b7cee2-bfa7-49d7-b58b-98b734bc5201";
 const request = {
@@ -331,6 +334,98 @@ async function verifyTimeBudgetYieldsAfterCheckpoint() {
   }
   assert.equal(completed.job.status, "completed");
   assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
+}
+
+async function verifyDeterministicNormalizationAndPreciseResume() {
+  const normalized = normalizeGeneratedComponentPayload({
+    kind: "blocks",
+    blocks: [
+      {
+        type: "paragraph",
+        role: "abstract",
+        text: "```text\nAbstract: Mature abstract content.\n```",
+        citationIds: [],
+        figureRequestIndexes: [],
+      },
+      {
+        type: "table",
+        caption: "Table 2 | Comparison",
+        columns: ["Method"],
+        rows: [["A"]],
+      },
+    ],
+    figureRequests: [
+      {
+        slotId: null,
+        figureType: "process_flow",
+        title: "Process",
+        caption: "Fig. 3 | Processing route.",
+        altText: "Route",
+        contentBrief: "Route",
+        placementAfterBlockIndex: 0,
+        sourceEvidenceIds: [],
+      },
+    ],
+  });
+  assert.equal(normalized.blocks[0].text, "Mature abstract content.");
+  assert.equal(normalized.blocks[1].caption, "Comparison");
+  assert.equal(normalized.figureRequests[0].caption, "Processing route.");
+
+  const repository = new InMemoryDocumentJobRepository();
+  const service = makeService(repository, {});
+  const created = await service.create({
+    ownerId: "user-1",
+    request,
+    plan,
+    verifiedReferences: references,
+  });
+  let failed = await repository.get(created.job.jobId);
+  const failedOrchestration = structuredClone(failed.checkpoint.orchestration);
+  failedOrchestration.status = "failed";
+  failedOrchestration.failure = {
+    code: "internal_content_leak",
+    message: "Internal field entered body text.",
+    componentKey: "title",
+  };
+  failedOrchestration.components[0] = {
+    ...failedOrchestration.components[0],
+    status: "failed",
+    attempts: 2,
+    lastError: {
+      code: "internal_content_leak",
+      message: "Internal field entered body text.",
+    },
+  };
+  failed = await repository.save(
+    {
+      ...failed,
+      status: "failed",
+      error: {
+        code: "internal_content_leak",
+        userMessage: "Content failed validation.",
+        technicalMessage: "Internal field entered body text.",
+        failedStage: "content_generation",
+        componentKey: "title",
+      },
+      checkpoint: {
+        ...failed.checkpoint,
+        orchestration: failedOrchestration,
+      },
+    },
+    failed.revision,
+  );
+  const resumed = await service.resume(failed.jobId);
+  const resumedState = await repository.get(failed.jobId);
+  assert.equal(resumed.job.status, "queued");
+  assert.equal(resumedState.checkpoint.orchestration.components[0].attempts, 0);
+  assert.equal(
+    resumedState.checkpoint.orchestration.components[0].generationRevision,
+    2,
+  );
+  assert.equal(
+    resumedState.checkpoint.orchestration.components[0].lastError.code,
+    "internal_content_leak",
+  );
 }
 
 async function verifyImageCallsAndAssetsUseSeparateBudgets() {
@@ -724,6 +819,7 @@ async function main() {
   await verifyLeaseBlocksDuplicateWorker();
   await verifyBoundedTicksResumeFromCheckpoint();
   await verifyTimeBudgetYieldsAfterCheckpoint();
+  await verifyDeterministicNormalizationAndPreciseResume();
   await verifyImageCallsAndAssetsUseSeparateBudgets();
   await verifyFinalizerFailureIsVisible();
   await verifyDispatchChecksHttpStatus();

@@ -34,6 +34,7 @@ export interface ComponentGenerationContext {
   component: PlannedComponent;
   componentIndex: number;
   figureSlots: ReadonlyArray<DocumentPlan["figureSlots"][number]>;
+  generationRevision: number;
   attempt: number;
   repairFeedback?: {
     code: string;
@@ -878,6 +879,7 @@ export async function runDocumentOrchestration(
           figureSlots: state.plan.figureSlots.filter(
             (slot) => slot.componentKey === component.componentKey,
           ),
+          generationRevision: componentState.generationRevision,
           attempt: contentAttempt,
           repairFeedback:
             componentState.lastError &&
