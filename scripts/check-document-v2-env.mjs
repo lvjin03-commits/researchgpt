@@ -19,7 +19,6 @@ const required = [
   "CRON_SECRET",
   "NEXT_PUBLIC_SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "OPENAI_API_KEY",
 ];
 const missing = required.filter((name) => !process.env[name]?.trim());
 const invalid = [];

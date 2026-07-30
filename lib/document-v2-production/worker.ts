@@ -192,7 +192,10 @@ async function prepareIntake(input: {
   await advance("evidence_acquisition", 6, "正在冻结可用于引用的证据。");
   const evidenceReferences = [
     ...new Map(
-      intake.evidence.map((item) => [item.reference.id, item.reference]),
+      [
+        ...(intake.verifiedReferences ?? []),
+        ...intake.evidence.map((item) => item.reference),
+      ].map((reference) => [reference.id, reference]),
     ).values(),
   ];
   const planningStartedAt = Date.now();
@@ -410,11 +413,6 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
   let job = await claimNext(supabase, workerId, jobId);
   if (!job) return { state: "idle" as const };
 
-  const openai = new OpenAI({
-    apiKey: config.openAiApiKey,
-    timeout: 75_000,
-    maxRetries: 0,
-  });
   const repository = new SupabaseDocumentJobRepository(supabase, job.ownerId);
   if (!job.checkpoint.dispatchToken) {
     const now = new Date().toISOString();
@@ -432,13 +430,12 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       job.revision,
     );
   }
-  const textExecution = job.checkpoint.textExecution ?? {
-    provider: "openai" as const,
-    requestedModelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
-    resolvedModelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
-    maxOutputTokens: 7_000,
-    allowProviderFallback: false as const,
-  };
+  const textExecution = job.checkpoint.textExecution;
+  if (!textExecution) {
+    throw new Error(
+      "legacy_text_execution_profile_missing: the document job has no frozen text model configuration.",
+    );
+  }
   const recordUsage = async (usage: DocumentModelUsage) => {
     const currentJob = await repository.get(job.jobId);
     await repository.appendEvent({
@@ -532,11 +529,6 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       preparedJob.revision,
     );
   }
-  const imageModel =
-    process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5";
-  const validatedFigurePipeline = new ValidatedFigureAssetPipeline(
-    new OpenAIFinalFigureGenerator(openai, imageModel),
-  );
   const service = new DocumentV2JobService(
     repository,
     {
@@ -546,6 +538,21 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       validator: new MatureDocumentComponentValidator(),
       figureAssetMaterializer: {
         async materialize(request, context) {
+          if (!config.openAiApiKey) {
+            throw new Error(
+              "openai_image_provider_not_configured: this job requires a complex image but OPENAI_API_KEY is unavailable.",
+            );
+          }
+          const validatedFigurePipeline = new ValidatedFigureAssetPipeline(
+            new OpenAIFinalFigureGenerator(
+              new OpenAI({
+                apiKey: config.openAiApiKey,
+                timeout: 75_000,
+                maxRetries: 0,
+              }),
+              process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5",
+            ),
+          );
           const asset = await validatedFigurePipeline.materialize(
             request,
             context,
@@ -611,6 +618,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
   const snapshot = await service.run(preparedJob.jobId, workerId, {
     maxComponents: 1,
     maxDurationMs,
+    alreadyClaimedJob: preparedJob,
   });
   return {
     state: snapshot.job.status,

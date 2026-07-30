@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z, type ZodType } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { estimateModelCostUsd } from "@/lib/ai/cost";
 import type { DocumentTextExecutionProfile } from "@/lib/document-v2/runtime/contracts";
+import { sha256Canonical } from "@/lib/document-v2/runtime/canonical-hash";
 
 export type DocumentModelUsage = {
   provider: "deepseek" | "openai";
@@ -41,9 +41,32 @@ export class DocumentModelExecutionInProgressError extends Error {
   }
 }
 
+export class DocumentModelExecutionRequiresReviewError extends Error {
+  constructor(
+    readonly executionKey: string,
+    readonly executionStatus:
+      | "validation_failed"
+      | "failed"
+      | "unknown_outcome",
+  ) {
+    super(
+      `Document model execution "${executionKey}" requires review (${executionStatus}).`,
+    );
+    this.name = "DocumentModelExecutionRequiresReviewError";
+  }
+}
+
 type StoredExecution = {
-  status: "running" | "succeeded" | "failed";
+  status:
+    | "running"
+    | "request_started"
+    | "raw_saved"
+    | "succeeded"
+    | "validation_failed"
+    | "failed"
+    | "unknown_outcome";
   raw_response: unknown;
+  lease_expires_at: string | null;
 };
 
 function fingerprint(input: {
@@ -54,9 +77,7 @@ function fingerprint(input: {
   systemInstruction: string;
   userInstruction: string;
 }) {
-  return createHash("sha256")
-    .update(JSON.stringify(input))
-    .digest("hex");
+  return sha256Canonical(input);
 }
 
 function parseJsonObject(text: string): unknown {
@@ -124,23 +145,73 @@ export class ProviderDocumentTextExecutor
       systemInstruction: input.systemInstruction,
       userInstruction: input.userInstruction,
     });
-    const executionKey = createHash("sha256")
-      .update(
-        [
-          this.persistence?.jobId ?? "unpersisted",
-          input.componentKey ?? "document",
-          input.operation,
-          inputFingerprint,
-        ].join(":"),
-      )
-      .digest("hex");
+    const executionKey = sha256Canonical({
+      jobId: this.persistence?.jobId ?? "unpersisted",
+      componentKey: input.componentKey ?? "document",
+      operation: input.operation,
+      inputFingerprint,
+    });
+    const leaseExpiresAt = new Date(Date.now() + 90_000).toISOString();
     if (this.persistence) {
       const existing = await this.getExecution(executionKey);
       if (existing?.status === "succeeded") {
-        return input.schema.parse(existing.raw_response);
+        return this.parseStoredResponse({
+          executionKey,
+          rawResponse: existing.raw_response,
+          storedStatus: "succeeded",
+          schema: input.schema,
+        });
       }
-      if (existing?.status === "running") {
+      if (existing?.status === "raw_saved") {
+        return this.parseStoredResponse({
+          executionKey,
+          rawResponse: existing.raw_response,
+          storedStatus: "raw_saved",
+          schema: input.schema,
+        });
+      }
+      if (
+        existing?.status === "validation_failed" ||
+        existing?.status === "unknown_outcome"
+      ) {
+        throw new DocumentModelExecutionRequiresReviewError(
+          executionKey,
+          existing.status,
+        );
+      }
+      if (
+        (existing?.status === "running" ||
+          existing?.status === "request_started") &&
+        existing.lease_expires_at &&
+        Date.parse(existing.lease_expires_at) <= Date.now()
+      ) {
+        await this.mustUpdateExecution(
+          executionKey,
+          {
+            status: "unknown_outcome",
+            failure_category: "execution_lease_expired",
+            error_message:
+              "The worker lease expired while the provider request outcome was not durable.",
+            completed_at: new Date().toISOString(),
+          },
+          [existing.status],
+        );
+        throw new DocumentModelExecutionRequiresReviewError(
+          executionKey,
+          "unknown_outcome",
+        );
+      }
+      if (
+        existing?.status === "running" ||
+        existing?.status === "request_started"
+      ) {
         throw new DocumentModelExecutionInProgressError(executionKey);
+      }
+      if (existing?.status === "failed") {
+        throw new DocumentModelExecutionRequiresReviewError(
+          executionKey,
+          "failed",
+        );
       }
       const { error } = await this.persistence.supabase
         .from("document_v2_model_executions")
@@ -154,11 +225,26 @@ export class ProviderDocumentTextExecutor
           requested_model_id: this.profile.requestedModelId,
           resolved_model_id: this.profile.resolvedModelId,
           status: "running",
+          lease_expires_at: leaseExpiresAt,
+          started_at: new Date().toISOString(),
         });
       if (error) {
         const raced = await this.getExecution(executionKey);
         if (raced?.status === "succeeded") {
-          return input.schema.parse(raced.raw_response);
+          return this.parseStoredResponse({
+            executionKey,
+            rawResponse: raced.raw_response,
+            storedStatus: "succeeded",
+            schema: input.schema,
+          });
+        }
+        if (raced?.status === "raw_saved") {
+          return this.parseStoredResponse({
+            executionKey,
+            rawResponse: raced.raw_response,
+            storedStatus: "raw_saved",
+            schema: input.schema,
+          });
         }
         throw new DocumentModelExecutionInProgressError(executionKey);
       }
@@ -173,6 +259,16 @@ export class ProviderDocumentTextExecutor
     let reasoningTokens = 0;
 
     try {
+      if (this.persistence) {
+        await this.mustUpdateExecution(
+          executionKey,
+          {
+            status: "request_started",
+            lease_expires_at: leaseExpiresAt,
+          },
+          ["running"],
+        );
+      }
       if (this.profile.provider === "openai") {
         const response = await this.client.responses.parse({
           model: this.profile.resolvedModelId,
@@ -223,10 +319,10 @@ export class ProviderDocumentTextExecutor
       }
 
       if (this.persistence) {
-        await this.persistence.supabase
-          .from("document_v2_model_executions")
-          .update({
-            status: "succeeded",
+        await this.mustUpdateExecution(
+          executionKey,
+          {
+            status: "raw_saved",
             raw_response: rawResponse,
             actual_model_id: actualModelId,
             provider_request_id: providerRequestId ?? null,
@@ -234,11 +330,40 @@ export class ProviderDocumentTextExecutor
             cached_input_tokens: cachedInputTokens,
             output_tokens: outputTokens,
             reasoning_tokens: reasoningTokens,
-            completed_at: new Date().toISOString(),
-          })
-          .eq("execution_key", executionKey);
+            response_received_at: new Date().toISOString(),
+            raw_saved_at: new Date().toISOString(),
+            lease_expires_at: null,
+          },
+          ["request_started"],
+        );
       }
-      parsed = input.schema.parse(rawResponse);
+      const validation = input.schema.safeParse(rawResponse);
+      if (!validation.success) {
+        if (this.persistence) {
+          await this.mustUpdateExecution(
+            executionKey,
+            {
+              status: "validation_failed",
+              failure_category: "schema_validation",
+              error_message: validation.error.message.slice(0, 2_000),
+              completed_at: new Date().toISOString(),
+            },
+            ["raw_saved"],
+          );
+        }
+        throw validation.error;
+      }
+      parsed = validation.data;
+      if (this.persistence) {
+        await this.mustUpdateExecution(
+          executionKey,
+          {
+            status: "succeeded",
+            completed_at: new Date().toISOString(),
+          },
+          ["raw_saved"],
+        );
+      }
       const calculatedCostUsd = estimateModelCostUsd(actualModelId, {
         inputTokens,
         cachedInputTokens,
@@ -263,18 +388,32 @@ export class ProviderDocumentTextExecutor
       return parsed;
     } catch (error) {
       if (this.persistence) {
-        await this.persistence.supabase
-          .from("document_v2_model_executions")
-          .update({
-            status: "failed",
-            error_message:
-              error instanceof Error
-                ? error.message.slice(0, 2_000)
-                : String(error).slice(0, 2_000),
-            completed_at: new Date().toISOString(),
-          })
-          .eq("execution_key", executionKey)
-          .eq("status", "running");
+        const current = await this.getExecution(executionKey);
+        if (
+          current?.status === "running" ||
+          current?.status === "request_started"
+        ) {
+          await this.mustUpdateExecution(
+            executionKey,
+            {
+              status:
+                current.status === "request_started"
+                  ? "unknown_outcome"
+                  : "failed",
+              failure_category:
+                current.status === "request_started"
+                  ? "provider_outcome_unknown"
+                  : "pre_provider_failure",
+              error_message:
+                error instanceof Error
+                  ? error.message.slice(0, 2_000)
+                  : String(error).slice(0, 2_000),
+              lease_expires_at: null,
+              completed_at: new Date().toISOString(),
+            },
+            [current.status],
+          );
+        }
       }
       throw error;
     }
@@ -286,10 +425,64 @@ export class ProviderDocumentTextExecutor
     if (!this.persistence) return null;
     const { data, error } = await this.persistence.supabase
       .from("document_v2_model_executions")
-      .select("status,raw_response")
+      .select("status,raw_response,lease_expires_at")
       .eq("execution_key", executionKey)
       .maybeSingle();
     if (error) throw error;
     return data as StoredExecution | null;
+  }
+
+  private async parseStoredResponse<T>(input: {
+    executionKey: string;
+    rawResponse: unknown;
+    storedStatus: "raw_saved" | "succeeded";
+    schema: ZodType<T>;
+  }): Promise<T> {
+    const parsed = input.schema.safeParse(input.rawResponse);
+    if (!parsed.success) {
+      await this.mustUpdateExecution(
+        input.executionKey,
+        {
+          status: "validation_failed",
+          failure_category: "schema_validation",
+          error_message: parsed.error.message.slice(0, 2_000),
+          completed_at: new Date().toISOString(),
+        },
+        [input.storedStatus],
+      );
+      throw parsed.error;
+    }
+    if (input.storedStatus === "raw_saved") {
+      await this.mustUpdateExecution(
+        input.executionKey,
+        {
+          status: "succeeded",
+          completed_at: new Date().toISOString(),
+        },
+        ["raw_saved"],
+      );
+    }
+    return parsed.data;
+  }
+
+  private async mustUpdateExecution(
+    executionKey: string,
+    values: Record<string, unknown>,
+    expectedStatuses: StoredExecution["status"][],
+  ): Promise<void> {
+    if (!this.persistence) return;
+    const { data, error } = await this.persistence.supabase
+      .from("document_v2_model_executions")
+      .update(values)
+      .eq("execution_key", executionKey)
+      .in("status", expectedStatuses)
+      .select("execution_key")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      throw new Error(
+        `Model execution "${executionKey}" changed before it could be updated.`,
+      );
+    }
   }
 }

@@ -212,20 +212,32 @@ export class DocumentV2JobService {
   async run(
     jobId: string,
     workerId: string,
-    options: { maxComponents?: number; maxDurationMs?: number } = {},
+    options: {
+      maxComponents?: number;
+      maxDurationMs?: number;
+      alreadyClaimedJob?: DocumentJob;
+    } = {},
   ): Promise<DocumentJobSnapshot> {
     const runStartedAt = this.clock().getTime();
     const maxDurationMs = options.maxDurationMs ?? Number.POSITIVE_INFINITY;
-    const leasedJob = await this.repository.acquireLease({
-      jobId,
-      workerId,
-      now: this.clock(),
-      leaseMs:
-        maxDurationMs === Number.POSITIVE_INFINITY
-          ? 5 * 60_000
-          : Math.max(60_000, maxDurationMs + 30_000),
-    });
+    const leasedJob =
+      options.alreadyClaimedJob ??
+      (await this.repository.acquireLease({
+        jobId,
+        workerId,
+        now: this.clock(),
+        leaseMs:
+          maxDurationMs === Number.POSITIVE_INFINITY
+            ? 5 * 60_000
+            : Math.max(60_000, maxDurationMs + 30_000),
+      }));
     if (!leasedJob) throw new DocumentJobLeaseUnavailableError();
+    if (
+      options.alreadyClaimedJob &&
+      options.alreadyClaimedJob.leaseOwner !== workerId
+    ) {
+      throw new DocumentJobLeaseUnavailableError();
+    }
     let job: DocumentJob = leasedJob;
     if (!job.checkpoint.orchestration) {
       throw new Error("Document intake must be prepared before content execution.");

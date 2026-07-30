@@ -40,6 +40,10 @@ const {
 const {
   normalizeGeneratedComponentPayload,
 } = require("../lib/document-v2/generation/normalize-component-payload.ts");
+const {
+  canonicalize,
+  sha256Canonical,
+} = require("../lib/document-v2/runtime/canonical-hash.ts");
 
 const requestId = "23b7cee2-bfa7-49d7-b58b-98b734bc5201";
 const request = {
@@ -633,6 +637,54 @@ async function verifyDispatchChecksHttpStatus() {
   }
 }
 
+async function verifyCanonicalHashesAndClaimReuse() {
+  assert.equal(
+    canonicalize({ z: 1, a: { y: true, x: null }, omitted: undefined }),
+    '{"a":{"x":null,"y":true},"z":1}',
+  );
+  assert.equal(
+    sha256Canonical({ b: 2, a: 1 }),
+    sha256Canonical({ a: 1, b: 2 }),
+  );
+  assert.notEqual(
+    sha256Canonical({ ordered: ["first", "second"] }),
+    sha256Canonical({ ordered: ["second", "first"] }),
+    "Business array order must remain semantic.",
+  );
+
+  const repository = new InMemoryDocumentJobRepository();
+  const calls = {};
+  const service = makeService(repository, calls);
+  const created = await service.create({
+    ownerId: "user-1",
+    request,
+    plan,
+    verifiedReferences: references,
+  });
+  const claimed = await repository.acquireLease({
+    jobId: created.job.jobId,
+    workerId: "single-authoritative-claim",
+    now: new Date("2026-07-28T12:00:00.000Z"),
+    leaseMs: 60_000,
+  });
+  assert.ok(claimed);
+  const originalAcquireLease = repository.acquireLease.bind(repository);
+  let additionalLeaseClaims = 0;
+  repository.acquireLease = async (input) => {
+    additionalLeaseClaims += 1;
+    return originalAcquireLease(input);
+  };
+  await service.run(created.job.jobId, "single-authoritative-claim", {
+    maxComponents: 1,
+    alreadyClaimedJob: claimed,
+  });
+  assert.equal(
+    additionalLeaseClaims,
+    0,
+    "A claimed worker tick must not acquire a second lease.",
+  );
+}
+
 async function main() {
   const workerRouteSource = fs.readFileSync(
     path.join(
@@ -734,6 +786,25 @@ async function main() {
     /execution_key TEXT PRIMARY KEY/,
     "Model calls require a database-enforced unique execution key.",
   );
+  const reliableModelExecutionMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/023_document_v2_model_execution_reliability.sql",
+    ),
+    "utf8",
+  );
+  for (const durableStatus of [
+    "request_started",
+    "raw_saved",
+    "validation_failed",
+    "unknown_outcome",
+  ]) {
+    assert.match(
+      reliableModelExecutionMigration,
+      new RegExp(`'${durableStatus}'`),
+      `Model executions require the ${durableStatus} state.`,
+    );
+  }
   const workerSource = fs.readFileSync(
     path.join(projectRoot, "lib/document-v2-production/worker.ts"),
     "utf8",
@@ -742,6 +813,57 @@ async function main() {
     workerSource,
     /job\.checkpoint\.textExecution/,
     "The worker must read the model provider frozen into the job.",
+  );
+  assert.doesNotMatch(
+    workerSource,
+    /job\.checkpoint\.textExecution\s*\?\?/,
+    "A missing frozen text profile must never silently fall back to OpenAI.",
+  );
+  assert.match(
+    workerSource,
+    /alreadyClaimedJob:\s*preparedJob/,
+    "The production worker must reuse the authoritative dispatch claim.",
+  );
+  assert.match(
+    workerSource,
+    /\.\.\.\(intake\.verifiedReferences\s*\?\?\s*\[\]\)/,
+    "Planning must retain explicitly verified references.",
+  );
+  assert.match(
+    workerSource,
+    /if\s*\(\s*!config\.openAiApiKey\s*\)/,
+    "The image provider must be initialized only at an image execution boundary.",
+  );
+  const runtimeConfigSource = fs.readFileSync(
+    path.join(projectRoot, "lib/document-v2-production/runtime-config.ts"),
+    "utf8",
+  );
+  const requiredEnvironmentBlock = runtimeConfigSource.slice(
+    runtimeConfigSource.indexOf("const REQUIRED_WORKER_ENV"),
+    runtimeConfigSource.indexOf("] as const;") + "] as const;".length,
+  );
+  assert.doesNotMatch(
+    requiredEnvironmentBlock,
+    /OPENAI_API_KEY/,
+    "A no-image DeepSeek job must not require an OpenAI credential.",
+  );
+  const executorSource = fs.readFileSync(
+    path.join(projectRoot, "lib/document-v2-production/text-executor.ts"),
+    "utf8",
+  );
+  const rawSavedIndex = executorSource.indexOf('status: "raw_saved"');
+  const schemaValidationIndex = executorSource.indexOf(
+    "input.schema.safeParse(rawResponse)",
+  );
+  const succeededIndex = executorSource.indexOf(
+    'status: "succeeded"',
+    schemaValidationIndex,
+  );
+  assert.ok(
+    rawSavedIndex >= 0 &&
+      schemaValidationIndex > rawSavedIndex &&
+      succeededIndex > schemaValidationIndex,
+    "A model response must be saved and validated before it is accepted.",
   );
   assert.doesNotMatch(
     workerSource,
@@ -825,6 +947,7 @@ async function main() {
   await verifyImageCallsAndAssetsUseSeparateBudgets();
   await verifyFinalizerFailureIsVisible();
   await verifyDispatchChecksHttpStatus();
+  await verifyCanonicalHashesAndClaimReuse();
   const previousFlag = process.env.DOCUMENT_V2_RUNTIME_ENABLED;
   delete process.env.DOCUMENT_V2_RUNTIME_ENABLED;
   const route = require("../app/api/document-v2/jobs/[id]/route.ts");

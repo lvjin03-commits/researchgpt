@@ -2,7 +2,6 @@ const REQUIRED_WORKER_ENV = [
   "CRON_SECRET",
   "NEXT_PUBLIC_SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "OPENAI_API_KEY",
 ] as const;
 
 export type DocumentV2RequiredEnvironmentVariable =
@@ -85,7 +84,7 @@ export function requireDocumentV2WorkerConfig(
     cronSecret: env.CRON_SECRET!.trim(),
     supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
     serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
-    openAiApiKey: env.OPENAI_API_KEY!.trim(),
+    openAiApiKey: env.OPENAI_API_KEY?.trim(),
   };
 }
 
