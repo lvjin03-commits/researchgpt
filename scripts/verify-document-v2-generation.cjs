@@ -44,6 +44,9 @@ const {
   ModelDocumentComponentGenerator,
 } = require("../lib/document-v2/generation/model-component-generator.ts");
 const {
+  normalizeGeneratedComponentPayload,
+} = require("../lib/document-v2/generation/normalize-component-payload.ts");
+const {
   OpenAIStructuredComponentModel,
 } = require("../lib/document-v2-production/openai-adapters.ts");
 const {
@@ -788,7 +791,44 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
   assert.equal(proposal.sections.length, 1);
 }
 
+function verifyPlanOwnedKindInjection() {
+  const section = normalizeGeneratedComponentPayload(
+    {
+      blocks: [
+        { type: "heading", level: 1, text: "1 Introduction" },
+        {
+          type: "paragraph",
+          role: "body",
+          text: "Mature section prose.",
+          citationIds: [],
+          figureRequestIndexes: [],
+        },
+      ],
+      figureRequests: [],
+    },
+    "blocks",
+  );
+  assert.equal(section.kind, "blocks");
+
+  const title = normalizeGeneratedComponentPayload(
+    { title: "A mature title" },
+    "title",
+  );
+  assert.deepEqual(title, { kind: "title", title: "A mature title" });
+
+  const conflict = normalizeGeneratedComponentPayload(
+    { kind: "title", title: "Wrong component kind" },
+    "blocks",
+  );
+  assert.equal(
+    conflict.kind,
+    "title",
+    "A conflicting model-provided kind must not be silently overwritten.",
+  );
+}
+
 async function main() {
+  verifyPlanOwnedKindInjection();
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
   await verifyCompleteGenerationFlow();

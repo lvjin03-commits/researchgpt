@@ -211,13 +211,20 @@ export class ModelDocumentComponentGenerator
     context: ComponentGenerationContext,
   ): Promise<GeneratedComponentPayload> {
     const instructions = buildComponentGenerationInstructions(context);
+    const expectedKind =
+      context.component.type === "title"
+        ? "title"
+        : context.component.type === "reference_list"
+          ? "references"
+          : "blocks";
     return GeneratedComponentPayloadSchema.parse(
       normalizeGeneratedComponentPayload(
         await this.model.generate({
-        schemaName: "document_component_payload_v1",
-        componentKey: context.component.componentKey,
-        ...instructions,
+          schemaName: "document_component_payload_v1",
+          componentKey: context.component.componentKey,
+          ...instructions,
         }),
+        expectedKind,
       ),
     );
   }

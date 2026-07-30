@@ -20,9 +20,23 @@ function pick(
   );
 }
 
-export function normalizeGeneratedComponentPayload(raw: unknown): unknown {
+export type ExpectedGeneratedComponentKind =
+  | "title"
+  | "blocks"
+  | "references";
+
+export function normalizeGeneratedComponentPayload(
+  raw: unknown,
+  expectedKind?: ExpectedGeneratedComponentKind,
+): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const source = structuredClone(raw) as Record<string, unknown>;
+  // The Document Plan already owns the component type. `kind` is an internal
+  // wire discriminator, so it is safe for the program to inject it when the
+  // model omits it. Conflicting model output is preserved for strict rejection.
+  if (source.kind === undefined && expectedKind) {
+    source.kind = expectedKind;
+  }
 
   if (source.kind === "title" && typeof source.title === "string") {
     const payload = pick(source, ["kind", "title"]);
