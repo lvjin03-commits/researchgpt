@@ -17,6 +17,7 @@ import {
   type DocumentJobEvent,
   type DocumentJobSnapshot,
   type DocumentJobStage,
+  type DocumentTextExecutionProfile,
 } from "./contracts";
 import type { DocumentJobRepository } from "./repository";
 import {
@@ -118,6 +119,7 @@ export class DocumentV2JobService {
       excerpt: string;
       locator?: { page?: number; section?: string };
     }>;
+    textExecution: DocumentTextExecutionProfile;
   }): Promise<DocumentJobSnapshot> {
     const now = this.clock().toISOString();
     const job = DocumentJobSchema.parse({
@@ -132,6 +134,8 @@ export class DocumentV2JobService {
       resumable: true,
       checkpoint: {
         schemaVersion: 1,
+        textExecution: input.textExecution,
+        dispatchToken: randomUUID().replaceAll("-", "") + randomUUID().replaceAll("-", ""),
         intake: {
           instruction: input.instruction,
           source: input.source,

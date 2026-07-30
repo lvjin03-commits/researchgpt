@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  DEFAULT_CHAT_MODEL_TIER,
+  getChatModelOption,
+  isChatModelTier,
+} from "@/lib/ai/chat-models";
 import { createClient } from "@/lib/supabase/server";
 import { VerifiedReferenceSchema } from "@/lib/document-v2/contracts";
 import { DocumentEvidenceItemSchema } from "@/lib/document-v2/runtime/contracts";
@@ -35,6 +40,7 @@ const CreateJobSchema = z
     targetLength: z.number().int().min(100).max(100_000).optional(),
     verifiedReferences: z.array(VerifiedReferenceSchema).max(500).optional(),
     evidence: z.array(DocumentEvidenceItemSchema).max(2_000).optional(),
+    modelTier: z.string().optional(),
   })
   .strict();
 
@@ -87,6 +93,11 @@ export async function POST(request: Request) {
       });
     }
     const references = input.verifiedReferences ?? [];
+    const modelOption = getChatModelOption(
+      isChatModelTier(input.modelTier)
+        ? input.modelTier
+        : DEFAULT_CHAT_MODEL_TIER,
+    );
     const service = new DocumentV2JobService(
       repository,
       {
@@ -106,6 +117,13 @@ export async function POST(request: Request) {
         targetLength: input.targetLength,
         verifiedReferences: references,
         evidence: input.evidence,
+        textExecution: {
+          provider: modelOption.provider,
+          requestedModelId: modelOption.model,
+          resolvedModelId: modelOption.model,
+          maxOutputTokens: modelOption.maxOutputTokens,
+          allowProviderFallback: false,
+        },
       });
     } catch (creationError) {
       if (!(creationError instanceof DocumentJobConflictError)) throw creationError;

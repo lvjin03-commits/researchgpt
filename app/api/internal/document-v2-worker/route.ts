@@ -1,10 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { executeOneDocumentV2Tick } from "@/lib/document-v2-production/worker";
-import {
-  dispatchDocumentV2Worker,
-  logDocumentV2DispatchFailure,
-} from "@/lib/document-v2-production/dispatch";
 import {
   DocumentV2ConfigurationError,
   requireDocumentV2WorkerConfig,
@@ -16,6 +13,12 @@ export const maxDuration = 300;
 function authorized(expected: string, request: Request): boolean {
   const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!supplied) return false;
+  const left = Buffer.from(expected);
+  const right = Buffer.from(supplied);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function secureEqual(expected: string, supplied: string): boolean {
   const left = Buffer.from(expected);
   const right = Buffer.from(supplied);
   return left.length === right.length && timingSafeEqual(left, right);
@@ -46,7 +49,48 @@ async function handleWorker(request: Request) {
       },
     );
   }
-  if (!authorized(config.cronSecret, request)) {
+  let requestedJobId: string | undefined;
+  let dispatchToken: string | undefined;
+  if (request.method === "POST") {
+    try {
+      const body = (await request.json()) as {
+        jobId?: unknown;
+        dispatchToken?: unknown;
+      };
+      requestedJobId =
+        typeof body.jobId === "string" && body.jobId.length > 0
+          ? body.jobId
+          : undefined;
+      dispatchToken =
+        typeof body.dispatchToken === "string" ? body.dispatchToken : undefined;
+    } catch {
+      return Response.json(
+        { error: "Invalid worker request.", code: "invalid_worker_request" },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+  }
+  const cronAuthorized = authorized(config.cronSecret, request);
+  let jobTokenAuthorized = false;
+  if (!cronAuthorized && requestedJobId && dispatchToken) {
+    const supabase = createClient(config.supabaseUrl, config.serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data } = await supabase
+      .from("document_v2_jobs")
+      .select("job_payload")
+      .eq("id", requestedJobId)
+      .maybeSingle();
+    const storedToken = (
+      data?.job_payload as {
+        checkpoint?: { dispatchToken?: unknown };
+      } | null
+    )?.checkpoint?.dispatchToken;
+    jobTokenAuthorized =
+      typeof storedToken === "string" &&
+      secureEqual(storedToken, dispatchToken);
+  }
+  if (!cronAuthorized && !jobTokenAuthorized) {
     console.warn("[document-v2-worker]", {
       operation: "worker.authorization.rejected",
     });
@@ -59,21 +103,6 @@ async function handleWorker(request: Request) {
     );
   }
   const invocationId = randomUUID();
-  let requestedJobId: string | undefined;
-  if (request.method === "POST") {
-    try {
-      const body = (await request.json()) as { jobId?: unknown };
-      requestedJobId =
-        typeof body.jobId === "string" && body.jobId.length > 0
-          ? body.jobId
-          : undefined;
-    } catch {
-      return Response.json(
-        { error: "Invalid worker request.", code: "invalid_worker_request" },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
-      );
-    }
-  }
   console.info("[document-v2-worker]", {
     invocationId,
     operation: "worker.tick.accepted",
@@ -90,22 +119,6 @@ async function handleWorker(request: Request) {
         requestedJobId,
         ...result,
       });
-      if (result.state === "queued") {
-        try {
-          await dispatchDocumentV2Worker({
-            cause: "continuation",
-            requestUrl: request.url,
-            jobId: result.jobId,
-          });
-        } catch (error) {
-          logDocumentV2DispatchFailure({
-            operation: "worker.continuation_dispatch.failed",
-            cause: "continuation",
-            jobId: result.jobId,
-            error,
-          });
-        }
-      }
     } catch (error) {
       console.error("[document-v2-worker]", {
         invocationId,

@@ -731,17 +731,13 @@ async function verifyUnsafeSvgIsRejected() {
 
 async function verifyOpenAiComponentSchemaHasObjectRoot() {
   const adapter = new OpenAIStructuredComponentModel({
-    responses: {
-      async parse() {
-        return {
-          output_parsed: {
-            payload: {
-              kind: "title",
-              title: "Validated object-root schema",
-            },
-          },
-        };
-      },
+    async generate(input) {
+      return input.schema.parse({
+        payload: {
+          kind: "title",
+          title: "Validated object-root schema",
+        },
+      });
     },
   });
   const result = await adapter.generate({
@@ -754,26 +750,27 @@ async function verifyOpenAiComponentSchemaHasObjectRoot() {
 
 async function verifyOutlineSchemaUsesTemplateBounds() {
   const planner = new OpenAISemanticOutlinePlanner({
-    responses: {
-      async parse(input) {
-        const sectionSchema =
-          input.text.format.schema.properties.sections;
-        assert.equal(sectionSchema.minItems, 1);
-        assert.equal(sectionSchema.maxItems, 2);
-        return {
-          output_parsed: {
-            sections: [
-              {
-                heading: "Mechanism",
-                purpose: "Explain the mechanism.",
-                relativeWeight: 1,
-                requiredEvidenceIds: [],
-              },
-            ],
-            conclusionHeading: "Conclusion",
+    async generate(input) {
+      assert.equal(
+        input.schema.safeParse({
+          sections: [],
+          conclusionHeading: "Conclusion",
+          figures: [],
+        }).success,
+        false,
+      );
+      return {
+        sections: [
+          {
+            heading: "Mechanism",
+            purpose: "Explain the mechanism.",
+            relativeWeight: 1,
+            requiredEvidenceIds: [],
           },
-        };
-      },
+        ],
+        conclusionHeading: "Conclusion",
+        figures: [],
+      };
     },
   });
   const proposal = await planner.propose({

@@ -1,7 +1,6 @@
 import OpenAI from "openai";
 import sharp from "sharp";
 import { z } from "zod";
-import { zodTextFormat } from "openai/helpers/zod";
 import { GeneratedComponentPayloadSchema } from "@/lib/document-v2/orchestration/contracts";
 import type { StructuredComponentModel } from "@/lib/document-v2/generation/model-component-generator";
 import type {
@@ -9,6 +8,7 @@ import type {
   GeneratedFigureBinary,
 } from "@/lib/document-v2/assets/figure-pipeline";
 import type { FigureRequest } from "@/lib/document-v2/assets/contracts";
+import type { DocumentStructuredTextExecutor } from "./text-executor";
 
 const GeneratedComponentEnvelopeSchema = z
   .object({
@@ -18,30 +18,24 @@ const GeneratedComponentEnvelopeSchema = z
 
 export class OpenAIStructuredComponentModel implements StructuredComponentModel {
   constructor(
-    private readonly client: OpenAI,
-    private readonly model = process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+    private readonly executor: DocumentStructuredTextExecutor,
   ) {}
 
   async generate(input: {
     schemaName: "document_component_payload_v1";
     systemInstruction: string;
     componentInstruction: string;
+    componentKey?: string;
   }): Promise<unknown> {
-    const response = await this.client.responses.parse({
-      model: this.model,
-      instructions: input.systemInstruction,
-      input: input.componentInstruction,
-      text: {
-        format: zodTextFormat(
-          GeneratedComponentEnvelopeSchema,
-          input.schemaName,
-        ),
-      },
+    const response = await this.executor.generate({
+      operation: "component.generate",
+      componentKey: input.componentKey,
+      schemaName: input.schemaName,
+      schema: GeneratedComponentEnvelopeSchema,
+      systemInstruction: input.systemInstruction,
+      userInstruction: input.componentInstruction,
     });
-    if (!response.output_parsed) {
-      throw new Error("The document model returned no structured component.");
-    }
-    return response.output_parsed.payload;
+    return response.payload;
   }
 }
 

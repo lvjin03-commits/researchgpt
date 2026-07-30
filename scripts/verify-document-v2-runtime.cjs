@@ -225,12 +225,20 @@ async function verifyIntakeExistsBeforePlanning() {
     instruction: "Generate an SCI review about physical gels.",
     source: { kind: "prompt", sourceIds: [] },
     language: "en",
+    textExecution: {
+      provider: "deepseek",
+      requestedModelId: "deepseek-v4-flash",
+      resolvedModelId: "deepseek-v4-flash",
+      maxOutputTokens: 3200,
+      allowProviderFallback: false,
+    },
   });
   assert.equal(snapshot.job.stage, "intake");
   assert.equal(snapshot.job.status, "queued");
   assert.equal(snapshot.job.totalComponents, 0);
   assert.equal("checkpoint" in snapshot.job, false);
   const stored = await repository.get(requestId);
+  assert.equal(stored.checkpoint.textExecution.provider, "deepseek");
   assert.equal(stored.checkpoint.orchestration, undefined);
   assert.match(stored.checkpoint.intake.instruction, /physical gels/);
 }
@@ -520,10 +528,10 @@ async function main() {
     ),
     "utf8",
   );
-  assert.match(
+  assert.doesNotMatch(
     workerRouteSource,
-    /result\.state\s*===\s*"queued"/,
-    "The worker must continue a job only while more work is queued.",
+    /dispatchDocumentV2Worker/,
+    "The worker must never continue by recursively requesting itself.",
   );
   assert.match(
     workerRouteSource,
@@ -583,6 +591,49 @@ async function main() {
     targetedDispatchMigration,
     /WHERE job_id = target_job_id/,
     "Targeted claims must be scoped to the dispatched job.",
+  );
+  const serverDispatchMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/018_document_v2_server_dispatch.sql",
+    ),
+    "utf8",
+  );
+  assert.match(
+    serverDispatchMigration,
+    /dispatch_document_v2_outbox_event/,
+    "Outbox events require an independent server-side dispatcher.",
+  );
+  assert.match(
+    serverDispatchMigration,
+    /document-v2-outbox-dispatch/,
+    "Pending outbox events require a server-side recovery schedule.",
+  );
+  const modelExecutionMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/019_document_v2_model_executions.sql",
+    ),
+    "utf8",
+  );
+  assert.match(
+    modelExecutionMigration,
+    /execution_key TEXT PRIMARY KEY/,
+    "Model calls require a database-enforced unique execution key.",
+  );
+  const workerSource = fs.readFileSync(
+    path.join(projectRoot, "lib/document-v2-production/worker.ts"),
+    "utf8",
+  );
+  assert.match(
+    workerSource,
+    /job\.checkpoint\.textExecution/,
+    "The worker must read the model provider frozen into the job.",
+  );
+  assert.doesNotMatch(
+    workerSource,
+    /new OpenAIStructuredComponentModel\(openai/,
+    "Text generation must not bypass the frozen provider executor.",
   );
   const dispatchSource = fs.readFileSync(
     path.join(projectRoot, "lib/document-v2-production/dispatch.ts"),

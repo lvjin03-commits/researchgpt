@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import OpenAI from "openai";
 import { z } from "zod";
-import { zodTextFormat } from "openai/helpers/zod";
 import {
   DocumentRequestSchema,
   type DocumentRequest,
@@ -10,6 +8,7 @@ import {
 import type { DocumentTemplateMatcher } from "@/lib/document-v2/templates/resolver";
 import type { SemanticOutlinePlanner } from "@/lib/document-v2/planning/planner";
 import { SemanticOutlineProposalSchema } from "@/lib/document-v2/planning/contracts";
+import type { DocumentStructuredTextExecutor } from "./text-executor";
 
 const UnderstoodRequestSchema = z
   .object({
@@ -44,16 +43,18 @@ export type DocumentCreationInput = {
 };
 
 export async function understandDocumentRequest(
-  client: OpenAI,
+  executor: DocumentStructuredTextExecutor,
   input: DocumentCreationInput,
 ): Promise<DocumentRequest> {
   const instruction = input.instruction.trim();
   if (!instruction || instruction.length > 8_000) {
     throw new Error("Document instruction must contain 1-8000 characters.");
   }
-  const response = await client.responses.parse({
-    model: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
-    instructions: [
+  const understood = await executor.generate({
+    operation: "request.understand",
+    schemaName: "document_request_v1",
+    schema: UnderstoodRequestSchema,
+    systemInstruction: [
       "Understand the user's complete document request semantically.",
       "A continuation such as 'generate it' must be interpreted from the supplied instruction/context, never by keyword routing.",
       "Extract the actual scientific topic, requested output language, and content requirements.",
@@ -61,15 +62,8 @@ export async function understandDocumentRequest(
       "Do not ask about optional language, length, figures, authors, or formatting when safe defaults exist.",
       "Do not write document content yet.",
     ].join(" "),
-    input: instruction,
-    text: {
-      format: zodTextFormat(UnderstoodRequestSchema, "document_request_v1"),
-    },
+    userInstruction: instruction,
   });
-  if (!response.output_parsed) {
-    throw new Error("The model could not understand the document request.");
-  }
-  const understood = response.output_parsed;
   if (!understood.ready) {
     if (!understood.question || !understood.reason) {
       throw new Error("The clarification response is incomplete.");
@@ -99,7 +93,7 @@ export async function understandDocumentRequest(
 }
 
 export class OpenAITemplateMatcher implements DocumentTemplateMatcher {
-  constructor(private readonly client: OpenAI) {}
+  constructor(private readonly executor: DocumentStructuredTextExecutor) {}
 
   async match(input: Parameters<DocumentTemplateMatcher["match"]>[0]) {
     if (input.candidates.length === 1) {
@@ -114,20 +108,19 @@ export class OpenAITemplateMatcher implements DocumentTemplateMatcher {
       confidence: z.number().min(0).max(1),
       rationale: z.string().min(1).max(1000),
     }).strict();
-    const response = await this.client.responses.parse({
-      model: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
-      instructions:
+    return this.executor.generate({
+      operation: "template.match",
+      schemaName: "template_match_v1",
+      schema: CandidateDecision,
+      systemInstruction:
         "Select exactly one compatible document template from the closed candidate list. Never invent a template.",
-      input: JSON.stringify(input),
-      text: { format: zodTextFormat(CandidateDecision, "template_match_v1") },
+      userInstruction: JSON.stringify(input),
     });
-    if (!response.output_parsed) throw new Error("No template decision returned.");
-    return response.output_parsed;
   }
 }
 
 export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
-  constructor(private readonly client: OpenAI) {}
+  constructor(private readonly executor: DocumentStructuredTextExecutor) {}
 
   async propose(input: Parameters<SemanticOutlinePlanner["propose"]>[0]) {
     const OutlineResponseSchema = z
@@ -165,9 +158,11 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
           .max(4),
       })
       .strict();
-    const response = await this.client.responses.parse({
-      model: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
-      instructions: [
+    const response = await this.executor.generate({
+      operation: "outline.plan",
+      schemaName: "document_outline_v1",
+      schema: OutlineResponseSchema,
+      systemInstruction: [
         "Plan the mature semantic structure of one SCI review document.",
         "Return only an outline; do not write paragraphs.",
         "Plan body sections only. Title, abstract, keywords, conclusion, and references are fixed template components created separately.",
@@ -183,7 +178,7 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
           ? `The previous outline was rejected. Correct all of these issues: ${input.repairFeedback}`
           : "",
       ].join(" "),
-      input: JSON.stringify({
+      userInstruction: JSON.stringify({
         topic: input.request.userRequirements.topic,
         requirements: input.request.userRequirements.specialInstructions ?? [],
         minimumSections: input.minimumSections,
@@ -201,14 +196,7 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
           plannedBeforeContentGeneration: true,
         },
       }),
-      text: {
-        format: zodTextFormat(
-          OutlineResponseSchema,
-          "document_outline_v1",
-        ),
-      },
     });
-    if (!response.output_parsed) throw new Error("No document outline returned.");
-    return SemanticOutlineProposalSchema.parse(response.output_parsed);
+    return SemanticOutlineProposalSchema.parse(response);
   }
 }

@@ -13,6 +13,7 @@ export interface StructuredComponentModel {
     schemaName: "document_component_payload_v1";
     systemInstruction: string;
     componentInstruction: string;
+    componentKey?: string;
   }): Promise<unknown>;
 }
 
@@ -211,6 +212,7 @@ export class ModelDocumentComponentGenerator
     return GeneratedComponentPayloadSchema.parse(
       await this.model.generate({
         schemaName: "document_component_payload_v1",
+        componentKey: context.component.componentKey,
         ...instructions,
       }),
     );

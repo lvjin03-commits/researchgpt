@@ -5,6 +5,20 @@ import { VerifiedReferenceSchema } from "../contracts";
 const IdentifierSchema = z.string().trim().min(1).max(120);
 const DateTimeSchema = z.iso.datetime({ offset: true });
 
+export const DocumentTextExecutionProfileSchema = z
+  .object({
+    provider: z.enum(["deepseek", "openai"]),
+    requestedModelId: IdentifierSchema,
+    resolvedModelId: IdentifierSchema,
+    maxOutputTokens: z.number().int().min(500).max(32_000),
+    allowProviderFallback: z.literal(false),
+  })
+  .strict();
+
+export type DocumentTextExecutionProfile = z.infer<
+  typeof DocumentTextExecutionProfileSchema
+>;
+
 export const DocumentEvidenceItemSchema = z
   .object({
     evidenceId: IdentifierSchema,
@@ -178,6 +192,8 @@ export const DocumentJobCheckpointSchema = z
       .strict()
       .optional(),
     executionSnapshot: DocumentExecutionSnapshotSchema.optional(),
+    textExecution: DocumentTextExecutionProfileSchema.optional(),
+    dispatchToken: z.string().min(32).max(200).optional(),
     budget: DocumentJobBudgetSchema.optional(),
     renderedArtifactId: IdentifierSchema.optional(),
     savedAt: DateTimeSchema,

@@ -15,6 +15,11 @@ import {
   OpenAIFinalFigureGenerator,
   OpenAIStructuredComponentModel,
 } from "./openai-adapters";
+import {
+  ProviderDocumentTextExecutor,
+  type DocumentModelUsage,
+  type DocumentStructuredTextExecutor,
+} from "./text-executor";
 import { requireDocumentV2WorkerConfig } from "./runtime-config";
 import {
   OpenAISemanticOutlinePlanner,
@@ -59,7 +64,7 @@ async function claimNext(
 async function prepareIntake(input: {
   job: DocumentJob;
   repository: SupabaseDocumentJobRepository;
-  openai: OpenAI;
+  textExecutor: DocumentStructuredTextExecutor;
 }): Promise<DocumentJob> {
   const intake = input.job.checkpoint.intake;
   if (!intake) throw new Error("Document intake payload is missing.");
@@ -93,7 +98,8 @@ async function prepareIntake(input: {
       correlationId: job.jobId,
       metadata: {
         jobRevision: job.revision,
-        modelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+        provider: input.textExecutor.profile.provider,
+        modelId: input.textExecutor.profile.resolvedModelId,
       },
       createdAt: now,
     });
@@ -102,7 +108,7 @@ async function prepareIntake(input: {
   const understandingStartedAt = Date.now();
   let understood;
   try {
-    understood = await understandDocumentRequest(input.openai, {
+    understood = await understandDocumentRequest(input.textExecutor, {
       idempotencyKey: job.jobId,
       instruction: intake.instruction,
       source: intake.source,
@@ -159,7 +165,8 @@ async function prepareIntake(input: {
     correlationId: job.jobId,
     durationMs: Date.now() - understandingStartedAt,
     metadata: {
-      modelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+      provider: input.textExecutor.profile.provider,
+      modelId: input.textExecutor.profile.resolvedModelId,
       language: understood.language,
       topicLength: understood.userRequirements.topic?.length ?? 0,
     },
@@ -190,7 +197,7 @@ async function prepareIntake(input: {
   const plan = await createDocumentPlanFromTemplate({
     request: understood,
     template,
-    outlinePlanner: new OpenAISemanticOutlinePlanner(input.openai),
+    outlinePlanner: new OpenAISemanticOutlinePlanner(input.textExecutor),
     availableEvidenceIds: evidenceReferences.map((reference) => reference.id),
   });
   await input.repository.appendEvent({
@@ -204,7 +211,8 @@ async function prepareIntake(input: {
     correlationId: job.jobId,
     durationMs: Date.now() - planningStartedAt,
     metadata: {
-      modelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+      provider: input.textExecutor.profile.provider,
+      modelId: input.textExecutor.profile.resolvedModelId,
       componentCount: plan.components.length,
       evidenceCount: evidenceReferences.length,
       templateId: template.snapshot.templateId,
@@ -249,8 +257,8 @@ async function prepareIntake(input: {
           plannerPromptVersion: "document-outline-v1",
           generatorPromptVersion: "document-component-v1",
           validatorVersion: "mature-content-v1",
-          modelProvider: "openai",
-          modelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+          modelProvider: input.textExecutor.profile.provider,
+          modelId: input.textExecutor.profile.resolvedModelId,
           rendererVersion: "sci-word-v1",
           templateChecksum: template.snapshot.checksum,
           evidenceSnapshotId,
@@ -319,7 +327,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
   const config = requireDocumentV2WorkerConfig();
   const supabase = adminClient();
   const workerId = `vercel-${randomUUID()}`;
-  const job = await claimNext(supabase, workerId, jobId);
+  let job = await claimNext(supabase, workerId, jobId);
   if (!job) return { state: "idle" as const };
 
   const openai = new OpenAI({
@@ -328,6 +336,63 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
     maxRetries: 0,
   });
   const repository = new SupabaseDocumentJobRepository(supabase, job.ownerId);
+  if (!job.checkpoint.dispatchToken) {
+    const now = new Date().toISOString();
+    job = await repository.save(
+      DocumentJobSchema.parse({
+        ...job,
+        checkpoint: {
+          ...job.checkpoint,
+          dispatchToken:
+            randomUUID().replaceAll("-", "") + randomUUID().replaceAll("-", ""),
+          savedAt: now,
+        },
+        updatedAt: now,
+      }),
+      job.revision,
+    );
+  }
+  const textExecution = job.checkpoint.textExecution ?? {
+    provider: "openai" as const,
+    requestedModelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+    resolvedModelId: process.env.OPENAI_DOCUMENT_MODEL ?? "gpt-5.2",
+    maxOutputTokens: 7_000,
+    allowProviderFallback: false as const,
+  };
+  const recordUsage = async (usage: DocumentModelUsage) => {
+    const currentJob = await repository.get(job.jobId);
+    await repository.appendEvent({
+      eventId: randomUUID(),
+      jobId: job.jobId,
+      stage: currentJob?.stage ?? job.stage,
+      status: "succeeded",
+      message: `模型调用完成：${usage.operation}`,
+      category: "model",
+      operation: "model.call.succeeded",
+      correlationId: usage.providerRequestId ?? usage.inputFingerprint.slice(0, 120),
+      componentKey: usage.componentKey,
+      durationMs: usage.durationMs,
+      metadata: {
+        provider: usage.provider,
+        requestedModelId: usage.requestedModelId,
+        actualModelId: usage.actualModelId,
+        providerRequestId: usage.providerRequestId ?? null,
+        modelOperation: usage.operation,
+        inputFingerprint: usage.inputFingerprint,
+        inputTokens: usage.inputTokens,
+        cachedInputTokens: usage.cachedInputTokens,
+        outputTokens: usage.outputTokens,
+        reasoningTokens: usage.reasoningTokens,
+        calculatedCostUsd: usage.calculatedCostUsd,
+      },
+      createdAt: new Date().toISOString(),
+    });
+  };
+  const textExecutor = new ProviderDocumentTextExecutor(
+    textExecution,
+    recordUsage,
+    { supabase, jobId: job.jobId },
+  );
   await repository.appendEvent({
     eventId: randomUUID(),
     jobId: job.jobId,
@@ -345,7 +410,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
   });
   const preparedJob = job.checkpoint.orchestration
     ? job
-    : await prepareIntake({ job, repository, openai });
+    : await prepareIntake({ job, repository, textExecutor });
   if (preparedJob.status === "awaiting_user_input") {
     return {
       state: preparedJob.status,
@@ -354,17 +419,13 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       progress: preparedJob.progress,
     };
   }
-  const documentModel =
-    preparedJob.checkpoint.executionSnapshot?.modelId ??
-    process.env.OPENAI_DOCUMENT_MODEL ??
-    "gpt-5.2";
   const imageModel =
     process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5";
   const service = new DocumentV2JobService(
     repository,
     {
       generator: new ModelDocumentComponentGenerator(
-        new OpenAIStructuredComponentModel(openai, documentModel),
+        new OpenAIStructuredComponentModel(textExecutor),
       ),
       validator: new MatureDocumentComponentValidator(),
       figureAssetMaterializer: new ValidatedFigureAssetPipeline(

@@ -2157,6 +2157,13 @@ export async function POST(request: Request) {
                 kind: previousContent ? "previous_message" : "prompt",
                 sourceIds: previousContent ? ["previous-assistant-message"] : [],
               },
+              textExecution: {
+                provider: modelOption.provider,
+                requestedModelId: modelOption.model,
+                resolvedModelId: modelOption.model,
+                maxOutputTokens: modelOption.maxOutputTokens,
+                allowProviderFallback: false,
+              },
             });
             await documentTrace?.event({
               stage: "pipeline_selection",

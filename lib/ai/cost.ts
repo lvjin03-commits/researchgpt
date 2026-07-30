@@ -12,6 +12,11 @@ type ModelPrice = {
 };
 
 const MODEL_PRICES: Record<string, ModelPrice> = {
+  "gpt-5.2": {
+    inputPerMillion: 1.75,
+    cachedInputPerMillion: 0.175,
+    outputPerMillion: 14,
+  },
   "deepseek-v4-flash": {
     inputPerMillion: 0.14,
     cachedInputPerMillion: 0.014,
