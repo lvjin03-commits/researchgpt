@@ -15,6 +15,11 @@ const GeneratedComponentEnvelopeSchema = z
     payload: GeneratedComponentPayloadSchema,
   })
   .strict();
+const RawComponentEnvelopeSchema = z
+  .object({
+    payload: z.record(z.string(), z.unknown()),
+  })
+  .passthrough();
 
 export class OpenAIStructuredComponentModel implements StructuredComponentModel {
   constructor(
@@ -31,7 +36,10 @@ export class OpenAIStructuredComponentModel implements StructuredComponentModel 
       operation: "component.generate",
       componentKey: input.componentKey,
       schemaName: input.schemaName,
-      schema: GeneratedComponentEnvelopeSchema,
+      schema:
+        this.executor.profile?.provider === "deepseek"
+          ? RawComponentEnvelopeSchema
+          : GeneratedComponentEnvelopeSchema,
       systemInstruction: input.systemInstruction,
       userInstruction: input.componentInstruction,
     });

@@ -344,6 +344,7 @@ async function verifyDeterministicNormalizationAndPreciseResume() {
         type: "paragraph",
         role: "abstract",
         text: "```text\nAbstract: Mature abstract content.\n```",
+        caption: "This unknown field must not reject valid prose.",
         citationIds: [],
         figureRequestIndexes: [],
       },
@@ -368,6 +369,7 @@ async function verifyDeterministicNormalizationAndPreciseResume() {
     ],
   });
   assert.equal(normalized.blocks[0].text, "Mature abstract content.");
+  assert.equal("caption" in normalized.blocks[0], false);
   assert.equal(normalized.blocks[1].caption, "Comparison");
   assert.equal(normalized.figureRequests[0].caption, "Processing route.");
 

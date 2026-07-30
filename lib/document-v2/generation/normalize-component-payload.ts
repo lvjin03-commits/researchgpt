@@ -9,12 +9,24 @@ function cleanText(value: unknown): unknown {
     : value;
 }
 
+function pick(
+  source: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  return Object.fromEntries(
+    fields
+      .filter((field) => source[field] !== undefined)
+      .map((field) => [field, source[field]]),
+  );
+}
+
 export function normalizeGeneratedComponentPayload(raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
-  const payload = structuredClone(raw) as Record<string, unknown>;
+  const source = structuredClone(raw) as Record<string, unknown>;
 
-  if (payload.kind === "title" && typeof payload.title === "string") {
-    payload.title = payload.title
+  if (source.kind === "title" && typeof source.title === "string") {
+    const payload = pick(source, ["kind", "title"]);
+    payload.title = source.title
       .replace(MARKDOWN_FENCE, "")
       .replace(/\s*\r?\n+\s*/g, " ")
       .replace(/\s{2,}/g, " ")
@@ -22,15 +34,38 @@ export function normalizeGeneratedComponentPayload(raw: unknown): unknown {
     return payload;
   }
 
-  if (payload.kind !== "blocks") return payload;
-  if (Array.isArray(payload.blocks)) {
-    payload.blocks = payload.blocks.map((candidate) => {
+  if (source.kind === "references") {
+    return pick(source, ["kind", "referenceIds"]);
+  }
+  if (source.kind !== "blocks") return source;
+  const payload = pick(source, ["kind", "blocks", "figureRequests"]);
+  if (Array.isArray(source.blocks)) {
+    payload.blocks = source.blocks.map((candidate) => {
       if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
         return candidate;
       }
-      const block = { ...candidate } as Record<string, unknown>;
-      block.text = cleanText(block.text);
-      block.caption = cleanText(block.caption);
+      const rawBlock = candidate as Record<string, unknown>;
+      const fields =
+        rawBlock.type === "heading"
+          ? ["type", "level", "text"]
+          : rawBlock.type === "paragraph"
+            ? [
+                "type",
+                "role",
+                "text",
+                "citationIds",
+                "figureRequestIndexes",
+              ]
+            : rawBlock.type === "keywords"
+              ? ["type", "values"]
+              : rawBlock.type === "table"
+                ? ["type", "caption", "columns", "rows"]
+                : Object.keys(rawBlock);
+      const block = pick(rawBlock, fields);
+      if (block.text !== undefined) block.text = cleanText(block.text);
+      if (block.caption !== undefined) {
+        block.caption = cleanText(block.caption);
+      }
       if (block.role === "abstract" && typeof block.text === "string") {
         block.text = block.text.replace(ABSTRACT_LABEL, "").trim();
       }
@@ -40,12 +75,21 @@ export function normalizeGeneratedComponentPayload(raw: unknown): unknown {
       return block;
     });
   }
-  if (Array.isArray(payload.figureRequests)) {
-    payload.figureRequests = payload.figureRequests.map((candidate) => {
+  if (Array.isArray(source.figureRequests)) {
+    payload.figureRequests = source.figureRequests.map((candidate) => {
       if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
         return candidate;
       }
-      const request = { ...candidate } as Record<string, unknown>;
+      const request = pick(candidate as Record<string, unknown>, [
+        "slotId",
+        "figureType",
+        "title",
+        "caption",
+        "altText",
+        "contentBrief",
+        "placementAfterBlockIndex",
+        "sourceEvidenceIds",
+      ]);
       for (const field of ["title", "caption", "altText", "contentBrief"]) {
         request[field] = cleanText(request[field]);
       }
