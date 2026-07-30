@@ -605,6 +605,36 @@ export class DocumentV2JobService {
       const failedAt = this.clock().toISOString();
       const technicalMessage =
         error instanceof Error ? error.message : String(error);
+      const recoveryAttempt = job.checkpoint.recoveryAttempt + 1;
+      if (recoveryAttempt < 3) {
+        job = await this.repository.save(
+          DocumentJobSchema.parse({
+            ...job,
+            status: "queued",
+            resumable: true,
+            leaseOwner: undefined,
+            leaseExpiresAt: undefined,
+            checkpoint: {
+              ...job.checkpoint,
+              recoveryAttempt,
+              savedAt: failedAt,
+            },
+            updatedAt: failedAt,
+          }),
+          job.revision,
+        );
+        await this.event(
+          job,
+          job.stage,
+          "retrying",
+          `最终文件处理暂时失败，将从当前阶段重试（${recoveryAttempt}/3）。`,
+          undefined,
+          recoveryAttempt,
+          "document_finalization_retry",
+          technicalMessage,
+        );
+        return this.snapshot(jobId);
+      }
       job = await this.repository.save(
         DocumentJobSchema.parse({
           ...job,
@@ -648,10 +678,11 @@ export class DocumentV2JobService {
         resumable: false,
         leaseOwner: undefined,
         leaseExpiresAt: undefined,
-        checkpoint: {
-          ...job.checkpoint,
-          renderedArtifactId: artifact!.artifactId,
-          savedAt: finishedAt,
+          checkpoint: {
+            ...job.checkpoint,
+            renderedArtifactId: artifact!.artifactId,
+            recoveryAttempt: 0,
+            savedAt: finishedAt,
         },
         updatedAt: finishedAt,
         finishedAt,

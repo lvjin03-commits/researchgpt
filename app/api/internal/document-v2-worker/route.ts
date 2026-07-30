@@ -120,13 +120,19 @@ async function handleWorker(request: Request) {
         ...result,
       });
     } catch (error) {
+      const normalizedError =
+        error instanceof Error
+          ? { message: error.message, stack: error.stack }
+          : typeof error === "object" && error !== null
+            ? { message: JSON.stringify(error), stack: undefined }
+            : { message: String(error), stack: undefined };
       console.error("[document-v2-worker]", {
         invocationId,
         operation: "worker.tick.failed",
         durationMs: Date.now() - startedAt,
         requestedJobId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
+        error: normalizedError.message,
+        stack: normalizedError.stack,
       });
     }
   });
