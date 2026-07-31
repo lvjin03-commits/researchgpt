@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { DocumentOrchestrationStateSchema } from "../orchestration/contracts";
-import { VerifiedReferenceSchema } from "../contracts";
+import { DocumentRequestSchema, VerifiedReferenceSchema } from "../contracts";
+import { TemplateResolutionSchema } from "../templates/contracts";
+import { DocumentSkeletonSchema, SectionPlanSchema } from "../planning/contracts";
 
 const IdentifierSchema = z.string().trim().min(1).max(120);
 const DateTimeSchema = z.iso.datetime({ offset: true });
@@ -177,6 +179,18 @@ export const DocumentJobCheckpointSchema = z
         targetLength: z.number().int().min(100).max(100_000).optional(),
         verifiedReferences: z.array(VerifiedReferenceSchema).max(500),
         evidence: z.array(DocumentEvidenceItemSchema).max(2_000).default([]),
+      })
+      .strict()
+      .optional(),
+    planning: z
+      .object({
+        schemaVersion: z.literal(1),
+        request: DocumentRequestSchema,
+        template: TemplateResolutionSchema,
+        evidenceReferences: z.array(VerifiedReferenceSchema).max(500),
+        evidenceSnapshotId: IdentifierSchema.optional(),
+        skeleton: DocumentSkeletonSchema.optional(),
+        sectionPlans: z.array(SectionPlanSchema).max(100),
       })
       .strict()
       .optional(),

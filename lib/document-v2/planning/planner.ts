@@ -9,10 +9,33 @@ import {
   type TemplateResolution,
 } from "../templates/contracts";
 import {
+  DocumentSkeletonDraftSchema,
+  DocumentSkeletonSchema,
+  SectionPlanDraftSchema,
+  SectionPlanSchema,
   SemanticOutlineProposalSchema,
+  type DocumentSkeleton,
+  type SectionPlan,
   type SemanticOutlineProposal,
 } from "./contracts";
 
+export interface HierarchicalOutlinePlanner {
+  createSkeleton(input: {
+    request: DocumentRequest;
+    template: TemplateResolution;
+    minimumSections: number;
+    maximumSections: number;
+  }): Promise<unknown>;
+  planSection(input: {
+    request: DocumentRequest;
+    template: TemplateResolution;
+    skeleton: DocumentSkeleton;
+    section: DocumentSkeleton["sections"][number];
+    availableEvidenceIds: ReadonlyArray<string>;
+  }): Promise<unknown>;
+}
+
+/** Compatibility contract for archived source snapshots; the production route uses HierarchicalOutlinePlanner. */
 export interface SemanticOutlinePlanner {
   propose(input: {
     request: DocumentRequest;
@@ -39,7 +62,78 @@ const ASSET_SPECIFICATION_PATTERN =
   /(?:^|\n)\s*(?:图|表|fig(?:ure)?|table)\s*\d+\s*[（(:：]/im;
 const MAX_SECTION_PURPOSE_CHARACTERS = 650;
 const MAX_SUBSECTION_MARKERS_PER_SECTION = 4;
-const MAX_OUTLINE_ATTEMPTS = 2;
+
+export function materializeDocumentSkeleton(input: unknown): DocumentSkeleton {
+  const draft = DocumentSkeletonDraftSchema.parse(input);
+  return DocumentSkeletonSchema.parse({
+    ...draft,
+    schemaVersion: 1,
+    sections: draft.sections.map((section, order) => ({
+      ...section,
+      sectionId: `section-${String(order + 1).padStart(2, "0")}`,
+      order,
+    })),
+    figures: draft.figures.map((figure, index) => ({
+      ...figure,
+      figureIntentId: `figure-intent-${String(index + 1).padStart(2, "0")}`,
+    })),
+  });
+}
+
+export function materializeSectionPlan(input: {
+  sectionId: string;
+  draft: unknown;
+}): SectionPlan {
+  return SectionPlanSchema.parse({
+    ...SectionPlanDraftSchema.parse(input.draft),
+    schemaVersion: 1,
+    sectionId: input.sectionId,
+    skeletonVersion: 1,
+  });
+}
+
+export function assembleSemanticOutline(input: {
+  skeleton: DocumentSkeleton;
+  sectionPlans: SectionPlan[];
+}): SemanticOutlineProposal {
+  const plans = new Map(input.sectionPlans.map((plan) => [plan.sectionId, plan]));
+  if (plans.size !== input.skeleton.sections.length) {
+    throw new DocumentPlanningError("Every skeleton section requires exactly one section plan.");
+  }
+  return SemanticOutlineProposalSchema.parse({
+    reviewThesis: input.skeleton.reviewThesis,
+    scopeBoundary: input.skeleton.scopeBoundary,
+    reviewQuestions: input.skeleton.reviewQuestions,
+    conclusionHeading: input.skeleton.conclusionHeading,
+    sections: input.skeleton.sections.map((section) => {
+      const plan = plans.get(section.sectionId);
+      if (!plan) throw new DocumentPlanningError(`Missing plan for ${section.sectionId}.`);
+      return {
+        heading: section.heading,
+        question: section.question,
+        purpose: section.purpose,
+        relativeWeight: section.relativeWeight,
+        contributionToThesis: plan.contributionToThesis,
+        comparisonDimensions: plan.comparisonDimensions,
+        applicableConditions: plan.applicableConditions,
+        failureModes: plan.failureModes,
+        requiredEvidenceIds: plan.requiredEvidenceIds,
+      };
+    }),
+    figures: input.skeleton.figures.map((figure) => {
+      const section = input.skeleton.sections[figure.sectionIndex];
+      const plan = section ? plans.get(section.sectionId) : undefined;
+      return {
+        sectionIndex: figure.sectionIndex,
+        figureType: figure.figureType,
+        purpose: figure.purpose,
+        questionAnswered: figure.questionAnswered,
+        claimsRepresented: figure.claimsRepresented,
+        requiredEvidenceIds: figure.evidenceRequired ? (plan?.requiredEvidenceIds ?? []) : [],
+      };
+    }),
+  });
+}
 
 function outlineSemanticErrors(
   proposal: SemanticOutlineProposal,
@@ -133,12 +227,12 @@ function allocateByWeight(
   return allocated;
 }
 
-export async function createDocumentPlanFromTemplate(input: {
+export function createDocumentPlanFromProposal(input: {
   request: DocumentRequest;
   template: TemplateResolution;
-  outlinePlanner: SemanticOutlinePlanner;
+  proposal: SemanticOutlineProposal;
   availableEvidenceIds?: string[];
-}): Promise<DocumentPlan> {
+}): DocumentPlan {
   const request = DocumentRequestSchema.parse(input.request);
   const template = TemplateResolutionSchema.parse(input.template);
   const sectionBlueprint = template.componentBlueprints.find(
@@ -151,33 +245,11 @@ export async function createDocumentPlanFromTemplate(input: {
   }
   const availableEvidenceIds = [...new Set(input.availableEvidenceIds ?? [])];
   const availableEvidenceSet = new Set(availableEvidenceIds);
-  let proposal: SemanticOutlineProposal | undefined;
-  let repairFeedback: string | undefined;
-  for (let attempt = 1; attempt <= MAX_OUTLINE_ATTEMPTS; attempt += 1) {
-    const candidate = SemanticOutlineProposalSchema.parse(
-      await input.outlinePlanner.propose({
-        request,
-        template,
-        minimumSections: sectionBlueprint.minimumCount,
-        maximumSections: sectionBlueprint.maximumCount,
-        availableEvidenceIds,
-        repairFeedback,
-      }),
-    );
-    const semanticErrors = outlineSemanticErrors(
-      candidate,
-      availableEvidenceSet,
-      request.language,
-    );
-    if (semanticErrors.length === 0) {
-      proposal = candidate;
-      break;
-    }
-    repairFeedback = semanticErrors.join(" ");
-  }
-  if (!proposal) {
+  const proposal = SemanticOutlineProposalSchema.parse(input.proposal);
+  const semanticErrors = outlineSemanticErrors(proposal, availableEvidenceSet, request.language);
+  if (semanticErrors.length > 0) {
     throw new DocumentPlanningError(
-      `Outline does not contain valid body sections. ${repairFeedback ?? ""}`.trim(),
+      `Outline does not contain valid body sections. ${semanticErrors.join(" ")}`,
     );
   }
   if (
@@ -306,4 +378,28 @@ export async function createDocumentPlanFromTemplate(input: {
       allowedSourceIds: [evidenceId],
     })),
   });
+}
+
+export async function createDocumentPlanFromTemplate(input: {
+  request: DocumentRequest;
+  template: TemplateResolution;
+  outlinePlanner: SemanticOutlinePlanner;
+  availableEvidenceIds?: string[];
+}): Promise<DocumentPlan> {
+  const minimumSections = input.template.componentBlueprints.find((item) => item.type === "section")?.minimumCount ?? 1;
+  const maximumSections = input.template.componentBlueprints.find((item) => item.type === "section")?.maximumCount ?? 100;
+  let repairFeedback: string | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const proposal = await input.outlinePlanner.propose({
+      request: input.request, template: input.template, minimumSections, maximumSections,
+      availableEvidenceIds: input.availableEvidenceIds ?? [], repairFeedback,
+    });
+    try {
+      return createDocumentPlanFromProposal({ ...input, proposal });
+    } catch (error) {
+      if (!(error instanceof DocumentPlanningError) || attempt === 1) throw error;
+      repairFeedback = error.message;
+    }
+  }
+  throw new DocumentPlanningError("Outline planning failed.");
 }

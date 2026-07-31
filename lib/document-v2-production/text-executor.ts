@@ -30,6 +30,8 @@ export type DocumentModelUsage = {
   providerRequestId?: string;
   operation: string;
   componentKey?: string;
+  requestedMaxOutputTokens: number;
+  effectiveMaxOutputTokens: number;
   inputFingerprint: string;
   inputTokens: number;
   cachedInputTokens: number;
@@ -44,6 +46,7 @@ export interface DocumentStructuredTextExecutor {
   generate<T>(input: {
     operation: string;
     componentKey?: string;
+    maxOutputTokens?: number;
     schemaName: string;
     schema: ZodType<T>;
     systemInstruction: string;
@@ -127,6 +130,7 @@ function fingerprint(input: {
   schemaName: string;
   systemInstruction: string;
   userInstruction: string;
+  maxOutputTokens: number;
 }) {
   return sha256Canonical(input);
 }
@@ -170,6 +174,7 @@ export class ProviderDocumentTextExecutor
   async generate<T>(input: {
     operation: string;
     componentKey?: string;
+    maxOutputTokens?: number;
     schemaName: string;
     schema: ZodType<T>;
     systemInstruction: string;
@@ -177,6 +182,10 @@ export class ProviderDocumentTextExecutor
     validateCandidate?: (value: T) => void;
   }): Promise<T> {
     const startedAt = Date.now();
+    const effectiveMaxOutputTokens = Math.min(
+      input.maxOutputTokens ?? this.profile.maxOutputTokens,
+      this.profile.maxOutputTokens,
+    );
     const inputFingerprint = fingerprint({
       profile: this.profile,
       operation: input.operation,
@@ -184,6 +193,7 @@ export class ProviderDocumentTextExecutor
       schemaName: input.schemaName,
       systemInstruction: input.systemInstruction,
       userInstruction: input.userInstruction,
+      maxOutputTokens: effectiveMaxOutputTokens,
     });
     const schemaVersion = sha256Canonical(z.toJSONSchema(input.schema));
     const executionKey = sha256Canonical({
@@ -372,7 +382,7 @@ export class ProviderDocumentTextExecutor
           model: this.profile.resolvedModelId,
           instructions: input.systemInstruction,
           input: input.userInstruction,
-          max_output_tokens: this.profile.maxOutputTokens,
+          max_output_tokens: effectiveMaxOutputTokens,
           text: {
             format: zodTextFormat(input.schema, input.schemaName),
           },
@@ -396,7 +406,7 @@ export class ProviderDocumentTextExecutor
       } else {
         const response = await this.client.chat.completions.create({
           model: this.profile.resolvedModelId,
-          max_tokens: this.profile.maxOutputTokens,
+          max_tokens: effectiveMaxOutputTokens,
           response_format: { type: "json_object" },
           messages: [
             {
@@ -473,7 +483,8 @@ export class ProviderDocumentTextExecutor
             auxiliary_content_length: auxiliaryText.length,
             auxiliary_content_types: auxiliaryContent.map((item) => item.type),
             provider_response_saved_at: responseReceivedAt,
-            requested_max_tokens: this.profile.maxOutputTokens,
+            requested_max_tokens: input.maxOutputTokens ?? this.profile.maxOutputTokens,
+            effective_max_tokens: effectiveMaxOutputTokens,
             parser_version: DOCUMENT_RESPONSE_PARSER_VERSION,
             repair_pipeline_version: DOCUMENT_RESPONSE_REPAIR_VERSION,
             schema_version: schemaVersion,
@@ -640,6 +651,8 @@ export class ProviderDocumentTextExecutor
         providerRequestId,
         operation: input.operation,
         componentKey: input.componentKey,
+        requestedMaxOutputTokens: input.maxOutputTokens ?? this.profile.maxOutputTokens,
+        effectiveMaxOutputTokens,
         inputFingerprint,
         inputTokens,
         cachedInputTokens,

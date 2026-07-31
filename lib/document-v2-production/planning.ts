@@ -6,8 +6,11 @@ import {
   type VerifiedReference,
 } from "@/lib/document-v2/contracts";
 import type { DocumentTemplateMatcher } from "@/lib/document-v2/templates/resolver";
-import type { SemanticOutlinePlanner } from "@/lib/document-v2/planning/planner";
-import { SemanticOutlineProposalSchema } from "@/lib/document-v2/planning/contracts";
+import type { HierarchicalOutlinePlanner } from "@/lib/document-v2/planning/planner";
+import {
+  DocumentSkeletonDraftSchema,
+  SectionPlanDraftSchema,
+} from "@/lib/document-v2/planning/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
 
 const UnderstoodRequestSchema = z
@@ -119,108 +122,35 @@ export class OpenAITemplateMatcher implements DocumentTemplateMatcher {
   }
 }
 
-export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
+export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlanner {
   constructor(private readonly executor: DocumentStructuredTextExecutor) {}
 
-  async propose(input: Parameters<SemanticOutlinePlanner["propose"]>[0]) {
-    const OutlineResponseSchema = z
-      .object({
-        reviewThesis: z.string().trim().min(1).max(2_000),
-        scopeBoundary: z.string().trim().min(1).max(2_000),
-        reviewQuestions: z
-          .array(z.string().trim().min(1).max(500))
-          .min(1)
-          .max(12),
-        sections: z
-          .array(
-            z
-              .object({
-                heading: z.string().trim().min(1).max(500),
-                question: z.string().trim().min(1).max(500),
-                purpose: z.string().trim().min(1).max(1_000),
-                contributionToThesis: z
-                  .string()
-                  .trim()
-                  .min(1)
-                  .max(1_000),
-                comparisonDimensions: z
-                  .array(z.string().trim().min(1).max(300))
-                  .max(12),
-                applicableConditions: z
-                  .array(z.string().trim().min(1).max(500))
-                  .max(12),
-                failureModes: z
-                  .array(z.string().trim().min(1).max(500))
-                  .max(12),
-                relativeWeight: z.number().positive().max(100),
-                requiredEvidenceIds: z.array(z.string().min(1).max(120)).max(500),
-              })
-              .strict(),
-          )
-          .min(input.minimumSections)
-          .max(input.maximumSections),
-        conclusionHeading: z.string().trim().min(1).max(500),
-        figures: z
-          .array(
-            z
-              .object({
-                sectionIndex: z.number().int().min(0).max(99),
-                figureType: z.enum([
-                  "mechanism_diagram",
-                  "process_flow",
-                  "conceptual_framework",
-                  "comparison_diagram",
-                  "data_plot",
-                ]),
-                purpose: z.string().trim().min(1).max(1_000),
-                questionAnswered: z.string().trim().min(1).max(500),
-                claimsRepresented: z
-                  .array(z.string().trim().min(1).max(500))
-                  .min(1)
-                  .max(12),
-                requiredEvidenceIds: z
-                  .array(z.string().min(1).max(120))
-                  .max(500),
-              })
-              .strict(),
-          )
-          .max(4),
-      })
-      .strict();
-    const response = await this.executor.generate({
-      operation: "outline.plan",
-      schemaName: "document_outline_v1",
-      schema: OutlineResponseSchema,
-      validateCandidate: (candidate) => {
-        SemanticOutlineProposalSchema.parse(candidate);
-      },
+  async createSkeleton(input: Parameters<HierarchicalOutlinePlanner["createSkeleton"]>[0]) {
+    return this.executor.generate({
+      operation: "outline.skeleton",
+      componentKey: "document-skeleton",
+      maxOutputTokens: 3_000,
+      schemaName: "document_skeleton_v1",
+      schema: DocumentSkeletonDraftSchema.refine(
+        (value) => value.sections.length >= input.minimumSections && value.sections.length <= input.maximumSections,
+        "Section count is outside the template limits.",
+      ),
       systemInstruction: [
-        "Plan the mature semantic structure of one SCI review document.",
+        "Plan only the compact semantic skeleton of one SCI review document.",
         "Establish one evidence-informed review thesis and a clear scope boundary before planning sections.",
-        "Each section must answer one explicit review question and state how it advances the review thesis.",
-        "For technically mature sections, identify comparison dimensions, applicable conditions, and failure modes instead of returning textbook-like topic lists.",
-        "Return only an outline; do not write paragraphs.",
+        "For each body section return only heading, question, concise purpose, and relative weight.",
+        "Do not plan section details, evidence mappings, or write paragraphs yet.",
         "Plan body sections only. Title, abstract, keywords, conclusion, and references are fixed template components created separately.",
-        "Never turn user instructions such as generating a title, abstract, keywords, figures, tables, or references into body sections.",
-        "Each section purpose must be a concise scientific scope, not a production checklist, numbered figure/table specification, or list of many subsection directives.",
-        "Split scientifically dense material across body sections while staying within the supplied limits.",
         "Use the requested language for headings.",
         "Stay within the supplied section limits.",
-        "Use only availableEvidenceIds; never invent evidence.",
-        "Choose section order and relative weights from scientific logic.",
         "Plan at most four essential figures for the whole document. Each figure must belong to one body section and state its scientific purpose. Do not plan decorative or redundant figures.",
-        "The runtime currently has no verified dataset assets, so data_plot is unavailable. Never plan data_plot. Omit the figure when no allowed figure type preserves its scientific purpose.",
-        "Bind each scientific figure only to relevant IDs from availableEvidenceIds through requiredEvidenceIds. Use an empty list only for a clearly conceptual, non-quantitative schematic.",
-        input.repairFeedback
-          ? `The previous outline was rejected. Correct all of these issues: ${input.repairFeedback}`
-          : "",
+        "Never plan data_plot because no verified dataset is supplied at this stage.",
       ].join(" "),
       userInstruction: JSON.stringify({
         topic: input.request.userRequirements.topic,
         requirements: input.request.userRequirements.specialInstructions ?? [],
         minimumSections: input.minimumSections,
         maximumSections: input.maximumSections,
-        availableEvidenceIds: input.availableEvidenceIds,
         fixedComponentsHandledByTemplate: input.template.componentBlueprints
           .filter((component) => component.type !== "section")
           .map((component) => component.type),
@@ -231,7 +161,6 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
         figureContract: {
           maximumCount: 4,
           plannedBeforeContentGeneration: true,
-          verifiedDatasetIds: [],
           allowedFigureTypes: [
             "mechanism_diagram",
             "process_flow",
@@ -239,13 +168,38 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
             "comparison_diagram",
           ],
           dataPlotPolicy: "forbidden_without_verified_dataset",
-          requiredFields: [
-            "questionAnswered",
-            "claimsRepresented",
-          ],
         },
       }),
     });
-    return SemanticOutlineProposalSchema.parse(response);
+  }
+
+  async planSection(input: Parameters<HierarchicalOutlinePlanner["planSection"]>[0]) {
+    return this.executor.generate({
+      operation: "outline.section_plan",
+      componentKey: input.section.sectionId,
+      maxOutputTokens: 1_800,
+      schemaName: "document_section_plan_v1",
+      schema: SectionPlanDraftSchema,
+      validateCandidate: (candidate) => {
+        const available = new Set(input.availableEvidenceIds);
+        for (const id of candidate.requiredEvidenceIds) {
+          if (!available.has(id)) throw new Error(`Unavailable evidence ID: ${id}`);
+        }
+      },
+      systemInstruction: [
+        "Plan the mature scientific argument for exactly one already-approved body section.",
+        "Do not rename, split, reorder, or add sections and do not write prose paragraphs.",
+        "State how this section advances the document thesis, its comparison dimensions, applicable conditions, failure modes, and evidence bindings.",
+        "Use only IDs from availableEvidenceIds. Never invent evidence.",
+      ].join(" "),
+      userInstruction: JSON.stringify({
+        topic: input.request.userRequirements.topic,
+        reviewThesis: input.skeleton.reviewThesis,
+        scopeBoundary: input.skeleton.scopeBoundary,
+        section: input.section,
+        neighboringSections: input.skeleton.sections.map(({ sectionId, heading, question }) => ({ sectionId, heading, question })),
+        availableEvidenceIds: input.availableEvidenceIds,
+      }),
+    });
   }
 }

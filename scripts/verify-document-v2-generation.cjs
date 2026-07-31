@@ -48,7 +48,7 @@ const {
   OpenAIStructuredComponentModel,
 } = require("../lib/document-v2-production/openai-adapters.ts");
 const {
-  OpenAISemanticOutlinePlanner,
+  ModelHierarchicalOutlinePlanner,
 } = require("../lib/document-v2-production/planning.ts");
 const {
   FigureAssetQualityError,
@@ -64,7 +64,10 @@ const {
 } = require("../lib/document-v2/orchestration/orchestrator.ts");
 const {
   DocumentPlanningError,
+  assembleSemanticOutline,
   createDocumentPlanFromTemplate,
+  materializeDocumentSkeleton,
+  materializeSectionPlan,
 } = require("../lib/document-v2/planning/planner.ts");
 const {
   renderFinalDocumentSpecToDocx,
@@ -802,10 +805,16 @@ async function verifyOpenAiComponentSchemaHasObjectRoot() {
 }
 
 async function verifyOutlineSchemaUsesTemplateBounds() {
-  const planner = new OpenAISemanticOutlinePlanner({
+  const planner = new ModelHierarchicalOutlinePlanner({
+    profile: { maxOutputTokens: 3200 },
     async generate(input) {
+      assert.equal(input.operation, "outline.skeleton");
+      assert.equal(input.maxOutputTokens, 3000);
       assert.equal(
         input.schema.safeParse({
+          reviewThesis: "x",
+          scopeBoundary: "y",
+          reviewQuestions: ["z"],
           sections: [],
           conclusionHeading: "Conclusion",
           figures: [],
@@ -825,13 +834,7 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
             heading: "Mechanism",
             question: "How are reversible junctions formed?",
             purpose: "Explain the mechanism.",
-            contributionToThesis:
-              "Connect junction formation to processing history.",
-            comparisonDimensions: ["junction lifetime"],
-            applicableConditions: ["reversible physical networks"],
-            failureModes: ["kinetic trapping"],
             relativeWeight: 1,
-            requiredEvidenceIds: [],
           },
         ],
         conclusionHeading: "Conclusion",
@@ -839,7 +842,7 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
       };
     },
   });
-  const proposal = await planner.propose({
+  const proposal = await planner.createSkeleton({
     request: {
       userRequirements: {
         topic: "Physical gels",
@@ -849,10 +852,34 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
     template: { componentBlueprints: [] },
     minimumSections: 1,
     maximumSections: 2,
-    availableEvidenceIds: [],
   });
   assert.equal(proposal.sections.length, 1);
   assert.match(proposal.reviewThesis, /Processing history/);
+}
+
+function verifyHierarchicalOutlineAssembly() {
+  const skeleton = materializeDocumentSkeleton({
+    reviewThesis: "Preparation history controls gel structure.",
+    scopeBoundary: "Reversible physical gels.",
+    reviewQuestions: ["How does processing control structure?"],
+    sections: [
+      { heading: "Pathways", question: "Which routes exist?", purpose: "Compare routes.", relativeWeight: 1 },
+      { heading: "Properties", question: "How is function controlled?", purpose: "Connect structure and behavior.", relativeWeight: 2 },
+    ],
+    conclusionHeading: "Conclusions",
+    figures: [],
+  });
+  assert.deepEqual(skeleton.sections.map((item) => item.sectionId), ["section-01", "section-02"]);
+  assert.throws(() => materializeDocumentSkeleton({
+    reviewThesis: "x", scopeBoundary: "y", reviewQuestions: ["z"],
+    sections: [{ sectionId: "model-id", heading: "h", question: "q", purpose: "p", relativeWeight: 1 }],
+    conclusionHeading: "c", figures: [],
+  }));
+  const sectionPlans = skeleton.sections.map((section) => materializeSectionPlan({
+    sectionId: section.sectionId,
+    draft: { contributionToThesis: "Advance the thesis.", comparisonDimensions: [], applicableConditions: [], failureModes: [], requiredEvidenceIds: [] },
+  }));
+  assert.equal(assembleSemanticOutline({ skeleton, sectionPlans }).sections.length, 2);
 }
 
 async function verifyManualFigureNumbersAreRejected() {
@@ -913,6 +940,7 @@ async function verifyManualFigureNumbersAreRejected() {
 async function main() {
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
+  verifyHierarchicalOutlineAssembly();
   await verifyManualFigureNumbersAreRejected();
   await verifyCompleteGenerationFlow();
   await verifyPlannerRejectsInvalidOutline();

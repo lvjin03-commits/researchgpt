@@ -24,12 +24,17 @@ import {
 } from "./text-executor";
 import { requireDocumentV2WorkerConfig } from "./runtime-config";
 import {
-  OpenAISemanticOutlinePlanner,
+  ModelHierarchicalOutlinePlanner,
   DocumentClarificationNeededError,
   understandDocumentRequest,
 } from "./planning";
 import { resolveDocumentTemplate } from "@/lib/document-v2/templates/resolver";
-import { createDocumentPlanFromTemplate } from "@/lib/document-v2/planning/planner";
+import {
+  assembleSemanticOutline,
+  createDocumentPlanFromProposal,
+  materializeDocumentSkeleton,
+  materializeSectionPlan,
+} from "@/lib/document-v2/planning/planner";
 import { createDocumentOrchestrationState } from "@/lib/document-v2/orchestration/orchestrator";
 import type { FigureAsset } from "@/lib/document-v2/assets/contracts";
 import type { FinalDocumentSpec } from "@/lib/document-v2/contracts";
@@ -123,221 +128,167 @@ async function prepareIntake(input: {
   const intake = input.job.checkpoint.intake;
   if (!intake) throw new Error("Document intake payload is missing.");
   let job = input.job;
-  const advance = async (
-    stage: "understanding" | "template_resolution" | "evidence_acquisition" | "planning",
+  const saveAndContinue = async (
+    planning: NonNullable<DocumentJob["checkpoint"]["planning"]>,
     progress: number,
-    message: string,
-    operation = `stage.${stage}`,
   ) => {
     const now = new Date().toISOString();
-    job = await input.repository.save(
-      DocumentJobSchema.parse({
-        ...job,
-        status: "running",
-        stage,
-        progress,
-        updatedAt: now,
-        startedAt: job.startedAt ?? now,
-      }),
-      job.revision,
-    );
+    return input.repository.save(DocumentJobSchema.parse({
+      ...job,
+      status: "queued",
+      stage: "planning",
+      progress,
+      leaseOwner: undefined,
+      leaseExpiresAt: undefined,
+      checkpoint: { ...job.checkpoint, planning, savedAt: now },
+      startedAt: job.startedAt ?? now,
+      updatedAt: now,
+    }), job.revision);
+  };
+  const logSaved = async (operation: string, message: string, metadata: Record<string, string | number | boolean | null>, componentKey?: string) => {
     await input.repository.appendEvent({
-      eventId: randomUUID(),
-      jobId: job.jobId,
-      stage,
-      status: "started",
-      message,
-      category: stage === "evidence_acquisition" ? "validation" : "model",
-      operation,
-      correlationId: job.jobId,
-      metadata: {
-        jobRevision: job.revision,
-        provider: input.textExecutor.profile.provider,
-        modelId: input.textExecutor.profile.resolvedModelId,
-      },
-      createdAt: now,
+      eventId: randomUUID(), jobId: job.jobId, stage: "planning", status: "succeeded",
+      message, category: operation === "outline.assemble" ? "validation" : "model",
+      operation, correlationId: job.jobId, componentKey, metadata,
+      createdAt: new Date().toISOString(),
     });
   };
-  await advance("understanding", 2, "正在理解您的文档要求。");
-  const understandingStartedAt = Date.now();
-  let understood;
-  try {
-    understood = await understandDocumentRequest(input.textExecutor, {
-      idempotencyKey: job.jobId,
-      instruction: intake.instruction,
-      source: intake.source,
-      language: intake.language,
-      targetLength: intake.targetLength,
-      verifiedReferences: intake.verifiedReferences,
+  const planner = new ModelHierarchicalOutlinePlanner(input.textExecutor);
+  let planning = job.checkpoint.planning;
+
+  if (!planning) {
+    const startedAt = new Date().toISOString();
+    job = await input.repository.save(DocumentJobSchema.parse({
+      ...job, status: "running", stage: "understanding", progress: 2,
+      startedAt: job.startedAt ?? startedAt, updatedAt: startedAt,
+    }), job.revision);
+    await input.repository.appendEvent({
+      eventId: randomUUID(), jobId: job.jobId, stage: "understanding", status: "started",
+      message: "Understanding the document request.", category: "model",
+      operation: "request.understand", correlationId: job.jobId,
+      metadata: { provider: input.textExecutor.profile.provider, modelId: input.textExecutor.profile.resolvedModelId },
+      createdAt: startedAt,
     });
-  } catch (error) {
-    if (!(error instanceof DocumentClarificationNeededError)) throw error;
-    const now = new Date().toISOString();
-    job = await input.repository.save(
-      DocumentJobSchema.parse({
+    let request;
+    try {
+      request = await understandDocumentRequest(input.textExecutor, {
+        idempotencyKey: job.jobId,
+        instruction: intake.instruction,
+        source: intake.source,
+        language: intake.language,
+        targetLength: intake.targetLength,
+        verifiedReferences: intake.verifiedReferences,
+      });
+    } catch (error) {
+      if (!(error instanceof DocumentClarificationNeededError)) throw error;
+      const now = new Date().toISOString();
+      job = await input.repository.save(DocumentJobSchema.parse({
         ...job,
         status: "awaiting_user_input",
-        clarification: {
-          questionId: randomUUID(),
-          field: "topic_or_scope",
-          question: error.question,
-          reason: error.reason,
-          required: true,
-        },
-        leaseOwner: undefined,
-        leaseExpiresAt: undefined,
-        checkpoint: {
-          ...job.checkpoint,
-          savedAt: now,
-        },
-        updatedAt: now,
-      }),
-      job.revision,
-    );
-    await input.repository.appendEvent({
-      eventId: randomUUID(),
-      jobId: job.jobId,
-      stage: "understanding",
-      status: "paused",
-      message: error.question,
-      category: "validation",
-      operation: "request.clarification_required",
-      correlationId: job.jobId,
-      metadata: { reason: error.reason },
-      createdAt: now,
+        clarification: { questionId: randomUUID(), field: "topic_or_scope", question: error.question, reason: error.reason, required: true },
+        leaseOwner: undefined, leaseExpiresAt: undefined,
+        checkpoint: { ...job.checkpoint, savedAt: now }, updatedAt: now,
+      }), job.revision);
+      await input.repository.appendEvent({
+        eventId: randomUUID(), jobId: job.jobId, stage: "understanding", status: "paused",
+        message: error.question, category: "validation", operation: "request.clarification_required",
+        correlationId: job.jobId, metadata: { reason: error.reason }, createdAt: now,
+      });
+      return job;
+    }
+    const template = await resolveDocumentTemplate({
+      request,
+      matcher: { async match({ candidates }) {
+        const candidate = candidates[0];
+        if (!candidate) throw new Error("No compatible document template is enabled.");
+        return { templateId: candidate.templateId, confidence: 1, rationale: "Resolved deterministically from template intent and compatibility." };
+      } },
+    });
+    const evidenceReferences = [...new Map([
+      ...(intake.verifiedReferences ?? []),
+      ...intake.evidence.map((item) => item.reference),
+    ].map((reference) => [reference.id, reference])).values()];
+    const evidenceSnapshotId = intake.evidence.length > 0
+      ? `evidence-${createHash("sha256").update(JSON.stringify(intake.evidence)).digest("hex").slice(0, 24)}`
+      : undefined;
+    planning = { schemaVersion: 1, request, template, evidenceReferences, evidenceSnapshotId, sectionPlans: [] };
+    job = await saveAndContinue(planning, 5);
+    await logSaved("planning.context.saved", "Document request, template, and evidence context were saved.", {
+      templateId: template.snapshot.templateId, evidenceCount: evidenceReferences.length,
     });
     return job;
   }
-  await input.repository.appendEvent({
-    eventId: randomUUID(),
-    jobId: job.jobId,
-    stage: "understanding",
-    status: "succeeded",
-    message: "文档要求理解完成。",
-    category: "model",
-    operation: "request.understand",
-    correlationId: job.jobId,
-    durationMs: Date.now() - understandingStartedAt,
-    metadata: {
-      provider: input.textExecutor.profile.provider,
-      modelId: input.textExecutor.profile.resolvedModelId,
-      language: understood.language,
-      topicLength: understood.userRequirements.topic?.length ?? 0,
-    },
-    createdAt: new Date().toISOString(),
+
+  const sectionBlueprint = planning.template.componentBlueprints.find((item) => item.type === "section");
+  if (!sectionBlueprint) throw new Error("Resolved template does not contain a section blueprint.");
+  if (!planning.skeleton) {
+    const skeleton = materializeDocumentSkeleton(await planner.createSkeleton({
+      request: planning.request, template: planning.template,
+      minimumSections: sectionBlueprint.minimumCount, maximumSections: sectionBlueprint.maximumCount,
+    }));
+    planning = { ...planning, skeleton };
+    job = await saveAndContinue(planning, 7);
+    await logSaved("outline.skeleton", "Document skeleton saved.", {
+      sectionCount: skeleton.sections.length, figureCount: skeleton.figures.length,
+    });
+    return job;
+  }
+
+  const skeleton = planning.skeleton;
+  const planned = new Set(planning.sectionPlans.map((item) => item.sectionId));
+  const section = skeleton.sections.find((item) => !planned.has(item.sectionId));
+  if (section) {
+    const sectionPlan = materializeSectionPlan({
+      sectionId: section.sectionId,
+      draft: await planner.planSection({
+        request: planning.request, template: planning.template, skeleton, section,
+        availableEvidenceIds: planning.evidenceReferences.map((item) => item.id),
+      }),
+    });
+    planning = { ...planning, sectionPlans: [...planning.sectionPlans, sectionPlan] };
+    const progress = 7 + Math.round((planning.sectionPlans.length / skeleton.sections.length) * 5);
+    job = await saveAndContinue(planning, progress);
+    await logSaved("outline.section_plan", `Section plan saved: ${section.heading}`, {
+      plannedSections: planning.sectionPlans.length, totalSections: skeleton.sections.length,
+    }, section.sectionId);
+    return job;
+  }
+
+  const proposal = assembleSemanticOutline({ skeleton, sectionPlans: planning.sectionPlans });
+  const plan = createDocumentPlanFromProposal({
+    request: planning.request, template: planning.template, proposal,
+    availableEvidenceIds: planning.evidenceReferences.map((item) => item.id),
   });
-  await advance("template_resolution", 4, "正在根据文档意图解析模板。");
-  const template = await resolveDocumentTemplate({
-    request: understood,
-    matcher: {
-      async match({ candidates }) {
-        const candidate = candidates[0];
-        if (!candidate) throw new Error("No compatible document template is enabled.");
-        return {
-          templateId: candidate.templateId,
-          confidence: 1,
-          rationale: "Resolved deterministically from template intent and compatibility.",
-        };
-      },
-    },
-  });
-  await advance("evidence_acquisition", 6, "正在冻结可用于引用的证据。");
-  const evidenceReferences = [
-    ...new Map(
-      [
-        ...(intake.verifiedReferences ?? []),
-        ...intake.evidence.map((item) => item.reference),
-      ].map((reference) => [reference.id, reference]),
-    ).values(),
-  ];
-  const planningStartedAt = Date.now();
-  const plan = await createDocumentPlanFromTemplate({
-    request: understood,
-    template,
-    outlinePlanner: new OpenAISemanticOutlinePlanner(input.textExecutor),
-    availableEvidenceIds: evidenceReferences.map((reference) => reference.id),
-  });
-  await input.repository.appendEvent({
-    eventId: randomUUID(),
-    jobId: job.jobId,
-    stage: "planning",
-    status: "succeeded",
-    message: "文档结构规划完成。",
-    category: "model",
-    operation: "outline.plan",
-    correlationId: job.jobId,
-    durationMs: Date.now() - planningStartedAt,
-    metadata: {
-      provider: input.textExecutor.profile.provider,
-      modelId: input.textExecutor.profile.resolvedModelId,
-      componentCount: plan.components.length,
-      evidenceCount: evidenceReferences.length,
-      templateId: template.snapshot.templateId,
-    },
-    createdAt: new Date().toISOString(),
-  });
-  await advance("planning", 8, "文档结构已经规划完成。");
   const orchestration = createDocumentOrchestrationState({
-    jobId: job.jobId,
-    request: understood,
-    plan,
-    verifiedReferences: evidenceReferences,
-    evidenceBundle: intake.evidence.map((item) => ({
-      evidenceId: item.evidenceId,
-      excerpt: item.excerpt,
-      locator: item.locator,
-    })),
+    jobId: job.jobId, request: planning.request, plan,
+    verifiedReferences: planning.evidenceReferences,
+    evidenceBundle: intake.evidence.map((item) => ({ evidenceId: item.evidenceId, excerpt: item.excerpt, locator: item.locator })),
   });
-  const evidenceSnapshotId =
-    intake.evidence.length > 0
-      ? `evidence-${createHash("sha256")
-          .update(JSON.stringify(intake.evidence))
-          .digest("hex")
-          .slice(0, 24)}`
-      : undefined;
   const now = new Date().toISOString();
-  job = await input.repository.save(
-    DocumentJobSchema.parse({
-      ...job,
-      status: "running",
-      stage: "planning",
-      progress: 8,
-      totalComponents: orchestration.components.length,
-      checkpoint: {
-        ...job.checkpoint,
-        orchestration,
-        executionSnapshot: {
-          requestSchemaVersion: "1",
-          planSchemaVersion: "1",
-          finalSpecSchemaVersion: "1",
-          intentPromptVersion: "document-request-v1",
-          plannerPromptVersion: "document-outline-figure-contract-v2",
-          generatorPromptVersion: "document-component-contract-v2",
-          validatorVersion: "mature-content-v1",
-          modelProvider: input.textExecutor.profile.provider,
-          modelId: input.textExecutor.profile.resolvedModelId,
-          rendererVersion: "sci-word-v1",
-          templateChecksum: template.snapshot.checksum,
-          evidenceSnapshotId,
-        },
-        budget: {
-          maxModelCalls: 24,
-          maxImageCalls: 8,
-          maxImageAssets: 4,
-          maxRepairAttempts: 8,
-          maxExecutionMs: 15 * 60_000,
-          usedModelCalls: 2,
-          usedImageCalls: 0,
-          completedImageAssets: 0,
-          usedRepairAttempts: 0,
-          usedExecutionMs: 0,
-        },
-        savedAt: now,
+  job = await input.repository.save(DocumentJobSchema.parse({
+    ...job, status: "running", stage: "planning", progress: 12,
+    totalComponents: orchestration.components.length,
+    checkpoint: {
+      ...job.checkpoint, planning, orchestration,
+      executionSnapshot: {
+        requestSchemaVersion: "1", planSchemaVersion: "1", finalSpecSchemaVersion: "1",
+        intentPromptVersion: "document-request-v1", plannerPromptVersion: "document-hierarchical-outline-v1",
+        generatorPromptVersion: "document-component-contract-v2", validatorVersion: "mature-content-v1",
+        modelProvider: input.textExecutor.profile.provider, modelId: input.textExecutor.profile.resolvedModelId,
+        rendererVersion: "sci-word-v1", templateChecksum: planning.template.snapshot.checksum,
+        evidenceSnapshotId: planning.evidenceSnapshotId,
       },
-      updatedAt: now,
-    }),
-    job.revision,
-  );
+      budget: {
+        maxModelCalls: Math.max(32, orchestration.components.length + planning.sectionPlans.length + 12),
+        maxImageCalls: 8, maxImageAssets: 4, maxRepairAttempts: 8,
+        maxExecutionMs: 15 * 60_000, usedModelCalls: 2 + planning.sectionPlans.length,
+        usedImageCalls: 0, completedImageAssets: 0, usedRepairAttempts: 0, usedExecutionMs: 0,
+      }, savedAt: now,
+    }, updatedAt: now,
+  }), job.revision);
+  await logSaved("outline.assemble", "Hierarchical document plan assembled.", {
+    componentCount: plan.components.length, sectionCount: planning.sectionPlans.length,
+  });
   return job;
 }
 
@@ -512,6 +463,8 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
         actualModelId: usage.actualModelId,
         providerRequestId: usage.providerRequestId ?? null,
         modelOperation: usage.operation,
+        requestedMaxOutputTokens: usage.requestedMaxOutputTokens,
+        effectiveMaxOutputTokens: usage.effectiveMaxOutputTokens,
         inputFingerprint: usage.inputFingerprint,
         inputTokens: usage.inputTokens,
         cachedInputTokens: usage.cachedInputTokens,
@@ -546,6 +499,14 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
     ? job
     : await prepareIntake({ job, repository, textExecutor });
   if (preparedJob.status === "awaiting_user_input") {
+    return {
+      state: preparedJob.status,
+      jobId: preparedJob.jobId,
+      stage: preparedJob.stage,
+      progress: preparedJob.progress,
+    };
+  }
+  if (!preparedJob.checkpoint.orchestration) {
     return {
       state: preparedJob.status,
       jobId: preparedJob.jobId,

@@ -2,6 +2,102 @@ import { z } from "zod";
 
 const IdentifierSchema = z.string().min(1).max(120);
 
+const FigureTypeSchema = z.enum([
+  "mechanism_diagram",
+  "process_flow",
+  "conceptual_framework",
+  "comparison_diagram",
+  "data_plot",
+]);
+
+export const DocumentSkeletonDraftSchema = z
+  .object({
+    reviewThesis: z.string().trim().min(1).max(2_000),
+    scopeBoundary: z.string().trim().min(1).max(2_000),
+    reviewQuestions: z.array(z.string().trim().min(1).max(500)).min(1).max(12),
+    sections: z
+      .array(
+        z
+          .object({
+            heading: z.string().trim().min(1).max(500),
+            question: z.string().trim().min(1).max(500),
+            purpose: z.string().trim().min(1).max(650),
+            relativeWeight: z.number().positive().max(100),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+    conclusionHeading: z.string().trim().min(1).max(500),
+    figures: z
+      .array(
+        z
+          .object({
+            sectionIndex: z.number().int().min(0).max(99),
+            figureType: FigureTypeSchema,
+            purpose: z.string().trim().min(1).max(1_000),
+            questionAnswered: z.string().trim().min(1).max(500),
+            claimsRepresented: z.array(z.string().trim().min(1).max(500)).min(1).max(12),
+            evidenceRequired: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(4),
+  })
+  .strict()
+  .superRefine((skeleton, context) => {
+    const headings = new Set<string>();
+    skeleton.sections.forEach((section, index) => {
+      const heading = section.heading.toLocaleLowerCase();
+      if (headings.has(heading)) {
+        context.addIssue({ code: "custom", path: ["sections", index, "heading"], message: "Section headings must be unique." });
+      }
+      headings.add(heading);
+    });
+    skeleton.figures.forEach((figure, index) => {
+      if (figure.sectionIndex >= skeleton.sections.length) {
+        context.addIssue({ code: "custom", path: ["figures", index, "sectionIndex"], message: "Figure must reference an existing section." });
+      }
+      if (figure.figureType === "data_plot") {
+        context.addIssue({ code: "custom", path: ["figures", index, "figureType"], message: "data_plot requires a verified dataset and is unavailable in skeleton planning." });
+      }
+    });
+  });
+
+export const DocumentSkeletonSchema = DocumentSkeletonDraftSchema.safeExtend({
+  schemaVersion: z.literal(1),
+  sections: z.array(
+    DocumentSkeletonDraftSchema.shape.sections.element.extend({
+      sectionId: IdentifierSchema,
+      order: z.number().int().nonnegative(),
+    }),
+  ),
+  figures: z.array(
+    DocumentSkeletonDraftSchema.shape.figures.element.extend({
+      figureIntentId: IdentifierSchema,
+    }),
+  ),
+}).strict();
+
+export const SectionPlanDraftSchema = z
+  .object({
+    contributionToThesis: z.string().trim().min(1).max(1_000),
+    comparisonDimensions: z.array(z.string().trim().min(1).max(300)).max(12),
+    applicableConditions: z.array(z.string().trim().min(1).max(500)).max(12),
+    failureModes: z.array(z.string().trim().min(1).max(500)).max(12),
+    requiredEvidenceIds: z.array(IdentifierSchema).max(500),
+  })
+  .strict();
+
+export const SectionPlanSchema = SectionPlanDraftSchema.extend({
+  schemaVersion: z.literal(1),
+  sectionId: IdentifierSchema,
+  skeletonVersion: z.literal(1),
+}).strict();
+
+export type DocumentSkeleton = z.infer<typeof DocumentSkeletonSchema>;
+export type SectionPlan = z.infer<typeof SectionPlanSchema>;
+
 export const SemanticOutlineProposalSchema = z
   .object({
     reviewThesis: z
