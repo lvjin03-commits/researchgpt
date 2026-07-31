@@ -45,6 +45,7 @@ export class DocumentModelExecutionRequiresReviewError extends Error {
   constructor(
     readonly executionKey: string,
     readonly executionStatus:
+      | "response_received"
       | "validation_failed"
       | "failed"
       | "unknown_outcome",
@@ -56,10 +57,30 @@ export class DocumentModelExecutionRequiresReviewError extends Error {
   }
 }
 
+export type DocumentModelFailureCategory =
+  | "empty_structured_output"
+  | "invalid_json"
+  | "schema_validation_failed"
+  | "provider_rejected"
+  | "transport_error"
+  | "unknown_outcome";
+
+export class DocumentModelOperationError extends Error {
+  constructor(
+    message: string,
+    readonly failureCategory: DocumentModelFailureCategory,
+    readonly operation?: string,
+  ) {
+    super(message);
+    this.name = "DocumentModelOperationError";
+  }
+}
+
 type StoredExecution = {
   status:
     | "running"
     | "request_started"
+    | "response_received"
     | "raw_saved"
     | "succeeded"
     | "validation_failed"
@@ -87,8 +108,20 @@ function parseJsonObject(text: string): unknown {
   } catch {
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
-    if (start < 0 || end <= start) throw new Error("The model returned no JSON object.");
-    return JSON.parse(trimmed.slice(start, end + 1));
+    if (start < 0 || end <= start) {
+      throw new DocumentModelOperationError(
+        "The model returned no JSON object.",
+        "invalid_json",
+      );
+    }
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1));
+    } catch {
+      throw new DocumentModelOperationError(
+        "The model returned invalid JSON.",
+        "invalid_json",
+      );
+    }
   }
 }
 
@@ -171,6 +204,7 @@ export class ProviderDocumentTextExecutor
         });
       }
       if (
+        existing?.status === "response_received" ||
         existing?.status === "validation_failed" ||
         existing?.status === "unknown_outcome"
       ) {
@@ -257,6 +291,14 @@ export class ProviderDocumentTextExecutor
     let cachedInputTokens = 0;
     let outputTokens = 0;
     let reasoningTokens = 0;
+    let finishReason: string | null = null;
+    let choiceCount = 0;
+    let contentState: "present" | "empty" | "null" | "missing" = "missing";
+    let contentLength = 0;
+    let reasoningContentPresent = false;
+    let refusalPresent = false;
+    let toolCallCount = 0;
+    let deepSeekContent: string | undefined;
 
     try {
       if (this.persistence) {
@@ -279,10 +321,6 @@ export class ProviderDocumentTextExecutor
             format: zodTextFormat(input.schema, input.schemaName),
           },
         });
-        if (!response.output_parsed) {
-          throw new Error("The document model returned no structured output.");
-        }
-        rawResponse = response.output_parsed;
         actualModelId = response.model ?? actualModelId;
         providerRequestId = response.id;
         inputTokens = response.usage?.input_tokens ?? 0;
@@ -291,6 +329,19 @@ export class ProviderDocumentTextExecutor
         outputTokens = response.usage?.output_tokens ?? 0;
         reasoningTokens =
           response.usage?.output_tokens_details?.reasoning_tokens ?? 0;
+        choiceCount = response.output?.length ?? 0;
+        finishReason = response.status ?? null;
+        contentState = response.output_parsed ? "present" : "null";
+        contentLength = response.output_parsed
+          ? JSON.stringify(response.output_parsed).length
+          : 0;
+        refusalPresent = response.output?.some(
+          (item) =>
+            "content" in item &&
+            Array.isArray(item.content) &&
+            item.content.some((content) => content.type === "refusal"),
+        ) ?? false;
+        rawResponse = response.output_parsed;
       } else {
         const response = await this.client.chat.completions.create({
           model: this.profile.resolvedModelId,
@@ -307,15 +358,79 @@ export class ProviderDocumentTextExecutor
             { role: "user", content: input.userInstruction },
           ],
         });
-        const content = response.choices[0]?.message.content;
-        if (!content) {
-          throw new Error("The document model returned no structured output.");
-        }
-        rawResponse = parseJsonObject(content);
+        const choice = response.choices[0];
+        const message = choice?.message as
+          | (typeof choice.message & {
+              reasoning_content?: string | null;
+              refusal?: string | null;
+            })
+          | undefined;
+        const content = message?.content;
         actualModelId = response.model ?? actualModelId;
         providerRequestId = response.id;
         inputTokens = response.usage?.prompt_tokens ?? 0;
         outputTokens = response.usage?.completion_tokens ?? 0;
+        choiceCount = response.choices.length;
+        finishReason = choice?.finish_reason ?? null;
+        contentState =
+          content === null
+            ? "null"
+            : content === undefined
+              ? "missing"
+              : content.length === 0
+                ? "empty"
+                : "present";
+        contentLength = content?.length ?? 0;
+        reasoningContentPresent = Boolean(message?.reasoning_content);
+        refusalPresent = Boolean(message?.refusal);
+        toolCallCount = message?.tool_calls?.length ?? 0;
+        deepSeekContent = content ?? undefined;
+      }
+
+      const responseReceivedAt = new Date().toISOString();
+      if (this.persistence) {
+        await this.mustUpdateExecution(
+          executionKey,
+          {
+            status: "response_received",
+            actual_model_id: actualModelId,
+            provider_request_id: providerRequestId ?? null,
+            input_tokens: inputTokens,
+            cached_input_tokens: cachedInputTokens,
+            output_tokens: outputTokens,
+            reasoning_tokens: reasoningTokens,
+            response_received_at: responseReceivedAt,
+            finish_reason: finishReason,
+            choice_count: choiceCount,
+            content_state: contentState,
+            content_length: contentLength,
+            reasoning_content_present: reasoningContentPresent,
+            refusal_present: refusalPresent,
+            tool_call_count: toolCallCount,
+          },
+          ["request_started"],
+        );
+      }
+      if (contentState !== "present") {
+        throw new DocumentModelOperationError(
+          "The document model returned no structured output.",
+          "empty_structured_output",
+          input.operation,
+        );
+      }
+      if (deepSeekContent !== undefined) {
+        try {
+          rawResponse = parseJsonObject(deepSeekContent);
+        } catch (error) {
+          if (error instanceof DocumentModelOperationError) {
+            throw new DocumentModelOperationError(
+              error.message,
+              error.failureCategory,
+              input.operation,
+            );
+          }
+          throw error;
+        }
       }
 
       if (this.persistence) {
@@ -330,11 +445,10 @@ export class ProviderDocumentTextExecutor
             cached_input_tokens: cachedInputTokens,
             output_tokens: outputTokens,
             reasoning_tokens: reasoningTokens,
-            response_received_at: new Date().toISOString(),
             raw_saved_at: new Date().toISOString(),
             lease_expires_at: null,
           },
-          ["request_started"],
+          ["response_received"],
         );
       }
       const validation = input.schema.safeParse(rawResponse);
@@ -344,7 +458,7 @@ export class ProviderDocumentTextExecutor
             executionKey,
             {
               status: "validation_failed",
-              failure_category: "schema_validation",
+              failure_category: "schema_validation_failed",
               error_message: validation.error.message.slice(0, 2_000),
               completed_at: new Date().toISOString(),
             },
@@ -391,8 +505,13 @@ export class ProviderDocumentTextExecutor
         const current = await this.getExecution(executionKey);
         if (
           current?.status === "running" ||
-          current?.status === "request_started"
+          current?.status === "request_started" ||
+          current?.status === "response_received"
         ) {
+          const knownFailure =
+            error instanceof DocumentModelOperationError
+              ? error.failureCategory
+              : null;
           await this.mustUpdateExecution(
             executionKey,
             {
@@ -402,8 +521,11 @@ export class ProviderDocumentTextExecutor
                   : "failed",
               failure_category:
                 current.status === "request_started"
-                  ? "provider_outcome_unknown"
-                  : "pre_provider_failure",
+                  ? "unknown_outcome"
+                  : knownFailure ??
+                    (current.status === "running"
+                      ? "transport_error"
+                      : "provider_rejected"),
               error_message:
                 error instanceof Error
                   ? error.message.slice(0, 2_000)
@@ -444,7 +566,7 @@ export class ProviderDocumentTextExecutor
         input.executionKey,
         {
           status: "validation_failed",
-          failure_category: "schema_validation",
+          failure_category: "schema_validation_failed",
           error_message: parsed.error.message.slice(0, 2_000),
           completed_at: new Date().toISOString(),
         },

@@ -14,7 +14,11 @@ import {
   sanitizeDiagnosticError,
 } from "./redaction";
 
-const ACTIVE_EXECUTION = new Set(["running", "request_started"]);
+const ACTIVE_EXECUTION = new Set([
+  "running",
+  "request_started",
+  "response_received",
+]);
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : undefined;
@@ -69,6 +73,13 @@ export function projectDocumentJobDiagnostics(
         failureCategory: row.failure_category,
         errorMessage: sanitizedError,
         errorFingerprint: diagnosticFingerprint(sanitizedError),
+        finishReason: row.finish_reason,
+        choiceCount: row.choice_count,
+        contentState: row.content_state,
+        contentLength: row.content_length,
+        reasoningContentPresent: row.reasoning_content_present,
+        refusalPresent: row.refusal_present,
+        toolCallCount: row.tool_call_count,
         inputTokens: row.input_tokens,
         cachedInputTokens: row.cached_input_tokens,
         outputTokens: row.output_tokens,
@@ -156,6 +167,13 @@ export function projectDocumentJobDiagnostics(
         inputTokens: execution.inputTokens,
         outputTokens: execution.outputTokens,
         rawSavedAt: execution.rawSavedAt,
+        finishReason: execution.finishReason,
+        choiceCount: execution.choiceCount,
+        contentState: execution.contentState,
+        contentLength: execution.contentLength,
+        reasoningContentPresent: execution.reasoningContentPresent,
+        refusalPresent: execution.refusalPresent,
+        toolCallCount: execution.toolCallCount,
       },
     }),
   );

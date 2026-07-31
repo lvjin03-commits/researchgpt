@@ -40,6 +40,13 @@ export type DiagnosticExecutionRow = {
   completed_at: string | null;
   failure_category: string | null;
   error_message: string | null;
+  finish_reason: string | null;
+  choice_count: number;
+  content_state: string | null;
+  content_length: number;
+  reasoning_content_present: boolean;
+  refusal_present: boolean;
+  tool_call_count: number;
   input_tokens: number;
   cached_input_tokens: number;
   output_tokens: number;
@@ -86,6 +93,13 @@ const EXECUTION_FIELDS = [
   "completed_at",
   "failure_category",
   "error_message",
+  "finish_reason",
+  "choice_count",
+  "content_state",
+  "content_length",
+  "reasoning_content_present",
+  "refusal_present",
+  "tool_call_count",
   "input_tokens",
   "cached_input_tokens",
   "output_tokens",

@@ -4,7 +4,11 @@ import type {
   ModelExecutionDiagnostic,
 } from "./contracts";
 
-const ACTIVE_EXECUTION = new Set(["running", "request_started"]);
+const ACTIVE_EXECUTION = new Set([
+  "running",
+  "request_started",
+  "response_received",
+]);
 
 export function diagnoseBlockers(input: {
   now: Date;
@@ -91,34 +95,69 @@ export function diagnoseBlockers(input: {
     activeExecution?.leaseExpiresAt &&
     Date.parse(activeExecution.leaseExpiresAt) < input.now.getTime()
   ) {
-    findings.push({
-      code: "model_unknown_outcome",
-      severity: "error",
-      certainty: "suspected",
-      location,
-      since: activeExecution.leaseExpiresAt,
-      matchedRule: "active_model_execution_lease_expired_without_durable_result",
-      evidence: [
-        {
-          source: "model_execution",
-          field: "status",
-          value: activeExecution.status,
-        },
-        {
-          source: "model_execution",
-          field: "leaseExpiresAt",
-          value: activeExecution.leaseExpiresAt,
-        },
-        {
-          source: "model_execution",
-          field: "rawSavedAt",
-          value: activeExecution.rawSavedAt,
-        },
-      ],
-      missingEvidence: ["provider response outcome", "worker invocation finish"],
-      recommendedNextInspection:
-        "Do not automatically repeat the provider request until its outcome is reviewed.",
-    });
+    if (activeExecution.status === "response_received") {
+      findings.push({
+        code: "model_response_processing_stalled",
+        severity: "error",
+        certainty: "deterministic",
+        location,
+        since: activeExecution.leaseExpiresAt,
+        matchedRule: "received_model_response_not_published_before_lease_expiry",
+        evidence: [
+          {
+            source: "model_execution",
+            field: "status",
+            value: activeExecution.status,
+          },
+          {
+            source: "model_execution",
+            field: "responseReceivedAt",
+            value: activeExecution.responseReceivedAt,
+          },
+          {
+            source: "model_execution",
+            field: "contentState",
+            value: activeExecution.contentState,
+          },
+        ],
+        missingEvidence: ["parsed provider response body"],
+        recommendedNextInspection:
+          "The provider responded, but parsing or persistence did not complete. Do not classify this as an unknown provider outcome.",
+      });
+    } else {
+      findings.push({
+        code: "model_unknown_outcome",
+        severity: "error",
+        certainty: "suspected",
+        location,
+        since: activeExecution.leaseExpiresAt,
+        matchedRule:
+          "active_model_execution_lease_expired_without_durable_result",
+        evidence: [
+          {
+            source: "model_execution",
+            field: "status",
+            value: activeExecution.status,
+          },
+          {
+            source: "model_execution",
+            field: "leaseExpiresAt",
+            value: activeExecution.leaseExpiresAt,
+          },
+          {
+            source: "model_execution",
+            field: "rawSavedAt",
+            value: activeExecution.rawSavedAt,
+          },
+        ],
+        missingEvidence: [
+          "provider response outcome",
+          "worker invocation finish",
+        ],
+        recommendedNextInspection:
+          "Do not automatically repeat the provider request until its outcome is reviewed.",
+      });
+    }
   }
 
   if (latestExecution?.status === "validation_failed") {

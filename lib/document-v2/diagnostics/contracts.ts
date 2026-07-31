@@ -71,6 +71,13 @@ export type ModelExecutionDiagnostic = {
   failureCategory: string | null;
   errorMessage: string | null;
   errorFingerprint: string | null;
+  finishReason: string | null;
+  choiceCount: number;
+  contentState: string | null;
+  contentLength: number;
+  reasoningContentPresent: boolean;
+  refusalPresent: boolean;
+  toolCallCount: number;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -159,4 +166,3 @@ export type DocumentJobDiagnostics = {
   };
   humanReadableReport: string;
 };
-

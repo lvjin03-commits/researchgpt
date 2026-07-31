@@ -17,6 +17,8 @@ import {
 } from "./openai-adapters";
 import {
   ProviderDocumentTextExecutor,
+  DocumentModelExecutionRequiresReviewError,
+  DocumentModelOperationError,
   type DocumentModelUsage,
   type DocumentStructuredTextExecutor,
 } from "./text-executor";
@@ -59,6 +61,56 @@ async function claimNext(
         target_job_id: jobId,
       })
     : await supabase.rpc("claim_next_document_v2_dispatch", lease);
+  if (error) throw error;
+  return data ? DocumentJobSchema.parse(data) : null;
+}
+
+function workerFailureDetails(error: unknown) {
+  if (error instanceof DocumentModelOperationError) {
+    return {
+      code: `document_model_${error.failureCategory}`,
+      category: error.failureCategory,
+      operation: error.operation ?? "model.generate",
+      technicalMessage: error.message,
+    };
+  }
+  if (error instanceof DocumentModelExecutionRequiresReviewError) {
+    return {
+      code: `document_model_${error.executionStatus}`,
+      category: error.executionStatus,
+      operation: "model.execution.review",
+      technicalMessage: error.message,
+    };
+  }
+  return {
+    code: "document_worker_failed",
+    category: "worker_failure",
+    operation: "worker.tick",
+    technicalMessage: error instanceof Error ? error.message : String(error),
+  };
+}
+
+async function finalizeWorkerFailure(input: {
+  supabase: SupabaseClient;
+  jobId: string;
+  workerId: string;
+  error: unknown;
+}): Promise<DocumentJob | null> {
+  const failure = workerFailureDetails(input.error);
+  const { data, error } = await input.supabase.rpc(
+    "finalize_document_v2_worker_failure",
+    {
+      target_job_id: input.jobId,
+      expected_worker_id: input.workerId,
+      failure_code: failure.code.slice(0, 120),
+      failure_category: failure.category.slice(0, 120),
+      failure_operation: failure.operation.slice(0, 120),
+      failure_user_message:
+        "文档生成在当前阶段暂停，请查看运行详情后重试。",
+      failure_technical_message: failure.technicalMessage.slice(0, 2_000),
+      failed_at: new Date().toISOString(),
+    },
+  );
   if (error) throw error;
   return data ? DocumentJobSchema.parse(data) : null;
 }
@@ -412,8 +464,13 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
   const workerId = `vercel-${randomUUID()}`;
   let job = await claimNext(supabase, workerId, jobId);
   if (!job) return { state: "idle" as const };
+  const claimedJob = job;
 
-  const repository = new SupabaseDocumentJobRepository(supabase, job.ownerId);
+  const repository = new SupabaseDocumentJobRepository(
+    supabase,
+    claimedJob.ownerId,
+  );
+  try {
   if (!job.checkpoint.dispatchToken) {
     const now = new Date().toISOString();
     job = await repository.save(
@@ -437,11 +494,11 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
     );
   }
   const recordUsage = async (usage: DocumentModelUsage) => {
-    const currentJob = await repository.get(job.jobId);
+    const currentJob = await repository.get(claimedJob.jobId);
     await repository.appendEvent({
       eventId: randomUUID(),
-      jobId: job.jobId,
-      stage: currentJob?.stage ?? job.stage,
+      jobId: claimedJob.jobId,
+      stage: currentJob?.stage ?? claimedJob.stage,
       status: "succeeded",
       message: `模型调用完成：${usage.operation}`,
       category: "model",
@@ -575,7 +632,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
         return {
           artifactId: await storeDocx(
             supabase,
-            job.ownerId,
+            claimedJob.ownerId,
             jobId,
             buffer,
           ),
@@ -583,7 +640,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       },
       async validateArtifact({ artifactId, shouldCancel }) {
         if (await shouldCancel()) throw new Error("Document job was cancelled.");
-        const metaPath = `${job.ownerId}/exports/${artifactId}.meta.json`;
+        const metaPath = `${claimedJob.ownerId}/exports/${artifactId}.meta.json`;
         const metadata = await supabase.storage
           .from(CHAT_ATTACHMENTS_BUCKET)
           .download(metaPath);
@@ -629,4 +686,21 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
     failedComponentKey: snapshot.job.error?.componentKey,
     failureMessage: snapshot.job.error?.technicalMessage.slice(0, 500),
   };
+  } catch (error) {
+    const finalized = await finalizeWorkerFailure({
+      supabase,
+      jobId: claimedJob.jobId,
+      workerId,
+      error,
+    });
+    if (!finalized) throw error;
+    return {
+      state: finalized.status,
+      jobId: finalized.jobId,
+      stage: finalized.stage,
+      progress: finalized.progress,
+      failureCode: finalized.error?.code,
+      failureMessage: finalized.error?.technicalMessage.slice(0, 500),
+    };
+  }
 }
