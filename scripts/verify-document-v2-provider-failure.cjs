@@ -22,12 +22,18 @@ require.extensions[".ts"] = function compileTypeScript(module, filename) {
 };
 
 process.env.DEEPSEEK_API_KEY = "test-only-key";
+process.env.DOCUMENT_V2_RESPONSE_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString(
+  "base64",
+);
 
 const { z } = require("zod");
 const {
   DocumentModelOperationError,
   ProviderDocumentTextExecutor,
 } = require("../lib/document-v2-production/text-executor.ts");
+const {
+  protectResponseEvidence,
+} = require("../lib/document-v2-production/response-evidence.ts");
 
 class ExecutionTable {
   constructor() {
@@ -103,6 +109,7 @@ class ExecutionQuery {
 
 function createExecutor(response) {
   const persistence = new ExecutionTable();
+  const calls = { count: 0 };
   const executor = new ProviderDocumentTextExecutor(
     {
       provider: "deepseek",
@@ -117,9 +124,16 @@ function createExecutor(response) {
     },
   );
   executor.client = {
-    chat: { completions: { create: async () => response } },
+    chat: {
+      completions: {
+        create: async () => {
+          calls.count += 1;
+          return response;
+        },
+      },
+    },
   };
-  return { executor, persistence };
+  return { executor, persistence, calls };
 }
 
 async function executeCase({ operation, response, schema }) {
@@ -191,9 +205,14 @@ async function executeCase({ operation, response, schema }) {
     schema: z.object({ value: z.string() }),
   });
   assert.equal(invalidJson.row.status, "failed");
-  assert.equal(invalidJson.row.failure_category, "invalid_json");
+  assert.equal(invalidJson.row.failure_category, "no_json_object");
   assert.equal(invalidJson.row.content_state, "present");
   assert.equal(invalidJson.row.content_length, 8);
+  assert.ok(invalidJson.row.raw_content_encrypted);
+  assert.ok(invalidJson.row.raw_content_hash);
+  assert.equal(invalidJson.row.sanitized_preview, "not json");
+  assert.ok(invalidJson.row.provider_response_saved_at);
+  assert.equal(invalidJson.row.parse_status, "failed");
 
   const invalidSchema = await executeCase({
     operation: "outline.plan.schema",
@@ -215,12 +234,55 @@ async function executeCase({ operation, response, schema }) {
     invalidSchema.row.failure_category,
     "schema_validation_failed",
   );
-  assert.ok(invalidSchema.row.raw_saved_at);
+  assert.ok(invalidSchema.row.provider_response_saved_at);
+  assert.ok(invalidSchema.row.raw_content_encrypted);
+
+  const recoverable = createExecutor({
+    id: "deepseek-recovery",
+    model: "deepseek-v4-flash",
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: "not json", tool_calls: [] },
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 2 },
+  });
+  const recoveryInput = {
+    operation: "outline.plan.recover",
+    schemaName: "provider_failure_test",
+    schema: z.object({ value: z.string() }),
+    systemInstruction: "Return test JSON.",
+    userInstruction: "Test.",
+  };
+  await assert.rejects(() => recoverable.executor.generate(recoveryInput));
+  assert.equal(recoverable.calls.count, 1);
+  const recoveryRow = [...recoverable.persistence.rows.values()][0];
+  const replacement = protectResponseEvidence('{"value":"recovered"}');
+  recoveryRow.raw_content_encrypted = replacement.encryptedContent;
+  recoveryRow.parser_version = "older-parser";
+  recoveryRow.schema_version = "older-schema";
+  const recovered = await recoverable.executor.generate(recoveryInput);
+  assert.deepEqual(recovered, { value: "recovered" });
+  assert.equal(
+    recoverable.calls.count,
+    1,
+    "Reparsing saved provider evidence must not call the provider again.",
+  );
+  const recoveredRow = [...recoverable.persistence.rows.values()][0];
+  assert.equal(recoveredRow.status, "succeeded");
 
   const migration = fs.readFileSync(
     path.join(
       projectRoot,
       "supabase/migrations/024_document_v2_provider_observability.sql",
+    ),
+    "utf8",
+  );
+  const recoveryMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/025_document_v2_response_recovery.sql",
     ),
     "utf8",
   );
@@ -232,6 +294,14 @@ async function executeCase({ operation, response, schema }) {
   );
   assert.match(migration, /next_status := 'paused'/);
   assert.match(migration, /current_job\.status = 'cancelling'/);
+  assert.match(recoveryMigration, /raw_content_encrypted TEXT/);
+  assert.match(recoveryMigration, /candidate_diagnostics JSONB/);
+  assert.match(recoveryMigration, /parser_version TEXT/);
+  assert.doesNotMatch(
+    recoveryMigration,
+    /raw_content_plaintext/i,
+    "The recovery migration must not introduce plaintext provider content.",
+  );
   const runtimeContracts = fs.readFileSync(
     path.join(projectRoot, "lib/document-v2/runtime/contracts.ts"),
     "utf8",

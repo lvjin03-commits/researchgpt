@@ -45,12 +45,29 @@ export type DiagnosticExecutionRow = {
   content_state: string | null;
   content_length: number;
   reasoning_content_present: boolean;
+  reasoning_content_length: number;
   refusal_present: boolean;
   tool_call_count: number;
   input_tokens: number;
   cached_input_tokens: number;
   output_tokens: number;
   reasoning_tokens: number;
+  raw_content_hash: string | null;
+  sanitized_preview: string | null;
+  provider_response_saved_at: string | null;
+  parse_started_at: string | null;
+  parse_completed_at: string | null;
+  parse_status: string | null;
+  parse_error_message: string | null;
+  parse_error_position: number | null;
+  candidate_count: number;
+  json_valid_candidate_count: number;
+  schema_valid_candidate_count: number;
+  repair_steps: unknown;
+  candidate_diagnostics: unknown;
+  parser_version: string | null;
+  repair_pipeline_version: string | null;
+  schema_version: string | null;
 };
 
 export type DiagnosticOutboxRow = {
@@ -98,12 +115,29 @@ const EXECUTION_FIELDS = [
   "content_state",
   "content_length",
   "reasoning_content_present",
+  "reasoning_content_length",
   "refusal_present",
   "tool_call_count",
   "input_tokens",
   "cached_input_tokens",
   "output_tokens",
   "reasoning_tokens",
+  "raw_content_hash",
+  "sanitized_preview",
+  "provider_response_saved_at",
+  "parse_started_at",
+  "parse_completed_at",
+  "parse_status",
+  "parse_error_message",
+  "parse_error_position",
+  "candidate_count",
+  "json_valid_candidate_count",
+  "schema_valid_candidate_count",
+  "repair_steps",
+  "candidate_diagnostics",
+  "parser_version",
+  "repair_pipeline_version",
+  "schema_version",
 ].join(",");
 const OUTBOX_FIELDS =
   "id,event_type,status,delivery_attempts,next_attempt_at,delivered_at,created_at";

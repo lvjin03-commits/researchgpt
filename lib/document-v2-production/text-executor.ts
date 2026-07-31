@@ -5,6 +5,17 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { estimateModelCostUsd } from "@/lib/ai/cost";
 import type { DocumentTextExecutionProfile } from "@/lib/document-v2/runtime/contracts";
 import { sha256Canonical } from "@/lib/document-v2/runtime/canonical-hash";
+import {
+  DOCUMENT_RESPONSE_PARSER_VERSION,
+  DOCUMENT_RESPONSE_REPAIR_VERSION,
+  parseStructuredResponse,
+  type StructuredResponseCandidateDiagnostic,
+  type StructuredResponseRepairStep,
+} from "./structured-response-parser";
+import {
+  protectResponseEvidence,
+  revealResponseEvidence,
+} from "./response-evidence";
 
 export type DocumentModelUsage = {
   provider: "deepseek" | "openai";
@@ -59,7 +70,10 @@ export class DocumentModelExecutionRequiresReviewError extends Error {
 
 export type DocumentModelFailureCategory =
   | "empty_structured_output"
-  | "invalid_json"
+  | "no_json_object"
+  | "truncated_json"
+  | "json_syntax_error"
+  | "ambiguous_json"
   | "schema_validation_failed"
   | "provider_rejected"
   | "transport_error"
@@ -87,6 +101,9 @@ type StoredExecution = {
     | "failed"
     | "unknown_outcome";
   raw_response: unknown;
+  raw_content_encrypted: string | null;
+  parser_version: string | null;
+  schema_version: string | null;
   lease_expires_at: string | null;
 };
 
@@ -99,30 +116,6 @@ function fingerprint(input: {
   userInstruction: string;
 }) {
   return sha256Canonical(input);
-}
-
-function parseJsonObject(text: string): unknown {
-  const trimmed = text.trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start < 0 || end <= start) {
-      throw new DocumentModelOperationError(
-        "The model returned no JSON object.",
-        "invalid_json",
-      );
-    }
-    try {
-      return JSON.parse(trimmed.slice(start, end + 1));
-    } catch {
-      throw new DocumentModelOperationError(
-        "The model returned invalid JSON.",
-        "invalid_json",
-      );
-    }
-  }
 }
 
 export class ProviderDocumentTextExecutor
@@ -178,6 +171,7 @@ export class ProviderDocumentTextExecutor
       systemInstruction: input.systemInstruction,
       userInstruction: input.userInstruction,
     });
+    const schemaVersion = sha256Canonical(z.toJSONSchema(input.schema));
     const executionKey = sha256Canonical({
       jobId: this.persistence?.jobId ?? "unpersisted",
       componentKey: input.componentKey ?? "document",
@@ -203,8 +197,49 @@ export class ProviderDocumentTextExecutor
           schema: input.schema,
         });
       }
+      if (existing?.status === "response_received") {
+        const recovered = await this.reparseStoredProviderContent({
+          executionKey,
+          execution: existing,
+          schema: input.schema,
+          schemaVersion,
+          operation: input.operation,
+        });
+        if (recovered !== undefined) return recovered;
+        throw new DocumentModelExecutionRequiresReviewError(
+          executionKey,
+          "response_received",
+        );
+      }
+      if (existing?.status === "failed") {
+        const parserChanged =
+          existing.parser_version !== DOCUMENT_RESPONSE_PARSER_VERSION ||
+          existing.schema_version !== schemaVersion;
+        if (parserChanged) {
+          const recovered = await this.reparseStoredProviderContent({
+            executionKey,
+            execution: existing,
+            schema: input.schema,
+            schemaVersion,
+            operation: input.operation,
+          });
+          if (recovered !== undefined) return recovered;
+        }
+      }
       if (
-        existing?.status === "response_received" ||
+        existing?.status === "validation_failed" &&
+        existing.schema_version !== schemaVersion
+      ) {
+        const recovered = await this.reparseStoredProviderContent({
+          executionKey,
+          execution: existing,
+          schema: input.schema,
+          schemaVersion,
+          operation: input.operation,
+        });
+        if (recovered !== undefined) return recovered;
+      }
+      if (
         existing?.status === "validation_failed" ||
         existing?.status === "unknown_outcome"
       ) {
@@ -296,9 +331,11 @@ export class ProviderDocumentTextExecutor
     let contentState: "present" | "empty" | "null" | "missing" = "missing";
     let contentLength = 0;
     let reasoningContentPresent = false;
+    let reasoningContentLength = 0;
     let refusalPresent = false;
     let toolCallCount = 0;
     let deepSeekContent: string | undefined;
+    let providerContent: string | undefined;
 
     try {
       if (this.persistence) {
@@ -342,6 +379,9 @@ export class ProviderDocumentTextExecutor
             item.content.some((content) => content.type === "refusal"),
         ) ?? false;
         rawResponse = response.output_parsed;
+        providerContent = response.output_parsed
+          ? JSON.stringify(response.output_parsed)
+          : undefined;
       } else {
         const response = await this.client.chat.completions.create({
           model: this.profile.resolvedModelId,
@@ -353,6 +393,7 @@ export class ProviderDocumentTextExecutor
               content: [
                 input.systemInstruction,
                 `Return one JSON object matching this schema exactly: ${JSON.stringify(z.toJSONSchema(input.schema))}`,
+                "Return only that JSON object in message.content. Do not include Markdown fences, explanations, examples, introductions, or trailing text. Do not place the final answer only in reasoning_content.",
               ].join("\n\n"),
             },
             { role: "user", content: input.userInstruction },
@@ -382,12 +423,17 @@ export class ProviderDocumentTextExecutor
                 : "present";
         contentLength = content?.length ?? 0;
         reasoningContentPresent = Boolean(message?.reasoning_content);
+        reasoningContentLength = message?.reasoning_content?.length ?? 0;
         refusalPresent = Boolean(message?.refusal);
         toolCallCount = message?.tool_calls?.length ?? 0;
         deepSeekContent = content ?? undefined;
+        providerContent = content ?? undefined;
       }
 
       const responseReceivedAt = new Date().toISOString();
+      const evidence = providerContent
+        ? protectResponseEvidence(providerContent)
+        : null;
       if (this.persistence) {
         await this.mustUpdateExecution(
           executionKey,
@@ -405,8 +451,16 @@ export class ProviderDocumentTextExecutor
             content_state: contentState,
             content_length: contentLength,
             reasoning_content_present: reasoningContentPresent,
+            reasoning_content_length: reasoningContentLength,
             refusal_present: refusalPresent,
             tool_call_count: toolCallCount,
+            raw_content_encrypted: evidence?.encryptedContent ?? null,
+            raw_content_hash: evidence?.contentHash ?? null,
+            sanitized_preview: evidence?.sanitizedPreview ?? null,
+            provider_response_saved_at: responseReceivedAt,
+            parser_version: DOCUMENT_RESPONSE_PARSER_VERSION,
+            repair_pipeline_version: DOCUMENT_RESPONSE_REPAIR_VERSION,
+            schema_version: schemaVersion,
           },
           ["request_started"],
         );
@@ -419,17 +473,61 @@ export class ProviderDocumentTextExecutor
         );
       }
       if (deepSeekContent !== undefined) {
-        try {
-          rawResponse = parseJsonObject(deepSeekContent);
-        } catch (error) {
-          if (error instanceof DocumentModelOperationError) {
-            throw new DocumentModelOperationError(
-              error.message,
-              error.failureCategory,
-              input.operation,
+        const parseStartedAt = new Date().toISOString();
+        const parseResult = parseStructuredResponse({
+          content: deepSeekContent,
+          schema: input.schema,
+        });
+        const parseCompletedAt = new Date().toISOString();
+        if (!parseResult.ok) {
+          if (this.persistence) {
+            await this.mustUpdateExecution(
+              executionKey,
+              {
+                status:
+                  parseResult.failureCategory === "schema_validation_failed"
+                    ? "validation_failed"
+                    : "failed",
+                failure_category: parseResult.failureCategory,
+                error_message: parseResult.message.slice(0, 2_000),
+                parse_status: "failed",
+                parse_error_message:
+                  parseResult.parseErrorMessage?.slice(0, 2_000) ?? null,
+                parse_error_position: parseResult.parseErrorPosition ?? null,
+                candidate_count: parseResult.candidateDiagnostics.length,
+                json_valid_candidate_count:
+                  parseResult.candidateDiagnostics.filter(
+                    (candidate) => candidate.parseStatus === "valid",
+                  ).length,
+                schema_valid_candidate_count:
+                  parseResult.candidateDiagnostics.filter(
+                    (candidate) => candidate.schemaStatus === "valid",
+                  ).length,
+                candidate_diagnostics: parseResult.candidateDiagnostics,
+                repair_steps: parseResult.repairSteps,
+                parse_started_at: parseStartedAt,
+                parse_completed_at: parseCompletedAt,
+                lease_expires_at: null,
+                completed_at: parseCompletedAt,
+              },
+              ["response_received"],
             );
           }
-          throw error;
+          throw new DocumentModelOperationError(
+            parseResult.message,
+            parseResult.failureCategory,
+            input.operation,
+          );
+        }
+        rawResponse = parseResult.parsedResponse;
+        parsed = parseResult.value;
+        if (this.persistence) {
+          await this.persistParseDiagnostics(executionKey, {
+            repairSteps: parseResult.repairSteps,
+            candidateDiagnostics: parseResult.candidateDiagnostics,
+            parseStartedAt,
+            parseCompletedAt,
+          });
         }
       }
 
@@ -446,6 +544,7 @@ export class ProviderDocumentTextExecutor
             output_tokens: outputTokens,
             reasoning_tokens: reasoningTokens,
             raw_saved_at: new Date().toISOString(),
+            parsed_response: rawResponse,
             lease_expires_at: null,
           },
           ["response_received"],
@@ -541,13 +640,127 @@ export class ProviderDocumentTextExecutor
     }
   }
 
+  private async reparseStoredProviderContent<T>(input: {
+    executionKey: string;
+    execution: StoredExecution;
+    schema: ZodType<T>;
+    schemaVersion: string;
+    operation: string;
+  }): Promise<T | undefined> {
+    if (!input.execution.raw_content_encrypted) return undefined;
+    const content = revealResponseEvidence(
+      input.execution.raw_content_encrypted,
+    );
+    if (content === null) return undefined;
+    const parseStartedAt = new Date().toISOString();
+    const result = parseStructuredResponse({ content, schema: input.schema });
+    const parseCompletedAt = new Date().toISOString();
+    const diagnostics = {
+      parser_version: DOCUMENT_RESPONSE_PARSER_VERSION,
+      repair_pipeline_version: DOCUMENT_RESPONSE_REPAIR_VERSION,
+      schema_version: input.schemaVersion,
+      parse_started_at: parseStartedAt,
+      parse_completed_at: parseCompletedAt,
+      repair_steps: result.repairSteps,
+      candidate_count: result.candidateDiagnostics.length,
+      json_valid_candidate_count: result.candidateDiagnostics.filter(
+        (candidate) => candidate.parseStatus === "valid",
+      ).length,
+      schema_valid_candidate_count: result.candidateDiagnostics.filter(
+        (candidate) => candidate.schemaStatus === "valid",
+      ).length,
+      candidate_diagnostics: result.candidateDiagnostics,
+    };
+    if (!result.ok) {
+      await this.mustUpdateExecution(
+        input.executionKey,
+        {
+          ...diagnostics,
+          status:
+            result.failureCategory === "schema_validation_failed"
+              ? "validation_failed"
+              : "failed",
+          failure_category: result.failureCategory,
+          error_message: result.message.slice(0, 2_000),
+          parse_status: "failed",
+          parse_error_message:
+            result.parseErrorMessage?.slice(0, 2_000) ?? null,
+          parse_error_position: result.parseErrorPosition ?? null,
+          completed_at: parseCompletedAt,
+        },
+        [input.execution.status],
+      );
+      throw new DocumentModelOperationError(
+        result.message,
+        result.failureCategory,
+        input.operation,
+      );
+    }
+    await this.mustUpdateExecution(
+      input.executionKey,
+      {
+        ...diagnostics,
+        status: "raw_saved",
+        raw_response: result.parsedResponse,
+        parsed_response: result.parsedResponse,
+        raw_saved_at: parseCompletedAt,
+        parse_status: "succeeded",
+        parse_error_message: null,
+        parse_error_position: null,
+        failure_category: null,
+        error_message: null,
+        completed_at: null,
+      },
+      [input.execution.status],
+    );
+    await this.mustUpdateExecution(
+      input.executionKey,
+      { status: "succeeded", completed_at: new Date().toISOString() },
+      ["raw_saved"],
+    );
+    return result.value;
+  }
+
+  private async persistParseDiagnostics(
+    executionKey: string,
+    input: {
+      repairSteps: StructuredResponseRepairStep[];
+      candidateDiagnostics: StructuredResponseCandidateDiagnostic[];
+      parseStartedAt: string;
+      parseCompletedAt: string;
+    },
+  ) {
+    await this.mustUpdateExecution(
+      executionKey,
+      {
+        parse_status: "succeeded",
+        parse_error_message: null,
+        parse_error_position: null,
+        candidate_count: input.candidateDiagnostics.length,
+        json_valid_candidate_count: input.candidateDiagnostics.filter(
+          (candidate) => candidate.parseStatus === "valid",
+        ).length,
+        schema_valid_candidate_count: input.candidateDiagnostics.filter(
+          (candidate) => candidate.schemaStatus === "valid",
+        ).length,
+        candidate_diagnostics: input.candidateDiagnostics,
+        repair_steps: input.repairSteps,
+        parse_started_at: input.parseStartedAt,
+        parse_completed_at: input.parseCompletedAt,
+      },
+      ["response_received"],
+    );
+  }
+
   private async getExecution(
     executionKey: string,
   ): Promise<StoredExecution | null> {
     if (!this.persistence) return null;
     const { data, error } = await this.persistence.supabase
       .from("document_v2_model_executions")
-      .select("status,raw_response,lease_expires_at")
+      .select(
+        "status,raw_response,raw_content_encrypted,parser_version,schema_version,lease_expires_at",
+      )
       .eq("execution_key", executionKey)
       .maybeSingle();
     if (error) throw error;

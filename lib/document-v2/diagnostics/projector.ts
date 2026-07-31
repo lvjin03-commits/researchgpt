@@ -30,6 +30,23 @@ function numberValue(value: unknown) {
     : undefined;
 }
 
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string").slice(0, 20)
+    : [];
+}
+
+function objectArray(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === "object" && !Array.isArray(item),
+        )
+        .slice(0, 20)
+    : [];
+}
+
 export function projectDocumentJobDiagnostics(
   sources: DiagnosticSources,
   now = new Date(),
@@ -78,12 +95,29 @@ export function projectDocumentJobDiagnostics(
         contentState: row.content_state,
         contentLength: row.content_length,
         reasoningContentPresent: row.reasoning_content_present,
+        reasoningContentLength: row.reasoning_content_length,
         refusalPresent: row.refusal_present,
         toolCallCount: row.tool_call_count,
         inputTokens: row.input_tokens,
         cachedInputTokens: row.cached_input_tokens,
         outputTokens: row.output_tokens,
         reasoningTokens: row.reasoning_tokens,
+        rawContentHash: row.raw_content_hash,
+        sanitizedPreview: sanitizeDiagnosticError(row.sanitized_preview),
+        providerResponseSavedAt: row.provider_response_saved_at,
+        parseStartedAt: row.parse_started_at,
+        parseCompletedAt: row.parse_completed_at,
+        parseStatus: row.parse_status,
+        parseErrorMessage: sanitizeDiagnosticError(row.parse_error_message),
+        parseErrorPosition: row.parse_error_position,
+        candidateCount: row.candidate_count,
+        jsonValidCandidateCount: row.json_valid_candidate_count,
+        schemaValidCandidateCount: row.schema_valid_candidate_count,
+        repairSteps: stringArray(row.repair_steps),
+        candidateDiagnostics: objectArray(row.candidate_diagnostics),
+        parserVersion: row.parser_version,
+        repairPipelineVersion: row.repair_pipeline_version,
+        schemaVersion: row.schema_version,
         calculatedCostUsd:
           recordedCosts.get(row.input_fingerprint) ?? null,
       };
@@ -172,8 +206,18 @@ export function projectDocumentJobDiagnostics(
         contentState: execution.contentState,
         contentLength: execution.contentLength,
         reasoningContentPresent: execution.reasoningContentPresent,
+        reasoningContentLength: execution.reasoningContentLength,
         refusalPresent: execution.refusalPresent,
         toolCallCount: execution.toolCallCount,
+        providerResponseSavedAt: execution.providerResponseSavedAt,
+        parseStatus: execution.parseStatus,
+        parseErrorPosition: execution.parseErrorPosition,
+        candidateCount: execution.candidateCount,
+        jsonValidCandidateCount: execution.jsonValidCandidateCount,
+        schemaValidCandidateCount: execution.schemaValidCandidateCount,
+        parserVersion: execution.parserVersion,
+        repairPipelineVersion: execution.repairPipelineVersion,
+        repairSteps: execution.repairSteps.join(",") || null,
       },
     }),
   );

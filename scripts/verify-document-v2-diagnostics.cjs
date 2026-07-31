@@ -86,12 +86,29 @@ const diagnostic = projectDocumentJobDiagnostics(
         content_state: null,
         content_length: 0,
         reasoning_content_present: false,
+        reasoning_content_length: 0,
         refusal_present: false,
         tool_call_count: 0,
         input_tokens: 0,
         cached_input_tokens: 0,
         output_tokens: 0,
         reasoning_tokens: 0,
+        raw_content_hash: "response-hash",
+        sanitized_preview: "safe preview",
+        provider_response_saved_at: null,
+        parse_started_at: null,
+        parse_completed_at: null,
+        parse_status: null,
+        parse_error_message: null,
+        parse_error_position: null,
+        candidate_count: 0,
+        json_valid_candidate_count: 0,
+        schema_valid_candidate_count: 0,
+        repair_steps: [],
+        candidate_diagnostics: [],
+        parser_version: "document-json-parser-v2",
+        repair_pipeline_version: "document-json-repair-v1",
+        schema_version: "schema-hash",
       },
     ],
     outbox: [
@@ -128,6 +145,9 @@ assert.equal(
   false,
 );
 assert.equal(JSON.stringify(diagnostic).includes("raw_response"), false);
+assert.equal(JSON.stringify(diagnostic).includes("raw_content_encrypted"), false);
+assert.equal(diagnostic.modelExecutions[0].rawContentHash, "response-hash");
+assert.equal(diagnostic.modelExecutions[0].sanitizedPreview, "safe preview");
 
 const cancellationWithDispatch = projectDocumentJobDiagnostics(
   {
