@@ -55,6 +55,7 @@ type SidebarProps = {
   onRenameProject: (project: ResearchProject) => void;
   onDeleteProject: (project: ResearchProject) => void;
   onLogout: () => void;
+  onDesktopCollapse?: () => void;
   isLoggingOut?: boolean;
   syncError?: string | null;
 };
@@ -89,6 +90,7 @@ export function Sidebar({
   onRenameProject,
   onDeleteProject,
   onLogout,
+  onDesktopCollapse,
   isLoggingOut = false,
   syncError = null,
 }: SidebarProps) {
@@ -266,14 +268,14 @@ export function Sidebar({
   return (
     <>
       <div
-        className={`fixed inset-0 z-40 bg-black/20 transition-opacity md:hidden ${
+        className={`fixed inset-0 z-40 bg-black/20 transition-opacity lg:hidden ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={onClose}
         aria-hidden="true"
       />
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[292px] flex-col border-r border-[#dbe4e7] bg-[#eef3f4] transition-transform md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[292px] flex-col border-r border-[#dbe4e7] bg-[#eef3f4] transition-transform lg:static lg:w-full lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         aria-label="科研项目与资料"
@@ -291,11 +293,22 @@ export function Sidebar({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center text-gray-500 hover:bg-gray-200 md:hidden"
+            className="inline-flex h-8 w-8 items-center justify-center text-gray-500 hover:bg-gray-200 lg:hidden"
             aria-label="关闭侧栏"
           >
             <X className="h-4 w-4" />
           </button>
+          {onDesktopCollapse && (
+            <button
+              type="button"
+              onClick={onDesktopCollapse}
+              className="hidden h-8 w-8 items-center justify-center text-gray-500 hover:bg-gray-200 lg:inline-flex"
+              aria-label="收起左侧导航"
+              title="收起左侧导航"
+            >
+              <ChevronRight className="h-4 w-4 rotate-180" />
+            </button>
+          )}
         </div>
 
         <div className="px-3 pb-3">

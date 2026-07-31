@@ -23,6 +23,11 @@ import { MenuIcon } from "@/components/icons";
 import { ProjectTranslationDialog } from "@/components/project-translation-dialog";
 import { ResearchToolPanel } from "@/components/research-tool-panel";
 import { Sidebar } from "@/components/sidebar";
+import { WorkspaceResizeHandle } from "@/components/workspace-layout/workspace-resize-handle";
+import {
+  useWorkspaceLayout,
+  WORKSPACE_LAYOUT_CONFIG,
+} from "@/components/workspace-layout/use-workspace-layout";
 import type { ChatMessage } from "@/lib/ai/types";
 import {
   DEFAULT_CHAT_MODEL_TIER,
@@ -353,6 +358,7 @@ export function ChatShell() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
+  const { rootRef, layout, commitWidth, toggleLeft } = useWorkspaceLayout();
   const [activeToolFolderId, setActiveToolFolderId] = useState<string | null>(
     null,
   );
@@ -1687,8 +1693,23 @@ export function ChatShell() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-[#f4f7f8]">
-      <Sidebar
+    <div
+      ref={rootRef}
+      className="flex h-dvh overflow-hidden bg-[#f4f7f8]"
+      style={
+        {
+          "--workspace-left-width": `${layout.leftWidth}px`,
+          "--workspace-right-width": `${layout.rightWidth}px`,
+        } as React.CSSProperties
+      }
+    >
+      <div
+        className={`contents lg:shrink-0 ${
+          layout.leftCollapsed ? "lg:hidden" : "lg:flex"
+        }`}
+        style={{ width: "var(--workspace-left-width)" }}
+      >
+        <Sidebar
         isOpen={sidebarOpen}
         conversations={conversations}
         activeConversationId={activeConversationId}
@@ -1712,20 +1733,46 @@ export function ChatShell() {
         onRenameProject={handleRenameProject}
         onDeleteProject={handleDeleteProject}
         onLogout={handleLogout}
+        onDesktopCollapse={toggleLeft}
         isLoggingOut={isLoggingOut}
         syncError={syncError}
-      />
+        />
+      </div>
+
+      {!layout.leftCollapsed && (
+        <WorkspaceResizeHandle
+          side="left"
+          currentWidth={layout.leftWidth}
+          otherPanelWidth={toolPanelOpen ? layout.rightWidth : 0}
+          minimumMainWidth={WORKSPACE_LAYOUT_CONFIG.minimumMainWidth}
+          panelConfig={WORKSPACE_LAYOUT_CONFIG.left}
+          rootRef={rootRef}
+          onResizeEnd={commitWidth}
+        />
+      )}
 
       <div className="relative flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center gap-3 border-b border-[#dbe4e7] bg-white/95 px-4 backdrop-blur sm:px-5">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="p-2 text-gray-600 hover:bg-gray-100 md:hidden"
+            className="p-2 text-gray-600 hover:bg-gray-100 lg:hidden"
             aria-label="打开侧栏"
           >
             <MenuIcon className="h-5 w-5" />
           </button>
+          {layout.leftCollapsed && (
+            <button
+              type="button"
+              onClick={toggleLeft}
+              className="hidden h-9 items-center gap-2 rounded-md border border-[#cddadd] bg-white px-3 text-xs font-bold text-[#42545c] hover:bg-[#f1f6f8] lg:inline-flex"
+              aria-label="展开左侧导航"
+              title="展开左侧导航"
+            >
+              <MenuIcon className="h-4 w-4" />
+              导航
+            </button>
+          )}
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-[#172126]">
               {activeProject?.name || chatTitle}
@@ -2148,7 +2195,25 @@ export function ChatShell() {
         </main>
       </div>
 
-      <ResearchToolPanel
+      {toolPanelOpen && (
+        <WorkspaceResizeHandle
+          side="right"
+          currentWidth={layout.rightWidth}
+          otherPanelWidth={layout.leftCollapsed ? 0 : layout.leftWidth}
+          minimumMainWidth={WORKSPACE_LAYOUT_CONFIG.minimumMainWidth}
+          panelConfig={WORKSPACE_LAYOUT_CONFIG.right}
+          rootRef={rootRef}
+          onResizeEnd={commitWidth}
+        />
+      )}
+
+      <div
+        className={`contents lg:shrink-0 ${
+          toolPanelOpen ? "lg:flex" : "lg:hidden"
+        }`}
+        style={{ width: "var(--workspace-right-width)" }}
+      >
+        <ResearchToolPanel
         open={toolPanelOpen}
         folder={activeToolFolder}
         project={activeToolFolder ? null : activeProject}
@@ -2179,7 +2244,8 @@ export function ChatShell() {
         onRemovePaper={(paper) => void handleRemovePaperFromOpenFolder(paper)}
         onUploadFiles={(files) => void handleUploadFilesToOpenFolder(files)}
         onClose={() => setToolPanelOpen(false)}
-      />
+        />
+      </div>
 
       {pendingProjectTranslation && (
         <ProjectTranslationDialog

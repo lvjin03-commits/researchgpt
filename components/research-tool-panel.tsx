@@ -251,7 +251,7 @@ export function ResearchToolPanel({
   };
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(460px,94vw)] flex-col border-l border-gray-200 bg-white shadow-2xl lg:static lg:z-auto lg:w-[380px] lg:shrink-0 lg:shadow-none xl:w-[440px]">
+    <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(460px,94vw)] flex-col border-l border-gray-200 bg-white shadow-2xl lg:relative lg:z-auto lg:w-full lg:shrink-0 lg:shadow-none">
       <header className="flex h-14 items-center justify-between border-b border-gray-200 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <BookOpen className="h-4 w-4 shrink-0 text-blue-700" />
@@ -340,7 +340,7 @@ export function ResearchToolPanel({
         }}
       >
         {dragActive && folder && (
-          <div className="pointer-events-none absolute inset-y-14 right-0 z-20 flex w-[min(460px,94vw)] items-center justify-center border-2 border-dashed border-blue-500 bg-blue-50/95 lg:w-[380px] xl:w-[440px]">
+          <div className="pointer-events-none absolute inset-y-14 right-0 z-20 flex w-[min(460px,94vw)] items-center justify-center border-2 border-dashed border-blue-500 bg-blue-50/95 lg:w-full">
             <div className="text-center">
               <FileUp className="mx-auto h-8 w-8 text-blue-700" />
               <p className="mt-3 text-sm font-bold text-blue-950">
