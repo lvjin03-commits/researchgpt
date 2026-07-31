@@ -82,6 +82,22 @@ assert.deepEqual(
   ["topic"],
 );
 
+const invariantFailure = parseStructuredResponse({
+  content: '{"ready":true,"topic":"forbidden"}',
+  schema,
+  validateCandidate: (candidate) => {
+    if (candidate.topic === "forbidden") {
+      throw new Error("The semantic invariant rejected this candidate.");
+    }
+  },
+});
+assert.equal(invariantFailure.ok, false);
+assert.equal(invariantFailure.failureCategory, "schema_validation_failed");
+assert.deepEqual(
+  invariantFailure.candidateDiagnostics[0].schemaIssuePaths,
+  ["$invariant"],
+);
+
 const proseOnly = parse("This response contains no structured object.");
 assert.equal(proseOnly.ok, false);
 assert.equal(proseOnly.failureCategory, "no_json_object");

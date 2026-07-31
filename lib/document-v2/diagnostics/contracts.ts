@@ -77,6 +77,14 @@ export type ModelExecutionDiagnostic = {
   contentLength: number;
   reasoningContentPresent: boolean;
   reasoningContentLength: number;
+  auxiliaryContentHash: string | null;
+  auxiliaryContentLength: number;
+  auxiliaryContentTypes: string[];
+  responseSource: string | null;
+  recoveryMode: string | null;
+  requestedMaxTokens: number | null;
+  effectiveMaxTokens: number | null;
+  visibleOutputTokens: number | null;
   refusalPresent: boolean;
   toolCallCount: number;
   inputTokens: number;

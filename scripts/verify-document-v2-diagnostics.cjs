@@ -95,6 +95,14 @@ const diagnostic = projectDocumentJobDiagnostics(
         reasoning_tokens: 0,
         raw_content_hash: "response-hash",
         sanitized_preview: "safe preview",
+        auxiliary_content_hash: "auxiliary-hash",
+        auxiliary_content_length: 512,
+        auxiliary_content_types: ["reasoning"],
+        response_source: "auxiliary_content",
+        recovery_mode: "unique_valid_auxiliary_candidate",
+        requested_max_tokens: 8_000,
+        effective_max_tokens: null,
+        visible_output_tokens: null,
         provider_response_saved_at: null,
         parse_started_at: null,
         parse_completed_at: null,
@@ -148,6 +156,24 @@ assert.equal(JSON.stringify(diagnostic).includes("raw_response"), false);
 assert.equal(JSON.stringify(diagnostic).includes("raw_content_encrypted"), false);
 assert.equal(diagnostic.modelExecutions[0].rawContentHash, "response-hash");
 assert.equal(diagnostic.modelExecutions[0].sanitizedPreview, "safe preview");
+assert.equal(
+  diagnostic.modelExecutions[0].auxiliaryContentHash,
+  "auxiliary-hash",
+);
+assert.equal(diagnostic.modelExecutions[0].auxiliaryContentLength, 512);
+assert.deepEqual(diagnostic.modelExecutions[0].auxiliaryContentTypes, [
+  "reasoning",
+]);
+assert.equal(
+  diagnostic.modelExecutions[0].responseSource,
+  "auxiliary_content",
+);
+assert.equal(
+  diagnostic.modelExecutions[0].recoveryMode,
+  "unique_valid_auxiliary_candidate",
+);
+assert.equal(diagnostic.modelExecutions[0].requestedMaxTokens, 8_000);
+assert.equal(JSON.stringify(diagnostic).includes("auxiliary_content_encrypted"), false);
 
 const cancellationWithDispatch = projectDocumentJobDiagnostics(
   {

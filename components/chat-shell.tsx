@@ -45,6 +45,7 @@ import {
   buildChatApiMessages,
   defaultContentForAttachments,
 } from "@/lib/chat/message-normalize";
+import { bindDocumentJobMarker } from "@/lib/chat/document-job-binding";
 import type { DisplayAttachment, DisplayChatMessage } from "@/lib/chat/types";
 import { useChatHistory } from "@/lib/chat/use-chat-history";
 import {
@@ -1140,12 +1141,45 @@ export function ChatShell() {
       let streamingMessages = nextMessages;
 
       const appendToAssistant = (content: string) => {
+        if (
+          abortController.signal.aborted ||
+          abortControllerRef.current !== abortController
+        ) {
+          return;
+        }
         streamingMessages = streamingMessages.map((message, index) =>
           index === streamingMessages.length - 1 &&
           message.role === "assistant"
             ? { ...message, content: message.content + content }
             : message,
         );
+        persistConversation(conversationId, streamingMessages);
+      };
+
+      const bindDocumentJobToAssistant = (jobId: string) => {
+        if (
+          abortController.signal.aborted ||
+          abortControllerRef.current !== abortController
+        ) {
+          return;
+        }
+        const boundAt = new Date().toISOString();
+        streamingMessages = streamingMessages.map((message, index) => {
+          if (
+            index !== streamingMessages.length - 1 ||
+            message.role !== "assistant"
+          ) {
+            return message;
+          }
+          return {
+            ...message,
+            content: bindDocumentJobMarker(message.content, jobId),
+            documentJobId: jobId,
+            documentJobBoundAt: boundAt,
+            documentJobBindingVersion:
+              (message.documentJobBindingVersion ?? 0) + 1,
+          };
+        });
         persistConversation(conversationId, streamingMessages);
       };
 
@@ -1244,7 +1278,7 @@ export function ChatShell() {
             );
           },
           onDocumentJob: (jobId) => {
-            appendToAssistant(`[[RESEARCHGPT_DOCUMENT_JOB:${jobId}]]`);
+            bindDocumentJobToAssistant(jobId);
           },
           onAttachmentsPrepared: (context) => {
             streamingMessages = streamingMessages.map((message, index) => {

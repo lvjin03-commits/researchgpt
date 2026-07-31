@@ -137,7 +137,7 @@ function createExecutor(response) {
 }
 
 async function executeCase({ operation, response, schema }) {
-  const { executor, persistence } = createExecutor(response);
+  const { executor, persistence, calls } = createExecutor(response);
   let caught;
   try {
     await executor.generate({
@@ -153,7 +153,7 @@ async function executeCase({ operation, response, schema }) {
   assert.ok(caught);
   const rows = [...persistence.rows.values()];
   assert.equal(rows.length, 1);
-  return { error: caught, row: rows[0] };
+  return { error: caught, row: rows[0], calls };
 }
 
 (async () => {
@@ -177,17 +177,104 @@ async function executeCase({ operation, response, schema }) {
     schema: z.object({ value: z.string() }),
   });
   assert.ok(empty.error instanceof DocumentModelOperationError);
-  assert.equal(empty.error.failureCategory, "empty_structured_output");
+  assert.equal(empty.error.failureCategory, "output_truncated");
   assert.equal(empty.row.status, "failed");
-  assert.equal(empty.row.failure_category, "empty_structured_output");
+  assert.equal(empty.row.failure_category, "output_truncated");
   assert.equal(empty.row.finish_reason, "length");
   assert.equal(empty.row.choice_count, 1);
   assert.equal(empty.row.content_state, "null");
   assert.equal(empty.row.reasoning_content_present, true);
+  assert.equal(empty.row.auxiliary_content_length, 18);
+  assert.ok(empty.row.auxiliary_content_encrypted);
   assert.equal(empty.row.provider_request_id, "deepseek-empty");
   assert.ok(empty.row.response_received_at);
   assert.equal(empty.row.input_tokens, 120);
   assert.equal(empty.row.output_tokens, 80);
+
+  const auxiliaryRecovery = createExecutor({
+    id: "deepseek-auxiliary-recovery",
+    model: "deepseek-v4-flash",
+    choices: [
+      {
+        finish_reason: "stop",
+        message: {
+          content: null,
+          reasoning_content:
+            'The final object is: {"value":"recovered from auxiliary"}',
+          tool_calls: [],
+        },
+      },
+    ],
+    usage: { prompt_tokens: 20, completion_tokens: 10 },
+  });
+  const auxiliaryValue = await auxiliaryRecovery.executor.generate({
+    operation: "outline.plan.auxiliary_recovery",
+    schemaName: "provider_failure_test",
+    schema: z.object({ value: z.string() }),
+    systemInstruction: "Return test JSON.",
+    userInstruction: "Test.",
+  });
+  assert.deepEqual(auxiliaryValue, {
+    value: "recovered from auxiliary",
+  });
+  assert.equal(auxiliaryRecovery.calls.count, 1);
+  const auxiliaryRow = [...auxiliaryRecovery.persistence.rows.values()][0];
+  assert.equal(auxiliaryRow.status, "succeeded");
+  assert.equal(auxiliaryRow.response_source, "auxiliary_content");
+  assert.equal(
+    auxiliaryRow.recovery_mode,
+    "unique_valid_auxiliary_candidate",
+  );
+  assert.ok(auxiliaryRow.auxiliary_content_encrypted);
+  assert.equal(auxiliaryRow.raw_content_encrypted, null);
+
+  const ambiguousAuxiliary = await executeCase({
+    operation: "outline.plan.ambiguous_auxiliary",
+    response: {
+      id: "deepseek-ambiguous-auxiliary",
+      model: "deepseek-v4-flash",
+      choices: [
+        {
+          finish_reason: "stop",
+          message: {
+            content: null,
+            reasoning_content:
+              '{"value":"first"}\n{"value":"second"}',
+            tool_calls: [],
+          },
+        },
+      ],
+      usage: { prompt_tokens: 20, completion_tokens: 10 },
+    },
+    schema: z.object({ value: z.string() }),
+  });
+  assert.equal(
+    ambiguousAuxiliary.error.failureCategory,
+    "ambiguous_auxiliary_output",
+  );
+  assert.equal(
+    ambiguousAuxiliary.row.failure_category,
+    "ambiguous_auxiliary_output",
+  );
+  assert.equal(ambiguousAuxiliary.calls.count, 1);
+
+  const providerEmpty = await executeCase({
+    operation: "outline.plan.provider_empty",
+    response: {
+      id: "deepseek-provider-empty",
+      model: "deepseek-v4-flash",
+      choices: [
+        {
+          finish_reason: "stop",
+          message: { content: null, reasoning_content: null, tool_calls: [] },
+        },
+      ],
+      usage: { prompt_tokens: 20, completion_tokens: 0 },
+    },
+    schema: z.object({ value: z.string() }),
+  });
+  assert.equal(providerEmpty.error.failureCategory, "provider_empty_response");
+  assert.equal(providerEmpty.row.failure_category, "provider_empty_response");
 
   const invalidJson = await executeCase({
     operation: "outline.plan.invalid_json",
@@ -286,6 +373,13 @@ async function executeCase({ operation, response, schema }) {
     ),
     "utf8",
   );
+  const auxiliaryRecoveryMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/026_document_v2_auxiliary_response.sql",
+    ),
+    "utf8",
+  );
   assert.match(migration, /'response_received'/);
   assert.match(migration, /finalize_document_v2_worker_failure/);
   assert.match(
@@ -297,6 +391,13 @@ async function executeCase({ operation, response, schema }) {
   assert.match(recoveryMigration, /raw_content_encrypted TEXT/);
   assert.match(recoveryMigration, /candidate_diagnostics JSONB/);
   assert.match(recoveryMigration, /parser_version TEXT/);
+  assert.match(auxiliaryRecoveryMigration, /auxiliary_content_encrypted TEXT/);
+  assert.match(auxiliaryRecoveryMigration, /response_source TEXT/);
+  assert.doesNotMatch(
+    auxiliaryRecoveryMigration,
+    /auxiliary_content_plaintext/i,
+    "Auxiliary provider output must never be persisted as plaintext.",
+  );
   assert.doesNotMatch(
     recoveryMigration,
     /raw_content_plaintext/i,

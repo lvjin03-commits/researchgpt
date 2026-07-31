@@ -7,6 +7,7 @@ import type {
   MessageContentPart,
 } from "@/lib/ai/types";
 import type { DisplayAttachment, DisplayChatMessage } from "@/lib/chat/types";
+import { extractDocumentJobId } from "@/lib/chat/document-job-binding";
 
 export type ApiTextMessage = {
   role: ChatRole;
@@ -450,11 +451,30 @@ export function normalizeDisplayMessage(
             : undefined,
       }))
     : undefined;
+  const persistedDocumentJobId = extractDocumentJobId(content);
+  const documentJobId =
+    typeof message.documentJobId === "string" && message.documentJobId.trim()
+      ? message.documentJobId.trim()
+      : persistedDocumentJobId;
 
   return {
     role,
     content,
     attachments: attachments && attachments.length > 0 ? attachments : undefined,
+    documentJobId,
+    documentJobBoundAt:
+      documentJobId && typeof message.documentJobBoundAt === "string"
+        ? message.documentJobBoundAt
+        : undefined,
+    documentJobBindingVersion:
+      documentJobId &&
+      typeof message.documentJobBindingVersion === "number" &&
+      Number.isInteger(message.documentJobBindingVersion) &&
+      message.documentJobBindingVersion > 0
+        ? message.documentJobBindingVersion
+        : documentJobId
+          ? 1
+          : undefined,
   };
 }
 

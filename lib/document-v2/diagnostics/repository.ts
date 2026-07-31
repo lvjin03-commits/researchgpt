@@ -46,6 +46,14 @@ export type DiagnosticExecutionRow = {
   content_length: number;
   reasoning_content_present: boolean;
   reasoning_content_length: number;
+  auxiliary_content_hash: string | null;
+  auxiliary_content_length: number;
+  auxiliary_content_types: unknown;
+  response_source: string | null;
+  recovery_mode: string | null;
+  requested_max_tokens: number | null;
+  effective_max_tokens: number | null;
+  visible_output_tokens: number | null;
   refusal_present: boolean;
   tool_call_count: number;
   input_tokens: number;
@@ -116,6 +124,14 @@ const EXECUTION_FIELDS = [
   "content_length",
   "reasoning_content_present",
   "reasoning_content_length",
+  "auxiliary_content_hash",
+  "auxiliary_content_length",
+  "auxiliary_content_types",
+  "response_source",
+  "recovery_mode",
+  "requested_max_tokens",
+  "effective_max_tokens",
+  "visible_output_tokens",
   "refusal_present",
   "tool_call_count",
   "input_tokens",

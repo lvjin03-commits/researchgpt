@@ -25,7 +25,9 @@ export function DocumentV2JobMonitor({
   jobId,
   initialSnapshot,
 }: Props) {
-  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [snapshot, setSnapshot] = useState(
+    initialSnapshot?.job.jobId === jobId ? initialSnapshot : undefined,
+  );
   const [busy, setBusy] = useState(false);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [connectionMessage, setConnectionMessage] = useState<string>();
@@ -52,6 +54,9 @@ export function DocumentV2JobMonitor({
       headers: { Accept: "application/json" },
     });
     const next = await readResponse(response);
+    if (next.job.jobId !== jobId) {
+      return next;
+    }
     setSnapshot(next);
     setConnectionMessage(undefined);
     return next;
@@ -77,7 +82,9 @@ export function DocumentV2JobMonitor({
         }
       }, delay);
     };
-    if (!snapshot || !TERMINAL_STATUSES.has(snapshot.job.status)) schedule(0);
+    if (!snapshot?.job.status || !TERMINAL_STATUSES.has(snapshot.job.status)) {
+      schedule(0);
+    }
     return () => {
       disposed = true;
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -96,7 +103,10 @@ export function DocumentV2JobMonitor({
         },
         body: JSON.stringify({ action }),
       });
-      setSnapshot(await readResponse(response));
+      const next = await readResponse(response);
+      if (next.job.jobId === jobId) {
+        setSnapshot(next);
+      }
     } catch (error) {
       setConnectionMessage(
         error instanceof Error ? error.message : "任务操作失败。",
@@ -123,7 +133,10 @@ export function DocumentV2JobMonitor({
           answer: clarificationAnswer.trim(),
         }),
       });
-      setSnapshot(await readResponse(response));
+      const next = await readResponse(response);
+      if (next.job.jobId === jobId) {
+        setSnapshot(next);
+      }
       setClarificationAnswer("");
     } catch (error) {
       setConnectionMessage(

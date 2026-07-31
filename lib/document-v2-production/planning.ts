@@ -191,6 +191,9 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
       operation: "outline.plan",
       schemaName: "document_outline_v1",
       schema: OutlineResponseSchema,
+      validateCandidate: (candidate) => {
+        SemanticOutlineProposalSchema.parse(candidate);
+      },
       systemInstruction: [
         "Plan the mature semantic structure of one SCI review document.",
         "Establish one evidence-informed review thesis and a clear scope boundary before planning sections.",

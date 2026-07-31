@@ -11,4 +11,8 @@ export type DisplayChatMessage = {
   role: ChatRole;
   content: string;
   attachments?: DisplayAttachment[];
+  /** Runtime authority for every control and poll targeting a document job. */
+  documentJobId?: string;
+  documentJobBoundAt?: string;
+  documentJobBindingVersion?: number;
 };

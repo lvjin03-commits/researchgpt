@@ -90,7 +90,7 @@ export function ChatMessages({
     <div className="relative mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6">
       {messages.map((message, index) => (
         <ChatMessageBubble
-          key={`${message.role}-${index}-${message.content.slice(0, 24)}-${message.attachments?.map((attachment) => attachment.name).join("|") ?? ""}`}
+          key={`${message.role}-${index}-${message.content.slice(0, 24)}-${message.documentJobId ?? "no-job"}-${message.attachments?.map((attachment) => attachment.name).join("|") ?? ""}`}
           message={message}
           chatTitle={chatTitle}
           onEdit={message.role === "user" ? () => onEditMessage(index) : undefined}

@@ -169,12 +169,14 @@ function schemaIssuePaths(error: z.ZodError) {
 export function parseStructuredResponse<T>(input: {
   content: string;
   schema: ZodType<T>;
+  validateCandidate?: (value: T) => void;
 }): StructuredResponseParseResult<T> {
   const directText = input.content.trim();
   try {
     const direct = JSON.parse(directText) as unknown;
     const validation = input.schema.safeParse(direct);
     if (validation.success) {
+      input.validateCandidate?.(validation.data);
       return {
         ok: true,
         value: validation.data,
@@ -239,20 +241,35 @@ export function parseStructuredResponse<T>(input: {
     }
     jsonValidCount += 1;
     const validation = input.schema.safeParse(parsed);
+    let invariantError: unknown;
+    if (validation.success && input.validateCandidate) {
+      try {
+        input.validateCandidate(validation.data);
+      } catch (error) {
+        invariantError = error;
+      }
+    }
+    const candidateIsValid = validation.success && invariantError === undefined;
     diagnostics.push({
       candidateIndex,
       contentHashInput: diagnosticHashInput(candidate.text),
       startOffset: candidate.startOffset,
       endOffset: candidate.endOffset,
       parseStatus: "valid",
-      schemaStatus: validation.success ? "valid" : "invalid",
-      schemaIssueCount: validation.success ? 0 : validation.error.issues.length,
-      schemaIssuePaths: validation.success
+      schemaStatus: candidateIsValid ? "valid" : "invalid",
+      schemaIssueCount: candidateIsValid
+        ? 0
+        : validation.success
+          ? 1
+          : validation.error.issues.length,
+      schemaIssuePaths: candidateIsValid
         ? []
-        : schemaIssuePaths(validation.error),
+        : validation.success
+          ? ["$invariant"]
+          : schemaIssuePaths(validation.error),
       repairSteps: candidateRepairs,
     });
-    if (validation.success) {
+    if (candidateIsValid && validation.success) {
       schemaValid.push({
         value: validation.data,
         parsedResponse: parsed,

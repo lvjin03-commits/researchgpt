@@ -62,7 +62,10 @@ function parsePlanDisclosurePayload(value: string): PlanDisclosurePayload | null
   }
 }
 
-function splitPlanDisclosures(content: string): MessagePart[] {
+function splitPlanDisclosures(
+  content: string,
+  boundDocumentJobId?: string,
+): MessagePart[] {
   const parts: MessagePart[] = [];
   let cursor = 0;
 
@@ -77,7 +80,7 @@ function splitPlanDisclosures(content: string): MessagePart[] {
       if (payload) {
         parts.push({ type: "plan", value: payload });
       }
-    } else {
+    } else if (!boundDocumentJobId) {
       parts.push({ type: "document_job", value: match[2] ?? "" });
     }
     cursor = index + match[0].length;
@@ -85,6 +88,10 @@ function splitPlanDisclosures(content: string): MessagePart[] {
 
   if (cursor < content.length) {
     parts.push({ type: "markdown", value: content.slice(cursor) });
+  }
+
+  if (boundDocumentJobId) {
+    parts.push({ type: "document_job", value: boundDocumentJobId });
   }
 
   return parts.length ? parts : [{ type: "markdown", value: content }];
@@ -807,13 +814,19 @@ function CodeBlock({
   );
 }
 
-function AssistantMarkdown({ content }: { content: string }) {
+function AssistantMarkdown({
+  content,
+  documentJobId,
+}: {
+  content: string;
+  documentJobId?: string;
+}) {
   const sourceSplit = splitSources(content);
   const imageSplit = splitImageGallery(sourceSplit.body);
   const body = imageSplit.body;
   const sources = sourceSplit.sources;
   const images = imageSplit.images;
-  const messageParts = splitPlanDisclosures(body);
+  const messageParts = splitPlanDisclosures(body, documentJobId);
   return (
     <div className="min-w-0 text-[15px] leading-7 text-gray-900">
       {messageParts.map((part, partIndex) =>
@@ -1114,7 +1127,12 @@ export function ChatMessageBubble({
         <AttachmentList attachments={message.attachments} isUser={false} />
       )}
 
-      {message.content && <AssistantMarkdown content={message.content} />}
+      {message.content && (
+        <AssistantMarkdown
+          content={message.content}
+          documentJobId={message.documentJobId}
+        />
+      )}
 
       {canExport && (
         <div className="mt-2 flex min-h-8 items-center gap-0.5">
