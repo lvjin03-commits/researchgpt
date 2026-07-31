@@ -6,8 +6,12 @@ This document is authoritative for step 5 of the document-v2 migration.
 
 The semantic outline planner may decide:
 
+- one review thesis and one explicit scope boundary;
+- review questions that organize the document argument;
 - section headings and order;
+- the question each section answers and its contribution to the thesis;
 - section purposes;
+- comparison dimensions, applicable conditions, and failure modes;
 - section count within template limits;
 - relative section weights;
 - required evidence from the provided evidence pool;
@@ -66,7 +70,10 @@ figure. A Figure Plan error must never trigger a chapter rewrite.
 contains only one planned component plus:
 
 - requested language and topic;
+- the frozen review thesis, scope boundary, and review questions;
 - planned type, heading, purpose, target length, and evidence IDs;
+- the section question, thesis contribution, comparison dimensions,
+  applicable conditions, and failure modes;
 - approved earlier components;
 - verified reference metadata;
 - repair feedback from the previous local attempt.
@@ -100,6 +107,8 @@ The model must return mature content. It must not return:
 - `visualSpecs`, `evidenceType`, or `aistructure`;
 - TODO, TBD, placeholders, or image prompts;
 - manual citation labels such as `[1]`;
+- handwritten figure or table numbers such as `Figure 1`, `[Fig. 2]`, or
+  `图 3`;
 - unverified reference metadata;
 - a heading different from the approved plan.
 
@@ -125,6 +134,7 @@ current runtime budget. Earlier approved components remain unchanged.
 |---|---|
 | Internal fields, placeholders, TODO, prompts, or code fences | `internal_content_leak` |
 | Manual numeric citation markers in prose | `manual_citation_marker` |
+| Handwritten figure or table references in prose | `manual_cross_reference` |
 | Multiline or excessively long title | `title_not_final` |
 | Abstract includes its own rendered label | `abstract_label_duplicated` |
 | Section or conclusion heading differs from plan | `planned_heading_mismatch` |
@@ -151,10 +161,12 @@ The contaminated section initially contains `TODO` and
 DOCX is inspected structurally and rendered through Microsoft Word for page
 review.
 
-## Not yet implemented
+## Remaining evidence and editorial work
 
-- production model-provider binding;
-- source-text retrieval and evidence packaging;
-- token budgeting and context compaction;
-- persistent jobs and progress streaming;
-- production routing and feature flag.
+- preliminary search-scope planning before evidence acquisition;
+- automatic retrieval of verified literature from the selected library or
+  authorized search;
+- claim-tier metadata and evidence-informed delivery gating;
+- compact component semantic summaries for document-wide consistency checks;
+- optional editorial components such as standfirst, key points, and conclusion
+  callouts.

@@ -129,6 +129,25 @@ export const DocumentPlanSchema = z
             ]),
             purpose: z.string().trim().min(1).max(1000),
             heading: z.string().trim().min(1).max(500).optional(),
+            question: z.string().trim().min(1).max(500).optional(),
+            contributionToThesis: z
+              .string()
+              .trim()
+              .min(1)
+              .max(1_000)
+              .optional(),
+            comparisonDimensions: z
+              .array(z.string().trim().min(1).max(300))
+              .max(12)
+              .default([]),
+            applicableConditions: z
+              .array(z.string().trim().min(1).max(500))
+              .max(12)
+              .default([]),
+            failureModes: z
+              .array(z.string().trim().min(1).max(500))
+              .max(12)
+              .default([]),
             targetLength: z.number().int().min(1).max(100_000).optional(),
             requiredEvidenceIds: z.array(IdentifierSchema).max(500).optional(),
             dependsOnComponentKeys: z.array(IdentifierSchema).max(100).default([]),
@@ -204,6 +223,18 @@ export const DocumentPlanSchema = z
               "data_plot",
             ]),
             purpose: z.string().trim().min(1).max(1_000),
+            questionAnswered: z
+              .string()
+              .trim()
+              .min(1)
+              .max(500)
+              .default("Explain the planned scientific relationship."),
+            evidenceMode: z.enum(["verified", "conceptual"]).default("conceptual"),
+            claimsRepresented: z
+              .array(z.string().trim().min(1).max(500))
+              .min(1)
+              .max(12)
+              .default(["Conceptual relationship described by the figure."]),
             requiredEvidenceIds: z
               .array(IdentifierSchema)
               .max(500)
@@ -213,6 +244,23 @@ export const DocumentPlanSchema = z
       )
       .max(4)
       .default([]),
+    reviewThesis: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2_000)
+      .default("Synthesize the requested topic through a coherent review argument."),
+    scopeBoundary: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2_000)
+      .default("Stay within the scientific scope defined by the user request."),
+    reviewQuestions: z
+      .array(z.string().trim().min(1).max(500))
+      .min(1)
+      .max(12)
+      .default(["What conclusions are supported within the requested scope?"]),
     figurePlanningCompleted: z.boolean().default(false),
     evidenceRequirements: z.array(
       z
@@ -259,6 +307,26 @@ export const DocumentPlanSchema = z
           });
         }
       });
+      if (
+        slot.evidenceMode === "verified" &&
+        slot.requiredEvidenceIds.length === 0
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["figureSlots", index, "requiredEvidenceIds"],
+          message: "Verified figures require at least one evidence ID.",
+        });
+      }
+      if (
+        slot.figureType === "data_plot" &&
+        slot.evidenceMode !== "verified"
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["figureSlots", index, "evidenceMode"],
+          message: "Data plots must use verified evidence mode.",
+        });
+      }
     });
   });
 
@@ -359,6 +427,8 @@ export const FinalDocumentSpecSchema = z
   })
   .strict()
   .superRefine((spec, context) => {
+    const manualCrossReferencePattern =
+      /(?:\bfig(?:ure)?\.?\s*\d+\b|\btable\s*\d+\b|图\s*\d+|表\s*\d+|\[\s*(?:fig(?:ure)?\.?|table|图|表)\s*\d+\s*\])/i;
     const blockIds = new Set<string>();
     const referenceIds = new Set(spec.references.map((reference) => reference.id));
     const assetIds = new Set<string>();
@@ -383,6 +453,14 @@ export const FinalDocumentSpecSchema = z
       }
       blockIds.add(block.id);
       if (block.type === "paragraph") {
+        if (manualCrossReferencePattern.test(block.text)) {
+          context.addIssue({
+            code: "custom",
+            path: ["blocks", index, "text"],
+            message:
+              "Final paragraph text cannot contain handwritten figure or table numbers.",
+          });
+        }
         for (const citationId of block.citationIds) {
           if (!referenceIds.has(citationId)) {
             context.addIssue({

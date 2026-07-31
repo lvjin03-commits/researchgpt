@@ -9,6 +9,10 @@ import type {
 const INTERNAL_CONTENT_PATTERN =
   /visualSpecs|evidenceType|aistructure|figure placeholder|TODO|TBD|\{\{[^}]+\}\}|```|system prompt|tool call/i;
 const MANUAL_CITATION_PATTERN = /\[(?:\d+)(?:\s*[-,]\s*\d+)*\]/;
+const MANUAL_FIGURE_REFERENCE_PATTERN =
+  /(?:\bfig(?:ure)?\.?\s*\d+\b|图\s*\d+|\[\s*(?:fig(?:ure)?\.?|图)\s*\d+\s*\])/i;
+const MANUAL_TABLE_REFERENCE_PATTERN =
+  /(?:\btable\s*\d+\b|表\s*\d+|\[\s*(?:table|表)\s*\d+\s*\])/i;
 
 export interface SemanticComponentReviewer {
   review(input: {
@@ -73,6 +77,20 @@ export class MatureDocumentComponentValidator
       return reject(
         "manual_citation_marker",
         "Remove manual numeric citation markers and use citationIds instead.",
+      );
+    }
+    if (
+      input.payload.kind === "blocks" &&
+      input.payload.blocks.some(
+        (block) =>
+          block.type === "paragraph" &&
+          (MANUAL_FIGURE_REFERENCE_PATTERN.test(block.text) ||
+            MANUAL_TABLE_REFERENCE_PATTERN.test(block.text)),
+      )
+    ) {
+      return reject(
+        "manual_cross_reference",
+        "Remove handwritten figure and table numbers. Use figureReferenceIds and structured relationships so the renderer owns final numbering.",
       );
     }
     if (

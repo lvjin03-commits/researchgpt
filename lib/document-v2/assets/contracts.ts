@@ -16,10 +16,44 @@ export const FigureRequestDraftSchema = z
     caption: z.string().trim().min(1).max(2_000),
     altText: z.string().trim().min(1).max(1_000),
     contentBrief: z.string().trim().min(1).max(4_000),
+    questionAnswered: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .default("Explain the planned scientific relationship."),
+    evidenceMode: z.enum(["verified", "conceptual"]).default("conceptual"),
+    claimsRepresented: z
+      .array(z.string().trim().min(1).max(500))
+      .min(1)
+      .max(12)
+      .default(["Conceptual relationship described by the figure."]),
     placementAfterBlockIndex: z.number().int().min(0).max(499),
     sourceEvidenceIds: z.array(IdentifierSchema).max(500),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    if (
+      request.evidenceMode === "verified" &&
+      request.sourceEvidenceIds.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceEvidenceIds"],
+        message: "Verified figure requests require source evidence.",
+      });
+    }
+    if (
+      request.figureType === "data_plot" &&
+      request.evidenceMode !== "verified"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["evidenceMode"],
+        message: "Data plots require verified evidence mode.",
+      });
+    }
+  });
 
 export type FigureRequestDraft = z.infer<typeof FigureRequestDraftSchema>;
 
@@ -46,6 +80,12 @@ export const FigureAssetSchema = z
     dpi: z.number().int().min(300).max(2_400),
     displayWidthPx: z.number().int().min(1).max(2_000),
     displayHeightPx: z.number().int().min(1).max(2_000),
+    preferredDisplayWidthMm: z.number().min(40).max(170).default(150),
+    minimumReadableWidthMm: z.number().min(40).max(170).default(90),
+    labelDensity: z.enum(["low", "medium", "high"]).default("medium"),
+    preferredLayout: z
+      .enum(["inline_medium", "inline_wide", "full_width", "dedicated_page"])
+      .default("full_width"),
     sha256: z.string().regex(/^[a-f0-9]{64}$/i),
     title: z.string().trim().min(1).max(500),
     altText: z.string().trim().min(1).max(1_000),
@@ -78,6 +118,13 @@ export const FigureAssetSchema = z
         code: "custom",
         path: ["fallbackPngBase64"],
         message: "PNG assets cannot define a separate PNG fallback.",
+      });
+    }
+    if (asset.minimumReadableWidthMm > asset.preferredDisplayWidthMm) {
+      context.addIssue({
+        code: "custom",
+        path: ["minimumReadableWidthMm"],
+        message: "Minimum readable width cannot exceed preferred width.",
       });
     }
   });

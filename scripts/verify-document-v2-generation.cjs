@@ -543,7 +543,7 @@ async function verifyCompleteGenerationFlow() {
   assert.match(documentXml, /2 Preparation Routes/);
   assert.match(documentXml, /Table 1 \|/);
   assert.match(documentXml, /Fig\. 1 \|/);
-  assert.match(documentXml, /\[Fig\. 1\]/);
+  assert.match(documentXml, /\(see Fig\. 1\)/);
   assert.doesNotMatch(documentXml, /TODO|evidenceType|aistructure/i);
   assert.doesNotMatch(documentXml, /Draw two preparation routes/i);
   const mediaFiles = Object.keys(archive.files).filter((entry) =>
@@ -813,10 +813,23 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
         false,
       );
       return {
+        reviewThesis:
+          "Processing history controls the network state of physical gels.",
+        scopeBoundary:
+          "Focus on reversible physical junctions and their preparation.",
+        reviewQuestions: [
+          "How does processing history determine network structure?",
+        ],
         sections: [
           {
             heading: "Mechanism",
+            question: "How are reversible junctions formed?",
             purpose: "Explain the mechanism.",
+            contributionToThesis:
+              "Connect junction formation to processing history.",
+            comparisonDimensions: ["junction lifetime"],
+            applicableConditions: ["reversible physical networks"],
+            failureModes: ["kinetic trapping"],
             relativeWeight: 1,
             requiredEvidenceIds: [],
           },
@@ -839,11 +852,68 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
     availableEvidenceIds: [],
   });
   assert.equal(proposal.sections.length, 1);
+  assert.match(proposal.reviewThesis, /Processing history/);
+}
+
+async function verifyManualFigureNumbersAreRejected() {
+  const validator = new MatureDocumentComponentValidator();
+  const result = await validator.validate({
+    request,
+    plan: {
+      requestId: request.requestId,
+      schemaVersion: 1,
+      templateSnapshot: (await resolveTemplate()).snapshot,
+      components: [
+        {
+          componentKey: "section-01",
+          type: "section",
+          heading: "1 Mechanism",
+          purpose: "Explain the mechanism.",
+          dependsOnComponentKeys: [],
+        },
+      ],
+      figureSlots: [],
+      figurePlanningCompleted: true,
+      evidenceRequirements: [],
+    },
+    component: {
+      componentKey: "section-01",
+      type: "section",
+      heading: "1 Mechanism",
+      purpose: "Explain the mechanism.",
+      dependsOnComponentKeys: [],
+    },
+    componentIndex: 0,
+    attempt: 1,
+    payload: {
+      kind: "blocks",
+      blocks: [
+        {
+          type: "heading",
+          level: 1,
+          text: "1 Mechanism",
+        },
+        {
+          type: "paragraph",
+          role: "body",
+          text: "As shown in Figure 1, the network is reversible.",
+          citationIds: [],
+          figureRequestIndexes: [],
+        },
+      ],
+      figureRequests: [],
+    },
+    approvedComponents: [],
+    verifiedReferences: [],
+  });
+  assert.equal(result.accepted, false);
+  assert.equal(result.code, "manual_cross_reference");
 }
 
 async function main() {
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
+  await verifyManualFigureNumbersAreRejected();
   await verifyCompleteGenerationFlow();
   await verifyPlannerRejectsInvalidOutline();
   await verifyPlannerRepairsTemplateComponentLeakage();

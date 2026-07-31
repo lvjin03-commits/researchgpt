@@ -6,7 +6,7 @@ This document is authoritative for step 6 of the document-v2 migration.
 
 | Stage | Owner | Output |
 |---|---|---|
-| Need and meaning | component content model | structured `FigureRequestDraft` |
+| Need and meaning | frozen Figure Plan | typed slot, purpose, question, evidence mode, represented claims |
 | System identity | orchestrator | stable `FigureRequest.requestId` |
 | Final media creation | injected `FinalFigureGenerator` | PNG or SVG bytes |
 | Technical acceptance | `ValidatedFigureAssetPipeline` | mature `FigureAsset` |
@@ -18,14 +18,18 @@ the image.
 
 ## Figure request
 
+The Figure Plan freezes:
+
+- figure type and evidence mode;
+- the question answered and claims represented;
+- verified evidence IDs.
+
 The content model may decide:
 
-- figure type;
 - title, mature caption, and alt text;
 - semantic content brief for the image generator;
 - placement after a specific local content block;
 - paragraphs that cite the local figure request;
-- verified evidence IDs supporting the figure.
 
 The model does not supply final asset IDs, figure numbers, file names,
 checksums, dimensions, or binary content.
@@ -46,6 +50,8 @@ The validated pipeline enforces:
 - mandatory high-resolution PNG fallback for SVG;
 - no fallback duplication for native PNG;
 - aspect-ratio-preserving display size within the SCI page width;
+- preferred display width, minimum readable width, label density, and layout
+  preference;
 - SHA-256 checksum over primary and fallback media.
 
 The figure generator receives up to two local attempts by default. A
@@ -56,8 +62,10 @@ approved chapter text.
 
 Paragraph drafts reference local figure-request indexes, not hardcoded numbers.
 After asset acceptance, the orchestrator maps those indexes to final asset IDs.
-The renderer calculates figure numbers from final block order and emits the
-visible reference, such as `[Fig. 1]` or `[图 1]`.
+The renderer calculates figure numbers from final block order and emits a
+localized visible reference, such as `(see Fig. 1)` or `（见图 1）`.
+Paragraph text containing handwritten figure or table numbers is rejected
+before approval and again at the final document boundary.
 
 This prevents references from drifting when a prior figure is inserted or
 removed.
@@ -119,7 +127,8 @@ visually inspected.
 
 ## Not yet implemented
 
-- production image-model or scientific-diagram provider;
+- deterministic SVG templates for supported scientific mechanisms and
+  workflows;
 - data-plot renderer driven by verified numeric datasets;
 - native Word `REF` fields for cross-references;
 - persistent asset storage and deduplication;

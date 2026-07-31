@@ -33,6 +33,7 @@ const TITLE_COLOR = "111111";
 const TEXT_COLOR = "222222";
 const CAPTION_COLOR = "444444";
 const TABLE_HEADER_FILL = "F2F2F2";
+const PIXELS_PER_MM_AT_96_DPI = 96 / 25.4;
 
 export class DocumentV2RenderError extends Error {
   constructor(message: string) {
@@ -115,7 +116,23 @@ function figureCitationSuffix(
     }
     return language === "zh" ? `图 ${number}` : `Fig. ${number}`;
   });
-  return ` [${labels.join(", ")}]`;
+  return language === "zh"
+    ? `（见${labels.join("、")}）`
+    : ` (see ${labels.join(", ")})`;
+}
+
+function localizedFigureLabel(
+  language: FinalDocumentSpec["metadata"]["language"],
+  number: number,
+): string {
+  return language === "zh" ? `图 ${number}` : `Fig. ${number}`;
+}
+
+function localizedTableLabel(
+  language: FinalDocumentSpec["metadata"]["language"],
+  number: number,
+): string {
+  return language === "zh" ? `表 ${number}` : `Table ${number}`;
 }
 
 function finalCaption(caption: string): string {
@@ -143,10 +160,18 @@ function figureImageRun(
       `Figure asset "${asset.id}" failed checksum verification.`,
     );
   }
+  const preferredWidthPx = Math.round(
+    asset.preferredDisplayWidthMm * PIXELS_PER_MM_AT_96_DPI,
+  );
+  const width = Math.min(asset.displayWidthPx, preferredWidthPx);
+  const height = Math.max(
+    1,
+    Math.round(width * (asset.pixelHeight / asset.pixelWidth)),
+  );
   const common = {
     transformation: {
-      width: asset.displayWidthPx,
-      height: asset.displayHeightPx,
+      width,
+      height,
     },
     altText: {
       title: asset.title,
@@ -302,7 +327,11 @@ export async function renderFinalDocumentSpecToDocx(
               bold: true,
               font: documentFonts.title,
             }),
-            new TextRun({ text: block.values.join("; ") }),
+            new TextRun({
+              text: block.values.join(
+                spec.metadata.language === "zh" ? "；" : "; ",
+              ),
+            }),
           ],
         }),
       );
@@ -319,7 +348,10 @@ export async function renderFinalDocumentSpecToDocx(
           style: styleIds.captionStyle,
           keepNext: true,
           children: [
-            new TextRun({ text: `Table ${tableNumber} | `, bold: true }),
+            new TextRun({
+              text: `${localizedTableLabel(spec.metadata.language, tableNumber)} | `,
+              bold: true,
+            }),
             new TextRun({ text: block.caption }),
           ],
         }),
@@ -399,7 +431,10 @@ export async function renderFinalDocumentSpecToDocx(
       new Paragraph({
         style: styleIds.captionStyle,
         children: [
-          new TextRun({ text: `Fig. ${figureNumber} | `, bold: true }),
+          new TextRun({
+            text: `${localizedFigureLabel(spec.metadata.language, figureNumber)} | `,
+            bold: true,
+          }),
           new TextRun({ text: finalCaption(block.caption) }),
         ],
       }),
@@ -567,7 +602,14 @@ export async function renderFinalDocumentSpecToDocx(
           next: styleIds.bodyStyle,
           quickFormat: true,
           run: {
-            font: "Arial",
+            font:
+              spec.metadata.language === "zh"
+                ? {
+                    ascii: "Arial",
+                    hAnsi: "Arial",
+                    eastAsia: "Microsoft YaHei",
+                  }
+                : "Arial",
             size: halfPoints(8.5),
             color: CAPTION_COLOR,
           },

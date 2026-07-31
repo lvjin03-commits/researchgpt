@@ -44,10 +44,21 @@ const MAX_OUTLINE_ATTEMPTS = 2;
 function outlineSemanticErrors(
   proposal: SemanticOutlineProposal,
   availableEvidenceIds: ReadonlySet<string>,
+  language: DocumentRequest["language"],
 ): string[] {
   const errors: string[] = [];
   proposal.sections.forEach((section, index) => {
     const label = `Section ${index + 1}`;
+    const cjkCharacters = section.heading.match(/[\u3400-\u9fff]/g)?.length ?? 0;
+    const latinCharacters = section.heading.match(/[A-Za-z]/g)?.length ?? 0;
+    if (
+      (language === "zh" && cjkCharacters === 0 && latinCharacters >= 8) ||
+      (language === "en" && cjkCharacters >= 4 && latinCharacters === 0)
+    ) {
+      errors.push(
+        `${label} heading does not use the requested ${language} document language.`,
+      );
+    }
     if (
       FIXED_COMPONENT_HEADING_PATTERN.test(section.heading) ||
       FIXED_COMPONENT_DIRECTIVE_PATTERN.test(section.heading) ||
@@ -156,6 +167,7 @@ export async function createDocumentPlanFromTemplate(input: {
     const semanticErrors = outlineSemanticErrors(
       candidate,
       availableEvidenceSet,
+      request.language,
     );
     if (semanticErrors.length === 0) {
       proposal = candidate;
@@ -206,7 +218,12 @@ export async function createDocumentPlanFromTemplate(input: {
           componentKey: `section-${String(index + 1).padStart(2, "0")}`,
           type: "section",
           heading: section.heading,
+          question: section.question,
           purpose: section.purpose,
+          contributionToThesis: section.contributionToThesis,
+          comparisonDimensions: section.comparisonDimensions,
+          applicableConditions: section.applicableConditions,
+          failureModes: section.failureModes,
           targetLength: sectionLengths[index],
           requiredEvidenceIds:
             section.requiredEvidenceIds.length > 0
@@ -222,6 +239,9 @@ export async function createDocumentPlanFromTemplate(input: {
       componentKey: blueprint.componentKey,
       type: blueprint.type,
       purpose: blueprint.purpose,
+      comparisonDimensions: [],
+      applicableConditions: [],
+      failureModes: [],
       heading:
         blueprint.type === "conclusion"
           ? proposal.conclusionHeading
@@ -262,12 +282,19 @@ export async function createDocumentPlanFromTemplate(input: {
     requestId: request.requestId,
     schemaVersion: 1,
     templateSnapshot: template.snapshot,
+    reviewThesis: proposal.reviewThesis,
+    scopeBoundary: proposal.scopeBoundary,
+    reviewQuestions: proposal.reviewQuestions,
     components: componentsWithDependencies,
     figureSlots: proposal.figures.map((figure, index) => ({
       slotId: `figure-slot-${String(index + 1).padStart(2, "0")}`,
       componentKey: `section-${String(figure.sectionIndex + 1).padStart(2, "0")}`,
       figureType: figure.figureType,
       purpose: figure.purpose,
+      questionAnswered: figure.questionAnswered,
+      evidenceMode:
+        figure.requiredEvidenceIds.length > 0 ? "verified" : "conceptual",
+      claimsRepresented: figure.claimsRepresented,
       requiredEvidenceIds: figure.requiredEvidenceIds,
     })),
     figurePlanningCompleted: true,

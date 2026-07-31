@@ -125,12 +125,33 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
   async propose(input: Parameters<SemanticOutlinePlanner["propose"]>[0]) {
     const OutlineResponseSchema = z
       .object({
+        reviewThesis: z.string().trim().min(1).max(2_000),
+        scopeBoundary: z.string().trim().min(1).max(2_000),
+        reviewQuestions: z
+          .array(z.string().trim().min(1).max(500))
+          .min(1)
+          .max(12),
         sections: z
           .array(
             z
               .object({
                 heading: z.string().trim().min(1).max(500),
+                question: z.string().trim().min(1).max(500),
                 purpose: z.string().trim().min(1).max(1_000),
+                contributionToThesis: z
+                  .string()
+                  .trim()
+                  .min(1)
+                  .max(1_000),
+                comparisonDimensions: z
+                  .array(z.string().trim().min(1).max(300))
+                  .max(12),
+                applicableConditions: z
+                  .array(z.string().trim().min(1).max(500))
+                  .max(12),
+                failureModes: z
+                  .array(z.string().trim().min(1).max(500))
+                  .max(12),
                 relativeWeight: z.number().positive().max(100),
                 requiredEvidenceIds: z.array(z.string().min(1).max(120)).max(500),
               })
@@ -152,6 +173,11 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
                   "data_plot",
                 ]),
                 purpose: z.string().trim().min(1).max(1_000),
+                questionAnswered: z.string().trim().min(1).max(500),
+                claimsRepresented: z
+                  .array(z.string().trim().min(1).max(500))
+                  .min(1)
+                  .max(12),
                 requiredEvidenceIds: z
                   .array(z.string().min(1).max(120))
                   .max(500),
@@ -167,6 +193,9 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
       schema: OutlineResponseSchema,
       systemInstruction: [
         "Plan the mature semantic structure of one SCI review document.",
+        "Establish one evidence-informed review thesis and a clear scope boundary before planning sections.",
+        "Each section must answer one explicit review question and state how it advances the review thesis.",
+        "For technically mature sections, identify comparison dimensions, applicable conditions, and failure modes instead of returning textbook-like topic lists.",
         "Return only an outline; do not write paragraphs.",
         "Plan body sections only. Title, abstract, keywords, conclusion, and references are fixed template components created separately.",
         "Never turn user instructions such as generating a title, abstract, keywords, figures, tables, or references into body sections.",
@@ -207,6 +236,10 @@ export class OpenAISemanticOutlinePlanner implements SemanticOutlinePlanner {
             "comparison_diagram",
           ],
           dataPlotPolicy: "forbidden_without_verified_dataset",
+          requiredFields: [
+            "questionAnswered",
+            "claimsRepresented",
+          ],
         },
       }),
     });

@@ -201,7 +201,7 @@ function fixture(language) {
   };
 }
 
-async function inspectDocx(buffer, expectedTitle) {
+async function inspectDocx(buffer, expectedTitle, language) {
   assert(Buffer.isBuffer(buffer), "Renderer must return a Buffer.");
   assert(buffer.length > 10_000, "DOCX output is unexpectedly small.");
   const archive = await JSZip.loadAsync(buffer);
@@ -210,7 +210,10 @@ async function inspectDocx(buffer, expectedTitle) {
   const footerXml = await archive.file("word/footer1.xml").async("string");
 
   assert(documentXml.includes(expectedTitle), "Document title is missing.");
-  assert(documentXml.includes("Table 1 |"), "Table caption was not rendered.");
+  assert(
+    documentXml.includes(language === "zh" ? "表 1 |" : "Table 1 |"),
+    "Localized table caption was not rendered.",
+  );
   assert(documentXml.includes("[1]"), "Citation marker was not rendered.");
   assert(
     /<w:pgMar[^>]*w:top="1134"[^>]*w:right="1247"[^>]*w:bottom="1134"[^>]*w:left="1247"/.test(
@@ -241,7 +244,7 @@ async function main() {
   for (const language of ["zh", "en"]) {
     const spec = fixture(language);
     const buffer = await renderFinalDocumentSpecToDocx(spec);
-    await inspectDocx(buffer, spec.metadata.title);
+    await inspectDocx(buffer, spec.metadata.title, language);
     const outputPath = path.join(outputDir, `sci-review-${language}.docx`);
     fs.writeFileSync(outputPath, buffer);
     console.log(outputPath);

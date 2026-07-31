@@ -164,10 +164,20 @@ export function buildComponentGenerationInstructions(
   const componentInstruction = JSON.stringify({
     language: context.request.language,
     topic: context.request.userRequirements.topic,
+    reviewContract: {
+      thesis: context.plan.reviewThesis,
+      scopeBoundary: context.plan.scopeBoundary,
+      reviewQuestions: context.plan.reviewQuestions,
+    },
     component: {
       type: context.component.type,
       heading: context.component.heading,
+      question: context.component.question,
       purpose: context.component.purpose,
+      contributionToThesis: context.component.contributionToThesis,
+      comparisonDimensions: context.component.comparisonDimensions,
+      applicableConditions: context.component.applicableConditions,
+      failureModes: context.component.failureModes,
       targetLength: context.component.targetLength,
       requiredEvidenceIds: context.component.requiredEvidenceIds ?? [],
     },
@@ -191,7 +201,7 @@ export function buildComponentGenerationInstructions(
       keywords:
         "Return only 3-8 final keyword strings.",
       section:
-        "Return mature body paragraphs plus justified tables when useful. Do not return the planned heading or any block type or paragraph role. For a completed figure plan, complete the supplied figureSlots exactly and never add an unplanned figure.",
+        "Answer the planned section question with mature analytical prose. Compare the supplied dimensions, state applicable conditions and failure modes, and advance the review thesis. Return justified tables only when they improve comparison. Do not return the planned heading or any block type or paragraph role. For a completed figure plan, complete the supplied figureSlots exactly and never add an unplanned figure.",
       conclusion:
         "Return only mature conclusion paragraphs. Do not return the planned heading, tables, figures, block types, or paragraph roles.",
       reference_list:

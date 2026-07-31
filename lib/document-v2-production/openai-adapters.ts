@@ -50,8 +50,15 @@ export class OpenAIFinalFigureGenerator implements FinalFigureGenerator {
         "Create a publication-ready scientific figure, not a draft or placeholder.",
         `Figure type: ${request.figureType}.`,
         `Title: ${request.title}.`,
+        `Question the figure must answer: ${request.questionAnswered}.`,
+        `Evidence mode: ${request.evidenceMode}.`,
+        `Claims represented: ${request.claimsRepresented.join("; ")}.`,
         `Content: ${request.contentBrief}.`,
         `Accessibility description: ${request.altText}.`,
+        "Use the same natural language as the supplied title and content for every visible label. Do not translate labels into a second language.",
+        request.evidenceMode === "conceptual"
+          ? "This is a conceptual schematic: do not invent measurements, numeric axes, data points, or quantitative precision."
+          : "Represent only the supplied evidence-backed claims and do not invent unsupported measurements.",
         "Use a white background, restrained scientific colors, clear visual hierarchy, Arial labels at readable size, and no decorative elements.",
         "Do not embed a figure number, caption, prompt, evidence IDs, citations, or raw metadata in the image.",
       ].join(" "),

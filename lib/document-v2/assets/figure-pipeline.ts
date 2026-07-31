@@ -11,6 +11,7 @@ const MINIMUM_WIDTH_PX = 900;
 const MINIMUM_HEIGHT_PX = 400;
 const MAXIMUM_FILE_BYTES = 25 * 1024 * 1024;
 const MAXIMUM_DISPLAY_WIDTH_PX = 627;
+const PIXELS_PER_MM_AT_96_DPI = 96 / 25.4;
 
 export interface GeneratedFigureBinary {
   format: "png" | "svg";
@@ -151,6 +152,28 @@ export class ValidatedFigureAssetPipeline
       1,
       Math.round(displayWidthPx * (height / width)),
     );
+    const aspectRatio = width / height;
+    const labelDensity =
+      request.claimsRepresented.length >= 7
+        ? "high"
+        : request.claimsRepresented.length >= 4
+          ? "medium"
+          : "low";
+    const minimumReadableWidthMm =
+      labelDensity === "high" ? 135 : labelDensity === "medium" ? 110 : 90;
+    const preferredDisplayWidthMm = Math.min(
+      165,
+      Math.max(
+        minimumReadableWidthMm,
+        Math.round(displayWidthPx / PIXELS_PER_MM_AT_96_DPI),
+      ),
+    );
+    const preferredLayout =
+      aspectRatio > 1.65 || labelDensity === "high"
+        ? "full_width"
+        : aspectRatio < 0.85
+          ? "dedicated_page"
+          : "inline_wide";
     const hash = createHash("sha256")
       .update(generated.data)
       .update(generated.fallbackPng ?? new Uint8Array())
@@ -169,6 +192,10 @@ export class ValidatedFigureAssetPipeline
       dpi,
       displayWidthPx,
       displayHeightPx,
+      preferredDisplayWidthMm,
+      minimumReadableWidthMm,
+      labelDensity,
+      preferredLayout,
       sha256: hash,
       title: request.title,
       altText: request.altText,

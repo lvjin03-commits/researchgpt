@@ -214,6 +214,9 @@ function assembleBody(
       caption: request.caption,
       altText: request.altText,
       contentBrief: request.contentBrief,
+      questionAnswered: slot.questionAnswered,
+      evidenceMode: slot.evidenceMode,
+      claimsRepresented: slot.claimsRepresented,
       placementAfterBlockIndex,
       sourceEvidenceIds: slot.requiredEvidenceIds,
     };

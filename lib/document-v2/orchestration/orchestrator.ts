@@ -629,9 +629,27 @@ function componentInputHash(
       .update(
         JSON.stringify({
           request: state.request,
+          reviewContract: {
+            reviewThesis: state.plan.reviewThesis,
+            scopeBoundary: state.plan.scopeBoundary,
+            reviewQuestions: state.plan.reviewQuestions,
+          },
           component,
           dependencyVersions,
-          evidenceIds: state.verifiedReferences.map((reference) => reference.id),
+          evidence: state.evidenceBundle
+            .filter((item) =>
+              (component.requiredEvidenceIds ?? []).includes(item.evidenceId),
+            )
+            .map((item) => ({
+              evidenceId: item.evidenceId,
+              excerptHash: createHash("sha256")
+                .update(item.excerpt)
+                .digest("hex"),
+              locator: item.locator,
+            }))
+            .sort((left, right) =>
+              left.evidenceId.localeCompare(right.evidenceId),
+            ),
         }),
       )
       .digest("hex"),
