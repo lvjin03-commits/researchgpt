@@ -5,12 +5,15 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleStop,
+  ClipboardCopy,
+  Download,
   LoaderCircle,
   RotateCcw,
 } from "lucide-react";
 import { useState } from "react";
 import type { DocumentJobSnapshot } from "@/lib/document-v2/runtime/contracts";
 import { STAGE_LABELS } from "@/lib/document-v2/runtime/contracts";
+import type { DocumentJobDiagnostics } from "@/lib/document-v2/diagnostics/contracts";
 
 type Props = {
   snapshot: DocumentJobSnapshot;
@@ -26,10 +29,71 @@ export function DocumentV2JobProgress({
   busy = false,
 }: Props) {
   const [showDetails, setShowDetails] = useState(false);
+  const [diagnosticBusy, setDiagnosticBusy] = useState(false);
+  const [diagnosticMessage, setDiagnosticMessage] = useState<string>();
   const { job, events } = snapshot;
   const active = ["queued", "running", "cancelling"].includes(job.status);
   const canResume =
     job.resumable && ["paused", "failed", "cancelled"].includes(job.status);
+
+  const loadDiagnostics = async () => {
+    const response = await fetch(
+      `/api/document-v2/jobs/${job.jobId}/diagnostics`,
+      { cache: "no-store", headers: { Accept: "application/json" } },
+    );
+    const payload = (await response.json()) as
+      | DocumentJobDiagnostics
+      | { error?: string };
+    if (!response.ok || !("identity" in payload)) {
+      throw new Error(
+        "error" in payload && payload.error
+          ? payload.error
+          : "无法读取诊断报告。",
+      );
+    }
+    return payload;
+  };
+
+  const copyDiagnostics = async () => {
+    setDiagnosticBusy(true);
+    setDiagnosticMessage(undefined);
+    try {
+      const diagnostics = await loadDiagnostics();
+      await navigator.clipboard.writeText(diagnostics.humanReadableReport);
+      setDiagnosticMessage("诊断报告已复制。");
+    } catch (error) {
+      setDiagnosticMessage(
+        error instanceof Error ? error.message : "复制诊断报告失败。",
+      );
+    } finally {
+      setDiagnosticBusy(false);
+    }
+  };
+
+  const downloadDiagnostics = async () => {
+    setDiagnosticBusy(true);
+    setDiagnosticMessage(undefined);
+    try {
+      const diagnostics = await loadDiagnostics();
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(diagnostics, null, 2)], {
+          type: "application/json",
+        }),
+      );
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `document-v2-diagnostics-${job.jobId}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setDiagnosticMessage("诊断JSON已下载。");
+    } catch (error) {
+      setDiagnosticMessage(
+        error instanceof Error ? error.message : "下载诊断JSON失败。",
+      );
+    } finally {
+      setDiagnosticBusy(false);
+    }
+  };
 
   return (
     <section
@@ -120,8 +184,34 @@ export function DocumentV2JobProgress({
       </div>
 
       {showDetails ? (
-        <ol className="mt-3 space-y-2 border-t border-neutral-100 pt-3">
-          {events.map((event) => (
+        <div className="mt-3 border-t border-neutral-100 pt-3">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={diagnosticBusy}
+              onClick={() => void copyDiagnostics()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-700 disabled:opacity-50"
+            >
+              <ClipboardCopy className="size-3.5" />
+              复制诊断报告
+            </button>
+            <button
+              type="button"
+              disabled={diagnosticBusy}
+              onClick={() => void downloadDiagnostics()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-700 disabled:opacity-50"
+            >
+              <Download className="size-3.5" />
+              下载诊断JSON
+            </button>
+            {diagnosticMessage ? (
+              <span className="text-xs text-neutral-500" role="status">
+                {diagnosticMessage}
+              </span>
+            ) : null}
+          </div>
+          <ol className="space-y-2">
+            {events.map((event) => (
             <li key={event.eventId} className="flex gap-2 text-sm">
               <span
                 className={`mt-1.5 size-2 shrink-0 rounded-full ${
@@ -172,8 +262,9 @@ export function DocumentV2JobProgress({
                 ) : null}
               </div>
             </li>
-          ))}
-        </ol>
+            ))}
+          </ol>
+        </div>
       ) : null}
     </section>
   );

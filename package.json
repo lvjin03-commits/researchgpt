@@ -17,6 +17,7 @@
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:mojibake": "node scripts/check-encoding.mjs",
     "check:document-architecture": "node scripts/check-document-v2-imports.mjs",
+    "check:document-diagnostics": "node scripts/check-document-v2-diagnostics-boundary.mjs",
     "check:document-v2-env": "node scripts/check-document-v2-env.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -25,11 +26,12 @@
     "test:document-v2-generation": "node scripts/verify-document-v2-generation.cjs",
     "test:document-v2-orchestrator": "node scripts/verify-document-v2-orchestrator.cjs",
     "test:document-v2-runtime": "node scripts/verify-document-v2-runtime.cjs",
+    "test:document-v2-diagnostics": "node scripts/verify-document-v2-diagnostics.cjs",
     "test:document-v2-docx": "node scripts/verify-document-v2-docx.cjs",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "test:word-visuals": "node scripts/verify-word-visuals.cjs",
     "smoke:document-v2": "node scripts/smoke-document-v2.mjs",
-    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-v2-runtime && npm run check:document-architecture && npm run build"
+    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-v2-runtime && npm run test:document-v2-diagnostics && npm run check:document-architecture && npm run check:document-diagnostics && npm run build"
   },
   "build": {
     "appId": "com.researchgpt.localconnector",

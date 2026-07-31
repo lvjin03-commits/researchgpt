@@ -1,0 +1,365 @@
+import type {
+  DiagnosticTimelineEvent,
+  DispatchDiagnostic,
+  DocumentJobDiagnostics,
+  ModelExecutionDiagnostic,
+} from "./contracts";
+import { DOCUMENT_DIAGNOSTICS_VERSION } from "./contracts";
+import { diagnoseBlockers } from "./blocker-rules";
+import { diagnoseConsistency } from "./consistency";
+import type { DiagnosticSources } from "./repository";
+import {
+  diagnosticFingerprint,
+  maskIdentifier,
+  sanitizeDiagnosticError,
+} from "./redaction";
+
+const ACTIVE_EXECUTION = new Set(["running", "request_started"]);
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+export function projectDocumentJobDiagnostics(
+  sources: DiagnosticSources,
+  now = new Date(),
+): DocumentJobDiagnostics {
+  const recordedCosts = new Map<string, number>();
+  for (const event of sources.events) {
+    const metadata =
+      event.event_payload.metadata &&
+      typeof event.event_payload.metadata === "object" &&
+      !Array.isArray(event.event_payload.metadata)
+        ? (event.event_payload.metadata as Record<string, unknown>)
+        : {};
+    const inputFingerprint = stringValue(metadata.inputFingerprint);
+    const calculatedCostUsd = numberValue(metadata.calculatedCostUsd);
+    if (inputFingerprint && calculatedCostUsd !== undefined) {
+      recordedCosts.set(inputFingerprint, calculatedCostUsd);
+    }
+  }
+  const executions: ModelExecutionDiagnostic[] = sources.executions.map(
+    (row) => {
+      const sanitizedError = sanitizeDiagnosticError(row.error_message);
+      return {
+        executionKey: row.execution_key,
+        componentKey: row.component_key,
+        operation: row.operation,
+        inputFingerprint: row.input_fingerprint,
+        provider: row.provider,
+        requestedModelId: row.requested_model_id,
+        resolvedModelId: row.resolved_model_id,
+        actualModelId: row.actual_model_id,
+        providerRequestFingerprint: diagnosticFingerprint(
+          row.provider_request_id,
+        ),
+        status: row.status,
+        attempt: row.attempt,
+        leaseExpiresAt: row.lease_expires_at,
+        startedAt: row.started_at,
+        responseReceivedAt: row.response_received_at,
+        rawSavedAt: row.raw_saved_at,
+        completedAt: row.completed_at,
+        failureCategory: row.failure_category,
+        errorMessage: sanitizedError,
+        errorFingerprint: diagnosticFingerprint(sanitizedError),
+        inputTokens: row.input_tokens,
+        cachedInputTokens: row.cached_input_tokens,
+        outputTokens: row.output_tokens,
+        reasoningTokens: row.reasoning_tokens,
+        calculatedCostUsd:
+          recordedCosts.get(row.input_fingerprint) ?? null,
+      };
+    },
+  );
+  const dispatches: DispatchDiagnostic[] = sources.outbox.map((row) => ({
+    outboxId: row.id,
+    eventType: row.event_type,
+    status: row.status,
+    deliveryAttempts: row.delivery_attempts,
+    nextAttemptAt: row.next_attempt_at,
+    deliveredAt: row.delivered_at,
+    createdAt: row.created_at,
+  }));
+  const eventTimeline: DiagnosticTimelineEvent[] = sources.events.map((row) => {
+    const payload = row.event_payload;
+    const metadata =
+      payload.metadata &&
+      typeof payload.metadata === "object" &&
+      !Array.isArray(payload.metadata)
+        ? (payload.metadata as Record<string, unknown>)
+        : {};
+    const sanitizedError = sanitizeDiagnosticError(
+      stringValue(payload.technicalMessage),
+    );
+    return {
+      timestamp: stringValue(payload.createdAt) ?? row.created_at,
+      source: "event",
+      code: stringValue(payload.operation) ?? "job.event",
+      status: stringValue(payload.status) ?? row.status,
+      stage: stringValue(payload.stage) ?? row.stage,
+      operation: stringValue(payload.operation),
+      componentKey: stringValue(payload.componentKey),
+      correlation: { jobId: sources.job.id },
+      durationMs: numberValue(payload.durationMs),
+      error: sanitizedError
+        ? {
+            category: stringValue(payload.category) ?? "event",
+            code: stringValue(payload.errorCode),
+            message: sanitizedError,
+            fingerprint: diagnosticFingerprint(sanitizedError) ?? undefined,
+          }
+        : undefined,
+      evidence: Object.fromEntries(
+        Object.entries(metadata)
+          .filter(([, value]) =>
+            ["string", "number", "boolean"].includes(typeof value),
+          )
+          .slice(0, 30),
+      ) as Record<string, string | number | boolean | null>,
+    };
+  });
+  const executionTimeline: DiagnosticTimelineEvent[] = executions.map(
+    (execution) => ({
+      timestamp:
+        execution.completedAt ??
+        execution.rawSavedAt ??
+        execution.responseReceivedAt ??
+        execution.startedAt ??
+        sources.job.updated_at,
+      source: "model_execution",
+      code: `model_execution.${execution.status}`,
+      status: execution.status,
+      operation: execution.operation,
+      componentKey: execution.componentKey ?? undefined,
+      correlation: {
+        jobId: sources.job.id,
+        executionKey: execution.executionKey,
+      },
+      error: execution.errorMessage
+        ? {
+            category: execution.failureCategory ?? "model_execution",
+            message: execution.errorMessage,
+            fingerprint: execution.errorFingerprint ?? undefined,
+          }
+        : undefined,
+      evidence: {
+        provider: execution.provider,
+        requestedModelId: execution.requestedModelId,
+        actualModelId: execution.actualModelId,
+        inputTokens: execution.inputTokens,
+        outputTokens: execution.outputTokens,
+        rawSavedAt: execution.rawSavedAt,
+      },
+    }),
+  );
+  const outboxTimeline: DiagnosticTimelineEvent[] = dispatches.map(
+    (dispatch) => ({
+      timestamp: dispatch.deliveredAt ?? dispatch.createdAt,
+      source: "outbox",
+      code: `outbox.${dispatch.status}`,
+      status: dispatch.status,
+      correlation: {
+        jobId: sources.job.id,
+        outboxId: dispatch.outboxId,
+      },
+      evidence: {
+        eventType: dispatch.eventType,
+        deliveryAttempts: dispatch.deliveryAttempts,
+        nextAttemptAt: dispatch.nextAttemptAt,
+      },
+    }),
+  );
+  const timeline = [
+    ...eventTimeline,
+    ...executionTimeline,
+    ...outboxTimeline,
+  ].sort(
+    (left, right) =>
+      Date.parse(left.timestamp) - Date.parse(right.timestamp),
+  );
+  const activeExecution = [...executions]
+    .reverse()
+    .find((execution) => ACTIVE_EXECUTION.has(execution.status));
+  const latestEvent = eventTimeline.at(-1);
+  const currentPosition = activeExecution
+    ? {
+        stage: latestEvent?.stage ?? sources.job.stage,
+        operation: activeExecution.operation,
+        componentKey: activeExecution.componentKey,
+        executionKey: activeExecution.executionKey,
+        derivedFrom: "model_execution" as const,
+      }
+    : latestEvent?.operation
+      ? {
+          stage: latestEvent.stage ?? sources.job.stage,
+          operation: latestEvent.operation,
+          componentKey: latestEvent.componentKey ?? null,
+          executionKey: null,
+          derivedFrom: "event" as const,
+        }
+      : {
+          stage: sources.job.stage,
+          operation: null,
+          componentKey: null,
+          executionKey: null,
+          derivedFrom: "job" as const,
+        };
+  const jobSummary = {
+    status: sources.job.status,
+    stage: sources.job.stage,
+    revision: sources.job.revision,
+    leaseOwnerMasked: maskIdentifier(sources.job.lease_owner),
+    leaseExpiresAt: sources.job.lease_expires_at,
+    lastHeartbeatAt: sources.job.last_heartbeat_at,
+    recoveryCount: sources.job.recovery_count,
+    createdAt: sources.job.created_at,
+    updatedAt: sources.job.updated_at,
+  };
+  const findings = [
+    ...diagnoseBlockers({
+      now,
+      job: jobSummary,
+      executions,
+      dispatches,
+    }),
+    ...diagnoseConsistency({
+      stage: sources.job.stage,
+      executions,
+      dispatches,
+    }),
+  ];
+  const cost = executions.reduce(
+    (total, execution) => ({
+      inputTokens: total.inputTokens + execution.inputTokens,
+      outputTokens: total.outputTokens + execution.outputTokens,
+      cachedInputTokens:
+        total.cachedInputTokens + execution.cachedInputTokens,
+      reasoningTokens: total.reasoningTokens + execution.reasoningTokens,
+      calculatedCostUsd:
+        total.calculatedCostUsd + (execution.calculatedCostUsd ?? 0),
+    }),
+    {
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedInputTokens: 0,
+      reasoningTokens: 0,
+      calculatedCostUsd: 0,
+    },
+  );
+  const executionFingerprints = new Map<string, number>();
+  for (const execution of executions) {
+    const key = [
+      execution.componentKey ?? "document",
+      execution.operation,
+      execution.inputFingerprint,
+    ].join(":");
+    executionFingerprints.set(key, (executionFingerprints.get(key) ?? 0) + 1);
+  }
+  const duplicateRisk = [...executionFingerprints.values()].some(
+    (count) => count > 1,
+  );
+  const incompleteSources = [
+    "worker_invocations",
+    "verified_checkpoint_projection",
+    "provider_attempt_history",
+  ];
+  const timestamps = [
+    sources.job.updated_at,
+    ...timeline.map((event) => event.timestamp),
+  ].filter(Boolean);
+  const sourceMaxUpdatedAt = timestamps.sort(
+    (left, right) => Date.parse(right) - Date.parse(left),
+  )[0] ?? null;
+  const primary = findings[0] ?? null;
+  const workerState =
+    sources.job.status === "running" && sources.job.lease_expires_at
+      ? Date.parse(sources.job.lease_expires_at) < now.getTime()
+        ? "lease_expired"
+        : sources.job.last_heartbeat_at
+          ? "active"
+          : "not_observable"
+      : "not_observable";
+  const report = [
+    "Document V2 Diagnostic Report",
+    `Generated: ${now.toISOString()}`,
+    "",
+    "Job",
+    `- Job ID: ${sources.job.id}`,
+    `- Status: ${sources.job.status}`,
+    `- Revision: ${sources.job.revision}`,
+    `- Stage: ${sources.job.stage}`,
+    "",
+    "Current Position",
+    `- Operation: ${currentPosition.operation ?? "unknown"}`,
+    `- Derived from: ${currentPosition.derivedFrom}`,
+    "",
+    "Primary Finding",
+    `- Code: ${primary?.code ?? "none"}`,
+    `- Certainty: ${primary?.certainty ?? "insufficient_data"}`,
+    "",
+    "Last Durable Checkpoint",
+    "- Verified: false",
+    "- Reason: protected checkpoint content is intentionally not read by diagnostics v1",
+    "",
+    "Safe Resume",
+    "- Not determined by diagnostics v1",
+  ].join("\n");
+  return {
+    identity: {
+      jobId: sources.job.id,
+      pipelineVersion: "document-v2",
+      diagnosticsVersion: DOCUMENT_DIAGNOSTICS_VERSION,
+    },
+    job: jobSummary,
+    currentPosition,
+    lastDurableCheckpoint: {
+      code: null,
+      savedAt: null,
+      reusableOutputs: [],
+      verified: false,
+      verificationEvidence: [],
+    },
+    currentBlocker: primary,
+    findings,
+    timeline,
+    modelExecutions: executions,
+    dispatches,
+    cost: { ...cost, duplicateRisk },
+    health: {
+      generatedAt: now.toISOString(),
+      sourceMaxUpdatedAt,
+      dataFreshnessMs: sourceMaxUpdatedAt
+        ? Math.max(0, now.getTime() - Date.parse(sourceMaxUpdatedAt))
+        : null,
+      incompleteSources,
+    },
+    codexSummary: {
+      jobStatus: sources.job.status,
+      activeStage: currentPosition.stage,
+      activeOperation: currentPosition.operation,
+      activeComponent: currentPosition.componentKey,
+      workerState,
+      modelRequestState: activeExecution?.status ?? executions.at(-1)?.status ?? null,
+      outboxState: dispatches.at(-1)?.status ?? null,
+      cancellationState:
+        sources.job.status === "cancelling"
+          ? "requested_not_finalized"
+          : sources.job.status === "cancelled"
+            ? "completed"
+            : null,
+      lastSuccessfulCheckpoint: null,
+      safeResumeFrom: null,
+      duplicateRisk,
+      incompleteEvidence: incompleteSources,
+      primaryFindingCode: primary?.code ?? null,
+    },
+    humanReadableReport: report,
+  };
+}
