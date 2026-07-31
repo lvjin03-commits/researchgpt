@@ -232,6 +232,19 @@ async function executeCase({ operation, response, schema }) {
   );
   assert.match(migration, /next_status := 'paused'/);
   assert.match(migration, /current_job\.status = 'cancelling'/);
+  const runtimeContracts = fs.readFileSync(
+    path.join(projectRoot, "lib/document-v2/runtime/contracts.ts"),
+    "utf8",
+  );
+  assert.match(
+    runtimeContracts,
+    /!\["failed", "paused"\]\.includes\(job\.status\)/,
+    "A paused worker failure must remain readable through the job contract.",
+  );
+  assert.match(
+    runtimeContracts,
+    /Only a failed or paused job may contain error details\./,
+  );
   assert.doesNotMatch(
     migration,
     /INSERT INTO public\.document_v2_outbox/,

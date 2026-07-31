@@ -278,11 +278,11 @@ export const DocumentJobSchema = z
         message: "A failed job requires error details.",
       });
     }
-    if (job.status !== "failed" && job.error) {
+    if (!["failed", "paused"].includes(job.status) && job.error) {
       context.addIssue({
         code: "custom",
         path: ["error"],
-        message: "Only a failed job may contain a terminal error.",
+        message: "Only a failed or paused job may contain error details.",
       });
     }
   });
