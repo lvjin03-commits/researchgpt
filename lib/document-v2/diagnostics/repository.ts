@@ -41,6 +41,9 @@ export type DiagnosticExecutionRow = {
   provider: string;
   requested_model_id: string;
   resolved_model_id: string;
+  requested_reasoning_effort: string | null;
+  effective_reasoning_effort: string | null;
+  reasoning_tokens_observed: boolean;
   actual_model_id: string | null;
   provider_request_id: string | null;
   status: string;
@@ -72,6 +75,9 @@ export type DiagnosticExecutionRow = {
   cached_input_tokens: number;
   output_tokens: number;
   reasoning_tokens: number;
+  calculated_cost_usd: number | null;
+  pricing_version: string | null;
+  cost_status: string | null;
   raw_content_hash: string | null;
   sanitized_preview: string | null;
   provider_response_saved_at: string | null;
@@ -131,6 +137,9 @@ const EXECUTION_FIELDS = [
   "provider",
   "requested_model_id",
   "resolved_model_id",
+  "requested_reasoning_effort",
+  "effective_reasoning_effort",
+  "reasoning_tokens_observed",
   "actual_model_id",
   "provider_request_id",
   "status",
@@ -162,6 +171,9 @@ const EXECUTION_FIELDS = [
   "cached_input_tokens",
   "output_tokens",
   "reasoning_tokens",
+  "calculated_cost_usd",
+  "pricing_version",
+  "cost_status",
   "raw_content_hash",
   "sanitized_preview",
   "provider_response_saved_at",

@@ -13,6 +13,7 @@ export const DocumentTextExecutionProfileSchema = z
     requestedModelId: IdentifierSchema,
     resolvedModelId: IdentifierSchema,
     maxOutputTokens: z.number().int().min(500).max(32_000),
+    reasoningEffort: z.enum(["none", "low", "medium"]).default("none"),
     allowProviderFallback: z.literal(false),
   })
   .strict();
@@ -39,6 +40,7 @@ export const DocumentOperationBudgetSchema = z
     effectivePreferredMaxOutputTokens: z.number().int().min(500).max(32_000),
     effectiveHardMaxOutputTokens: z.number().int().min(500).max(32_000),
     escalationAllowed: z.boolean(),
+    reasoningPolicy: z.enum(["inherit", "none", "low", "medium"]).default("inherit"),
   })
   .strict()
   .superRefine((budget, context) => {
@@ -242,10 +244,32 @@ export const DocumentJobCheckpointSchema = z
     planning: z
       .object({
         schemaVersion: z.literal(1),
+        planningRevision: z.number().int().positive().default(1),
         request: DocumentRequestSchema,
         template: TemplateResolutionSchema,
         evidenceReferences: z.array(VerifiedReferenceSchema).max(500),
         evidenceSnapshotId: IdentifierSchema.optional(),
+        thesis: z
+          .object({
+            reviewThesis: z.string().trim().min(1).max(1_200),
+            scopeBoundary: z.string().trim().min(1).max(1_200),
+            reviewQuestions: z.array(z.string().trim().min(1).max(300)).min(1).max(8),
+            conclusionHeading: z.string().trim().min(1).max(300),
+          })
+          .strict()
+          .optional(),
+        planningMigration: z
+          .object({
+            supersededOperation: z.literal("outline.structure"),
+            replacementOperations: z.tuple([
+              z.literal("outline.thesis"),
+              z.literal("outline.section_index"),
+            ]),
+            reason: IdentifierSchema,
+            migratedAt: DateTimeSchema,
+          })
+          .strict()
+          .optional(),
         skeleton: DocumentSkeletonSchema.optional(),
         figureIntentsCompleted: z.boolean().default(false),
         sectionPlans: z.array(SectionPlanSchema).max(100),

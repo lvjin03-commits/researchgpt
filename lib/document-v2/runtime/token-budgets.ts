@@ -5,7 +5,7 @@ import {
 } from "./contracts";
 
 export const DOCUMENT_OPERATION_BUDGET_POLICY_VERSION =
-  "document-operation-budget-v1";
+  "document-operation-budget-v2";
 export const DOCUMENT_MODEL_CAPABILITY_VERSION =
   "document-model-capability-v1";
 export const DOCUMENT_PRODUCT_BUDGET_POLICY_VERSION =
@@ -17,66 +17,84 @@ export const DOCUMENT_OPERATION_BUDGETS = {
     preferredMaxOutputTokens: 1_200,
     hardMaxOutputTokens: 1_600,
     escalationAllowed: true,
+    reasoningPolicy: "none",
   },
   "template.match": {
     expectedOutputTokens: 400,
     preferredMaxOutputTokens: 800,
     hardMaxOutputTokens: 1_200,
     escalationAllowed: false,
+    reasoningPolicy: "none",
   },
-  "outline.structure": {
-    expectedOutputTokens: 1_800,
-    preferredMaxOutputTokens: 2_600,
-    hardMaxOutputTokens: 3_200,
+  "outline.thesis": {
+    expectedOutputTokens: 700,
+    preferredMaxOutputTokens: 1_200,
+    hardMaxOutputTokens: 1_600,
+    escalationAllowed: false,
+    reasoningPolicy: "none",
+  },
+  "outline.section_index": {
+    expectedOutputTokens: 1_200,
+    preferredMaxOutputTokens: 2_000,
+    hardMaxOutputTokens: 2_600,
     escalationAllowed: true,
+    reasoningPolicy: "none",
   },
   "outline.figure_intents": {
     expectedOutputTokens: 900,
     preferredMaxOutputTokens: 1_200,
     hardMaxOutputTokens: 1_800,
     escalationAllowed: true,
+    reasoningPolicy: "none",
   },
   "outline.section_plan": {
     expectedOutputTokens: 1_200,
     preferredMaxOutputTokens: 1_800,
     hardMaxOutputTokens: 2_400,
     escalationAllowed: true,
+    reasoningPolicy: "none",
   },
   "component.title": {
     expectedOutputTokens: 250,
     preferredMaxOutputTokens: 500,
     hardMaxOutputTokens: 800,
     escalationAllowed: false,
+    reasoningPolicy: "none",
   },
   "component.abstract": {
     expectedOutputTokens: 1_200,
     preferredMaxOutputTokens: 1_500,
     hardMaxOutputTokens: 2_200,
     escalationAllowed: true,
+    reasoningPolicy: "none",
   },
   "component.keywords": {
     expectedOutputTokens: 250,
     preferredMaxOutputTokens: 500,
     hardMaxOutputTokens: 800,
     escalationAllowed: false,
+    reasoningPolicy: "none",
   },
   "component.section": {
     expectedOutputTokens: 3_500,
     preferredMaxOutputTokens: 4_500,
     hardMaxOutputTokens: 5_500,
     escalationAllowed: true,
+    reasoningPolicy: "inherit",
   },
   "component.conclusion": {
     expectedOutputTokens: 1_500,
     preferredMaxOutputTokens: 1_800,
     hardMaxOutputTokens: 2_800,
     escalationAllowed: true,
+    reasoningPolicy: "inherit",
   },
   "component.reference_list": {
     expectedOutputTokens: 500,
     preferredMaxOutputTokens: 800,
     hardMaxOutputTokens: 1_200,
     escalationAllowed: false,
+    reasoningPolicy: "none",
   },
 } as const;
 

@@ -9,7 +9,8 @@ import type { DocumentTemplateMatcher } from "@/lib/document-v2/templates/resolv
 import type { HierarchicalOutlinePlanner } from "@/lib/document-v2/planning/planner";
 import {
   DocumentFigureIntentsDraftSchema,
-  DocumentStructureDraftSchema,
+  DocumentSectionIndexDraftSchema,
+  DocumentThesisDraftSchema,
   SectionPlanDraftSchema,
 } from "@/lib/document-v2/planning/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
@@ -131,19 +132,41 @@ export class OpenAITemplateMatcher implements DocumentTemplateMatcher {
 export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlanner {
   constructor(private readonly executor: DocumentStructuredTextExecutor) {}
 
-  async createStructure(input: Parameters<HierarchicalOutlinePlanner["createStructure"]>[0]) {
+  async createThesis(input: Parameters<HierarchicalOutlinePlanner["createThesis"]>[0]) {
     return this.executor.generate({
-      operation: "outline.structure",
-      budgetKey: "outline.structure",
-      componentKey: "document-structure",
-      schemaName: "document_structure_v1",
-      schema: DocumentStructureDraftSchema.refine(
+      operation: "outline.thesis",
+      budgetKey: "outline.thesis",
+      componentKey: "document-thesis",
+      schemaName: "document_thesis_v1",
+      schema: DocumentThesisDraftSchema,
+      systemInstruction: [
+        "Define only the central thesis and scope of one SCI review document.",
+        "Return one review thesis, one scope boundary, the principal review questions, and a conclusion heading.",
+        "Do not plan sections, figures, evidence mappings, paragraphs, or internal IDs.",
+        "Use the requested document language.",
+      ].join(" "),
+      userInstruction: JSON.stringify({
+        topic: input.request.userRequirements.topic,
+        requirements: input.request.userRequirements.specialInstructions ?? [],
+        fixedComponentsHandledByTemplate: input.template.componentBlueprints
+          .filter((component) => component.type !== "section")
+          .map((component) => component.type),
+      }),
+    });
+  }
+
+  async createSectionIndex(input: Parameters<HierarchicalOutlinePlanner["createSectionIndex"]>[0]) {
+    return this.executor.generate({
+      operation: "outline.section_index",
+      budgetKey: "outline.section_index",
+      componentKey: "document-section-index",
+      schemaName: "document_section_index_v1",
+      schema: DocumentSectionIndexDraftSchema.refine(
         (value) => value.sections.length >= input.minimumSections && value.sections.length <= input.maximumSections,
         "Section count is outside the template limits.",
       ),
       systemInstruction: [
-        "Plan only the compact semantic structure of one SCI review document.",
-        "Establish one evidence-informed review thesis and a clear scope boundary before planning sections.",
+        "Plan only the compact body-section index for an already-approved SCI review thesis.",
         "For each body section return only heading, question, concise purpose, owned scope, excluded scope, and relative weight.",
         "Do not plan section details, evidence mappings, or write paragraphs yet.",
         "Plan body sections only. Title, abstract, keywords, conclusion, and references are fixed template components created separately.",
@@ -153,6 +176,7 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
       ].join(" "),
       userInstruction: JSON.stringify({
         topic: input.request.userRequirements.topic,
+        thesis: input.thesis,
         requirements: input.request.userRequirements.specialInstructions ?? [],
         minimumSections: input.minimumSections,
         maximumSections: input.maximumSections,

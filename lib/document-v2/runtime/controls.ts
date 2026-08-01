@@ -80,6 +80,28 @@ export async function resumeDocumentJob(
     : undefined;
   if (!orchestration) {
     const now = clock().toISOString();
+    const shouldRevisePlanning =
+      job.stage === "planning" &&
+      job.error?.code === "document_model_split_required" &&
+      job.checkpoint.planning !== undefined &&
+      job.checkpoint.planning.skeleton === undefined;
+    const planning = shouldRevisePlanning
+      ? {
+          ...job.checkpoint.planning,
+          planningRevision:
+            (job.checkpoint.planning?.planningRevision ?? 1) + 1,
+          thesis: undefined,
+          planningMigration: {
+            supersededOperation: "outline.structure" as const,
+            replacementOperations: [
+              "outline.thesis",
+              "outline.section_index",
+            ] as const,
+            reason: "structured_output_capacity_exhausted",
+            migratedAt: now,
+          },
+        }
+      : job.checkpoint.planning;
     job = await repository.save(
       DocumentJobSchema.parse({
         ...job,
@@ -89,11 +111,26 @@ export async function resumeDocumentJob(
         finishedAt: undefined,
         leaseOwner: undefined,
         leaseExpiresAt: undefined,
+        checkpoint: { ...job.checkpoint, planning, savedAt: now },
         updatedAt: now,
       }),
       job.revision,
     );
-    await controlEvent(repository, jobId, job.stage, "任务已恢复并重新排队。");
+    await controlEvent(
+      repository,
+      jobId,
+      job.stage,
+      shouldRevisePlanning
+        ? "已从保存点创建新的规划修订，请求、模板和证据上下文均已保留。"
+        : "任务已恢复并重新排队。",
+      shouldRevisePlanning
+        ? {
+            resumeScope: "planning_revision",
+            supersededOperation: "outline.structure",
+            replacementOperations: "outline.thesis,outline.section_index",
+          }
+        : undefined,
+    );
     return getDocumentJobSnapshot(repository, jobId);
   }
   let resumeStage = job.stage;

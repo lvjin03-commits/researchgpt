@@ -36,7 +36,10 @@ import {
   materializeFigureIntents,
   materializeSectionPlan,
 } from "@/lib/document-v2/planning/planner";
-import { createDocumentExecutionBudgetSnapshot } from "@/lib/document-v2/runtime/token-budgets";
+import {
+  createDocumentExecutionBudgetSnapshot,
+  DOCUMENT_OPERATION_BUDGET_POLICY_VERSION,
+} from "@/lib/document-v2/runtime/token-budgets";
 import { createDocumentOrchestrationState } from "@/lib/document-v2/orchestration/orchestrator";
 import type { FigureAsset } from "@/lib/document-v2/assets/contracts";
 import type { FinalDocumentSpec } from "@/lib/document-v2/contracts";
@@ -219,6 +222,7 @@ async function prepareIntake(input: {
       template,
       evidenceReferences,
       evidenceSnapshotId,
+      planningRevision: 1,
       figureIntentsCompleted: false,
       sectionPlans: [],
     };
@@ -231,15 +235,36 @@ async function prepareIntake(input: {
 
   const sectionBlueprint = planning.template.componentBlueprints.find((item) => item.type === "section");
   if (!sectionBlueprint) throw new Error("Resolved template does not contain a section blueprint.");
+  if (!planning.thesis) {
+    const thesis = await planner.createThesis({
+      request: planning.request,
+      template: planning.template,
+    });
+    planning = { ...planning, thesis };
+    job = await saveAndContinue(planning, 6);
+    await logSaved("outline.thesis", "Document thesis and scope saved.", {
+      planningRevision: planning.planningRevision,
+    });
+    return job;
+  }
+
   if (!planning.skeleton) {
-    const skeleton = materializeDocumentStructure(await planner.createStructure({
-      request: planning.request, template: planning.template,
-      minimumSections: sectionBlueprint.minimumCount, maximumSections: sectionBlueprint.maximumCount,
-    }));
+    const sectionIndex = await planner.createSectionIndex({
+      request: planning.request,
+      template: planning.template,
+      thesis: planning.thesis,
+      minimumSections: sectionBlueprint.minimumCount,
+      maximumSections: sectionBlueprint.maximumCount,
+    });
+    const skeleton = materializeDocumentStructure({
+      thesis: planning.thesis,
+      sectionIndex,
+    });
     planning = { ...planning, skeleton };
     job = await saveAndContinue(planning, 7);
-    await logSaved("outline.structure", "Document structure saved.", {
+    await logSaved("outline.section_index", "Document section index saved.", {
       sectionCount: skeleton.sections.length,
+      planningRevision: planning.planningRevision,
     });
     return job;
   }
@@ -318,7 +343,7 @@ async function prepareIntake(input: {
       ...job.checkpoint, planning, orchestration,
       executionSnapshot: {
         requestSchemaVersion: "1", planSchemaVersion: "1", finalSpecSchemaVersion: "1",
-        intentPromptVersion: "document-request-v1", plannerPromptVersion: "document-hierarchical-outline-v1",
+        intentPromptVersion: "document-request-v1", plannerPromptVersion: "document-hierarchical-outline-v2",
         generatorPromptVersion: "document-component-contract-v2", validatorVersion: "mature-content-v1",
         modelProvider: input.textExecutor.profile.provider, modelId: input.textExecutor.profile.resolvedModelId,
         rendererVersion: "sci-word-v1", templateChecksum: planning.template.snapshot.checksum,
@@ -490,7 +515,11 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       "legacy_text_execution_profile_missing: the document job has no frozen text model configuration.",
     );
   }
-  if (!job.checkpoint.executionBudget) {
+  if (
+    !job.checkpoint.executionBudget ||
+    job.checkpoint.executionBudget.operationBudgetPolicyVersion !==
+      DOCUMENT_OPERATION_BUDGET_POLICY_VERSION
+  ) {
     const now = new Date().toISOString();
     job = await repository.save(
       DocumentJobSchema.parse({

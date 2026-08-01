@@ -94,6 +94,9 @@ export function projectDocumentJobDiagnostics(
         provider: row.provider,
         requestedModelId: row.requested_model_id,
         resolvedModelId: row.resolved_model_id,
+        requestedReasoningEffort: row.requested_reasoning_effort,
+        effectiveReasoningEffort: row.effective_reasoning_effort,
+        reasoningTokensObserved: row.reasoning_tokens_observed,
         actualModelId: row.actual_model_id,
         providerRequestFingerprint: diagnosticFingerprint(
           row.provider_request_id,
@@ -145,9 +148,11 @@ export function projectDocumentJobDiagnostics(
         repairPipelineVersion: row.repair_pipeline_version,
         schemaVersion: row.schema_version,
         calculatedCostUsd:
-          recordedCosts.get(
+          row.calculated_cost_usd ?? recordedCosts.get(
             row.generation_config_fingerprint ?? row.input_fingerprint,
           ) ?? null,
+        pricingVersion: row.pricing_version,
+        costStatus: row.cost_status,
       };
     },
   );

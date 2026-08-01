@@ -186,6 +186,66 @@ export function diagnoseBlockers(input: {
     });
   }
 
+  if (latestExecution?.failureCategory === "reasoning_budget_exhausted") {
+    findings.push({
+      code: "reasoning_budget_exhausted",
+      severity: "error",
+      certainty: "deterministic",
+      location,
+      since: latestExecution.completedAt,
+      matchedRule: "structured_output_budget_consumed_by_reasoning",
+      evidence: [
+        {
+          source: "model_execution",
+          field: "effectiveReasoningEffort",
+          value: latestExecution.effectiveReasoningEffort,
+        },
+        {
+          source: "model_execution",
+          field: "reasoningTokens",
+          value: latestExecution.reasoningTokens,
+        },
+        {
+          source: "model_execution",
+          field: "contentLength",
+          value: latestExecution.contentLength,
+        },
+        {
+          source: "model_execution",
+          field: "finishReason",
+          value: latestExecution.finishReason,
+        },
+      ],
+      missingEvidence: [],
+      recommendedNextInspection:
+        "Verify the operation reasoning policy and resume from the saved planning revision; increasing output capacity is not the first remedy.",
+    });
+  } else if (latestExecution?.failureCategory === "split_required") {
+    findings.push({
+      code: "structured_operation_requires_split",
+      severity: "error",
+      certainty: "deterministic",
+      location,
+      since: latestExecution.completedAt,
+      matchedRule: "structured_output_exceeded_hard_capacity",
+      evidence: [
+        {
+          source: "model_execution",
+          field: "operation",
+          value: latestExecution.operation,
+        },
+        {
+          source: "model_execution",
+          field: "effectiveMaxTokens",
+          value: latestExecution.effectiveMaxTokens,
+        },
+      ],
+      missingEvidence: [],
+      recommendedNextInspection:
+        "Resume through the operation-specific planning revision instead of repeating the same execution key.",
+    });
+  }
+
   if (
     latestDispatch?.status === "pending" &&
     input.now.getTime() - Date.parse(latestDispatch.createdAt) > 120_000

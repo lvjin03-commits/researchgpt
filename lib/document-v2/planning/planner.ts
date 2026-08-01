@@ -10,7 +10,8 @@ import {
 } from "../templates/contracts";
 import {
   DocumentFigureIntentsDraftSchema,
-  DocumentStructureDraftSchema,
+  DocumentSectionIndexDraftSchema,
+  DocumentThesisDraftSchema,
   DocumentSkeletonDraftSchema,
   DocumentSkeletonSchema,
   SectionPlanDraftSchema,
@@ -20,11 +21,17 @@ import {
   type SectionPlan,
   type SemanticOutlineProposal,
 } from "./contracts";
+import type { z } from "zod";
 
 export interface HierarchicalOutlinePlanner {
-  createStructure(input: {
+  createThesis(input: {
     request: DocumentRequest;
     template: TemplateResolution;
+  }): Promise<unknown>;
+  createSectionIndex(input: {
+    request: DocumentRequest;
+    template: TemplateResolution;
+    thesis: z.infer<typeof DocumentThesisDraftSchema>;
     minimumSections: number;
     maximumSections: number;
   }): Promise<unknown>;
@@ -88,15 +95,19 @@ export function materializeDocumentSkeleton(input: unknown): DocumentSkeleton {
   });
 }
 
-export function materializeDocumentStructure(input: unknown): DocumentSkeleton {
-  const draft = DocumentStructureDraftSchema.parse(input);
+export function materializeDocumentStructure(input: {
+  thesis: unknown;
+  sectionIndex: unknown;
+}): DocumentSkeleton {
+  const thesis = DocumentThesisDraftSchema.parse(input.thesis);
+  const sectionIndex = DocumentSectionIndexDraftSchema.parse(input.sectionIndex);
   return DocumentSkeletonSchema.parse({
-    reviewThesis: draft.reviewThesis,
-    scopeBoundary: draft.scopeBoundary,
-    reviewQuestions: draft.reviewQuestions,
-    conclusionHeading: draft.conclusionHeading,
+    reviewThesis: thesis.reviewThesis,
+    scopeBoundary: thesis.scopeBoundary,
+    reviewQuestions: thesis.reviewQuestions,
+    conclusionHeading: thesis.conclusionHeading,
     schemaVersion: 1,
-    sections: draft.sections.map((section, order) => ({
+    sections: sectionIndex.sections.map((section, order) => ({
       ...section,
       sectionId: `section-${String(order + 1).padStart(2, "0")}`,
       order,

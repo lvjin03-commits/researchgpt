@@ -10,11 +10,17 @@ const FigureTypeSchema = z.enum([
   "data_plot",
 ]);
 
-export const DocumentStructureDraftSchema = z
+export const DocumentThesisDraftSchema = z
   .object({
     reviewThesis: z.string().trim().min(1).max(1_200),
     scopeBoundary: z.string().trim().min(1).max(1_200),
     reviewQuestions: z.array(z.string().trim().min(1).max(300)).min(1).max(8),
+    conclusionHeading: z.string().trim().min(1).max(300),
+  })
+  .strict();
+
+export const DocumentSectionIndexDraftSchema = z
+  .object({
     sections: z
       .array(
         z
@@ -30,7 +36,6 @@ export const DocumentStructureDraftSchema = z
       )
       .min(1)
       .max(12),
-    conclusionHeading: z.string().trim().min(1).max(300),
   })
   .strict();
 

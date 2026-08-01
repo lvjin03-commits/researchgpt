@@ -27,6 +27,9 @@ const {
 const {
   sanitizeDiagnosticError,
 } = require("../lib/document-v2/diagnostics/redaction.ts");
+const {
+  diagnoseBlockers,
+} = require("../lib/document-v2/diagnostics/blocker-rules.ts");
 
 const now = new Date("2026-07-31T03:20:00.000Z");
 const diagnostic = projectDocumentJobDiagnostics(
@@ -174,6 +177,34 @@ assert.equal(
 );
 assert.equal(diagnostic.modelExecutions[0].requestedMaxTokens, 8_000);
 assert.equal(JSON.stringify(diagnostic).includes("auxiliary_content_encrypted"), false);
+
+const reasoningFindings = diagnoseBlockers({
+  now,
+  job: {
+    status: "paused",
+    stage: "planning",
+    leaseExpiresAt: null,
+    lastHeartbeatAt: null,
+    updatedAt: "2026-07-31T03:14:01.000Z",
+  },
+  executions: [
+    {
+      ...diagnostic.modelExecutions[0],
+      operation: "outline.thesis",
+      status: "failed",
+      completedAt: "2026-07-31T03:14:00.000Z",
+      failureCategory: "reasoning_budget_exhausted",
+      effectiveReasoningEffort: "none",
+      reasoningTokens: 1_200,
+      outputTokens: 1_200,
+      contentLength: 0,
+      finishReason: "length",
+    },
+  ],
+  dispatches: [],
+});
+assert.equal(reasoningFindings[0].code, "reasoning_budget_exhausted");
+assert.equal(reasoningFindings[0].certainty, "deterministic");
 
 const cancellationWithDispatch = projectDocumentJobDiagnostics(
   {

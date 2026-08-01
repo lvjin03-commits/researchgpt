@@ -53,6 +53,8 @@ export type DocumentModelUsage = {
   durationMs: number;
 };
 
+const DOCUMENT_MODEL_PRICING_VERSION = "document-model-pricing-v1";
+
 export type DocumentStructuredGenerationInput<T> = {
     operation: string;
     budgetKey?: DocumentOperationBudgetKey;
@@ -99,6 +101,7 @@ export type DocumentModelFailureCategory =
   | "provider_empty_response"
   | "ambiguous_auxiliary_output"
   | "output_truncated"
+  | "reasoning_budget_exhausted"
   | "split_required"
   | "no_json_object"
   | "truncated_json"
@@ -140,7 +143,6 @@ type StoredExecution = {
 };
 
 function contentFingerprint(input: {
-  profile: DocumentTextExecutionProfile;
   operation: string;
   componentKey?: string;
   schemaName: string;
@@ -229,8 +231,12 @@ export class ProviderDocumentTextExecutor
       this.executionBudget.modelCapability.maxOutputTokens,
       this.executionBudget.productMaxOutputTokensPerOperation,
     );
+    const effectiveReasoningEffort =
+      operationBudget?.reasoningPolicy &&
+      operationBudget.reasoningPolicy !== "inherit"
+        ? operationBudget.reasoningPolicy
+        : (this.profile.reasoningEffort ?? "none");
     const inputFingerprint = contentFingerprint({
-      profile: this.profile,
       operation: input.operation,
       componentKey: input.componentKey,
       schemaName: input.schemaName,
@@ -245,6 +251,7 @@ export class ProviderDocumentTextExecutor
       schemaVersion,
       budgetKey: input.budgetKey,
       effectiveMaxOutputTokens,
+      effectiveReasoningEffort,
       operationBudgetPolicyVersion:
         this.executionBudget.operationBudgetPolicyVersion,
       modelCapabilityVersion:
@@ -427,6 +434,8 @@ export class ProviderDocumentTextExecutor
           provider: this.profile.provider,
           requested_model_id: this.profile.requestedModelId,
           resolved_model_id: this.profile.resolvedModelId,
+          requested_reasoning_effort: this.profile.reasoningEffort,
+          effective_reasoning_effort: effectiveReasoningEffort,
           status: "running",
           lease_expires_at: leaseExpiresAt,
           started_at: new Date().toISOString(),
@@ -490,6 +499,7 @@ export class ProviderDocumentTextExecutor
           instructions: input.systemInstruction,
           input: input.userInstruction,
           max_output_tokens: effectiveMaxOutputTokens,
+          reasoning: { effort: effectiveReasoningEffort },
           text: {
             format: zodTextFormat(input.schema, input.schemaName),
           },
@@ -514,6 +524,7 @@ export class ProviderDocumentTextExecutor
         const response = await this.client.chat.completions.create({
           model: this.profile.resolvedModelId,
           max_tokens: effectiveMaxOutputTokens,
+          reasoning_effort: effectiveReasoningEffort,
           response_format: { type: "json_object" },
           messages: [
             {
@@ -551,6 +562,12 @@ export class ProviderDocumentTextExecutor
       }
 
       const responseReceivedAt = new Date().toISOString();
+      const calculatedCostUsd = estimateModelCostUsd(actualModelId, {
+        inputTokens,
+        cachedInputTokens,
+        outputTokens,
+        reasoningTokens,
+      });
       const evidence = providerContent
         ? protectResponseEvidence(providerContent)
         : null;
@@ -572,6 +589,11 @@ export class ProviderDocumentTextExecutor
             cached_input_tokens: cachedInputTokens,
             output_tokens: outputTokens,
             reasoning_tokens: reasoningTokens,
+            visible_output_tokens: Math.max(0, outputTokens - reasoningTokens),
+            reasoning_tokens_observed: reasoningTokens > 0,
+            calculated_cost_usd: calculatedCostUsd,
+            pricing_version: DOCUMENT_MODEL_PRICING_VERSION,
+            cost_status: "calculated",
             response_received_at: responseReceivedAt,
             finish_reason: finishReason,
             choice_count: choiceCount,
@@ -597,6 +619,18 @@ export class ProviderDocumentTextExecutor
             schema_version: schemaVersion,
           },
           ["request_started"],
+        );
+      }
+      const reasoningBudgetExhausted =
+        (finishReason === "length" || finishReason === "incomplete") &&
+        outputTokens > 0 &&
+        reasoningTokens / outputTokens >= 0.8 &&
+        contentLength < 64;
+      if (reasoningBudgetExhausted) {
+        throw new DocumentModelOperationError(
+          "The provider consumed the structured-output budget in reasoning and returned no publishable JSON content.",
+          "reasoning_budget_exhausted",
+          input.operation,
         );
       }
       if (finishReason === "length" || finishReason === "incomplete") {
@@ -745,12 +779,6 @@ export class ProviderDocumentTextExecutor
           ["raw_saved"],
         );
       }
-      const calculatedCostUsd = estimateModelCostUsd(actualModelId, {
-        inputTokens,
-        cachedInputTokens,
-        outputTokens,
-        reasoningTokens,
-      });
       await this.onUsage?.({
         provider: this.profile.provider,
         requestedModelId: this.profile.requestedModelId,

@@ -807,29 +807,34 @@ async function verifyOpenAiComponentSchemaHasObjectRoot() {
 }
 
 async function verifyOutlineSchemaUsesTemplateBounds() {
+  let call = 0;
   const planner = new ModelHierarchicalOutlinePlanner({
     profile: { maxOutputTokens: 3200 },
     async generate(input) {
-      assert.equal(input.operation, "outline.structure");
-      assert.equal(input.budgetKey, "outline.structure");
+      call += 1;
+      if (call === 1) {
+        assert.equal(input.operation, "outline.thesis");
+        assert.equal(input.budgetKey, "outline.thesis");
+        return {
+          reviewThesis:
+            "Processing history controls the network state of physical gels.",
+          scopeBoundary:
+            "Focus on reversible physical junctions and their preparation.",
+          reviewQuestions: [
+            "How does processing history determine network structure?",
+          ],
+          conclusionHeading: "Conclusion",
+        };
+      }
+      assert.equal(input.operation, "outline.section_index");
+      assert.equal(input.budgetKey, "outline.section_index");
       assert.equal(
         input.schema.safeParse({
-          reviewThesis: "x",
-          scopeBoundary: "y",
-          reviewQuestions: ["z"],
           sections: [],
-          conclusionHeading: "Conclusion",
         }).success,
         false,
       );
       return {
-        reviewThesis:
-          "Processing history controls the network state of physical gels.",
-        scopeBoundary:
-          "Focus on reversible physical junctions and their preparation.",
-        reviewQuestions: [
-          "How does processing history determine network structure?",
-        ],
         sections: [
           {
             heading: "Mechanism",
@@ -840,11 +845,10 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
             relativeWeight: 1,
           },
         ],
-        conclusionHeading: "Conclusion",
       };
     },
   });
-  const proposal = await planner.createStructure({
+  const base = {
     request: {
       userRequirements: {
         topic: "Physical gels",
@@ -852,29 +856,38 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
       },
     },
     template: { componentBlueprints: [] },
+  };
+  const thesis = await planner.createThesis(base);
+  const proposal = await planner.createSectionIndex({
+    ...base,
+    thesis,
     minimumSections: 1,
     maximumSections: 2,
   });
   assert.equal(proposal.sections.length, 1);
-  assert.match(proposal.reviewThesis, /Processing history/);
+  assert.match(thesis.reviewThesis, /Processing history/);
 }
 
 async function verifyFigureIntentPlanningUsesSectionOrder() {
   const structure = materializeDocumentStructure({
-    reviewThesis: "Processing controls structure.",
-    scopeBoundary: "Physical gels.",
-    reviewQuestions: ["How does processing control structure?"],
-    sections: [
-      {
-        heading: "Mechanisms",
-        question: "Which mechanisms dominate?",
-        purpose: "Compare mechanisms.",
-        owns: ["Reversible junctions"],
-        excludes: ["Covalent gels"],
-        relativeWeight: 1,
-      },
-    ],
-    conclusionHeading: "Conclusion",
+    thesis: {
+      reviewThesis: "Processing controls structure.",
+      scopeBoundary: "Physical gels.",
+      reviewQuestions: ["How does processing control structure?"],
+      conclusionHeading: "Conclusion",
+    },
+    sectionIndex: {
+      sections: [
+        {
+          heading: "Mechanisms",
+          question: "Which mechanisms dominate?",
+          purpose: "Compare mechanisms.",
+          owns: ["Reversible junctions"],
+          excludes: ["Covalent gels"],
+          relativeWeight: 1,
+        },
+      ],
+    },
   });
   const completed = materializeFigureIntents({
     skeleton: structure,

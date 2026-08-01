@@ -41,6 +41,9 @@ const {
   canonicalize,
   sha256Canonical,
 } = require("../lib/document-v2/runtime/canonical-hash.ts");
+const {
+  resolveDocumentTemplate,
+} = require("../lib/document-v2/templates/resolver.ts");
 
 const requestId = "23b7cee2-bfa7-49d7-b58b-98b734bc5201";
 const request = {
@@ -234,6 +237,7 @@ async function verifyIntakeExistsBeforePlanning() {
       requestedModelId: "deepseek-v4-flash",
       resolvedModelId: "deepseek-v4-flash",
       maxOutputTokens: 3200,
+      reasoningEffort: "none",
       allowProviderFallback: false,
     },
   });
@@ -243,6 +247,7 @@ async function verifyIntakeExistsBeforePlanning() {
   assert.equal("checkpoint" in snapshot.job, false);
   const stored = await repository.get(requestId);
   assert.equal(stored.checkpoint.textExecution.provider, "deepseek");
+  assert.equal(stored.checkpoint.textExecution.reasoningEffort, "none");
   assert.equal(
     stored.checkpoint.executionBudget.modelCapability.maxOutputTokens,
     8192,
@@ -252,6 +257,11 @@ async function verifyIntakeExistsBeforePlanning() {
     stored.checkpoint.executionBudget.effectiveBudgets["component.section"]
       .effectivePreferredMaxOutputTokens,
     4500,
+  );
+  assert.equal(
+    stored.checkpoint.executionBudget.effectiveBudgets["outline.thesis"]
+      .reasoningPolicy,
+    "none",
   );
   assert.equal(
     stored.checkpoint.executionBudget.productBudgetMode,
@@ -408,6 +418,79 @@ async function verifyPreciseResume() {
     resumedState.checkpoint.orchestration.components[0].lastError.code,
     "internal_content_leak",
   );
+}
+
+async function verifyPlanningRevisionResume() {
+  const repository = new InMemoryDocumentJobRepository();
+  const service = makeService(repository, {});
+  await service.createIntake({
+    ownerId: "user-1",
+    jobId: requestId,
+    instruction: "Generate an SCI review about physical gels.",
+    source: { kind: "prompt", sourceIds: [] },
+    language: "en",
+    textExecution: {
+      provider: "deepseek",
+      requestedModelId: "deepseek-v4-flash",
+      resolvedModelId: "deepseek-v4-flash",
+      maxOutputTokens: 3200,
+      reasoningEffort: "none",
+      allowProviderFallback: false,
+    },
+  });
+  const template = await resolveDocumentTemplate({
+    request,
+    matcher: {
+      async match({ candidates }) {
+        return {
+          templateId: candidates[0].templateId,
+          confidence: 1,
+          rationale: "test",
+        };
+      },
+    },
+  });
+  let failed = await repository.get(requestId);
+  failed = await repository.save(
+    {
+      ...failed,
+      status: "paused",
+      stage: "planning",
+      error: {
+        code: "document_model_split_required",
+        userMessage: "Planning paused.",
+        technicalMessage: "The structure output exceeded its hard capacity.",
+        failedStage: "planning",
+        componentKey: "document-structure",
+      },
+      checkpoint: {
+        ...failed.checkpoint,
+        planning: {
+          schemaVersion: 1,
+          planningRevision: 1,
+          request,
+          template,
+          evidenceReferences: [],
+          figureIntentsCompleted: false,
+          sectionPlans: [],
+        },
+      },
+    },
+    failed.revision,
+  );
+  await service.resume(requestId);
+  const resumed = await repository.get(requestId);
+  assert.equal(resumed.status, "queued");
+  assert.equal(resumed.checkpoint.planning.planningRevision, 2);
+  assert.equal(
+    resumed.checkpoint.planning.planningMigration.supersededOperation,
+    "outline.structure",
+  );
+  assert.deepEqual(
+    resumed.checkpoint.planning.planningMigration.replacementOperations,
+    ["outline.thesis", "outline.section_index"],
+  );
+  assert.equal(resumed.checkpoint.planning.request.requestId, requestId);
 }
 
 async function verifyImageCallsAndAssetsUseSeparateBudgets() {
@@ -925,6 +1008,7 @@ async function main() {
   await verifyBoundedTicksResumeFromCheckpoint();
   await verifyTimeBudgetYieldsAfterCheckpoint();
   await verifyPreciseResume();
+  await verifyPlanningRevisionResume();
   await verifyImageCallsAndAssetsUseSeparateBudgets();
   await verifyFinalizerFailureIsVisible();
   await verifyDispatchChecksHttpStatus();

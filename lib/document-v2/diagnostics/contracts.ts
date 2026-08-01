@@ -71,6 +71,9 @@ export type ModelExecutionDiagnostic = {
   provider: string;
   requestedModelId: string;
   resolvedModelId: string;
+  requestedReasoningEffort: string | null;
+  effectiveReasoningEffort: string | null;
+  reasoningTokensObserved: boolean;
   actualModelId: string | null;
   providerRequestFingerprint: string | null;
   status: string;
@@ -120,6 +123,8 @@ export type ModelExecutionDiagnostic = {
   repairPipelineVersion: string | null;
   schemaVersion: string | null;
   calculatedCostUsd: number | null;
+  pricingVersion: string | null;
+  costStatus: string | null;
 };
 
 export type DispatchDiagnostic = {

@@ -2165,6 +2165,7 @@ export async function POST(request: Request) {
                 requestedModelId: modelOption.model,
                 resolvedModelId: modelOption.model,
                 maxOutputTokens: modelOption.maxOutputTokens,
+                reasoningEffort: modelOption.reasoningEffort,
                 allowProviderFallback: false,
               },
             });
