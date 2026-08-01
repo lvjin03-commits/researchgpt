@@ -56,6 +56,18 @@ export type ModelExecutionDiagnostic = {
   componentKey: string | null;
   operation: string;
   inputFingerprint: string;
+  contentInputFingerprint: string;
+  generationConfigFingerprint: string | null;
+  attemptNumber: number;
+  parentExecutionKey: string | null;
+  escalationReason: string | null;
+  budgetEscalationCount: number;
+  expectedOutputTokens: number | null;
+  modelPhysicalMaxOutputTokens: number | null;
+  productMaxOutputTokens: number | null;
+  operationHardMaxOutputTokens: number | null;
+  generationBudgetPolicyVersion: string | null;
+  modelCapabilityVersion: string | null;
   provider: string;
   requestedModelId: string;
   resolvedModelId: string;

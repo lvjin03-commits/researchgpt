@@ -21,6 +21,63 @@ export type DocumentTextExecutionProfile = z.infer<
   typeof DocumentTextExecutionProfileSchema
 >;
 
+export const DocumentModelCapabilitySnapshotSchema = z
+  .object({
+    provider: z.enum(["deepseek", "openai"]),
+    requestedModelId: IdentifierSchema,
+    resolvedModelId: IdentifierSchema,
+    maxOutputTokens: z.number().int().min(500).max(32_000),
+    capabilityVersion: IdentifierSchema,
+  })
+  .strict();
+
+export const DocumentOperationBudgetSchema = z
+  .object({
+    expectedOutputTokens: z.number().int().min(1).max(32_000),
+    preferredMaxOutputTokens: z.number().int().min(500).max(32_000),
+    hardMaxOutputTokens: z.number().int().min(500).max(32_000),
+    effectivePreferredMaxOutputTokens: z.number().int().min(500).max(32_000),
+    effectiveHardMaxOutputTokens: z.number().int().min(500).max(32_000),
+    escalationAllowed: z.boolean(),
+  })
+  .strict()
+  .superRefine((budget, context) => {
+    if (budget.preferredMaxOutputTokens > budget.hardMaxOutputTokens) {
+      context.addIssue({
+        code: "custom",
+        path: ["preferredMaxOutputTokens"],
+        message: "Preferred output budget cannot exceed the hard budget.",
+      });
+    }
+    if (
+      budget.effectivePreferredMaxOutputTokens >
+      budget.effectiveHardMaxOutputTokens
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["effectivePreferredMaxOutputTokens"],
+        message: "Effective preferred budget cannot exceed the effective hard budget.",
+      });
+    }
+  });
+
+export const DocumentExecutionBudgetSnapshotSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    modelCapability: DocumentModelCapabilitySnapshotSchema,
+    productBudgetPolicyVersion: IdentifierSchema,
+    operationBudgetPolicyVersion: IdentifierSchema,
+    productBudgetMode: z.literal("observe_only"),
+    productMaxOutputTokensPerOperation: z.number().int().min(500).max(32_000),
+    effectiveBudgets: z.record(IdentifierSchema, DocumentOperationBudgetSchema),
+    frozenAt: DateTimeSchema,
+  })
+  .strict();
+
+export type DocumentExecutionBudgetSnapshot = z.infer<
+  typeof DocumentExecutionBudgetSnapshotSchema
+>;
+
 export const DocumentEvidenceItemSchema = z
   .object({
     evidenceId: IdentifierSchema,
@@ -190,6 +247,7 @@ export const DocumentJobCheckpointSchema = z
         evidenceReferences: z.array(VerifiedReferenceSchema).max(500),
         evidenceSnapshotId: IdentifierSchema.optional(),
         skeleton: DocumentSkeletonSchema.optional(),
+        figureIntentsCompleted: z.boolean().default(false),
         sectionPlans: z.array(SectionPlanSchema).max(100),
       })
       .strict()
@@ -207,6 +265,7 @@ export const DocumentJobCheckpointSchema = z
       .optional(),
     executionSnapshot: DocumentExecutionSnapshotSchema.optional(),
     textExecution: DocumentTextExecutionProfileSchema.optional(),
+    executionBudget: DocumentExecutionBudgetSnapshotSchema.optional(),
     dispatchToken: z.string().min(32).max(200).optional(),
     budget: DocumentJobBudgetSchema.optional(),
     renderedArtifactId: IdentifierSchema.optional(),

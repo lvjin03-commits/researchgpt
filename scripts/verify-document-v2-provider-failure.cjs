@@ -34,6 +34,9 @@ const {
 const {
   protectResponseEvidence,
 } = require("../lib/document-v2-production/response-evidence.ts");
+const {
+  createDocumentExecutionBudgetSnapshot,
+} = require("../lib/document-v2/runtime/token-budgets.ts");
 
 class ExecutionTable {
   constructor() {
@@ -156,7 +159,120 @@ async function executeCase({ operation, response, schema }) {
   return { error: caught, row: rows[0], calls };
 }
 
+function createBudgetedExecutor(responses) {
+  const persistence = new ExecutionTable();
+  const calls = { count: 0 };
+  const profile = {
+    provider: "deepseek",
+    requestedModelId: "deepseek-v4-flash",
+    resolvedModelId: "deepseek-v4-flash",
+    maxOutputTokens: 3_200,
+    allowProviderFallback: false,
+  };
+  const executor = new ProviderDocumentTextExecutor(
+    profile,
+    undefined,
+    {
+      supabase: persistence,
+      jobId: "96ffc8b0-8fe7-438a-ac54-9ee6f3075a1a",
+    },
+    createDocumentExecutionBudgetSnapshot(
+      profile,
+      "2026-07-31T12:00:00.000Z",
+    ),
+  );
+  executor.client = {
+    chat: {
+      completions: {
+        create: async (input) => {
+          const response = responses[calls.count];
+          calls.count += 1;
+          assert.ok(response, "The executor made an unexpected extra call.");
+          assert.equal(
+            input.max_tokens,
+            calls.count === 1 ? 2_600 : 3_200,
+          );
+          return response;
+        },
+      },
+    },
+  };
+  return { executor, persistence, calls };
+}
+
+async function verifyControlledCapacityEscalation() {
+  const truncated = {
+    id: "attempt-1",
+    model: "deepseek-v4-flash",
+    choices: [
+      {
+        finish_reason: "length",
+        message: { content: '{"value":"partial', tool_calls: [] },
+      },
+    ],
+    usage: { prompt_tokens: 100, completion_tokens: 2_600 },
+  };
+  const succeeded = {
+    id: "attempt-2",
+    model: "deepseek-v4-flash",
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: '{"value":"complete"}', tool_calls: [] },
+      },
+    ],
+    usage: { prompt_tokens: 100, completion_tokens: 20 },
+  };
+  const recovered = createBudgetedExecutor([truncated, succeeded]);
+  const result = await recovered.executor.generate({
+    operation: "outline.structure",
+    budgetKey: "outline.structure",
+    componentKey: "document-structure",
+    schemaName: "capacity_test",
+    schema: z.object({ value: z.string() }).strict(),
+    systemInstruction: "Return JSON.",
+    userInstruction: "Test capacity.",
+  });
+  assert.deepEqual(result, { value: "complete" });
+  assert.equal(recovered.calls.count, 2);
+  const rows = [...recovered.persistence.rows.values()];
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].attempt_number, 1);
+  assert.equal(rows[0].failure_category, "output_truncated");
+  assert.equal(rows[1].attempt_number, 2);
+  assert.equal(rows[1].parent_execution_key, rows[0].execution_key);
+  assert.equal(rows[1].escalation_reason, "output_truncated_near_budget");
+  assert.equal(
+    rows[0].content_input_fingerprint,
+    rows[1].content_input_fingerprint,
+  );
+  assert.notEqual(
+    rows[0].generation_config_fingerprint,
+    rows[1].generation_config_fingerprint,
+  );
+
+  const terminal = createBudgetedExecutor([truncated, truncated]);
+  await assert.rejects(
+    () => terminal.executor.generate({
+      operation: "outline.structure",
+      budgetKey: "outline.structure",
+      componentKey: "document-structure",
+      schemaName: "capacity_test",
+      schema: z.object({ value: z.string() }).strict(),
+      systemInstruction: "Return JSON.",
+      userInstruction: "Test capacity.",
+    }),
+    (error) =>
+      error instanceof DocumentModelOperationError &&
+      error.failureCategory === "split_required",
+  );
+  assert.equal(terminal.calls.count, 2, "A third provider call is forbidden.");
+  const terminalRows = [...terminal.persistence.rows.values()];
+  assert.equal(terminalRows[1].failure_category, "split_required");
+}
+
 (async () => {
+  await verifyControlledCapacityEscalation();
   const empty = await executeCase({
     operation: "outline.plan.empty",
     response: {
@@ -380,6 +496,13 @@ async function executeCase({ operation, response, schema }) {
     ),
     "utf8",
   );
+  const outputCapacityMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/027_document_v2_output_capacity.sql",
+    ),
+    "utf8",
+  );
   assert.match(migration, /'response_received'/);
   assert.match(migration, /finalize_document_v2_worker_failure/);
   assert.match(
@@ -393,6 +516,10 @@ async function executeCase({ operation, response, schema }) {
   assert.match(recoveryMigration, /parser_version TEXT/);
   assert.match(auxiliaryRecoveryMigration, /auxiliary_content_encrypted TEXT/);
   assert.match(auxiliaryRecoveryMigration, /response_source TEXT/);
+  assert.match(outputCapacityMigration, /content_input_fingerprint TEXT/);
+  assert.match(outputCapacityMigration, /generation_config_fingerprint TEXT/);
+  assert.match(outputCapacityMigration, /attempt_number INTEGER/);
+  assert.match(outputCapacityMigration, /budget_escalation_count INTEGER/);
   assert.doesNotMatch(
     auxiliaryRecoveryMigration,
     /auxiliary_content_plaintext/i,

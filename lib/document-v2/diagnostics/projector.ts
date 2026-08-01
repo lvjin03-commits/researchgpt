@@ -59,7 +59,9 @@ export function projectDocumentJobDiagnostics(
       !Array.isArray(event.event_payload.metadata)
         ? (event.event_payload.metadata as Record<string, unknown>)
         : {};
-    const inputFingerprint = stringValue(metadata.inputFingerprint);
+    const inputFingerprint =
+      stringValue(metadata.generationConfigFingerprint) ??
+      stringValue(metadata.inputFingerprint);
     const calculatedCostUsd = numberValue(metadata.calculatedCostUsd);
     if (inputFingerprint && calculatedCostUsd !== undefined) {
       recordedCosts.set(inputFingerprint, calculatedCostUsd);
@@ -73,6 +75,22 @@ export function projectDocumentJobDiagnostics(
         componentKey: row.component_key,
         operation: row.operation,
         inputFingerprint: row.input_fingerprint,
+        contentInputFingerprint:
+          row.content_input_fingerprint ?? row.input_fingerprint,
+        generationConfigFingerprint: row.generation_config_fingerprint,
+        attemptNumber: row.attempt_number,
+        parentExecutionKey: row.parent_execution_key,
+        escalationReason: row.escalation_reason,
+        budgetEscalationCount: row.budget_escalation_count,
+        expectedOutputTokens: row.expected_output_tokens,
+        modelPhysicalMaxOutputTokens:
+          row.model_physical_max_output_tokens,
+        productMaxOutputTokens: row.product_max_output_tokens,
+        operationHardMaxOutputTokens:
+          row.operation_hard_max_output_tokens,
+        generationBudgetPolicyVersion:
+          row.generation_budget_policy_version,
+        modelCapabilityVersion: row.model_capability_version,
         provider: row.provider,
         requestedModelId: row.requested_model_id,
         resolvedModelId: row.resolved_model_id,
@@ -127,7 +145,9 @@ export function projectDocumentJobDiagnostics(
         repairPipelineVersion: row.repair_pipeline_version,
         schemaVersion: row.schema_version,
         calculatedCostUsd:
-          recordedCosts.get(row.input_fingerprint) ?? null,
+          recordedCosts.get(
+            row.generation_config_fingerprint ?? row.input_fingerprint,
+          ) ?? null,
       };
     },
   );
@@ -208,6 +228,17 @@ export function projectDocumentJobDiagnostics(
         actualModelId: execution.actualModelId,
         inputTokens: execution.inputTokens,
         outputTokens: execution.outputTokens,
+        attemptNumber: execution.attemptNumber,
+        parentExecutionKey: execution.parentExecutionKey,
+        escalationReason: execution.escalationReason,
+        expectedOutputTokens: execution.expectedOutputTokens,
+        requestedMaxTokens: execution.requestedMaxTokens,
+        effectiveMaxTokens: execution.effectiveMaxTokens,
+        operationHardMaxOutputTokens:
+          execution.operationHardMaxOutputTokens,
+        modelPhysicalMaxOutputTokens:
+          execution.modelPhysicalMaxOutputTokens,
+        productMaxOutputTokens: execution.productMaxOutputTokens,
         rawSavedAt: execution.rawSavedAt,
         finishReason: execution.finishReason,
         choiceCount: execution.choiceCount,
@@ -328,7 +359,8 @@ export function projectDocumentJobDiagnostics(
     const key = [
       execution.componentKey ?? "document",
       execution.operation,
-      execution.inputFingerprint,
+      execution.contentInputFingerprint,
+      execution.generationConfigFingerprint ?? "legacy-config",
     ].join(":");
     executionFingerprints.set(key, (executionFingerprints.get(key) ?? 0) + 1);
   }

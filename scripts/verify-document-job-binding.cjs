@@ -56,7 +56,11 @@ const explicitBinding = normalizeDisplayMessage({
   documentJobId: oldJobId,
   documentJobBindingVersion: 7,
 });
-assert.equal(explicitBinding.documentJobId, oldJobId);
+assert.equal(
+  explicitBinding.documentJobId,
+  newJobId,
+  "The marker stored on this assistant message must override stale structured metadata.",
+);
 assert.equal(explicitBinding.documentJobBindingVersion, 7);
 
 console.log("Document job binding tests passed.");

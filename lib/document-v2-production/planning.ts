@@ -8,7 +8,8 @@ import {
 import type { DocumentTemplateMatcher } from "@/lib/document-v2/templates/resolver";
 import type { HierarchicalOutlinePlanner } from "@/lib/document-v2/planning/planner";
 import {
-  DocumentSkeletonDraftSchema,
+  DocumentFigureIntentsDraftSchema,
+  DocumentStructureDraftSchema,
   SectionPlanDraftSchema,
 } from "@/lib/document-v2/planning/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
@@ -18,6 +19,7 @@ const UnderstoodRequestSchema = z
     ready: z.boolean(),
     topic: z.string().trim().min(1).max(500).nullable(),
     language: z.enum(["zh", "en"]).nullable(),
+    visualIntent: z.enum(["auto", "required", "forbidden"]),
     specialInstructions: z
       .array(z.string().trim().min(1).max(500))
       .max(20),
@@ -55,12 +57,14 @@ export async function understandDocumentRequest(
   }
   const understood = await executor.generate({
     operation: "request.understand",
+    budgetKey: "request.understand",
     schemaName: "document_request_v1",
     schema: UnderstoodRequestSchema,
     systemInstruction: [
       "Understand the user's complete document request semantically.",
       "A continuation such as 'generate it' must be interpreted from the supplied instruction/context, never by keyword routing.",
       "Extract the actual scientific topic, requested output language, and content requirements.",
+      "Set visualIntent=forbidden when the user explicitly requests no images or figures, required when figures are explicitly required, otherwise auto.",
       "Set ready=false only when the scientific topic or document scope cannot be determined without changing the requested document.",
       "Do not ask about optional language, length, figures, authors, or formatting when safe defaults exist.",
       "Do not write document content yet.",
@@ -90,6 +94,7 @@ export async function understandDocumentRequest(
     userRequirements: {
       topic: understood.topic,
       targetLength: input.targetLength,
+      visualIntent: understood.visualIntent,
       specialInstructions: understood.specialInstructions,
     },
   });
@@ -113,6 +118,7 @@ export class OpenAITemplateMatcher implements DocumentTemplateMatcher {
     }).strict();
     return this.executor.generate({
       operation: "template.match",
+      budgetKey: "template.match",
       schemaName: "template_match_v1",
       schema: CandidateDecision,
       systemInstruction:
@@ -125,26 +131,25 @@ export class OpenAITemplateMatcher implements DocumentTemplateMatcher {
 export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlanner {
   constructor(private readonly executor: DocumentStructuredTextExecutor) {}
 
-  async createSkeleton(input: Parameters<HierarchicalOutlinePlanner["createSkeleton"]>[0]) {
+  async createStructure(input: Parameters<HierarchicalOutlinePlanner["createStructure"]>[0]) {
     return this.executor.generate({
-      operation: "outline.skeleton",
-      componentKey: "document-skeleton",
-      maxOutputTokens: 3_000,
-      schemaName: "document_skeleton_v1",
-      schema: DocumentSkeletonDraftSchema.refine(
+      operation: "outline.structure",
+      budgetKey: "outline.structure",
+      componentKey: "document-structure",
+      schemaName: "document_structure_v1",
+      schema: DocumentStructureDraftSchema.refine(
         (value) => value.sections.length >= input.minimumSections && value.sections.length <= input.maximumSections,
         "Section count is outside the template limits.",
       ),
       systemInstruction: [
-        "Plan only the compact semantic skeleton of one SCI review document.",
+        "Plan only the compact semantic structure of one SCI review document.",
         "Establish one evidence-informed review thesis and a clear scope boundary before planning sections.",
-        "For each body section return only heading, question, concise purpose, and relative weight.",
+        "For each body section return only heading, question, concise purpose, owned scope, excluded scope, and relative weight.",
         "Do not plan section details, evidence mappings, or write paragraphs yet.",
         "Plan body sections only. Title, abstract, keywords, conclusion, and references are fixed template components created separately.",
         "Use the requested language for headings.",
         "Stay within the supplied section limits.",
-        "Plan at most four essential figures for the whole document. Each figure must belong to one body section and state its scientific purpose. Do not plan decorative or redundant figures.",
-        "Never plan data_plot because no verified dataset is supplied at this stage.",
+        "Do not plan figures, tables, captions, prompts, evidence mappings, prose, or internal IDs.",
       ].join(" "),
       userInstruction: JSON.stringify({
         topic: input.request.userRequirements.topic,
@@ -158,17 +163,43 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
           minimumCount: input.minimumSections,
           maximumCount: input.maximumSections,
         },
-        figureContract: {
-          maximumCount: 4,
-          plannedBeforeContentGeneration: true,
-          allowedFigureTypes: [
-            "mechanism_diagram",
-            "process_flow",
-            "conceptual_framework",
-            "comparison_diagram",
-          ],
-          dataPlotPolicy: "forbidden_without_verified_dataset",
-        },
+      }),
+    });
+  }
+
+  async planFigureIntents(input: Parameters<HierarchicalOutlinePlanner["planFigureIntents"]>[0]) {
+    return this.executor.generate({
+      operation: "outline.figure_intents",
+      budgetKey: "outline.figure_intents",
+      componentKey: "document-figure-intents",
+      schemaName: "document_figure_intents_v1",
+      schema: DocumentFigureIntentsDraftSchema,
+      systemInstruction: [
+        "Plan only essential scientific figure intents for the already-approved document structure.",
+        "Return at most four figures and use the one-based sectionOrder supplied by the program.",
+        "Do not rewrite, rename, split, or add sections and do not generate internal IDs.",
+        "Do not plan decorative figures or data plots. When no figure materially improves scientific understanding, return an empty figures array.",
+        "Set evidenceRequired=true only when the figure must represent supplied verified evidence rather than a conceptual relationship.",
+      ].join(" "),
+      userInstruction: JSON.stringify({
+        topic: input.request.userRequirements.topic,
+        visualIntent: input.request.userRequirements.visualIntent,
+        sections: input.skeleton.sections.map((section) => ({
+          sectionOrder: section.order + 1,
+          heading: section.heading,
+          question: section.question,
+          purpose: section.purpose,
+          owns: section.owns,
+          excludes: section.excludes,
+        })),
+        availableEvidenceIds: input.availableEvidenceIds,
+        maximumFigures: 4,
+        allowedFigureTypes: [
+          "mechanism_diagram",
+          "process_flow",
+          "conceptual_framework",
+          "comparison_diagram",
+        ],
       }),
     });
   }
@@ -176,8 +207,8 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
   async planSection(input: Parameters<HierarchicalOutlinePlanner["planSection"]>[0]) {
     return this.executor.generate({
       operation: "outline.section_plan",
+      budgetKey: "outline.section_plan",
       componentKey: input.section.sectionId,
-      maxOutputTokens: 1_800,
       schemaName: "document_section_plan_v1",
       schema: SectionPlanDraftSchema,
       validateCandidate: (candidate) => {

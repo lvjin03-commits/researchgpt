@@ -8,6 +8,7 @@ import type {
 } from "@/lib/document-v2/assets/figure-pipeline";
 import type { FigureRequest } from "@/lib/document-v2/assets/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
+import type { DocumentOperationBudgetKey } from "@/lib/document-v2/runtime/token-budgets";
 
 export class OpenAIStructuredComponentModel implements StructuredComponentModel {
   constructor(
@@ -20,11 +21,13 @@ export class OpenAIStructuredComponentModel implements StructuredComponentModel 
     systemInstruction: string;
     componentInstruction: string;
     componentKey?: string;
+    budgetKey?: DocumentOperationBudgetKey;
   }): Promise<unknown> {
     const envelopeSchema = z.object({ payload: input.schema }).strict();
     const response = await this.executor.generate({
       operation: "component.generate",
       componentKey: input.componentKey,
+      budgetKey: input.budgetKey,
       schemaName: input.schemaName,
       schema: envelopeSchema,
       systemInstruction: input.systemInstruction,

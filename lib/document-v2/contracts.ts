@@ -75,6 +75,9 @@ export const DocumentRequestSchema = z
       .object({
         topic: z.string().trim().min(1).max(500).optional(),
         targetLength: z.number().int().min(100).max(100_000).optional(),
+        visualIntent: z
+          .enum(["auto", "required", "forbidden"])
+          .default("auto"),
         specialInstructions: z
           .array(z.string().trim().min(1).max(500))
           .max(20)
@@ -128,6 +131,8 @@ export const DocumentPlanSchema = z
               "reference_list",
             ]),
             purpose: z.string().trim().min(1).max(1000),
+            owns: z.array(z.string().trim().min(1).max(240)).max(5).default([]),
+            excludes: z.array(z.string().trim().min(1).max(240)).max(5).default([]),
             heading: z.string().trim().min(1).max(500).optional(),
             question: z.string().trim().min(1).max(500).optional(),
             contributionToThesis: z

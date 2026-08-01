@@ -9,6 +9,8 @@ import {
   type TemplateResolution,
 } from "../templates/contracts";
 import {
+  DocumentFigureIntentsDraftSchema,
+  DocumentStructureDraftSchema,
   DocumentSkeletonDraftSchema,
   DocumentSkeletonSchema,
   SectionPlanDraftSchema,
@@ -20,11 +22,17 @@ import {
 } from "./contracts";
 
 export interface HierarchicalOutlinePlanner {
-  createSkeleton(input: {
+  createStructure(input: {
     request: DocumentRequest;
     template: TemplateResolution;
     minimumSections: number;
     maximumSections: number;
+  }): Promise<unknown>;
+  planFigureIntents(input: {
+    request: DocumentRequest;
+    template: TemplateResolution;
+    skeleton: DocumentSkeleton;
+    availableEvidenceIds: ReadonlyArray<string>;
   }): Promise<unknown>;
   planSection(input: {
     request: DocumentRequest;
@@ -80,6 +88,42 @@ export function materializeDocumentSkeleton(input: unknown): DocumentSkeleton {
   });
 }
 
+export function materializeDocumentStructure(input: unknown): DocumentSkeleton {
+  const draft = DocumentStructureDraftSchema.parse(input);
+  return DocumentSkeletonSchema.parse({
+    reviewThesis: draft.reviewThesis,
+    scopeBoundary: draft.scopeBoundary,
+    reviewQuestions: draft.reviewQuestions,
+    conclusionHeading: draft.conclusionHeading,
+    schemaVersion: 1,
+    sections: draft.sections.map((section, order) => ({
+      ...section,
+      sectionId: `section-${String(order + 1).padStart(2, "0")}`,
+      order,
+    })),
+    figures: [],
+  });
+}
+
+export function materializeFigureIntents(input: {
+  skeleton: DocumentSkeleton;
+  draft: unknown;
+}): DocumentSkeleton {
+  const draft = DocumentFigureIntentsDraftSchema.parse(input.draft);
+  return DocumentSkeletonSchema.parse({
+    ...input.skeleton,
+    figures: draft.figures.map((figure, index) => ({
+      sectionIndex: figure.sectionOrder - 1,
+      figureType: figure.figureType,
+      purpose: figure.purpose,
+      questionAnswered: figure.questionAnswered,
+      claimsRepresented: figure.claimsRepresented,
+      evidenceRequired: figure.evidenceRequired,
+      figureIntentId: `figure-intent-${String(index + 1).padStart(2, "0")}`,
+    })),
+  });
+}
+
 export function materializeSectionPlan(input: {
   sectionId: string;
   draft: unknown;
@@ -112,6 +156,8 @@ export function assembleSemanticOutline(input: {
         heading: section.heading,
         question: section.question,
         purpose: section.purpose,
+        owns: section.owns,
+        excludes: section.excludes,
         relativeWeight: section.relativeWeight,
         contributionToThesis: plan.contributionToThesis,
         comparisonDimensions: plan.comparisonDimensions,
@@ -292,6 +338,8 @@ export function createDocumentPlanFromProposal(input: {
           heading: section.heading,
           question: section.question,
           purpose: section.purpose,
+          owns: section.owns,
+          excludes: section.excludes,
           contributionToThesis: section.contributionToThesis,
           comparisonDimensions: section.comparisonDimensions,
           applicableConditions: section.applicableConditions,
@@ -311,6 +359,8 @@ export function createDocumentPlanFromProposal(input: {
       componentKey: blueprint.componentKey,
       type: blueprint.type,
       purpose: blueprint.purpose,
+      owns: [],
+      excludes: [],
       comparisonDimensions: [],
       applicableConditions: [],
       failureModes: [],

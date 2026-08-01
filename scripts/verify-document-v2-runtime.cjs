@@ -243,6 +243,21 @@ async function verifyIntakeExistsBeforePlanning() {
   assert.equal("checkpoint" in snapshot.job, false);
   const stored = await repository.get(requestId);
   assert.equal(stored.checkpoint.textExecution.provider, "deepseek");
+  assert.equal(
+    stored.checkpoint.executionBudget.modelCapability.maxOutputTokens,
+    8192,
+    "Document capacity must not inherit the 3200-token chat budget.",
+  );
+  assert.equal(
+    stored.checkpoint.executionBudget.effectiveBudgets["component.section"]
+      .effectivePreferredMaxOutputTokens,
+    4500,
+  );
+  assert.equal(
+    stored.checkpoint.executionBudget.productBudgetMode,
+    "observe_only",
+    "Cost telemetry must not silently become a hard spending limit.",
+  );
   assert.equal(stored.checkpoint.orchestration, undefined);
   assert.match(stored.checkpoint.intake.instruction, /physical gels/);
 }
@@ -898,6 +913,11 @@ async function main() {
     productionWorkerSource,
     /timeout:\s*75_000/,
     "Model calls must finish before the worker platform timeout.",
+  );
+  assert.match(
+    productionWorkerSource,
+    /planning\.request\.userRequirements\.visualIntent === "forbidden"[\s\S]*?\{ figures: \[\] \}[\s\S]*?: await planner\.planFigureIntents/,
+    "A no-image request must bypass the figure-intent model call.",
   );
   await verifyIntakeExistsBeforePlanning();
   await verifyCancelResumeAndCompletion();

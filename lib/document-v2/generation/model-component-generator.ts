@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 import type { GeneratedComponentPayload } from "../orchestration/contracts";
+import type { DocumentOperationBudgetKey } from "../runtime/token-budgets";
 import type {
   ComponentGenerationContext,
   DocumentComponentGenerator,
@@ -14,6 +15,7 @@ export interface StructuredComponentModel {
     systemInstruction: string;
     componentInstruction: string;
     componentKey?: string;
+    budgetKey?: DocumentOperationBudgetKey;
   }): Promise<unknown>;
 }
 
@@ -174,6 +176,8 @@ export function buildComponentGenerationInstructions(
       heading: context.component.heading,
       question: context.component.question,
       purpose: context.component.purpose,
+      owns: context.component.owns,
+      excludes: context.component.excludes,
       contributionToThesis: context.component.contributionToThesis,
       comparisonDimensions: context.component.comparisonDimensions,
       applicableConditions: context.component.applicableConditions,
@@ -236,6 +240,7 @@ export class ModelDocumentComponentGenerator
       schemaName: contract.schemaName,
       schema: contract.modelOutputSchema,
       componentKey: context.component.componentKey,
+      budgetKey: `component.${context.component.type}`,
       systemInstruction: instructions.systemInstruction,
       componentInstruction,
     });

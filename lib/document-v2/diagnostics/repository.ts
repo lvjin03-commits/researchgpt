@@ -26,6 +26,18 @@ export type DiagnosticExecutionRow = {
   component_key: string | null;
   operation: string;
   input_fingerprint: string;
+  content_input_fingerprint: string | null;
+  generation_config_fingerprint: string | null;
+  attempt_number: number;
+  parent_execution_key: string | null;
+  escalation_reason: string | null;
+  budget_escalation_count: number;
+  expected_output_tokens: number | null;
+  model_physical_max_output_tokens: number | null;
+  product_max_output_tokens: number | null;
+  operation_hard_max_output_tokens: number | null;
+  generation_budget_policy_version: string | null;
+  model_capability_version: string | null;
   provider: string;
   requested_model_id: string;
   resolved_model_id: string;
@@ -104,6 +116,18 @@ const EXECUTION_FIELDS = [
   "component_key",
   "operation",
   "input_fingerprint",
+  "content_input_fingerprint",
+  "generation_config_fingerprint",
+  "attempt_number",
+  "parent_execution_key",
+  "escalation_reason",
+  "budget_escalation_count",
+  "expected_output_tokens",
+  "model_physical_max_output_tokens",
+  "product_max_output_tokens",
+  "operation_hard_max_output_tokens",
+  "generation_budget_policy_version",
+  "model_capability_version",
   "provider",
   "requested_model_id",
   "resolved_model_id",

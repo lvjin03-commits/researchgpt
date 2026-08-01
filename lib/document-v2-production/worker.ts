@@ -32,9 +32,11 @@ import { resolveDocumentTemplate } from "@/lib/document-v2/templates/resolver";
 import {
   assembleSemanticOutline,
   createDocumentPlanFromProposal,
-  materializeDocumentSkeleton,
+  materializeDocumentStructure,
+  materializeFigureIntents,
   materializeSectionPlan,
 } from "@/lib/document-v2/planning/planner";
+import { createDocumentExecutionBudgetSnapshot } from "@/lib/document-v2/runtime/token-budgets";
 import { createDocumentOrchestrationState } from "@/lib/document-v2/orchestration/orchestrator";
 import type { FigureAsset } from "@/lib/document-v2/assets/contracts";
 import type { FinalDocumentSpec } from "@/lib/document-v2/contracts";
@@ -211,7 +213,15 @@ async function prepareIntake(input: {
     const evidenceSnapshotId = intake.evidence.length > 0
       ? `evidence-${createHash("sha256").update(JSON.stringify(intake.evidence)).digest("hex").slice(0, 24)}`
       : undefined;
-    planning = { schemaVersion: 1, request, template, evidenceReferences, evidenceSnapshotId, sectionPlans: [] };
+    planning = {
+      schemaVersion: 1,
+      request,
+      template,
+      evidenceReferences,
+      evidenceSnapshotId,
+      figureIntentsCompleted: false,
+      sectionPlans: [],
+    };
     job = await saveAndContinue(planning, 5);
     await logSaved("planning.context.saved", "Document request, template, and evidence context were saved.", {
       templateId: template.snapshot.templateId, evidenceCount: evidenceReferences.length,
@@ -222,15 +232,51 @@ async function prepareIntake(input: {
   const sectionBlueprint = planning.template.componentBlueprints.find((item) => item.type === "section");
   if (!sectionBlueprint) throw new Error("Resolved template does not contain a section blueprint.");
   if (!planning.skeleton) {
-    const skeleton = materializeDocumentSkeleton(await planner.createSkeleton({
+    const skeleton = materializeDocumentStructure(await planner.createStructure({
       request: planning.request, template: planning.template,
       minimumSections: sectionBlueprint.minimumCount, maximumSections: sectionBlueprint.maximumCount,
     }));
     planning = { ...planning, skeleton };
     job = await saveAndContinue(planning, 7);
-    await logSaved("outline.skeleton", "Document skeleton saved.", {
-      sectionCount: skeleton.sections.length, figureCount: skeleton.figures.length,
+    await logSaved("outline.structure", "Document structure saved.", {
+      sectionCount: skeleton.sections.length,
     });
+    return job;
+  }
+
+  if (!planning.figureIntentsCompleted) {
+    const figureDraft =
+      planning.request.userRequirements.visualIntent === "forbidden"
+        ? { figures: [] }
+        : await planner.planFigureIntents({
+            request: planning.request,
+            template: planning.template,
+            skeleton: planning.skeleton,
+            availableEvidenceIds: planning.evidenceReferences.map(
+              (item) => item.id,
+            ),
+          });
+    const skeleton = materializeFigureIntents({
+      skeleton: planning.skeleton,
+      draft: figureDraft,
+    });
+    planning = {
+      ...planning,
+      skeleton,
+      figureIntentsCompleted: true,
+    };
+    job = await saveAndContinue(planning, 8);
+    await logSaved(
+      "outline.figure_intents",
+      planning.request.userRequirements.visualIntent === "forbidden"
+        ? "Figure planning skipped because the user forbade figures."
+        : "Document figure intents saved.",
+      {
+        figureCount: skeleton.figures.length,
+        skipped:
+          planning.request.userRequirements.visualIntent === "forbidden",
+      },
+    );
     return job;
   }
 
@@ -246,7 +292,7 @@ async function prepareIntake(input: {
       }),
     });
     planning = { ...planning, sectionPlans: [...planning.sectionPlans, sectionPlan] };
-    const progress = 7 + Math.round((planning.sectionPlans.length / skeleton.sections.length) * 5);
+    const progress = 8 + Math.round((planning.sectionPlans.length / skeleton.sections.length) * 4);
     job = await saveAndContinue(planning, progress);
     await logSaved("outline.section_plan", `Section plan saved: ${section.heading}`, {
       plannedSections: planning.sectionPlans.length, totalSections: skeleton.sections.length,
@@ -444,6 +490,28 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       "legacy_text_execution_profile_missing: the document job has no frozen text model configuration.",
     );
   }
+  if (!job.checkpoint.executionBudget) {
+    const now = new Date().toISOString();
+    job = await repository.save(
+      DocumentJobSchema.parse({
+        ...job,
+        checkpoint: {
+          ...job.checkpoint,
+          executionBudget: createDocumentExecutionBudgetSnapshot(
+            textExecution,
+            now,
+          ),
+          savedAt: now,
+        },
+        updatedAt: now,
+      }),
+      job.revision,
+    );
+  }
+  const executionBudget = job.checkpoint.executionBudget;
+  if (!executionBudget) {
+    throw new Error("document_execution_budget_snapshot_missing");
+  }
   const recordUsage = async (usage: DocumentModelUsage) => {
     const currentJob = await repository.get(claimedJob.jobId);
     await repository.appendEvent({
@@ -465,7 +533,12 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
         modelOperation: usage.operation,
         requestedMaxOutputTokens: usage.requestedMaxOutputTokens,
         effectiveMaxOutputTokens: usage.effectiveMaxOutputTokens,
+        expectedOutputTokens: usage.expectedOutputTokens ?? null,
+        operationHardMaxOutputTokens:
+          usage.operationHardMaxOutputTokens ?? null,
         inputFingerprint: usage.inputFingerprint,
+        generationConfigFingerprint: usage.generationConfigFingerprint,
+        modelAttempt: usage.attemptNumber,
         inputTokens: usage.inputTokens,
         cachedInputTokens: usage.cachedInputTokens,
         outputTokens: usage.outputTokens,
@@ -479,6 +552,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
     textExecution,
     recordUsage,
     { supabase, jobId: job.jobId },
+    executionBudget,
   );
   await repository.appendEvent({
     eventId: randomUUID(),

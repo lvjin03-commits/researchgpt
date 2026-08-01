@@ -66,6 +66,8 @@ const {
   DocumentPlanningError,
   assembleSemanticOutline,
   createDocumentPlanFromTemplate,
+  materializeDocumentStructure,
+  materializeFigureIntents,
   materializeDocumentSkeleton,
   materializeSectionPlan,
 } = require("../lib/document-v2/planning/planner.ts");
@@ -808,8 +810,8 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
   const planner = new ModelHierarchicalOutlinePlanner({
     profile: { maxOutputTokens: 3200 },
     async generate(input) {
-      assert.equal(input.operation, "outline.skeleton");
-      assert.equal(input.maxOutputTokens, 3000);
+      assert.equal(input.operation, "outline.structure");
+      assert.equal(input.budgetKey, "outline.structure");
       assert.equal(
         input.schema.safeParse({
           reviewThesis: "x",
@@ -817,7 +819,6 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
           reviewQuestions: ["z"],
           sections: [],
           conclusionHeading: "Conclusion",
-          figures: [],
         }).success,
         false,
       );
@@ -834,15 +835,16 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
             heading: "Mechanism",
             question: "How are reversible junctions formed?",
             purpose: "Explain the mechanism.",
+            owns: ["Reversible junction formation"],
+            excludes: ["Covalent gels"],
             relativeWeight: 1,
           },
         ],
         conclusionHeading: "Conclusion",
-        figures: [],
       };
     },
   });
-  const proposal = await planner.createSkeleton({
+  const proposal = await planner.createStructure({
     request: {
       userRequirements: {
         topic: "Physical gels",
@@ -855,6 +857,42 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
   });
   assert.equal(proposal.sections.length, 1);
   assert.match(proposal.reviewThesis, /Processing history/);
+}
+
+async function verifyFigureIntentPlanningUsesSectionOrder() {
+  const structure = materializeDocumentStructure({
+    reviewThesis: "Processing controls structure.",
+    scopeBoundary: "Physical gels.",
+    reviewQuestions: ["How does processing control structure?"],
+    sections: [
+      {
+        heading: "Mechanisms",
+        question: "Which mechanisms dominate?",
+        purpose: "Compare mechanisms.",
+        owns: ["Reversible junctions"],
+        excludes: ["Covalent gels"],
+        relativeWeight: 1,
+      },
+    ],
+    conclusionHeading: "Conclusion",
+  });
+  const completed = materializeFigureIntents({
+    skeleton: structure,
+    draft: {
+      figures: [
+        {
+          sectionOrder: 1,
+          figureType: "mechanism_diagram",
+          purpose: "Explain reversible junctions.",
+          questionAnswered: "How do junctions form?",
+          claimsRepresented: ["Junctions are reversible."],
+          evidenceRequired: false,
+        },
+      ],
+    },
+  });
+  assert.equal(completed.figures[0].sectionIndex, 0);
+  assert.equal(completed.figures[0].figureIntentId, "figure-intent-01");
 }
 
 function verifyHierarchicalOutlineAssembly() {
@@ -940,6 +978,7 @@ async function verifyManualFigureNumbersAreRejected() {
 async function main() {
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
+  await verifyFigureIntentPlanningUsesSectionOrder();
   verifyHierarchicalOutlineAssembly();
   await verifyManualFigureNumbersAreRejected();
   await verifyCompleteGenerationFlow();

@@ -3,8 +3,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z, type ZodType } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { estimateModelCostUsd } from "@/lib/ai/cost";
-import type { DocumentTextExecutionProfile } from "@/lib/document-v2/runtime/contracts";
+import type {
+  DocumentExecutionBudgetSnapshot,
+  DocumentTextExecutionProfile,
+} from "@/lib/document-v2/runtime/contracts";
 import { sha256Canonical } from "@/lib/document-v2/runtime/canonical-hash";
+import {
+  createDocumentExecutionBudgetSnapshot,
+  getDocumentOperationBudget,
+  type DocumentOperationBudgetKey,
+} from "@/lib/document-v2/runtime/token-budgets";
 import {
   DOCUMENT_RESPONSE_PARSER_VERSION,
   DOCUMENT_RESPONSE_REPAIR_VERSION,
@@ -32,7 +40,11 @@ export type DocumentModelUsage = {
   componentKey?: string;
   requestedMaxOutputTokens: number;
   effectiveMaxOutputTokens: number;
+  expectedOutputTokens?: number;
+  operationHardMaxOutputTokens?: number;
   inputFingerprint: string;
+  generationConfigFingerprint: string;
+  attemptNumber: number;
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -41,10 +53,9 @@ export type DocumentModelUsage = {
   durationMs: number;
 };
 
-export interface DocumentStructuredTextExecutor {
-  readonly profile: DocumentTextExecutionProfile;
-  generate<T>(input: {
+export type DocumentStructuredGenerationInput<T> = {
     operation: string;
+    budgetKey?: DocumentOperationBudgetKey;
     componentKey?: string;
     maxOutputTokens?: number;
     schemaName: string;
@@ -52,7 +63,11 @@ export interface DocumentStructuredTextExecutor {
     systemInstruction: string;
     userInstruction: string;
     validateCandidate?: (value: T) => void;
-  }): Promise<T>;
+};
+
+export interface DocumentStructuredTextExecutor {
+  readonly profile: DocumentTextExecutionProfile;
+  generate<T>(input: DocumentStructuredGenerationInput<T>): Promise<T>;
 }
 
 export class DocumentModelExecutionInProgressError extends Error {
@@ -84,6 +99,7 @@ export type DocumentModelFailureCategory =
   | "provider_empty_response"
   | "ambiguous_auxiliary_output"
   | "output_truncated"
+  | "split_required"
   | "no_json_object"
   | "truncated_json"
   | "json_syntax_error"
@@ -123,7 +139,18 @@ type StoredExecution = {
   lease_expires_at: string | null;
 };
 
-function fingerprint(input: {
+function contentFingerprint(input: {
+  profile: DocumentTextExecutionProfile;
+  operation: string;
+  componentKey?: string;
+  schemaName: string;
+  systemInstruction: string;
+  userInstruction: string;
+}) {
+  return sha256Canonical(input);
+}
+
+function legacyExecutionFingerprint(input: {
   profile: DocumentTextExecutionProfile;
   operation: string;
   componentKey?: string;
@@ -147,6 +174,8 @@ export class ProviderDocumentTextExecutor
       supabase: SupabaseClient;
       jobId: string;
     },
+    private readonly executionBudget: DocumentExecutionBudgetSnapshot =
+      createDocumentExecutionBudgetSnapshot(profile),
   ) {
     const apiKey =
       profile.provider === "deepseek"
@@ -171,40 +200,100 @@ export class ProviderDocumentTextExecutor
     });
   }
 
-  async generate<T>(input: {
-    operation: string;
-    componentKey?: string;
-    maxOutputTokens?: number;
-    schemaName: string;
-    schema: ZodType<T>;
-    systemInstruction: string;
-    userInstruction: string;
-    validateCandidate?: (value: T) => void;
-  }): Promise<T> {
+  async generate<T>(input: DocumentStructuredGenerationInput<T>): Promise<T> {
+    return this.generateAttempt(input, { attemptNumber: 1 });
+  }
+
+  private async generateAttempt<T>(
+    input: DocumentStructuredGenerationInput<T>,
+    attempt: {
+      attemptNumber: number;
+      parentExecutionKey?: string;
+      maxOutputTokensOverride?: number;
+      escalationReason?: string;
+    },
+  ): Promise<T> {
     const startedAt = Date.now();
+    const operationBudget = input.budgetKey
+      ? getDocumentOperationBudget(this.executionBudget, input.budgetKey)
+      : undefined;
+    const requestedMaxOutputTokens =
+      attempt.maxOutputTokensOverride ??
+      input.maxOutputTokens ??
+      operationBudget?.effectivePreferredMaxOutputTokens ??
+      this.profile.maxOutputTokens;
     const effectiveMaxOutputTokens = Math.min(
-      input.maxOutputTokens ?? this.profile.maxOutputTokens,
-      this.profile.maxOutputTokens,
+      requestedMaxOutputTokens,
+      operationBudget?.effectiveHardMaxOutputTokens ??
+        this.executionBudget.modelCapability.maxOutputTokens,
+      this.executionBudget.modelCapability.maxOutputTokens,
+      this.executionBudget.productMaxOutputTokensPerOperation,
     );
-    const inputFingerprint = fingerprint({
+    const inputFingerprint = contentFingerprint({
       profile: this.profile,
       operation: input.operation,
       componentKey: input.componentKey,
       schemaName: input.schemaName,
       systemInstruction: input.systemInstruction,
       userInstruction: input.userInstruction,
-      maxOutputTokens: effectiveMaxOutputTokens,
     });
     const schemaVersion = sha256Canonical(z.toJSONSchema(input.schema));
+    const generationConfigFingerprint = sha256Canonical({
+      provider: this.profile.provider,
+      requestedModelId: this.profile.requestedModelId,
+      resolvedModelId: this.profile.resolvedModelId,
+      schemaVersion,
+      budgetKey: input.budgetKey,
+      effectiveMaxOutputTokens,
+      operationBudgetPolicyVersion:
+        this.executionBudget.operationBudgetPolicyVersion,
+      modelCapabilityVersion:
+        this.executionBudget.modelCapability.capabilityVersion,
+      attemptNumber: attempt.attemptNumber,
+    });
     const executionKey = sha256Canonical({
       jobId: this.persistence?.jobId ?? "unpersisted",
       componentKey: input.componentKey ?? "document",
       operation: input.operation,
       inputFingerprint,
+      generationConfigFingerprint,
     });
     const leaseExpiresAt = new Date(Date.now() + 90_000).toISOString();
     if (this.persistence) {
       const existing = await this.getExecution(executionKey);
+      if (!existing && attempt.attemptNumber === 1) {
+        const legacyMaxOutputTokens = Math.min(
+          input.maxOutputTokens ?? this.profile.maxOutputTokens,
+          this.profile.maxOutputTokens,
+        );
+        const legacyInputFingerprint = legacyExecutionFingerprint({
+          profile: this.profile,
+          operation: input.operation,
+          componentKey: input.componentKey,
+          schemaName: input.schemaName,
+          systemInstruction: input.systemInstruction,
+          userInstruction: input.userInstruction,
+          maxOutputTokens: legacyMaxOutputTokens,
+        });
+        const legacyExecutionKey = sha256Canonical({
+          jobId: this.persistence.jobId,
+          componentKey: input.componentKey ?? "document",
+          operation: input.operation,
+          inputFingerprint: legacyInputFingerprint,
+        });
+        const legacyExecution = await this.getExecution(legacyExecutionKey);
+        if (
+          legacyExecution?.status === "succeeded" ||
+          legacyExecution?.status === "raw_saved"
+        ) {
+          return this.parseStoredResponse({
+            executionKey: legacyExecutionKey,
+            rawResponse: legacyExecution.raw_response,
+            storedStatus: legacyExecution.status,
+            schema: input.schema,
+          });
+        }
+      }
       if (existing?.status === "succeeded") {
         return this.parseStoredResponse({
           executionKey,
@@ -317,6 +406,24 @@ export class ProviderDocumentTextExecutor
           component_key: input.componentKey ?? null,
           operation: input.operation,
           input_fingerprint: inputFingerprint,
+          content_input_fingerprint: inputFingerprint,
+          generation_config_fingerprint: generationConfigFingerprint,
+          attempt_number: attempt.attemptNumber,
+          parent_execution_key: attempt.parentExecutionKey ?? null,
+          escalation_reason: attempt.escalationReason ?? null,
+          budget_escalation_count: attempt.attemptNumber - 1,
+          expected_output_tokens:
+            operationBudget?.expectedOutputTokens ?? null,
+          model_physical_max_output_tokens:
+            this.executionBudget.modelCapability.maxOutputTokens,
+          product_max_output_tokens:
+            this.executionBudget.productMaxOutputTokensPerOperation,
+          operation_hard_max_output_tokens:
+            operationBudget?.hardMaxOutputTokens ?? null,
+          generation_budget_policy_version:
+            this.executionBudget.operationBudgetPolicyVersion,
+          model_capability_version:
+            this.executionBudget.modelCapability.capabilityVersion,
           provider: this.profile.provider,
           requested_model_id: this.profile.requestedModelId,
           resolved_model_id: this.profile.resolvedModelId,
@@ -483,7 +590,7 @@ export class ProviderDocumentTextExecutor
             auxiliary_content_length: auxiliaryText.length,
             auxiliary_content_types: auxiliaryContent.map((item) => item.type),
             provider_response_saved_at: responseReceivedAt,
-            requested_max_tokens: input.maxOutputTokens ?? this.profile.maxOutputTokens,
+            requested_max_tokens: requestedMaxOutputTokens,
             effective_max_tokens: effectiveMaxOutputTokens,
             parser_version: DOCUMENT_RESPONSE_PARSER_VERSION,
             repair_pipeline_version: DOCUMENT_RESPONSE_REPAIR_VERSION,
@@ -651,9 +758,14 @@ export class ProviderDocumentTextExecutor
         providerRequestId,
         operation: input.operation,
         componentKey: input.componentKey,
-        requestedMaxOutputTokens: input.maxOutputTokens ?? this.profile.maxOutputTokens,
+        requestedMaxOutputTokens,
         effectiveMaxOutputTokens,
+        expectedOutputTokens: operationBudget?.expectedOutputTokens,
+        operationHardMaxOutputTokens:
+          operationBudget?.effectiveHardMaxOutputTokens,
         inputFingerprint,
+        generationConfigFingerprint,
+        attemptNumber: attempt.attemptNumber,
         inputTokens,
         cachedInputTokens,
         outputTokens,
@@ -663,6 +775,26 @@ export class ProviderDocumentTextExecutor
       });
       return parsed;
     } catch (error) {
+      const outputWasTruncated =
+        error instanceof DocumentModelOperationError &&
+        error.failureCategory === "output_truncated";
+      const canEscalate =
+        outputWasTruncated &&
+        operationBudget !== undefined &&
+        attempt.attemptNumber === 1 &&
+        operationBudget.escalationAllowed === true &&
+        effectiveMaxOutputTokens <
+          operationBudget.effectiveHardMaxOutputTokens &&
+        (outputTokens === 0 ||
+          outputTokens / effectiveMaxOutputTokens >= 0.8);
+      const terminalFailure =
+        outputWasTruncated && operationBudget && !canEscalate
+          ? new DocumentModelOperationError(
+              "The document model output was truncated after the allowed capacity strategy; this semantic component must be split.",
+              "split_required",
+              input.operation,
+            )
+          : error;
       if (this.persistence) {
         const current = await this.getExecution(executionKey);
         if (
@@ -671,8 +803,8 @@ export class ProviderDocumentTextExecutor
           current?.status === "response_received"
         ) {
           const knownFailure =
-            error instanceof DocumentModelOperationError
-              ? error.failureCategory
+            terminalFailure instanceof DocumentModelOperationError
+              ? terminalFailure.failureCategory
               : null;
           await this.mustUpdateExecution(
             executionKey,
@@ -689,15 +821,28 @@ export class ProviderDocumentTextExecutor
                       ? "transport_error"
                       : "provider_rejected"),
               error_message:
-                error instanceof Error
-                  ? error.message.slice(0, 2_000)
-                  : String(error).slice(0, 2_000),
+                terminalFailure instanceof Error
+                  ? terminalFailure.message.slice(0, 2_000)
+                  : String(terminalFailure).slice(0, 2_000),
               lease_expires_at: null,
               completed_at: new Date().toISOString(),
             },
             [current.status],
           );
         }
+      }
+      if (outputWasTruncated) {
+        if (!operationBudget) throw error;
+        if (canEscalate) {
+          return this.generateAttempt(input, {
+            attemptNumber: 2,
+            parentExecutionKey: executionKey,
+            maxOutputTokensOverride:
+              operationBudget.effectiveHardMaxOutputTokens,
+            escalationReason: "output_truncated_near_budget",
+          });
+        }
+        throw terminalFailure;
       }
       throw error;
     }

@@ -10,6 +10,52 @@ const FigureTypeSchema = z.enum([
   "data_plot",
 ]);
 
+export const DocumentStructureDraftSchema = z
+  .object({
+    reviewThesis: z.string().trim().min(1).max(1_200),
+    scopeBoundary: z.string().trim().min(1).max(1_200),
+    reviewQuestions: z.array(z.string().trim().min(1).max(300)).min(1).max(8),
+    sections: z
+      .array(
+        z
+          .object({
+            heading: z.string().trim().min(1).max(300),
+            question: z.string().trim().min(1).max(300),
+            purpose: z.string().trim().min(1).max(500),
+            owns: z.array(z.string().trim().min(1).max(240)).max(5).default([]),
+            excludes: z.array(z.string().trim().min(1).max(240)).max(5).default([]),
+            relativeWeight: z.number().positive().max(100),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(12),
+    conclusionHeading: z.string().trim().min(1).max(300),
+  })
+  .strict();
+
+export const DocumentFigureIntentsDraftSchema = z
+  .object({
+    figures: z
+      .array(
+        z
+          .object({
+            sectionOrder: z.number().int().min(1).max(12),
+            figureType: FigureTypeSchema.exclude(["data_plot"]),
+            purpose: z.string().trim().min(1).max(600),
+            questionAnswered: z.string().trim().min(1).max(300),
+            claimsRepresented: z
+              .array(z.string().trim().min(1).max(300))
+              .min(1)
+              .max(6),
+            evidenceRequired: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(4),
+  })
+  .strict();
+
 export const DocumentSkeletonDraftSchema = z
   .object({
     reviewThesis: z.string().trim().min(1).max(2_000),
@@ -22,6 +68,8 @@ export const DocumentSkeletonDraftSchema = z
             heading: z.string().trim().min(1).max(500),
             question: z.string().trim().min(1).max(500),
             purpose: z.string().trim().min(1).max(650),
+            owns: z.array(z.string().trim().min(1).max(240)).max(5).default([]),
+            excludes: z.array(z.string().trim().min(1).max(240)).max(5).default([]),
             relativeWeight: z.number().positive().max(100),
           })
           .strict(),
@@ -129,6 +177,8 @@ export const SemanticOutlineProposalSchema = z
               .max(500)
               .default("What does this section establish?"),
             purpose: z.string().trim().min(1).max(1_000),
+            owns: z.array(z.string().trim().min(1).max(240)).max(5).default([]),
+            excludes: z.array(z.string().trim().min(1).max(240)).max(5).default([]),
             contributionToThesis: z
               .string()
               .trim()

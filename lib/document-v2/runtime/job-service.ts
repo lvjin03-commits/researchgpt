@@ -19,6 +19,7 @@ import {
   type DocumentJobStage,
   type DocumentTextExecutionProfile,
 } from "./contracts";
+import { createDocumentExecutionBudgetSnapshot } from "./token-budgets";
 import type { DocumentJobRepository } from "./repository";
 import {
   getDocumentJobSnapshot,
@@ -135,6 +136,10 @@ export class DocumentV2JobService {
       checkpoint: {
         schemaVersion: 1,
         textExecution: input.textExecution,
+        executionBudget: createDocumentExecutionBudgetSnapshot(
+          input.textExecution,
+          now,
+        ),
         dispatchToken: randomUUID().replaceAll("-", "") + randomUUID().replaceAll("-", ""),
         intake: {
           instruction: input.instruction,

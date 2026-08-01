@@ -453,9 +453,10 @@ export function normalizeDisplayMessage(
     : undefined;
   const persistedDocumentJobId = extractDocumentJobId(content);
   const documentJobId =
-    typeof message.documentJobId === "string" && message.documentJobId.trim()
+    persistedDocumentJobId ??
+    (typeof message.documentJobId === "string" && message.documentJobId.trim()
       ? message.documentJobId.trim()
-      : persistedDocumentJobId;
+      : undefined);
 
   return {
     role,
