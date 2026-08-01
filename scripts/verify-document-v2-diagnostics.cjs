@@ -234,6 +234,72 @@ assert.equal(
   false,
 );
 
+const languageMismatchDiagnostic = projectDocumentJobDiagnostics(
+  {
+    job: {
+      ...diagnosticFixtureJob(),
+      status: "paused",
+      stage: "planning",
+      updated_at: "2026-08-01T20:30:00.000Z",
+    },
+    events: [
+      {
+        sequence: 1,
+        stage: "planning",
+        status: "paused",
+        created_at: "2026-08-01T20:30:00.000Z",
+        event_payload: {
+          stage: "planning",
+          status: "paused",
+          operation: "outline.section_index",
+          category: "recovery",
+          errorCode: "outline_language_mismatch",
+          technicalMessage: JSON.stringify({
+            message: "The section index uses the wrong language.",
+            requestedLanguage: "zh",
+            violatingSectionOrders: "1,2,3,4,5,6,7",
+            violatingFields: "heading",
+            sourceComponent: "outline.section_index",
+            sourceRevision: 1,
+            repairAttemptCount: 1,
+            safeResumeFrom: "outline.section_index",
+          }),
+          metadata: {
+            failureCategory: "outline_language_mismatch",
+            workerFailureFinalized: true,
+          },
+          createdAt: "2026-08-01T20:30:00.000Z",
+        },
+      },
+    ],
+    executions: [],
+    outbox: [],
+  },
+  new Date("2026-08-01T20:31:00.000Z"),
+);
+assert.equal(
+  languageMismatchDiagnostic.currentBlocker.code,
+  "outline_language_mismatch",
+);
+assert.equal(
+  languageMismatchDiagnostic.currentBlocker.certainty,
+  "deterministic",
+);
+assert.equal(
+  languageMismatchDiagnostic.codexSummary.safeResumeFrom,
+  "outline.section_index",
+);
+assert.equal(
+  languageMismatchDiagnostic.currentBlocker.evidence.some(
+    (item) => item.field === "requestedLanguage" && item.value === "zh",
+  ),
+  true,
+);
+assert.match(
+  languageMismatchDiagnostic.humanReadableReport,
+  /Resume from: outline\.section_index/,
+);
+
 console.log("Document v2 diagnostics projection tests passed.");
 
 function diagnosticFixtureJob() {

@@ -32,9 +32,11 @@ import { resolveDocumentTemplate } from "@/lib/document-v2/templates/resolver";
 import {
   assembleSemanticOutline,
   createDocumentPlanFromProposal,
+  createValidatedSectionIndex,
   materializeDocumentStructure,
   materializeFigureIntents,
   materializeSectionPlan,
+  OutlineLanguageMismatchError,
 } from "@/lib/document-v2/planning/planner";
 import {
   createDocumentExecutionBudgetSnapshot,
@@ -76,6 +78,14 @@ async function claimNext(
 }
 
 function workerFailureDetails(error: unknown) {
+  if (error instanceof OutlineLanguageMismatchError) {
+    return {
+      code: error.failureCategory,
+      category: error.failureCategory,
+      operation: error.sourceComponent,
+      technicalMessage: JSON.stringify(error.diagnosticDetails()),
+    };
+  }
   if (error instanceof DocumentModelOperationError) {
     return {
       code: `document_model_${error.failureCategory}`,
@@ -225,6 +235,7 @@ async function prepareIntake(input: {
       planningRevision: 1,
       figureIntentsCompleted: false,
       sectionPlans: [],
+      planningInvalidations: [],
     };
     job = await saveAndContinue(planning, 5);
     await logSaved("planning.context.saved", "Document request, template, and evidence context were saved.", {
@@ -239,6 +250,7 @@ async function prepareIntake(input: {
     const thesis = await planner.createThesis({
       request: planning.request,
       template: planning.template,
+      planningRevision: planning.planningRevision,
     });
     planning = { ...planning, thesis };
     job = await saveAndContinue(planning, 6);
@@ -249,12 +261,14 @@ async function prepareIntake(input: {
   }
 
   if (!planning.skeleton) {
-    const sectionIndex = await planner.createSectionIndex({
+    const sectionIndex = await createValidatedSectionIndex({
+      planner,
       request: planning.request,
       template: planning.template,
       thesis: planning.thesis,
       minimumSections: sectionBlueprint.minimumCount,
       maximumSections: sectionBlueprint.maximumCount,
+      planningRevision: planning.planningRevision,
     });
     const skeleton = materializeDocumentStructure({
       thesis: planning.thesis,
@@ -280,6 +294,7 @@ async function prepareIntake(input: {
             availableEvidenceIds: planning.evidenceReferences.map(
               (item) => item.id,
             ),
+            planningRevision: planning.planningRevision,
           });
     const skeleton = materializeFigureIntents({
       skeleton: planning.skeleton,
@@ -314,6 +329,7 @@ async function prepareIntake(input: {
       draft: await planner.planSection({
         request: planning.request, template: planning.template, skeleton, section,
         availableEvidenceIds: planning.evidenceReferences.map((item) => item.id),
+        planningRevision: planning.planningRevision,
       }),
     });
     planning = { ...planning, sectionPlans: [...planning.sectionPlans, sectionPlan] };

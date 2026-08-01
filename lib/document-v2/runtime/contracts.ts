@@ -273,6 +273,23 @@ export const DocumentJobCheckpointSchema = z
         skeleton: DocumentSkeletonSchema.optional(),
         figureIntentsCompleted: z.boolean().default(false),
         sectionPlans: z.array(SectionPlanSchema).max(100),
+        planningInvalidations: z
+          .array(
+            z
+              .object({
+                sourceRevision: z.number().int().positive(),
+                reason: z.enum([
+                  "outline_language_mismatch",
+                  "structured_output_capacity_exhausted",
+                ]),
+                invalidatedSectionCount: z.number().int().nonnegative(),
+                invalidatedSectionPlanCount: z.number().int().nonnegative(),
+                invalidatedAt: DateTimeSchema,
+              })
+              .strict(),
+          )
+          .max(20)
+          .default([]),
       })
       .strict()
       .optional(),

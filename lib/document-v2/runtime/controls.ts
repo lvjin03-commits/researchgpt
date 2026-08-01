@@ -80,12 +80,25 @@ export async function resumeDocumentJob(
     : undefined;
   if (!orchestration) {
     const now = clock().toISOString();
-    const shouldRevisePlanning =
+    const shouldReviseCapacityPlanning =
       job.stage === "planning" &&
       job.error?.code === "document_model_split_required" &&
       job.checkpoint.planning !== undefined &&
       job.checkpoint.planning.skeleton === undefined;
-    const planning = shouldRevisePlanning
+    const isLegacyOutlineLanguageMismatch =
+      job.error?.code === "document_worker_failed" &&
+      job.error.technicalMessage.includes(
+        "heading does not use the requested",
+      );
+    const shouldReviseLanguagePlanning =
+      job.stage === "planning" &&
+      job.checkpoint.planning !== undefined &&
+      (job.error?.code === "outline_language_mismatch" ||
+        isLegacyOutlineLanguageMismatch);
+    const shouldRevisePlanning =
+      shouldReviseCapacityPlanning || shouldReviseLanguagePlanning;
+    const currentPlanning = job.checkpoint.planning;
+    const planning = shouldReviseCapacityPlanning
       ? {
           ...job.checkpoint.planning,
           planningRevision:
@@ -101,6 +114,26 @@ export async function resumeDocumentJob(
             migratedAt: now,
           },
         }
+      : shouldReviseLanguagePlanning && currentPlanning
+        ? {
+            ...currentPlanning,
+            planningRevision: currentPlanning.planningRevision + 1,
+            skeleton: undefined,
+            figureIntentsCompleted: false,
+            sectionPlans: [],
+            planningInvalidations: [
+              ...(currentPlanning.planningInvalidations ?? []),
+              {
+                sourceRevision: currentPlanning.planningRevision,
+                reason: "outline_language_mismatch" as const,
+                invalidatedSectionCount:
+                  currentPlanning.skeleton?.sections.length ?? 0,
+                invalidatedSectionPlanCount:
+                  currentPlanning.sectionPlans.length,
+                invalidatedAt: now,
+              },
+            ].slice(-20),
+          }
       : job.checkpoint.planning;
     job = await repository.save(
       DocumentJobSchema.parse({
@@ -126,8 +159,15 @@ export async function resumeDocumentJob(
       shouldRevisePlanning
         ? {
             resumeScope: "planning_revision",
-            supersededOperation: "outline.structure",
-            replacementOperations: "outline.thesis,outline.section_index",
+            supersededOperation: shouldReviseLanguagePlanning
+              ? "outline.section_index"
+              : "outline.structure",
+            replacementOperations: shouldReviseLanguagePlanning
+              ? "outline.section_index"
+              : "outline.thesis,outline.section_index",
+            invalidationReason: shouldReviseLanguagePlanning
+              ? "outline_language_mismatch"
+              : "structured_output_capacity_exhausted",
           }
         : undefined,
     );

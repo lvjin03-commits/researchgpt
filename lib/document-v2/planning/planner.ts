@@ -22,11 +22,26 @@ import {
   type SemanticOutlineProposal,
 } from "./contracts";
 import type { z } from "zod";
+import { headingUsesDocumentLanguage } from "./language-contract";
+
+export type OutlineLanguageViolation = Readonly<{
+  sectionOrder: number;
+  field: "heading";
+  reason: "language_mismatch";
+}>;
+
+export type SectionIndexLanguageRepair = Readonly<{
+  mode: "repair_language";
+  sourceRevision: number;
+  sourceSectionIndex: z.infer<typeof DocumentSectionIndexDraftSchema>;
+  violations: ReadonlyArray<OutlineLanguageViolation>;
+}>;
 
 export interface HierarchicalOutlinePlanner {
   createThesis(input: {
     request: DocumentRequest;
     template: TemplateResolution;
+    planningRevision?: number;
   }): Promise<unknown>;
   createSectionIndex(input: {
     request: DocumentRequest;
@@ -34,12 +49,15 @@ export interface HierarchicalOutlinePlanner {
     thesis: z.infer<typeof DocumentThesisDraftSchema>;
     minimumSections: number;
     maximumSections: number;
+    planningRevision?: number;
+    repair?: SectionIndexLanguageRepair;
   }): Promise<unknown>;
   planFigureIntents(input: {
     request: DocumentRequest;
     template: TemplateResolution;
     skeleton: DocumentSkeleton;
     availableEvidenceIds: ReadonlyArray<string>;
+    planningRevision?: number;
   }): Promise<unknown>;
   planSection(input: {
     request: DocumentRequest;
@@ -47,6 +65,7 @@ export interface HierarchicalOutlinePlanner {
     skeleton: DocumentSkeleton;
     section: DocumentSkeleton["sections"][number];
     availableEvidenceIds: ReadonlyArray<string>;
+    planningRevision?: number;
   }): Promise<unknown>;
 }
 
@@ -69,6 +88,39 @@ export class DocumentPlanningError extends Error {
   }
 }
 
+export class OutlineLanguageMismatchError extends DocumentPlanningError {
+  readonly failureCategory = "outline_language_mismatch" as const;
+  readonly sourceComponent = "outline.section_index" as const;
+  readonly safeResumeFrom = "outline.section_index" as const;
+
+  constructor(
+    readonly requestedLanguage: DocumentRequest["language"],
+    readonly violations: ReadonlyArray<OutlineLanguageViolation>,
+    readonly sourceRevision: number,
+    readonly repairAttemptCount: number,
+  ) {
+    super(
+      `The section index does not use the requested ${requestedLanguage} document language in section(s): ${violations.map((item) => item.sectionOrder).join(", ")}.`,
+    );
+    this.name = "OutlineLanguageMismatchError";
+  }
+
+  diagnosticDetails() {
+    return {
+      message: this.message,
+      requestedLanguage: this.requestedLanguage,
+      violatingSectionOrders: this.violations
+        .map((item) => item.sectionOrder)
+        .join(","),
+      violatingFields: "heading",
+      sourceComponent: this.sourceComponent,
+      sourceRevision: this.sourceRevision,
+      repairAttemptCount: this.repairAttemptCount,
+      safeResumeFrom: this.safeResumeFrom,
+    };
+  }
+}
+
 const FIXED_COMPONENT_HEADING_PATTERN =
   /^(?:title|abstract|keywords?|references?|标题|摘要|关键词|参考文献)$/i;
 const FIXED_COMPONENT_DIRECTIVE_PATTERN =
@@ -77,6 +129,162 @@ const ASSET_SPECIFICATION_PATTERN =
   /(?:^|\n)\s*(?:图|表|fig(?:ure)?|table)\s*\d+\s*[（(:：]/im;
 const MAX_SECTION_PURPOSE_CHARACTERS = 650;
 const MAX_SUBSECTION_MARKERS_PER_SECTION = 4;
+
+function normalizeHeadingForComparison(heading: string) {
+  return heading
+    .normalize("NFKC")
+    .replace(/^\s*\d+(?:\.\d+)*[.)、]?\s*/, "")
+    .trim()
+    .toLocaleLowerCase();
+}
+
+export function findSectionIndexLanguageViolations(input: {
+  sectionIndex: unknown;
+  language: DocumentRequest["language"];
+}): OutlineLanguageViolation[] {
+  const sectionIndex = DocumentSectionIndexDraftSchema.parse(
+    input.sectionIndex,
+  );
+  return sectionIndex.sections.flatMap((section, index) =>
+    headingUsesDocumentLanguage(section.heading, input.language)
+      ? []
+      : [
+          {
+            sectionOrder: index + 1,
+            field: "heading" as const,
+            reason: "language_mismatch" as const,
+          },
+        ],
+  );
+}
+
+export function validateSectionIndexForPublication(input: {
+  sectionIndex: unknown;
+  language: DocumentRequest["language"];
+  minimumSections: number;
+  maximumSections: number;
+  sourceRevision: number;
+  repairAttemptCount?: number;
+}) {
+  const sectionIndex = DocumentSectionIndexDraftSchema.parse(
+    input.sectionIndex,
+  );
+  if (
+    sectionIndex.sections.length < input.minimumSections ||
+    sectionIndex.sections.length > input.maximumSections
+  ) {
+    throw new DocumentPlanningError(
+      `Section index contains ${sectionIndex.sections.length} sections; the template allows ${input.minimumSections}-${input.maximumSections}.`,
+    );
+  }
+  const normalizedHeadings = sectionIndex.sections.map((section) =>
+    normalizeHeadingForComparison(section.heading),
+  );
+  if (new Set(normalizedHeadings).size !== normalizedHeadings.length) {
+    throw new DocumentPlanningError(
+      "Section index contains duplicate body-section headings.",
+    );
+  }
+  const violations = findSectionIndexLanguageViolations({
+    sectionIndex,
+    language: input.language,
+  });
+  if (violations.length > 0) {
+    throw new OutlineLanguageMismatchError(
+      input.language,
+      violations,
+      input.sourceRevision,
+      input.repairAttemptCount ?? 0,
+    );
+  }
+  return sectionIndex;
+}
+
+export function assertSectionIndexLanguageRepairInvariant(input: {
+  original: unknown;
+  repaired: unknown;
+  violations: ReadonlyArray<OutlineLanguageViolation>;
+}) {
+  const original = DocumentSectionIndexDraftSchema.parse(input.original);
+  const repaired = DocumentSectionIndexDraftSchema.parse(input.repaired);
+  if (original.sections.length !== repaired.sections.length) {
+    throw new DocumentPlanningError(
+      "Section-index language repair changed the section count.",
+    );
+  }
+  const changeableOrders = new Set(
+    input.violations.map((item) => item.sectionOrder),
+  );
+  original.sections.forEach((section, index) => {
+    const candidate = repaired.sections[index];
+    if (!changeableOrders.has(index + 1) && candidate.heading !== section.heading) {
+      throw new DocumentPlanningError(
+        `Section-index language repair changed a valid heading at section ${index + 1}.`,
+      );
+    }
+    if (
+      candidate.question !== section.question ||
+      candidate.purpose !== section.purpose ||
+      JSON.stringify(candidate.owns) !== JSON.stringify(section.owns) ||
+      JSON.stringify(candidate.excludes) !== JSON.stringify(section.excludes) ||
+      candidate.relativeWeight !== section.relativeWeight
+    ) {
+      throw new DocumentPlanningError(
+        `Section-index language repair changed protected structure or semantics at section ${index + 1}.`,
+      );
+    }
+  });
+  return repaired;
+}
+
+export async function createValidatedSectionIndex(input: {
+  planner: HierarchicalOutlinePlanner;
+  request: DocumentRequest;
+  template: TemplateResolution;
+  thesis: z.infer<typeof DocumentThesisDraftSchema>;
+  minimumSections: number;
+  maximumSections: number;
+  planningRevision: number;
+}) {
+  const generationInput = {
+    request: input.request,
+    template: input.template,
+    thesis: input.thesis,
+    minimumSections: input.minimumSections,
+    maximumSections: input.maximumSections,
+    planningRevision: input.planningRevision,
+  };
+  const original = await input.planner.createSectionIndex(generationInput);
+  const violations = findSectionIndexLanguageViolations({
+    sectionIndex: original,
+    language: input.request.language,
+  });
+  let candidate = original;
+  if (violations.length > 0) {
+    candidate = await input.planner.createSectionIndex({
+      ...generationInput,
+      repair: {
+        mode: "repair_language",
+        sourceRevision: input.planningRevision,
+        sourceSectionIndex: DocumentSectionIndexDraftSchema.parse(original),
+        violations,
+      },
+    });
+    candidate = assertSectionIndexLanguageRepairInvariant({
+      original,
+      repaired: candidate,
+      violations,
+    });
+  }
+  return validateSectionIndexForPublication({
+    sectionIndex: candidate,
+    language: input.request.language,
+    minimumSections: input.minimumSections,
+    maximumSections: input.maximumSections,
+    sourceRevision: input.planningRevision,
+    repairAttemptCount: violations.length > 0 ? 1 : 0,
+  });
+}
 
 export function materializeDocumentSkeleton(input: unknown): DocumentSkeleton {
   const draft = DocumentSkeletonDraftSchema.parse(input);
@@ -200,12 +408,7 @@ function outlineSemanticErrors(
   const errors: string[] = [];
   proposal.sections.forEach((section, index) => {
     const label = `Section ${index + 1}`;
-    const cjkCharacters = section.heading.match(/[\u3400-\u9fff]/g)?.length ?? 0;
-    const latinCharacters = section.heading.match(/[A-Za-z]/g)?.length ?? 0;
-    if (
-      (language === "zh" && cjkCharacters === 0 && latinCharacters >= 8) ||
-      (language === "en" && cjkCharacters >= 4 && latinCharacters === 0)
-    ) {
+    if (!headingUsesDocumentLanguage(section.heading, language)) {
       errors.push(
         `${label} heading does not use the requested ${language} document language.`,
       );

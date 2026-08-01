@@ -14,6 +14,22 @@ import {
   SectionPlanDraftSchema,
 } from "@/lib/document-v2/planning/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
+import { createDocumentPlanningLanguageContract } from "@/lib/document-v2/planning/language-contract";
+
+function planningContext(input: {
+  request: DocumentRequest;
+  templateId: string;
+  templateVersion: string;
+  templateChecksum: string;
+  planningRevision?: number;
+}) {
+  return Object.freeze({
+    ...createDocumentPlanningLanguageContract(input.request.language),
+    templateSnapshotId: `${input.templateId}@${input.templateVersion}`,
+    templateChecksum: input.templateChecksum,
+    requestRevision: input.planningRevision ?? 1,
+  });
+}
 
 const UnderstoodRequestSchema = z
   .object({
@@ -133,6 +149,13 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
   constructor(private readonly executor: DocumentStructuredTextExecutor) {}
 
   async createThesis(input: Parameters<HierarchicalOutlinePlanner["createThesis"]>[0]) {
+    const context = planningContext({
+      request: input.request,
+      templateId: input.template.snapshot.templateId,
+      templateVersion: input.template.snapshot.templateVersion,
+      templateChecksum: input.template.snapshot.checksum,
+      planningRevision: input.planningRevision,
+    });
     return this.executor.generate({
       operation: "outline.thesis",
       budgetKey: "outline.thesis",
@@ -146,6 +169,7 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
         "Use the requested document language.",
       ].join(" "),
       userInstruction: JSON.stringify({
+        planningContext: context,
         topic: input.request.userRequirements.topic,
         requirements: input.request.userRequirements.specialInstructions ?? [],
         fixedComponentsHandledByTemplate: input.template.componentBlueprints
@@ -156,6 +180,14 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
   }
 
   async createSectionIndex(input: Parameters<HierarchicalOutlinePlanner["createSectionIndex"]>[0]) {
+    const context = planningContext({
+      request: input.request,
+      templateId: input.template.snapshot.templateId,
+      templateVersion: input.template.snapshot.templateVersion,
+      templateChecksum: input.template.snapshot.checksum,
+      planningRevision: input.planningRevision,
+    });
+    const repair = input.repair;
     return this.executor.generate({
       operation: "outline.section_index",
       budgetKey: "outline.section_index",
@@ -166,15 +198,25 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
         "Section count is outside the template limits.",
       ),
       systemInstruction: [
-        "Plan only the compact body-section index for an already-approved SCI review thesis.",
+        repair
+          ? "Repair only the language of the identified invalid headings in an existing body-section index."
+          : "Plan only the compact body-section index for an already-approved SCI review thesis.",
         "For each body section return only heading, question, concise purpose, owned scope, excluded scope, and relative weight.",
         "Do not plan section details, evidence mappings, or write paragraphs yet.",
         "Plan body sections only. Title, abstract, keywords, conclusion, and references are fixed template components created separately.",
-        "Use the requested language for headings.",
+        context.documentLanguageInstruction,
+        repair
+          ? "Preserve section count, order, question, purpose, owned scope, excluded scope, and relative weight exactly. Do not change headings that were not identified as violations."
+          : "Use the requested language for headings.",
         "Stay within the supplied section limits.",
         "Do not plan figures, tables, captions, prompts, evidence mappings, prose, or internal IDs.",
       ].join(" "),
       userInstruction: JSON.stringify({
+        planningContext: context,
+        mode: repair?.mode ?? "generate",
+        sourceRevision: repair?.sourceRevision,
+        sourceSectionIndex: repair?.sourceSectionIndex,
+        violations: repair?.violations,
         topic: input.request.userRequirements.topic,
         thesis: input.thesis,
         requirements: input.request.userRequirements.specialInstructions ?? [],
@@ -192,6 +234,13 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
   }
 
   async planFigureIntents(input: Parameters<HierarchicalOutlinePlanner["planFigureIntents"]>[0]) {
+    const context = planningContext({
+      request: input.request,
+      templateId: input.template.snapshot.templateId,
+      templateVersion: input.template.snapshot.templateVersion,
+      templateChecksum: input.template.snapshot.checksum,
+      planningRevision: input.planningRevision,
+    });
     return this.executor.generate({
       operation: "outline.figure_intents",
       budgetKey: "outline.figure_intents",
@@ -204,8 +253,10 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
         "Do not rewrite, rename, split, or add sections and do not generate internal IDs.",
         "Do not plan decorative figures or data plots. When no figure materially improves scientific understanding, return an empty figures array.",
         "Set evidenceRequired=true only when the figure must represent supplied verified evidence rather than a conceptual relationship.",
+        context.documentLanguageInstruction,
       ].join(" "),
       userInstruction: JSON.stringify({
+        planningContext: context,
         topic: input.request.userRequirements.topic,
         visualIntent: input.request.userRequirements.visualIntent,
         sections: input.skeleton.sections.map((section) => ({
@@ -229,6 +280,13 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
   }
 
   async planSection(input: Parameters<HierarchicalOutlinePlanner["planSection"]>[0]) {
+    const context = planningContext({
+      request: input.request,
+      templateId: input.template.snapshot.templateId,
+      templateVersion: input.template.snapshot.templateVersion,
+      templateChecksum: input.template.snapshot.checksum,
+      planningRevision: input.planningRevision,
+    });
     return this.executor.generate({
       operation: "outline.section_plan",
       budgetKey: "outline.section_plan",
@@ -246,8 +304,10 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
         "Do not rename, split, reorder, or add sections and do not write prose paragraphs.",
         "State how this section advances the document thesis, its comparison dimensions, applicable conditions, failure modes, and evidence bindings.",
         "Use only IDs from availableEvidenceIds. Never invent evidence.",
+        context.documentLanguageInstruction,
       ].join(" "),
       userInstruction: JSON.stringify({
+        planningContext: context,
         topic: input.request.userRequirements.topic,
         reviewThesis: input.skeleton.reviewThesis,
         scopeBoundary: input.skeleton.scopeBoundary,

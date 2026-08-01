@@ -1,4 +1,5 @@
 import type {
+  BlockerDiagnosis,
   DiagnosticTimelineEvent,
   DispatchDiagnostic,
   DocumentJobDiagnostics,
@@ -45,6 +46,68 @@ function objectArray(value: unknown) {
         )
         .slice(0, 20)
     : [];
+}
+
+const PLANNING_DIAGNOSTIC_DETAIL_KEYS = new Set([
+  "requestedLanguage",
+  "violatingSectionOrders",
+  "violatingFields",
+  "sourceComponent",
+  "sourceRevision",
+  "repairAttemptCount",
+  "safeResumeFrom",
+]);
+
+function parsePlanningDiagnosticDetails(value: unknown) {
+  if (typeof value !== "string" || !value.trim().startsWith("{")) return {};
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([key, detail]) => {
+        if (!PLANNING_DIAGNOSTIC_DETAIL_KEYS.has(key)) return [];
+        if (["string", "number", "boolean"].includes(typeof detail)) {
+          return [[key, detail]];
+        }
+        if (
+          Array.isArray(detail) &&
+          detail.every((item) =>
+            ["string", "number", "boolean"].includes(typeof item),
+          )
+        ) {
+          return [[key, detail.join(",")]];
+        }
+        return [];
+      }),
+    ) as Record<string, string | number | boolean>;
+  } catch {
+    return {};
+  }
+}
+
+function planningFailureFinding(
+  event: DiagnosticTimelineEvent | undefined,
+): BlockerDiagnosis | null {
+  if (event?.error?.code !== "outline_language_mismatch") return null;
+  return {
+    code: "outline_language_mismatch",
+    severity: "error",
+    certainty: "deterministic",
+    location: {
+      stage: event.stage ?? "planning",
+      operation: event.operation ?? "outline.section_index",
+      componentKey: event.componentKey ?? "document-section-index",
+    },
+    since: event.timestamp,
+    matchedRule: "published_section_index_language_contract_failed",
+    evidence: Object.entries(event.evidence).map(([field, value]) => ({
+      source: "event",
+      field,
+      value,
+    })),
+    missingEvidence: [],
+    recommendedNextInspection:
+      "Resume from a new outline.section_index revision; preserve request, template, evidence, and thesis checkpoints.",
+  };
 }
 
 export function projectDocumentJobDiagnostics(
@@ -173,9 +236,19 @@ export function projectDocumentJobDiagnostics(
       !Array.isArray(payload.metadata)
         ? (payload.metadata as Record<string, unknown>)
         : {};
-    const sanitizedError = sanitizeDiagnosticError(
-      stringValue(payload.technicalMessage),
-    );
+    const technicalMessage = stringValue(payload.technicalMessage);
+    const planningDetails = parsePlanningDiagnosticDetails(technicalMessage);
+    let diagnosticMessage = technicalMessage;
+    if (technicalMessage?.trim().startsWith("{")) {
+      try {
+        diagnosticMessage = stringValue(
+          (JSON.parse(technicalMessage) as Record<string, unknown>).message,
+        );
+      } catch {
+        diagnosticMessage = technicalMessage;
+      }
+    }
+    const sanitizedError = sanitizeDiagnosticError(diagnosticMessage);
     return {
       timestamp: stringValue(payload.createdAt) ?? row.created_at,
       source: "event",
@@ -195,7 +268,7 @@ export function projectDocumentJobDiagnostics(
           }
         : undefined,
       evidence: Object.fromEntries(
-        Object.entries(metadata)
+        Object.entries({ ...metadata, ...planningDetails })
           .filter(([, value]) =>
             ["string", "number", "boolean"].includes(typeof value),
           )
@@ -328,7 +401,15 @@ export function projectDocumentJobDiagnostics(
     createdAt: sources.job.created_at,
     updatedAt: sources.job.updated_at,
   };
+  const latestTimelineEvent = eventTimeline.at(-1);
+  const latestPlanningFailure =
+    ["paused", "failed"].includes(sources.job.status) &&
+    latestTimelineEvent?.error?.code === "outline_language_mismatch"
+      ? latestTimelineEvent
+      : undefined;
+  const planningFinding = planningFailureFinding(latestPlanningFailure);
   const findings = [
+    ...(planningFinding ? [planningFinding] : []),
     ...diagnoseBlockers({
       now,
       job: jobSummary,
@@ -385,6 +466,10 @@ export function projectDocumentJobDiagnostics(
     (left, right) => Date.parse(right) - Date.parse(left),
   )[0] ?? null;
   const primary = findings[0] ?? null;
+  const safeResumeFrom =
+    primary?.code === "outline_language_mismatch"
+      ? "outline.section_index"
+      : null;
   const workerState =
     sources.job.status === "running" && sources.job.lease_expires_at
       ? Date.parse(sources.job.lease_expires_at) < now.getTime()
@@ -416,7 +501,9 @@ export function projectDocumentJobDiagnostics(
     "- Reason: protected checkpoint content is intentionally not read by diagnostics v1",
     "",
     "Safe Resume",
-    "- Not determined by diagnostics v1",
+    safeResumeFrom
+      ? `- Resume from: ${safeResumeFrom}`
+      : "- Not determined by diagnostics v1",
   ].join("\n");
   return {
     identity: {
@@ -462,7 +549,7 @@ export function projectDocumentJobDiagnostics(
             ? "completed"
             : null,
       lastSuccessfulCheckpoint: null,
-      safeResumeFrom: null,
+      safeResumeFrom,
       duplicateRisk,
       incompleteEvidence: incompleteSources,
       primaryFindingCode: primary?.code ?? null,

@@ -64,13 +64,22 @@ const {
 } = require("../lib/document-v2/orchestration/orchestrator.ts");
 const {
   DocumentPlanningError,
+  OutlineLanguageMismatchError,
+  assertSectionIndexLanguageRepairInvariant,
   assembleSemanticOutline,
+  createValidatedSectionIndex,
   createDocumentPlanFromTemplate,
+  findSectionIndexLanguageViolations,
   materializeDocumentStructure,
   materializeFigureIntents,
   materializeDocumentSkeleton,
   materializeSectionPlan,
+  validateSectionIndexForPublication,
 } = require("../lib/document-v2/planning/planner.ts");
+const {
+  createDocumentPlanningLanguageContract,
+  headingUsesDocumentLanguage,
+} = require("../lib/document-v2/planning/language-contract.ts");
 const {
   renderFinalDocumentSpecToDocx,
 } = require("../lib/document-v2/renderers/docx.ts");
@@ -812,6 +821,13 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
     profile: { maxOutputTokens: 3200 },
     async generate(input) {
       call += 1;
+      const planningInput = JSON.parse(input.userInstruction);
+      assert.equal(planningInput.planningContext.documentLanguage, "en");
+      assert.equal(
+        planningInput.planningContext.documentLanguageName,
+        "English",
+      );
+      assert.equal(planningInput.planningContext.requestRevision, 3);
       if (call === 1) {
         assert.equal(input.operation, "outline.thesis");
         assert.equal(input.budgetKey, "outline.thesis");
@@ -848,14 +864,11 @@ async function verifyOutlineSchemaUsesTemplateBounds() {
       };
     },
   });
+  const template = await resolveTemplate();
   const base = {
-    request: {
-      userRequirements: {
-        topic: "Physical gels",
-        specialInstructions: [],
-      },
-    },
-    template: { componentBlueprints: [] },
+    request,
+    template,
+    planningRevision: 3,
   };
   const thesis = await planner.createThesis(base);
   const proposal = await planner.createSectionIndex({
@@ -906,6 +919,150 @@ async function verifyFigureIntentPlanningUsesSectionOrder() {
   });
   assert.equal(completed.figures[0].sectionIndex, 0);
   assert.equal(completed.figures[0].figureIntentId, "figure-intent-01");
+}
+
+async function verifySectionIndexLanguageContractAndBoundedRepair() {
+  const template = await resolveTemplate();
+  const zhRequest = {
+    ...request,
+    language: "zh",
+    userRequirements: {
+      ...request.userRequirements,
+      topic: "大语言模型",
+    },
+  };
+  const thesis = {
+    reviewThesis: "大语言模型的发展取决于架构、数据与评估体系的协同演进。",
+    scopeBoundary: "聚焦通用大语言模型的技术演进与科研应用。",
+    reviewQuestions: ["大语言模型的能力如何形成并被可靠评估？"],
+    conclusionHeading: "结论",
+  };
+  const operations = [];
+  const modelInputs = [];
+  const planner = new ModelHierarchicalOutlinePlanner({
+    profile: { maxOutputTokens: 3200 },
+    async generate(input) {
+      operations.push(input.operation);
+      const payload = JSON.parse(input.userInstruction);
+      modelInputs.push(payload);
+      assert.equal(payload.planningContext.documentLanguage, "zh");
+      assert.equal(
+        payload.planningContext.documentLanguageName,
+        "Simplified Chinese",
+      );
+      assert.match(
+        payload.planningContext.documentLanguageInstruction,
+        /Simplified Chinese/,
+      );
+      if (payload.mode === "repair_language") {
+        assert.equal(payload.sourceRevision, 4);
+        assert.deepEqual(
+          payload.violations.map((item) => item.sectionOrder),
+          [1, 2],
+        );
+        return {
+          sections: payload.sourceSectionIndex.sections.map(
+            (section, index) => ({
+              ...section,
+              heading:
+                index === 0
+                  ? "大语言模型的基础架构"
+                  : "训练方法与能力形成",
+            }),
+          ),
+        };
+      }
+      return {
+        sections: [
+          {
+            heading: "Large Language Model Architectures",
+            question: "模型架构如何影响能力？",
+            purpose: "比较主要架构及其能力边界。",
+            owns: ["模型架构"],
+            excludes: ["应用部署"],
+            relativeWeight: 1,
+          },
+          {
+            heading: "Training and Emergent Capabilities",
+            question: "训练过程如何形成模型能力？",
+            purpose: "分析数据、目标函数与能力形成的关系。",
+            owns: ["训练方法"],
+            excludes: ["推理部署"],
+            relativeWeight: 2,
+          },
+        ],
+      };
+    },
+  });
+  const repaired = await createValidatedSectionIndex({
+    planner,
+    request: zhRequest,
+    template,
+    thesis,
+    minimumSections: 1,
+    maximumSections: 8,
+    planningRevision: 4,
+  });
+  assert.deepEqual(operations, [
+    "outline.section_index",
+    "outline.section_index",
+  ]);
+  assert.equal(modelInputs[0].mode, "generate");
+  assert.equal(modelInputs[1].mode, "repair_language");
+  assert.equal(repaired.sections[0].heading, "大语言模型的基础架构");
+  assert.equal(repaired.sections[0].purpose, "比较主要架构及其能力边界。");
+  assert.equal(headingUsesDocumentLanguage("PVA物理凝胶", "zh"), true);
+  assert.equal(headingUsesDocumentLanguage("SEM表征", "zh"), true);
+  assert.equal(headingUsesDocumentLanguage("3D打印应用", "zh"), true);
+  assert.equal(
+    headingUsesDocumentLanguage("Preparation Methods of Physical Gels", "zh"),
+    false,
+  );
+  assert.throws(
+    () =>
+      validateSectionIndexForPublication({
+        sectionIndex: {
+          sections: [
+            {
+              heading: "Preparation Methods of Physical Gels",
+              question: "制备方法有哪些？",
+              purpose: "比较不同制备方法。",
+              owns: [],
+              excludes: [],
+              relativeWeight: 1,
+            },
+          ],
+        },
+        language: "zh",
+        minimumSections: 1,
+        maximumSections: 8,
+        sourceRevision: 1,
+      }),
+    OutlineLanguageMismatchError,
+  );
+  assert.throws(() =>
+    assertSectionIndexLanguageRepairInvariant({
+      original: repaired,
+      repaired: {
+        sections: repaired.sections.map((section) => ({
+          ...section,
+          purpose: `${section.purpose} changed`,
+        })),
+      },
+      violations: findSectionIndexLanguageViolations({
+        sectionIndex: {
+          sections: repaired.sections.map((section) => ({
+            ...section,
+            heading: "English Heading",
+          })),
+        },
+        language: "zh",
+      }),
+    }),
+  );
+  const zhContract = createDocumentPlanningLanguageContract("zh");
+  const enContract = createDocumentPlanningLanguageContract("en");
+  assert.notDeepEqual(zhContract, enContract);
 }
 
 function verifyHierarchicalOutlineAssembly() {
@@ -991,6 +1148,7 @@ async function verifyManualFigureNumbersAreRejected() {
 async function main() {
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
+  await verifySectionIndexLanguageContractAndBoundedRepair();
   await verifyFigureIntentPlanningUsesSectionOrder();
   verifyHierarchicalOutlineAssembly();
   await verifyManualFigureNumbersAreRejected();

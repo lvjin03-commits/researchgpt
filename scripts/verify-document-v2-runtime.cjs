@@ -493,6 +493,127 @@ async function verifyPlanningRevisionResume() {
   assert.equal(resumed.checkpoint.planning.request.requestId, requestId);
 }
 
+async function verifyLanguagePlanningRevisionResume() {
+  const repository = new InMemoryDocumentJobRepository();
+  const service = makeService(repository, {});
+  await service.createIntake({
+    ownerId: "user-1",
+    jobId: requestId,
+    instruction: "生成一篇关于物理凝胶的中文SCI综述。",
+    source: { kind: "prompt", sourceIds: [] },
+    language: "zh",
+    textExecution: {
+      provider: "deepseek",
+      requestedModelId: "deepseek-v4-flash",
+      resolvedModelId: "deepseek-v4-flash",
+      maxOutputTokens: 3200,
+      reasoningEffort: "none",
+      allowProviderFallback: false,
+    },
+  });
+  const zhRequest = {
+    ...request,
+    language: "zh",
+    userRequirements: { topic: "物理凝胶制备" },
+  };
+  const template = await resolveDocumentTemplate({
+    request: zhRequest,
+    matcher: {
+      async match({ candidates }) {
+        return {
+          templateId: candidates[0].templateId,
+          confidence: 1,
+          rationale: "test",
+        };
+      },
+    },
+  });
+  const thesis = {
+    reviewThesis: "制备历史控制物理凝胶的网络结构。",
+    scopeBoundary: "聚焦可逆物理交联网络。",
+    reviewQuestions: ["制备历史如何影响结构？"],
+    conclusionHeading: "结论",
+  };
+  const skeleton = {
+    schemaVersion: 1,
+    reviewThesis: thesis.reviewThesis,
+    scopeBoundary: thesis.scopeBoundary,
+    reviewQuestions: thesis.reviewQuestions,
+    conclusionHeading: thesis.conclusionHeading,
+    sections: [
+      {
+        sectionId: "section-01",
+        order: 0,
+        heading: "Preparation Routes",
+        question: "有哪些制备路径？",
+        purpose: "比较制备路径。",
+        owns: [],
+        excludes: [],
+        relativeWeight: 1,
+      },
+    ],
+    figures: [],
+  };
+  let failed = await repository.get(requestId);
+  failed = await repository.save(
+    {
+      ...failed,
+      status: "paused",
+      stage: "planning",
+      error: {
+        code: "outline_language_mismatch",
+        userMessage: "Planning paused.",
+        technicalMessage: "The section heading uses the wrong language.",
+        failedStage: "planning",
+        componentKey: "document-section-index",
+      },
+      checkpoint: {
+        ...failed.checkpoint,
+        planning: {
+          schemaVersion: 1,
+          planningRevision: 1,
+          request: zhRequest,
+          template,
+          evidenceReferences: [],
+          thesis,
+          skeleton,
+          figureIntentsCompleted: true,
+          sectionPlans: [
+            {
+              schemaVersion: 1,
+              skeletonVersion: 1,
+              sectionId: "section-01",
+              contributionToThesis: "推进主旨。",
+              comparisonDimensions: [],
+              applicableConditions: [],
+              failureModes: [],
+              requiredEvidenceIds: [],
+            },
+          ],
+          planningInvalidations: [],
+        },
+      },
+    },
+    failed.revision,
+  );
+  await service.resume(requestId);
+  const resumed = await repository.get(requestId);
+  assert.equal(resumed.status, "queued");
+  assert.equal(resumed.checkpoint.planning.planningRevision, 2);
+  assert.equal(resumed.checkpoint.planning.thesis.reviewThesis, thesis.reviewThesis);
+  assert.equal(resumed.checkpoint.planning.skeleton, undefined);
+  assert.deepEqual(resumed.checkpoint.planning.sectionPlans, []);
+  assert.equal(
+    resumed.checkpoint.planning.planningInvalidations[0].reason,
+    "outline_language_mismatch",
+  );
+  assert.equal(
+    resumed.checkpoint.planning.planningInvalidations[0]
+      .invalidatedSectionPlanCount,
+    1,
+  );
+}
+
 async function verifyImageCallsAndAssetsUseSeparateBudgets() {
   const repository = new InMemoryDocumentJobRepository();
   const calls = {};
@@ -1009,6 +1130,7 @@ async function main() {
   await verifyTimeBudgetYieldsAfterCheckpoint();
   await verifyPreciseResume();
   await verifyPlanningRevisionResume();
+  await verifyLanguagePlanningRevisionResume();
   await verifyImageCallsAndAssetsUseSeparateBudgets();
   await verifyFinalizerFailureIsVisible();
   await verifyDispatchChecksHttpStatus();
