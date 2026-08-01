@@ -110,6 +110,45 @@ function planningFailureFinding(
   };
 }
 
+const DETERMINISTIC_CAPTION_FAILURES = new Set([
+  "figure_caption_numbered",
+  "table_caption_numbered",
+]);
+
+function captionFormatFailureFinding(
+  event: DiagnosticTimelineEvent | undefined,
+): BlockerDiagnosis | null {
+  const code = event?.error?.code;
+  if (!code || !DETERMINISTIC_CAPTION_FAILURES.has(code)) return null;
+  return {
+    code,
+    severity: "warning",
+    certainty: "deterministic",
+    location: {
+      stage: event.stage ?? "content_generation",
+      operation: event.operation ?? "component.failed",
+      componentKey: event.componentKey ?? null,
+    },
+    since: event.timestamp,
+    matchedRule: "generated_caption_contains_renderer_owned_number",
+    evidence: [
+      {
+        source: "event",
+        field: "failureCode",
+        value: code,
+      },
+      {
+        source: "system",
+        field: "availableRecoveryMechanism",
+        value: "caption-v1",
+      },
+    ],
+    missingEvidence: [],
+    recommendedNextInspection:
+      "Resume the failed component and reprocess its captions with the deterministic caption normalizer; do not restart planning.",
+  };
+}
+
 export function projectDocumentJobDiagnostics(
   sources: DiagnosticSources,
   now = new Date(),
@@ -408,8 +447,13 @@ export function projectDocumentJobDiagnostics(
       ? latestTimelineEvent
       : undefined;
   const planningFinding = planningFailureFinding(latestPlanningFailure);
+  const captionFinding =
+    ["paused", "failed"].includes(sources.job.status)
+      ? captionFormatFailureFinding(latestTimelineEvent)
+      : null;
   const findings = [
     ...(planningFinding ? [planningFinding] : []),
+    ...(captionFinding ? [captionFinding] : []),
     ...diagnoseBlockers({
       now,
       job: jobSummary,
@@ -469,6 +513,8 @@ export function projectDocumentJobDiagnostics(
   const safeResumeFrom =
     primary?.code === "outline_language_mismatch"
       ? "outline.section_index"
+      : primary && DETERMINISTIC_CAPTION_FAILURES.has(primary.code)
+        ? primary.location.componentKey
       : null;
   const workerState =
     sources.job.status === "running" && sources.job.lease_expires_at

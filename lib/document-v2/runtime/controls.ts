@@ -193,6 +193,7 @@ export async function resumeDocumentJob(
         attempts: 0,
         transientFailures: 0,
         lastError: failedComponent.lastError,
+        normalizationRecords: failedComponent.normalizationRecords,
         revisions: failedComponent.revisions,
       };
       resumeStage = "content_generation";

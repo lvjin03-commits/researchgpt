@@ -144,6 +144,19 @@ const ApprovedComponentSchema = z.discriminatedUnion("kind", [
 
 export type ApprovedComponent = z.infer<typeof ApprovedComponentSchema>;
 
+const ContentNormalizationRecordSchema = z
+  .object({
+    generationRevision: z.number().int().positive(),
+    attempt: z.number().int().positive(),
+    fieldPath: z.string().trim().min(1).max(500),
+    rawValueHash: z.string().regex(/^[a-f0-9]{64}$/i),
+    rawPreview: z.string().max(240),
+    normalizedValue: z.string().max(2_000),
+    rulesApplied: z.array(IdentifierSchema).min(1).max(10),
+    normalizerVersion: IdentifierSchema,
+  })
+  .strict();
+
 const ComponentRevisionSchema = z
   .object({
     revision: z.number().int().positive(),
@@ -169,6 +182,10 @@ export const ComponentExecutionStateSchema = z
       })
       .strict()
       .optional(),
+    normalizationRecords: z
+      .array(ContentNormalizationRecordSchema)
+      .max(2_000)
+      .default([]),
     approved: ApprovedComponentSchema.optional(),
     revisions: z.array(ComponentRevisionSchema).default([]),
   })

@@ -300,6 +300,56 @@ assert.match(
   /Resume from: outline\.section_index/,
 );
 
+const captionFailureDiagnostic = projectDocumentJobDiagnostics(
+  {
+    job: {
+      ...diagnosticFixtureJob(),
+      status: "failed",
+      stage: "content_generation",
+      revision: 29,
+      updated_at: "2026-08-01T21:05:00.000Z",
+    },
+    events: [
+      {
+        sequence: 1,
+        stage: "content_generation",
+        status: "failed",
+        created_at: "2026-08-01T21:05:00.000Z",
+        event_payload: {
+          stage: "content_generation",
+          status: "failed",
+          operation: "component.failed",
+          componentKey: "section-02",
+          category: "validation",
+          errorCode: "figure_caption_numbered",
+          technicalMessage:
+            "Return a mature figure caption without a figure number; the renderer assigns numbering.",
+          createdAt: "2026-08-01T21:05:00.000Z",
+        },
+      },
+    ],
+    executions: [],
+    outbox: [],
+  },
+  new Date("2026-08-01T21:06:00.000Z"),
+);
+assert.equal(
+  captionFailureDiagnostic.currentBlocker.code,
+  "figure_caption_numbered",
+);
+assert.equal(
+  captionFailureDiagnostic.currentBlocker.certainty,
+  "deterministic",
+);
+assert.equal(
+  captionFailureDiagnostic.codexSummary.safeResumeFrom,
+  "section-02",
+);
+assert.match(
+  captionFailureDiagnostic.humanReadableReport,
+  /Resume from: section-02/,
+);
+
 console.log("Document v2 diagnostics projection tests passed.");
 
 function diagnosticFixtureJob() {

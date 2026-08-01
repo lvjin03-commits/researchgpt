@@ -5,6 +5,7 @@ import {
   type FigureRequest,
 } from "../assets/contracts";
 import type { FigureAssetMaterializer } from "../assets/figure-pipeline";
+import { normalizeGeneratedComponentContent } from "../generation/content-normalizer";
 import {
   DocumentPlanSchema,
   DocumentRequestSchema,
@@ -966,6 +967,40 @@ export async function runDocumentOrchestration(
       continue;
     }
     componentState.attempts = contentAttempt;
+    const normalization = normalizeGeneratedComponentContent(payload);
+    payload = normalization.payload;
+    componentState.normalizationRecords = [
+      ...componentState.normalizationRecords,
+      ...normalization.records.map((record) => ({
+        ...record,
+        generationRevision: componentState.generationRevision,
+        attempt: contentAttempt,
+      })),
+    ].slice(-2_000);
+    const normalizationIssue = normalization.issues[0];
+    if (normalizationIssue) {
+      componentState.lastError = {
+        code: normalizationIssue.code,
+        message: `${normalizationIssue.message} Field: ${normalizationIssue.fieldPath}.`,
+      };
+      appendEvent(state, {
+        type: "component_rejected",
+        componentKey: component.componentKey,
+        attempt: componentState.attempts,
+        code: componentState.lastError.code,
+        message: componentState.lastError.message,
+      });
+      if (componentState.attempts >= maxAttempts) {
+        failJob(
+          state,
+          componentState,
+          componentState.lastError.code,
+          componentState.lastError.message,
+        );
+        return DocumentOrchestrationStateSchema.parse(state);
+      }
+      continue;
+    }
 
     let structuralApproval: {
       approved: ApprovedComponent;

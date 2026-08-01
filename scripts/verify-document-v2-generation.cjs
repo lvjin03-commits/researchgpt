@@ -58,6 +58,9 @@ const {
   MatureDocumentComponentValidator,
 } = require("../lib/document-v2/generation/mature-content-validator.ts");
 const {
+  normalizeGeneratedComponentContent,
+} = require("../lib/document-v2/generation/content-normalizer.ts");
+const {
   createDocumentOrchestrationState,
   invalidateDocumentComponent,
   runDocumentOrchestration,
@@ -248,7 +251,7 @@ function maturePayload(component, repairFeedback) {
             ? [
                 {
                   caption:
-                    "Representative routes and their structural consequences",
+                    "Table 1 | Representative routes and their structural consequences",
                   columns: ["Route", "Dominant process", "Network outcome"],
                   rows: [
                     [
@@ -273,7 +276,7 @@ function maturePayload(component, repairFeedback) {
                   slotId: "figure-slot-01",
                   title: "Preparation route to network structure",
                   caption:
-                    "Preparation routes create distinct physical junction domains",
+                    "Fig. 1 | Preparation routes create distinct physical junction domains",
                   altText:
                     "Flow diagram connecting freeze-thaw and solvent exchange routes to different physical gel network structures.",
                   contentBrief:
@@ -516,7 +519,22 @@ async function verifyCompleteGenerationFlow() {
   assert.equal(
     modelCalls["2 Preparation Routes"],
     2,
-    "Only the component leaking internal content should be regenerated.",
+    "A deterministic caption prefix must not trigger another model regeneration.",
+  );
+  const sectionTwo = completed.components.find(
+    (component) => component.componentKey === "section-02",
+  );
+  assert.deepEqual(
+    sectionTwo.normalizationRecords.map(
+      (record) => record.rulesApplied[0],
+    ),
+    ["strip_table_number_prefix", "strip_figure_number_prefix"],
+    "The orchestration checkpoint must retain caption normalization evidence.",
+  );
+  assert.equal(
+    completed.figures[0].request.caption,
+    "Preparation routes create distinct physical junction domains",
+    "Only the renderer may add the final figure number.",
   );
   assert.equal(
     figureGeneratorCalls,
@@ -557,6 +575,8 @@ async function verifyCompleteGenerationFlow() {
   assert.match(documentXml, /2 Preparation Routes/);
   assert.match(documentXml, /Table 1 \|/);
   assert.match(documentXml, /Fig\. 1 \|/);
+  assert.doesNotMatch(documentXml, /Table 1 \|\s*Table 1/i);
+  assert.doesNotMatch(documentXml, /Fig\. 1 \|\s*Fig\. 1/i);
   assert.match(documentXml, /\(see Fig\. 1\)/);
   assert.doesNotMatch(documentXml, /TODO|evidenceType|aistructure/i);
   assert.doesNotMatch(documentXml, /Draw two preparation routes/i);
@@ -1145,12 +1165,93 @@ async function verifyManualFigureNumbersAreRejected() {
   assert.equal(result.code, "manual_cross_reference");
 }
 
+function verifyCaptionNormalization() {
+  const input = {
+    kind: "blocks",
+    blocks: [
+      {
+        type: "table",
+        caption: "Table 1 | Preparation routes",
+        columns: ["Route"],
+        rows: [["Cooling"]],
+      },
+    ],
+    figureRequests: [
+      {
+        slotId: "figure-slot-01",
+        figureType: "mechanism_diagram",
+        title: "Network mechanism",
+        caption: "图 2：3D网络形成机制",
+        altText: "A reversible network.",
+        contentBrief: "Show reversible junctions.",
+        questionAnswered: "How does the network form?",
+        evidenceMode: "conceptual",
+        claimsRepresented: ["Reversible junctions form a network."],
+        placementAfterBlockIndex: 0,
+        sourceEvidenceIds: [],
+      },
+      {
+        slotId: "figure-slot-02",
+        figureType: "conceptual_framework",
+        title: "Supplementary workflow",
+        caption: "Figure S1: Supplementary workflow",
+        altText: "A supplementary workflow.",
+        contentBrief: "Show the workflow.",
+        questionAnswered: "What is the workflow?",
+        evidenceMode: "conceptual",
+        claimsRepresented: ["The workflow has multiple stages."],
+        placementAfterBlockIndex: 0,
+        sourceEvidenceIds: [],
+      },
+    ],
+  };
+  const first = normalizeGeneratedComponentContent(input);
+  assert.equal(first.payload.blocks[0].caption, "Preparation routes");
+  assert.equal(first.payload.figureRequests[0].caption, "3D网络形成机制");
+  assert.equal(
+    first.payload.figureRequests[1].caption,
+    "Figure S1: Supplementary workflow",
+  );
+  assert.deepEqual(
+    first.records.map((record) => record.rulesApplied[0]),
+    ["strip_table_number_prefix", "strip_figure_number_prefix"],
+  );
+  assert.deepEqual(first.issues, [
+    {
+      code: "caption_prefix_unsupported",
+      fieldPath: "figureRequests[1].caption",
+      message:
+        "The figure caption uses a manual number format that the renderer does not support.",
+    },
+  ]);
+  const second = normalizeGeneratedComponentContent(first.payload);
+  assert.deepEqual(second.payload, first.payload);
+  assert.deepEqual(second.records, []);
+  assert.deepEqual(second.issues, first.issues);
+
+  const empty = normalizeGeneratedComponentContent({
+    kind: "blocks",
+    blocks: [
+      {
+        type: "table",
+        caption: "Table 1",
+        columns: ["Route"],
+        rows: [["Cooling"]],
+      },
+    ],
+    figureRequests: [],
+  });
+  assert.equal(empty.payload.blocks[0].caption, "");
+  assert.equal(empty.issues[0].code, "table_caption_empty");
+}
+
 async function main() {
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
   await verifySectionIndexLanguageContractAndBoundedRepair();
   await verifyFigureIntentPlanningUsesSectionOrder();
   verifyHierarchicalOutlineAssembly();
+  verifyCaptionNormalization();
   await verifyManualFigureNumbersAreRejected();
   await verifyCompleteGenerationFlow();
   await verifyPlannerRejectsInvalidOutline();
