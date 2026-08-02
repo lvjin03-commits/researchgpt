@@ -61,6 +61,48 @@ export const DocumentFigureIntentsDraftSchema = z
   })
   .strict();
 
+const FIGURE_INTENT_IGNORABLE_KEYS = [
+  "requiredEvidenceIds",
+  "evidenceIds",
+  "citationIds",
+] as const;
+
+export function normalizeFigureIntentCandidate(value: unknown): {
+  value: unknown;
+  repairSteps: Array<"out_of_scope_fields_removed">;
+  normalizationPaths: string[];
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { value, repairSteps: [], normalizationPaths: [] };
+  }
+  const payload = value as Record<string, unknown>;
+  if (!Array.isArray(payload.figures)) {
+    return { value, repairSteps: [], normalizationPaths: [] };
+  }
+  const normalizationPaths: string[] = [];
+  const figures = payload.figures.map((figure, index) => {
+    if (!figure || typeof figure !== "object" || Array.isArray(figure)) {
+      return figure;
+    }
+    const normalizedFigure = { ...(figure as Record<string, unknown>) };
+    for (const key of FIGURE_INTENT_IGNORABLE_KEYS) {
+      if (Object.hasOwn(normalizedFigure, key)) {
+        delete normalizedFigure[key];
+        normalizationPaths.push(`figures[${index}].${key}`);
+      }
+    }
+    return normalizedFigure;
+  });
+  if (normalizationPaths.length === 0) {
+    return { value, repairSteps: [], normalizationPaths };
+  }
+  return {
+    value: { ...payload, figures },
+    repairSteps: ["out_of_scope_fields_removed"],
+    normalizationPaths,
+  };
+}
+
 export const DocumentSkeletonDraftSchema = z
   .object({
     reviewThesis: z.string().trim().min(1).max(2_000),

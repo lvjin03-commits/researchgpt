@@ -9,6 +9,7 @@ import type { DocumentTemplateMatcher } from "@/lib/document-v2/templates/resolv
 import type { HierarchicalOutlinePlanner } from "@/lib/document-v2/planning/planner";
 import {
   DocumentFigureIntentsDraftSchema,
+  normalizeFigureIntentCandidate,
   DocumentSectionIndexDraftSchema,
   DocumentThesisDraftSchema,
   SectionPlanDraftSchema,
@@ -260,12 +261,14 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
       componentKey: "document-figure-intents",
       schemaName: "document_figure_intents_v1",
       schema: DocumentFigureIntentsDraftSchema,
+      normalizeCandidate: normalizeFigureIntentCandidate,
       systemInstruction: [
         "Plan only essential scientific figure intents for the already-approved document structure.",
         "Return at most four figures and use the one-based sectionOrder supplied by the program.",
         "Do not rewrite, rename, split, or add sections and do not generate internal IDs.",
         "Do not plan decorative figures or data plots. When no figure materially improves scientific understanding, return an empty figures array.",
         "Set evidenceRequired=true only when the figure must represent supplied verified evidence rather than a conceptual relationship.",
+        "Do not select, copy, invent, or return evidence IDs, reference IDs, or citation IDs. Concrete evidence binding belongs to section planning.",
         context.documentLanguageInstruction,
       ].join(" "),
       userInstruction: JSON.stringify({
@@ -280,7 +283,7 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
           owns: section.owns,
           excludes: section.excludes,
         })),
-        availableEvidenceIds: input.availableEvidenceIds,
+        evidenceContext: input.evidenceContext,
         maximumFigures: 4,
         allowedFigureTypes: [
           "mechanism_diagram",

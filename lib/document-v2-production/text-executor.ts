@@ -17,6 +17,7 @@ import {
   DOCUMENT_RESPONSE_PARSER_VERSION,
   DOCUMENT_RESPONSE_REPAIR_VERSION,
   parseStructuredResponse,
+  type StructuredResponseCandidateNormalization,
   type StructuredResponseCandidateDiagnostic,
   type StructuredResponseRepairStep,
 } from "./structured-response-parser";
@@ -65,6 +66,9 @@ export type DocumentStructuredGenerationInput<T> = {
     systemInstruction: string;
     userInstruction: string;
     validateCandidate?: (value: T) => void;
+    normalizeCandidate?: (
+      value: unknown,
+    ) => StructuredResponseCandidateNormalization;
 };
 
 export interface DocumentStructuredTextExecutor {
@@ -298,6 +302,7 @@ export class ProviderDocumentTextExecutor
             rawResponse: legacyExecution.raw_response,
             storedStatus: legacyExecution.status,
             schema: input.schema,
+            normalizeCandidate: input.normalizeCandidate,
           });
         }
       }
@@ -307,6 +312,7 @@ export class ProviderDocumentTextExecutor
           rawResponse: existing.raw_response,
           storedStatus: "succeeded",
           schema: input.schema,
+          normalizeCandidate: input.normalizeCandidate,
         });
       }
       if (existing?.status === "raw_saved") {
@@ -315,6 +321,7 @@ export class ProviderDocumentTextExecutor
           rawResponse: existing.raw_response,
           storedStatus: "raw_saved",
           schema: input.schema,
+          normalizeCandidate: input.normalizeCandidate,
         });
       }
       if (existing?.status === "response_received") {
@@ -325,6 +332,7 @@ export class ProviderDocumentTextExecutor
           schemaVersion,
           operation: input.operation,
           validateCandidate: input.validateCandidate,
+          normalizeCandidate: input.normalizeCandidate,
         });
         if (recovered !== undefined) return recovered;
         throw new DocumentModelExecutionRequiresReviewError(
@@ -344,13 +352,15 @@ export class ProviderDocumentTextExecutor
             schemaVersion,
             operation: input.operation,
             validateCandidate: input.validateCandidate,
+            normalizeCandidate: input.normalizeCandidate,
           });
           if (recovered !== undefined) return recovered;
         }
       }
       if (
         existing?.status === "validation_failed" &&
-        existing.schema_version !== schemaVersion
+        (existing.parser_version !== DOCUMENT_RESPONSE_PARSER_VERSION ||
+          existing.schema_version !== schemaVersion)
       ) {
         const recovered = await this.reparseStoredProviderContent({
           executionKey,
@@ -359,6 +369,7 @@ export class ProviderDocumentTextExecutor
           schemaVersion,
           operation: input.operation,
           validateCandidate: input.validateCandidate,
+          normalizeCandidate: input.normalizeCandidate,
         });
         if (recovered !== undefined) return recovered;
       }
@@ -448,6 +459,7 @@ export class ProviderDocumentTextExecutor
             rawResponse: raced.raw_response,
             storedStatus: "succeeded",
             schema: input.schema,
+            normalizeCandidate: input.normalizeCandidate,
           });
         }
         if (raced?.status === "raw_saved") {
@@ -456,6 +468,7 @@ export class ProviderDocumentTextExecutor
             rawResponse: raced.raw_response,
             storedStatus: "raw_saved",
             schema: input.schema,
+            normalizeCandidate: input.normalizeCandidate,
           });
         }
         throw new DocumentModelExecutionInProgressError(executionKey);
@@ -661,6 +674,7 @@ export class ProviderDocumentTextExecutor
           content: parseContent,
           schema: input.schema,
           validateCandidate: input.validateCandidate,
+          normalizeCandidate: input.normalizeCandidate,
         });
         const parseCompletedAt = new Date().toISOString();
         if (!parseResult.ok) {
@@ -883,6 +897,9 @@ export class ProviderDocumentTextExecutor
     schemaVersion: string;
     operation: string;
     validateCandidate?: (value: T) => void;
+    normalizeCandidate?: (
+      value: unknown,
+    ) => StructuredResponseCandidateNormalization;
   }): Promise<T | undefined> {
     const encryptedContent =
       input.execution.raw_content_encrypted ??
@@ -900,6 +917,7 @@ export class ProviderDocumentTextExecutor
       content,
       schema: input.schema,
       validateCandidate: input.validateCandidate,
+      normalizeCandidate: input.normalizeCandidate,
     });
     const parseCompletedAt = new Date().toISOString();
     const diagnostics = {
@@ -1024,8 +1042,14 @@ export class ProviderDocumentTextExecutor
     rawResponse: unknown;
     storedStatus: "raw_saved" | "succeeded";
     schema: ZodType<T>;
+    normalizeCandidate?: (
+      value: unknown,
+    ) => StructuredResponseCandidateNormalization;
   }): Promise<T> {
-    const parsed = input.schema.safeParse(input.rawResponse);
+    const normalized = input.normalizeCandidate?.(input.rawResponse) ?? {
+      value: input.rawResponse,
+    };
+    const parsed = input.schema.safeParse(normalized.value);
     if (!parsed.success) {
       await this.mustUpdateExecution(
         input.executionKey,

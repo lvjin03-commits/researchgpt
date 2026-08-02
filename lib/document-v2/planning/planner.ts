@@ -56,7 +56,10 @@ export interface HierarchicalOutlinePlanner {
     request: DocumentRequest;
     template: TemplateResolution;
     skeleton: DocumentSkeleton;
-    availableEvidenceIds: ReadonlyArray<string>;
+    evidenceContext: Readonly<{
+      verifiedEvidenceAvailable: boolean;
+      verifiedEvidenceCount: number;
+    }>;
     planningRevision?: number;
   }): Promise<unknown>;
   planSection(input: {

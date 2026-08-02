@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { z, type ZodType } from "zod";
 
-export const DOCUMENT_RESPONSE_PARSER_VERSION = "document-json-parser-v2";
-export const DOCUMENT_RESPONSE_REPAIR_VERSION = "document-json-repair-v1";
+export const DOCUMENT_RESPONSE_PARSER_VERSION = "document-json-parser-v3";
+export const DOCUMENT_RESPONSE_REPAIR_VERSION = "document-json-repair-v2";
 
 export type StructuredResponseFailureCategory =
   | "no_json_object"
@@ -15,7 +15,14 @@ export type StructuredResponseRepairStep =
   | "bom_removed"
   | "markdown_fence_removed"
   | "surrounding_text_removed"
-  | "trailing_comma_removed";
+  | "trailing_comma_removed"
+  | "out_of_scope_fields_removed";
+
+export type StructuredResponseCandidateNormalization = Readonly<{
+  value: unknown;
+  repairSteps?: ReadonlyArray<StructuredResponseRepairStep>;
+  normalizationPaths?: ReadonlyArray<string>;
+}>;
 
 export type StructuredResponseCandidateDiagnostic = {
   candidateIndex: number;
@@ -28,6 +35,7 @@ export type StructuredResponseCandidateDiagnostic = {
   schemaStatus?: "valid" | "invalid";
   schemaIssueCount?: number;
   schemaIssuePaths?: string[];
+  normalizationPaths?: string[];
   repairSteps: StructuredResponseRepairStep[];
 };
 
@@ -170,19 +178,43 @@ export function parseStructuredResponse<T>(input: {
   content: string;
   schema: ZodType<T>;
   validateCandidate?: (value: T) => void;
+  normalizeCandidate?: (
+    value: unknown,
+  ) => StructuredResponseCandidateNormalization;
 }): StructuredResponseParseResult<T> {
   const directText = input.content.trim();
   try {
     const direct = JSON.parse(directText) as unknown;
-    const validation = input.schema.safeParse(direct);
+    const normalization = input.normalizeCandidate?.(direct) ?? {
+      value: direct,
+    };
+    const validation = input.schema.safeParse(normalization.value);
     if (validation.success) {
       input.validateCandidate?.(validation.data);
+      const repairSteps = [...(normalization.repairSteps ?? [])];
+      const normalizationPaths = [...(normalization.normalizationPaths ?? [])];
       return {
         ok: true,
         value: validation.data,
-        parsedResponse: direct,
-        repairSteps: [],
-        candidateDiagnostics: [],
+        parsedResponse: normalization.value,
+        repairSteps,
+        candidateDiagnostics:
+          repairSteps.length > 0 || normalizationPaths.length > 0
+            ? [
+                {
+                  candidateIndex: 0,
+                  contentHashInput: diagnosticHashInput(directText),
+                  startOffset: 0,
+                  endOffset: directText.length,
+                  parseStatus: "valid",
+                  schemaStatus: "valid",
+                  schemaIssueCount: 0,
+                  schemaIssuePaths: [],
+                  normalizationPaths,
+                  repairSteps,
+                },
+              ]
+            : [],
       };
     }
   } catch {
@@ -240,7 +272,12 @@ export function parseStructuredResponse<T>(input: {
       return;
     }
     jsonValidCount += 1;
-    const validation = input.schema.safeParse(parsed);
+    const normalization = input.normalizeCandidate?.(parsed) ?? {
+      value: parsed,
+    };
+    candidateRepairs.push(...(normalization.repairSteps ?? []));
+    const normalizationPaths = [...(normalization.normalizationPaths ?? [])];
+    const validation = input.schema.safeParse(normalization.value);
     let invariantError: unknown;
     if (validation.success && input.validateCandidate) {
       try {
@@ -267,12 +304,13 @@ export function parseStructuredResponse<T>(input: {
         : validation.success
           ? ["$invariant"]
           : schemaIssuePaths(validation.error),
+      normalizationPaths,
       repairSteps: candidateRepairs,
     });
     if (candidateIsValid && validation.success) {
       schemaValid.push({
         value: validation.data,
-        parsedResponse: parsed,
+        parsedResponse: normalization.value,
         repairSteps: candidateRepairs,
       });
     }

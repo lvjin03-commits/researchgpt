@@ -435,7 +435,10 @@ async function prepareIntake(input: {
             request: planning.request,
             template: planning.template,
             skeleton: planning.skeleton,
-            availableEvidenceIds,
+            evidenceContext: {
+              verifiedEvidenceAvailable: availableEvidenceIds.length > 0,
+              verifiedEvidenceCount: availableEvidenceIds.length,
+            },
             planningRevision: planning.planningRevision,
           });
     const skeleton = materializeFigureIntents({

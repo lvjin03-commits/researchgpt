@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const Module = require("node:module");
@@ -25,6 +26,10 @@ const { z } = require("zod");
 const {
   parseStructuredResponse,
 } = require("../lib/document-v2-production/structured-response-parser.ts");
+const {
+  DocumentFigureIntentsDraftSchema,
+  normalizeFigureIntentCandidate,
+} = require("../lib/document-v2/planning/contracts.ts");
 
 const schema = z.object({ ready: z.boolean(), topic: z.string() }).strict();
 const parse = (content) => parseStructuredResponse({ content, schema });
@@ -106,5 +111,76 @@ const syntaxError = parse('{"ready":true,"topic":invalid}');
 assert.equal(syntaxError.ok, false);
 assert.equal(syntaxError.failureCategory, "json_syntax_error");
 assert.ok(syntaxError.candidateDiagnostics[0].parseErrorMessage);
+
+const figurePayload = {
+  figures: [
+    {
+      sectionOrder: 1,
+      figureType: "conceptual_framework",
+      purpose: "Explain the conceptual relationship.",
+      questionAnswered: "How are the mechanisms related?",
+      claimsRepresented: ["The mechanisms form a coherent framework."],
+      evidenceRequired: false,
+      requiredEvidenceIds: ["evidence-1"],
+      citationIds: ["evidence-1"],
+    },
+  ],
+};
+const normalizedFigure = parseStructuredResponse({
+  content: JSON.stringify(figurePayload),
+  schema: DocumentFigureIntentsDraftSchema,
+  normalizeCandidate: normalizeFigureIntentCandidate,
+});
+assert.equal(normalizedFigure.ok, true);
+assert.deepEqual(normalizedFigure.repairSteps, [
+  "out_of_scope_fields_removed",
+]);
+assert.deepEqual(
+  normalizedFigure.candidateDiagnostics[0].normalizationPaths,
+  ["figures[0].requiredEvidenceIds", "figures[0].citationIds"],
+);
+assert.equal(
+  Object.hasOwn(normalizedFigure.parsedResponse.figures[0], "requiredEvidenceIds"),
+  false,
+);
+const normalizedOnce = normalizeFigureIntentCandidate(figurePayload);
+const normalizedTwice = normalizeFigureIntentCandidate(normalizedOnce.value);
+assert.deepEqual(normalizedTwice.value, normalizedOnce.value);
+assert.deepEqual(normalizedTwice.normalizationPaths, []);
+
+const unknownFigureField = parseStructuredResponse({
+  content: JSON.stringify({
+    figures: [
+      {
+        ...figurePayload.figures[0],
+        sourceUrl: "https://example.invalid/source",
+      },
+    ],
+  }),
+  schema: DocumentFigureIntentsDraftSchema,
+  normalizeCandidate: normalizeFigureIntentCandidate,
+});
+assert.equal(unknownFigureField.ok, false);
+assert.equal(unknownFigureField.failureCategory, "schema_validation_failed");
+assert.deepEqual(
+  unknownFigureField.candidateDiagnostics[0].schemaIssuePaths,
+  ["figures.0"],
+);
+
+const contradictoryDataPlot = parseStructuredResponse({
+  content: JSON.stringify({
+    figures: [
+      {
+        ...figurePayload.figures[0],
+        figureType: "data_plot",
+        evidenceRequired: false,
+      },
+    ],
+  }),
+  schema: DocumentFigureIntentsDraftSchema,
+  normalizeCandidate: normalizeFigureIntentCandidate,
+});
+assert.equal(contradictoryDataPlot.ok, false);
+assert.equal(contradictoryDataPlot.failureCategory, "schema_validation_failed");
 
 console.log("Document v2 structured response parser tests passed.");
