@@ -22,19 +22,25 @@ import {
   type FinalDocumentSpec,
   type VerifiedReference,
 } from "../contracts";
-import { deriveCitationManifest } from "../citations/manifest";
+import { assembleDocumentManifest } from "../assembly/manifest";
 import { citationSegmentSeparator } from "../citations/segments";
+import { assertRenderedDocumentQuality } from "./quality";
+import {
+  resolveSciWordFonts,
+  SCI_WORD_STYLE_REGISTRY,
+} from "./style-registry";
 
 const TWIPS_PER_POINT = 20;
-const A4_WIDTH_DXA = 11_906;
-const A4_HEIGHT_DXA = 16_838;
-const VERTICAL_PAGE_MARGIN_DXA = 1_134;
-const HORIZONTAL_PAGE_MARGIN_DXA = 1_247;
+const A4_WIDTH_DXA = SCI_WORD_STYLE_REGISTRY.page.widthDxa;
+const A4_HEIGHT_DXA = SCI_WORD_STYLE_REGISTRY.page.heightDxa;
+const VERTICAL_PAGE_MARGIN_DXA = SCI_WORD_STYLE_REGISTRY.page.verticalMarginDxa;
+const HORIZONTAL_PAGE_MARGIN_DXA = SCI_WORD_STYLE_REGISTRY.page.horizontalMarginDxa;
 const CONTENT_WIDTH_DXA = A4_WIDTH_DXA - HORIZONTAL_PAGE_MARGIN_DXA * 2;
-const TITLE_COLOR = "111111";
-const TEXT_COLOR = "222222";
-const CAPTION_COLOR = "444444";
-const TABLE_HEADER_FILL = "F2F2F2";
+const TITLE_COLOR = SCI_WORD_STYLE_REGISTRY.colors.title;
+const TEXT_COLOR = SCI_WORD_STYLE_REGISTRY.colors.text;
+const CAPTION_COLOR = SCI_WORD_STYLE_REGISTRY.colors.caption;
+const TABLE_HEADER_FILL = SCI_WORD_STYLE_REGISTRY.colors.tableHeaderFill;
+const STYLE_ROLES = SCI_WORD_STYLE_REGISTRY.paragraphRoles;
 const PIXELS_PER_MM_AT_96_DPI = 96 / 25.4;
 
 export class DocumentV2RenderError extends Error {
@@ -53,23 +59,7 @@ function points(pointsValue: number): number {
 }
 
 function fonts(language: FinalDocumentSpec["metadata"]["language"]) {
-  return language === "zh"
-    ? {
-        title: {
-          ascii: "Arial",
-          hAnsi: "Arial",
-          eastAsia: "Microsoft YaHei",
-        },
-        body: {
-          ascii: "Times New Roman",
-          hAnsi: "Times New Roman",
-          eastAsia: "SimSun",
-        },
-      }
-    : {
-        title: "Arial",
-        body: "Times New Roman",
-      };
+  return resolveSciWordFonts(language);
 }
 
 function referenceText(reference: VerifiedReference, number: number): string {
@@ -179,20 +169,6 @@ function figureCitationSuffix(
     : ` (see ${labels.join(", ")})`;
 }
 
-function localizedFigureLabel(
-  language: FinalDocumentSpec["metadata"]["language"],
-  number: number,
-): string {
-  return language === "zh" ? `图 ${number}` : `Fig. ${number}`;
-}
-
-function localizedTableLabel(
-  language: FinalDocumentSpec["metadata"]["language"],
-  number: number,
-): string {
-  return language === "zh" ? `表 ${number}` : `Table ${number}`;
-}
-
 function finalCaption(caption: string): string {
   return /[.!?。！？]$/.test(caption) ? caption : `${caption}.`;
 }
@@ -292,12 +268,16 @@ function tableCell(
       new Paragraph({
         alignment:
           !header && numeric ? AlignmentType.RIGHT : AlignmentType.LEFT,
-        spacing: { before: 0, after: 0, line: 240 },
+        spacing: { before: 0, after: 0, line: STYLE_ROLES.caption.lineTwips },
         children: [
           new TextRun({
             text,
             bold: header,
-            size: halfPoints(header ? 9 : 8.5),
+            size: halfPoints(
+              header
+                ? STYLE_ROLES.tableHeader.sizePt
+                : STYLE_ROLES.tableBody.sizePt,
+            ),
             color: TEXT_COLOR,
           }),
         ],
@@ -312,7 +292,14 @@ export async function renderFinalDocumentSpecToDocx(
   const spec = FinalDocumentSpecSchema.parse(input);
   const styleIds = spec.templateSnapshot.typography;
   const documentFonts = fonts(spec.metadata.language);
-  const citationManifest = deriveCitationManifest(spec);
+  const assembly = assembleDocumentManifest(spec, CONTENT_WIDTH_DXA);
+  const citationManifest = assembly.citation;
+  const layoutByBlockId = new Map(
+    assembly.layout.map((entry) => [entry.blockId, entry]),
+  );
+  const captionByBlockId = new Map(
+    assembly.captions.map((entry) => [entry.blockId, entry]),
+  );
   const referenceById = new Map(
     spec.references.map((reference) => [reference.id, reference]),
   );
@@ -431,30 +418,27 @@ export async function renderFinalDocumentSpecToDocx(
     }
 
     if (block.type === "table") {
-      const tableNumber =
-        spec.blocks
-          .slice(0, spec.blocks.indexOf(block) + 1)
-          .filter((candidate) => candidate.type === "table").length;
+      const caption = captionByBlockId.get(block.id);
+      const layout = layoutByBlockId.get(block.id);
+      if (!caption || caption.kind !== "table" || !layout?.tableColumnWidthsDxa) {
+        throw new DocumentV2RenderError(
+          `Table block "${block.id}" is missing its assembly projection.`,
+        );
+      }
       children.push(
         new Paragraph({
           style: styleIds.captionStyle,
           keepNext: true,
           children: [
             new TextRun({
-              text: `${localizedTableLabel(spec.metadata.language, tableNumber)} | `,
+              text: `${caption.label} | `,
               bold: true,
             }),
-            new TextRun({ text: block.caption }),
+            new TextRun({ text: caption.title }),
           ],
         }),
       );
-      const columnWidth = Math.floor(CONTENT_WIDTH_DXA / block.columns.length);
-      const columnWidths = block.columns.map((_, index) =>
-        index === block.columns.length - 1
-          ? CONTENT_WIDTH_DXA -
-            columnWidth * (block.columns.length - 1)
-          : columnWidth,
-      );
+      const columnWidths = layout.tableColumnWidthsDxa;
       children.push(
         new Table({
           width: { size: CONTENT_WIDTH_DXA, type: WidthType.DXA },
@@ -499,7 +483,9 @@ export async function renderFinalDocumentSpecToDocx(
           ],
         }),
       );
-      children.push(new Paragraph({ spacing: { after: points(6) } }));
+      children.push(
+        new Paragraph({ spacing: { after: points(STYLE_ROLES.body.afterPt) } }),
+      );
       continue;
     }
 
@@ -509,25 +495,30 @@ export async function renderFinalDocumentSpecToDocx(
         `Figure block "${block.id}" references missing asset "${block.assetId}".`,
       );
     }
-    const figureNumber =
-      spec.blocks
-        .slice(0, spec.blocks.indexOf(block) + 1)
-        .filter((candidate) => candidate.type === "figure").length;
+    const caption = captionByBlockId.get(block.id);
+    if (!caption || caption.kind !== "figure") {
+      throw new DocumentV2RenderError(
+        `Figure block "${block.id}" is missing its assembly projection.`,
+      );
+    }
     children.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
         keepNext: true,
-        spacing: { before: points(6), after: points(3) },
+        spacing: {
+          before: points(STYLE_ROLES.caption.beforePt),
+          after: points(STYLE_ROLES.caption.afterPt),
+        },
         children: [figureImageRun(asset)],
       }),
       new Paragraph({
         style: styleIds.captionStyle,
         children: [
           new TextRun({
-            text: `${localizedFigureLabel(spec.metadata.language, figureNumber)} | `,
+            text: `${caption.label} | `,
             bold: true,
           }),
-          new TextRun({ text: finalCaption(block.caption) }),
+          new TextRun({ text: finalCaption(caption.title) }),
         ],
       }),
     );
@@ -558,11 +549,14 @@ export async function renderFinalDocumentSpecToDocx(
         document: {
           run: {
             font: documentFonts.body,
-            size: halfPoints(10),
+            size: halfPoints(STYLE_ROLES.body.sizePt),
             color: TEXT_COLOR,
           },
           paragraph: {
-            spacing: { line: 276, after: points(6) },
+            spacing: {
+              line: STYLE_ROLES.body.lineTwips,
+              after: points(STYLE_ROLES.body.afterPt),
+            },
           },
         },
       },
@@ -575,13 +569,16 @@ export async function renderFinalDocumentSpecToDocx(
           quickFormat: true,
           run: {
             font: documentFonts.title,
-            size: halfPoints(22),
+            size: halfPoints(STYLE_ROLES.title.sizePt),
             bold: true,
             color: TITLE_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: { before: 0, after: points(12) },
+            spacing: {
+              before: points(STYLE_ROLES.title.beforePt),
+              after: points(STYLE_ROLES.title.afterPt),
+            },
             keepNext: true,
           },
         },
@@ -593,13 +590,16 @@ export async function renderFinalDocumentSpecToDocx(
           quickFormat: true,
           run: {
             font: documentFonts.title,
-            size: halfPoints(13),
+            size: halfPoints(STYLE_ROLES.heading1.sizePt),
             bold: true,
             color: TEXT_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: { before: points(14), after: points(5) },
+            spacing: {
+              before: points(STYLE_ROLES.heading1.beforePt),
+              after: points(STYLE_ROLES.heading1.afterPt),
+            },
             keepNext: true,
           },
         },
@@ -611,13 +611,16 @@ export async function renderFinalDocumentSpecToDocx(
           quickFormat: true,
           run: {
             font: documentFonts.title,
-            size: halfPoints(11),
+            size: halfPoints(STYLE_ROLES.heading2.sizePt),
             bold: true,
             color: TEXT_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: { before: points(10), after: points(4) },
+            spacing: {
+              before: points(STYLE_ROLES.heading2.beforePt),
+              after: points(STYLE_ROLES.heading2.afterPt),
+            },
             keepNext: true,
           },
         },
@@ -629,13 +632,16 @@ export async function renderFinalDocumentSpecToDocx(
           quickFormat: true,
           run: {
             font: documentFonts.title,
-            size: halfPoints(10),
+            size: halfPoints(STYLE_ROLES.heading3.sizePt),
             bold: true,
             color: TEXT_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: { before: points(8), after: points(3) },
+            spacing: {
+              before: points(STYLE_ROLES.heading3.beforePt),
+              after: points(STYLE_ROLES.heading3.afterPt),
+            },
             keepNext: true,
           },
         },
@@ -647,12 +653,16 @@ export async function renderFinalDocumentSpecToDocx(
           quickFormat: true,
           run: {
             font: documentFonts.body,
-            size: halfPoints(10),
+            size: halfPoints(STYLE_ROLES.body.sizePt),
             color: TEXT_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.JUSTIFIED,
-            spacing: { before: 0, after: points(6), line: 276 },
+            spacing: {
+              before: 0,
+              after: points(STYLE_ROLES.body.afterPt),
+              line: STYLE_ROLES.body.lineTwips,
+            },
           },
         },
         {
@@ -663,12 +673,16 @@ export async function renderFinalDocumentSpecToDocx(
           quickFormat: true,
           run: {
             font: documentFonts.body,
-            size: halfPoints(9.5),
+            size: halfPoints(STYLE_ROLES.abstract.sizePt),
             color: TEXT_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.JUSTIFIED,
-            spacing: { before: 0, after: points(8), line: 264 },
+            spacing: {
+              before: 0,
+              after: points(STYLE_ROLES.abstract.afterPt),
+              line: STYLE_ROLES.abstract.lineTwips,
+            },
           },
         },
         {
@@ -679,12 +693,16 @@ export async function renderFinalDocumentSpecToDocx(
           quickFormat: true,
           run: {
             font: documentFonts.body,
-            size: halfPoints(9.5),
+            size: halfPoints(STYLE_ROLES.keywords.sizePt),
             color: TEXT_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: { before: 0, after: points(8), line: 240 },
+            spacing: {
+              before: 0,
+              after: points(STYLE_ROLES.keywords.afterPt),
+              line: STYLE_ROLES.keywords.lineTwips,
+            },
           },
         },
         {
@@ -694,20 +712,17 @@ export async function renderFinalDocumentSpecToDocx(
           next: styleIds.bodyStyle,
           quickFormat: true,
           run: {
-            font:
-              spec.metadata.language === "zh"
-                ? {
-                    ascii: "Arial",
-                    hAnsi: "Arial",
-                    eastAsia: "Microsoft YaHei",
-                  }
-                : "Arial",
-            size: halfPoints(8.5),
+            font: documentFonts.caption,
+            size: halfPoints(STYLE_ROLES.caption.sizePt),
             color: CAPTION_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: { before: points(6), after: points(3), line: 240 },
+            spacing: {
+              before: points(STYLE_ROLES.caption.beforePt),
+              after: points(STYLE_ROLES.caption.afterPt),
+              line: STYLE_ROLES.caption.lineTwips,
+            },
           },
         },
         {
@@ -718,13 +733,20 @@ export async function renderFinalDocumentSpecToDocx(
           quickFormat: true,
           run: {
             font: documentFonts.body,
-            size: halfPoints(8.5),
+            size: halfPoints(STYLE_ROLES.reference.sizePt),
             color: TEXT_COLOR,
           },
           paragraph: {
             alignment: AlignmentType.LEFT,
-            spacing: { before: 0, after: points(3), line: 240 },
-            indent: { left: 283, hanging: 283 },
+            spacing: {
+              before: 0,
+              after: points(STYLE_ROLES.reference.afterPt),
+              line: STYLE_ROLES.reference.lineTwips,
+            },
+            indent: {
+              left: STYLE_ROLES.reference.hangingDxa,
+              hanging: STYLE_ROLES.reference.hangingDxa,
+            },
           },
         },
       ],
@@ -764,5 +786,7 @@ export async function renderFinalDocumentSpecToDocx(
     ],
   });
 
-  return Packer.toBuffer(document);
+  const buffer = await Packer.toBuffer(document);
+  await assertRenderedDocumentQuality({ buffer, spec, assembly });
+  return buffer;
 }

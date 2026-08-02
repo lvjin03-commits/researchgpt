@@ -62,6 +62,14 @@ async function main() {
             "container-title": ["Journal of Reliable Gels"],
             abstract:
               "This study reports reversible network formation and relaxation in a physical gel under controlled thermal conditions.",
+          }, {
+            DOI: "10.1000/unrelated-ferrite",
+            title: ["Ferrite additives for reinforced concrete construction"],
+            author: [{ given: "B", family: "Builder" }],
+            issued: { "date-parts": [[2023]] },
+            "container-title": ["Construction Materials"],
+            abstract:
+              "This construction study evaluates ferrite additives, compressive strength, aggregate grading, curing schedules, and structural durability in reinforced concrete systems.",
           }],
         },
       }), { status: 200, headers: { "content-type": "application/json" } });
@@ -96,9 +104,15 @@ async function main() {
   });
   assert.deepEqual(fetchedUrls.sort(), ["api.crossref.org", "api.openalex.org"]);
   assert.equal(result.outcome, "partial");
+  assert.equal(result.candidateCount, 2);
+  assert.equal(result.relevanceRejectedCount, 1);
   assert.equal(result.verifiedReferences.length, 1);
   assert.equal(result.evidence.length, 1);
   assert.equal(result.evidence[0].evidenceId, result.verifiedReferences[0].id);
+  assert.equal(
+    result.warnings.some((warning) => warning.code === "references_off_topic_filtered"),
+    true,
+  );
 
   const unavailable = await acquireDocumentReferences({
     profile: requiredProfile,

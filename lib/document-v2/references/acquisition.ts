@@ -26,6 +26,11 @@ type Candidate = {
 const MAX_REFERENCES = 12;
 const MIN_COMPLETE_REFERENCES = 6;
 const PROVIDER_TIMEOUT_MS = 8_000;
+const SEARCH_STOP_WORDS = new Set([
+  "about", "after", "against", "among", "and", "are", "based", "between",
+  "for", "from", "into", "method", "methods", "of", "on", "review", "study",
+  "the", "their", "through", "toward", "using", "with",
+]);
 
 function cleanText(value: unknown, maximum = 20_000): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -55,6 +60,38 @@ function normalizeTitle(value: string): string {
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
+}
+
+function searchTerms(value: string): Set<string> {
+  const terms = value
+    .normalize("NFKC")
+    .toLowerCase()
+    .match(/[a-z][a-z0-9-]{2,}/g) ?? [];
+  return new Set(
+    terms
+      .map((term) => term.replace(/(?:ies|ing|ed|es|s)$/i, ""))
+      .filter((term) => term.length >= 3 && !SEARCH_STOP_WORDS.has(term)),
+  );
+}
+
+function isRelevantCandidate(candidate: Candidate, queryTerms: Set<string>): boolean {
+  if (queryTerms.size < 2) return true;
+  const candidateTerms = searchTerms(
+    `${candidate.title} ${candidate.abstract ?? ""}`,
+  );
+  let overlap = 0;
+  for (const term of queryTerms) {
+    const matched = [...candidateTerms].some(
+      (candidateTerm) =>
+        candidateTerm === term ||
+        (term === "gel" && candidateTerm.endsWith("gel")) ||
+        (term.length >= 7 &&
+          candidateTerm.length >= 7 &&
+          candidateTerm.slice(0, 6) === term.slice(0, 6)),
+    );
+    if (matched) overlap += 1;
+  }
+  return overlap >= Math.min(2, queryTerms.size);
 }
 
 function candidateKey(candidate: Pick<Candidate, "doi" | "title">): string {
@@ -253,6 +290,7 @@ export async function acquireDocumentReferences(input: {
       verifiedReferences: [],
       evidence: [],
       candidateCount: 0,
+      relevanceRejectedCount: 0,
       providerCalls: 0,
       durationMs: Date.now() - startedAt,
       manifestRevision: 1,
@@ -316,6 +354,18 @@ export async function acquireDocumentReferences(input: {
   }
 
   candidates = mergeCandidates(candidates);
+  const candidateCount = candidates.length;
+  const queryTerms = searchTerms(input.topic);
+  candidates = candidates.filter((candidate) =>
+    isRelevantCandidate(candidate, queryTerms),
+  );
+  const relevanceRejectedCount = candidateCount - candidates.length;
+  if (relevanceRejectedCount > 0) {
+    warnings.push({
+      code: "references_off_topic_filtered",
+      message: `已排除${relevanceRejectedCount}条与检索主题缺乏直接术语关联的候选文献。`,
+    });
+  }
   for (const candidate of candidates) {
     if (evidenceById.size >= MAX_REFERENCES) break;
     const evidence = materializeCandidate(candidate);
@@ -352,7 +402,8 @@ export async function acquireDocumentReferences(input: {
     outcome,
     verifiedReferences,
     evidence,
-    candidateCount: candidates.length,
+    candidateCount,
+    relevanceRejectedCount,
     providerCalls,
     durationMs: Date.now() - startedAt,
     manifestRevision: 1,
@@ -377,6 +428,7 @@ export function createReferencePipelineFallback(input: {
     verifiedReferences,
     evidence: input.existingEvidence,
     candidateCount: 0,
+    relevanceRejectedCount: 0,
     providerCalls: 0,
     durationMs: 0,
     manifestRevision: 1,

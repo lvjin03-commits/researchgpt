@@ -40,6 +40,7 @@ export interface DocumentFinalizer {
   }): Promise<FinalDocumentArtifact>;
   validateArtifact(input: {
     artifactId: string;
+    spec: FinalDocumentSpec;
     shouldCancel(): Promise<boolean>;
   }): Promise<void>;
 }
@@ -638,6 +639,7 @@ export class DocumentV2JobService {
       }
       await this.finalizer.validateArtifact({
         artifactId: existingArtifactId,
+        spec,
         shouldCancel: () => this.cancelRequested(jobId),
       });
       await this.event(

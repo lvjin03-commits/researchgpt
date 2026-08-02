@@ -24,7 +24,6 @@ const AI_RESPONSIBILITIES = [
   "figure_type",
   "figure_content",
   "figure_caption",
-  "figure_placement",
   "table_need",
   "table_content",
   "table_caption",
@@ -33,14 +32,12 @@ const AI_RESPONSIBILITIES = [
   "citation_mapping",
   "figure_cross_reference",
   "table_cross_reference",
-  "reference_order",
   "language_polish",
   "sentence_variety",
   "academic_tone",
   "content_completeness",
   "context_consistency",
   "figure_text_consistency",
-  "reference_consistency",
 ] as const;
 
 export const SCI_REVIEW_TEMPLATE: DocumentTemplateDefinition = {
@@ -121,7 +118,7 @@ export const SCI_REVIEW_TEMPLATE: DocumentTemplateDefinition = {
       minimumCount: 1,
       maximumCount: 1,
       purpose:
-        "Select only verified references used by the approved document content.",
+        "Publish the deterministic reference manifest derived from verified citations in approved content.",
     },
   ],
   aiResponsibilities: [...AI_RESPONSIBILITIES],

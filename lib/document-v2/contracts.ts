@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { FigureAssetSchema } from "./assets/contracts.ts";
-import { joinCitationSegmentTexts } from "./citations/segments";
+import { joinCitationSegmentTexts } from "./citations/segments.ts";
 
 const IdentifierSchema = z.string().min(1).max(120);
 
@@ -117,6 +117,12 @@ export const DocumentRequestSchema = z
             "web_search_only",
           ])
           .default("user_sources_plus_web"),
+        referenceSearchQuery: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .optional(),
         specialInstructions: z
           .array(z.string().trim().min(1).max(500))
           .max(20)

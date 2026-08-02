@@ -45,6 +45,13 @@ const UnderstoodRequestSchema = z
       "user_sources_plus_web",
       "web_search_only",
     ]),
+    referenceSearchQuery: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .nullable()
+      .default(null),
     specialInstructions: z
       .array(z.string().trim().min(1).max(500))
       .max(20),
@@ -91,6 +98,7 @@ export async function understandDocumentRequest(
       "Set visualIntent=forbidden when the user explicitly requests no images or figures, required when figures are explicitly required, otherwise auto.",
       "Set citationRequirement=required when references or citations are explicitly requested, forbidden when explicitly prohibited, otherwise optional.",
       "Set referencePolicy=user_sources_only only when the user explicitly restricts citations to supplied sources; use user_sources_plus_web when supplied sources may be supplemented; use web_search_only when citations are requested and no supplied literature is available.",
+      "When references may be used, return a concise English scientific referenceSearchQuery that preserves the user's exact topic; otherwise return null. This is a retrieval query, not visible document content.",
       "Set ready=false only when the scientific topic or document scope cannot be determined without changing the requested document.",
       "Do not ask about optional language, length, figures, authors, or formatting when safe defaults exist.",
       "Do not write document content yet.",
@@ -126,6 +134,7 @@ export async function understandDocumentRequest(
       visualIntent: understood.visualIntent,
       citationRequirement: understood.citationRequirement,
       referencePolicy: understood.referencePolicy,
+      referenceSearchQuery: understood.referenceSearchQuery ?? undefined,
       specialInstructions: understood.specialInstructions,
     },
   });

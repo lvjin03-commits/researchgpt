@@ -9,6 +9,8 @@ import { ModelDocumentComponentGenerator } from "@/lib/document-v2/generation/mo
 import { MatureDocumentComponentValidator } from "@/lib/document-v2/generation/mature-content-validator";
 import { ValidatedFigureAssetPipeline } from "@/lib/document-v2/assets/figure-pipeline";
 import { renderFinalDocumentSpecToDocx } from "@/lib/document-v2/renderers/docx";
+import { assertRenderedDocumentQuality } from "@/lib/document-v2/renderers/quality";
+import { assembleDocumentManifest } from "@/lib/document-v2/assembly/manifest";
 import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/uploads/storage-constants";
 import type { ExportRecord } from "@/lib/export/types";
 import {
@@ -343,7 +345,10 @@ async function prepareIntake(input: {
     try {
       referenceResult = await acquireDocumentReferences({
         profile: referenceExecution,
-        topic: planning.request.userRequirements.topic ?? "",
+        topic:
+          planning.request.userRequirements.referenceSearchQuery ??
+          planning.request.userRequirements.topic ??
+          "",
         existingReferences: planning.evidenceReferences,
         existingEvidence: intake.evidence,
       });
@@ -406,6 +411,7 @@ async function prepareIntake(input: {
       metadata: {
         outcome: referenceResult.outcome,
         candidateCount: referenceResult.candidateCount,
+        relevanceRejectedCount: referenceResult.relevanceRejectedCount,
         verifiedCount: referenceResult.verifiedReferences.length,
         providerCalls: referenceResult.providerCalls,
         durationMs: referenceResult.durationMs,
@@ -871,7 +877,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
           ),
         };
       },
-      async validateArtifact({ artifactId, shouldCancel }) {
+      async validateArtifact({ artifactId, spec, shouldCancel }) {
         if (await shouldCancel()) throw new Error("Document job was cancelled.");
         const metaPath = `${claimedJob.ownerId}/exports/${artifactId}.meta.json`;
         const metadata = await supabase.storage
@@ -891,10 +897,11 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
           throw file.error ?? new Error("Rendered DOCX is missing.");
         }
         const buffer = Buffer.from(await file.data.arrayBuffer());
-        const zip = await JSZip.loadAsync(buffer);
-        if (!zip.file("word/document.xml")) {
-          throw new Error("Rendered DOCX is invalid.");
-        }
+        await assertRenderedDocumentQuality({
+          buffer,
+          spec,
+          assembly: assembleDocumentManifest(spec),
+        });
       },
     },
   );

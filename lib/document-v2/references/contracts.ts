@@ -72,6 +72,7 @@ export const ReferencePipelineResultSchema = z
     verifiedReferences: z.array(VerifiedReferenceSchema).max(500),
     evidence: z.array(ReferenceEvidenceSchema).max(2_000),
     candidateCount: z.number().int().nonnegative(),
+    relevanceRejectedCount: z.number().int().nonnegative().default(0),
     providerCalls: z.number().int().nonnegative(),
     durationMs: z.number().int().nonnegative(),
     manifestRevision: z.number().int().positive(),

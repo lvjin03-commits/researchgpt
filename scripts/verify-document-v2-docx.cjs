@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require("node:fs");
 const Module = require("node:module");
 const os = require("node:os");
@@ -45,6 +46,12 @@ const {
 const {
   FinalDocumentSpecSchema,
 } = require("../lib/document-v2/contracts.ts");
+const {
+  assembleDocumentManifest,
+} = require("../lib/document-v2/assembly/manifest.ts");
+const {
+  auditRenderedDocument,
+} = require("../lib/document-v2/renderers/quality.ts");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -254,7 +261,21 @@ async function main() {
 
   for (const language of ["zh", "en"]) {
     const spec = fixture(language);
-    const buffer = await renderFinalDocumentSpecToDocx(spec);
+    const parsedSpec = FinalDocumentSpecSchema.parse(spec);
+    const assembly = assembleDocumentManifest(parsedSpec);
+    assert(assembly.captions.length === 1, "Assembly must derive one table caption.");
+    assert(
+      assembly.captions[0].label === (language === "zh" ? "表 1" : "Table 1"),
+      "Caption numbering must be derived by the assembly layer.",
+    );
+    assert(
+      new Set(assembly.layout.find((item) => item.blockId === "route-table").tableColumnWidthsDxa).size > 1,
+      "Table geometry should reflect content instead of forcing equal columns.",
+    );
+    const buffer = await renderFinalDocumentSpecToDocx(parsedSpec);
+    const quality = await auditRenderedDocument({ buffer, spec: parsedSpec, assembly });
+    assert(quality.passed, JSON.stringify(quality.issues));
+    assert(quality.metrics.tableCount === 1, "Render QA must count the table.");
     await inspectDocx(buffer, spec.metadata.title, language);
     const outputPath = path.join(outputDir, `sci-review-${language}.docx`);
     fs.writeFileSync(outputPath, buffer);
@@ -320,6 +341,22 @@ async function main() {
     !segmentText.includes("citation:ref-") &&
       !segmentText.includes("evidence:ref-"),
     "Internal reference markers must never enter visible DOCX text.",
+  );
+  const leakedArchive = await JSZip.loadAsync(segmentBuffer);
+  leakedArchive.file(
+    "word/document.xml",
+    segmentXml.replace(
+      "Processing history controls topology",
+      "Processing history controls topology citation-deadbeef",
+    ),
+  );
+  const leakedBuffer = await leakedArchive.generateAsync({ type: "nodebuffer" });
+  const leakedQuality = await auditRenderedDocument({ buffer: leakedBuffer });
+  assert(
+    leakedQuality.issues.some(
+      (issue) => issue.code === "visible_internal_token_detected",
+    ),
+    "Render QA must reject internal IDs in visible text.",
   );
   const segmentOutputPath = path.join(outputDir, "sci-review-segment-citations.docx");
   fs.writeFileSync(segmentOutputPath, segmentBuffer);
