@@ -350,6 +350,69 @@ assert.match(
   /Resume from: section-02/,
 );
 
+const referenceFailureDiagnostic = projectDocumentJobDiagnostics(
+  {
+    job: {
+      ...diagnosticFixtureJob(),
+      id: "57b5df96-dd93-4f4d-937b-75b6b9a3e7a6",
+      status: "failed",
+      stage: "content_generation",
+      revision: 74,
+      updated_at: "2026-08-02T04:32:00.000Z",
+    },
+    events: [
+      {
+        sequence: 1,
+        stage: "content_generation",
+        status: "failed",
+        created_at: "2026-08-02T04:32:00.000Z",
+        event_payload: {
+          stage: "content_generation",
+          status: "failed",
+          operation: "component.failed",
+          componentKey: "references",
+          category: "validation",
+          errorCode: "component_structure_invalid",
+          technicalMessage:
+            'Reference list does not include cited reference "literature-3bf661fc236ec4fd57a581a9".',
+          createdAt: "2026-08-02T04:32:00.000Z",
+        },
+      },
+    ],
+    executions: [],
+    outbox: [],
+  },
+  new Date("2026-08-02T04:33:00.000Z"),
+);
+assert.equal(
+  referenceFailureDiagnostic.currentBlocker.code,
+  "reference_manifest_missing_cited_id",
+);
+assert.equal(
+  referenceFailureDiagnostic.currentBlocker.certainty,
+  "deterministic",
+);
+assert.equal(
+  referenceFailureDiagnostic.codexSummary.safeResumeFrom,
+  "references",
+);
+assert.equal(
+  referenceFailureDiagnostic.currentBlocker.evidence.some(
+    (item) =>
+      item.field === "referenceId" &&
+      item.value === "literature-3bf661fc236ec4fd57a581a9",
+  ),
+  true,
+);
+assert.match(
+  referenceFailureDiagnostic.humanReadableReport,
+  /Code: reference_manifest_missing_cited_id/,
+);
+assert.match(
+  referenceFailureDiagnostic.humanReadableReport,
+  /Resume from: references/,
+);
+
 console.log("Document v2 diagnostics projection tests passed.");
 
 function diagnosticFixtureJob() {

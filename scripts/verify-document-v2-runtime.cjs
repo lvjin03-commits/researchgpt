@@ -187,7 +187,7 @@ async function verifyCancelResumeAndCompletion() {
   assert.equal(completed.job.status, "completed");
   assert.equal(completed.job.progress, 100);
   assert.equal(completed.job.artifactId, "artifact-1");
-  assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
+  assert.deepEqual(calls, { title: 1, introduction: 1 });
   assert.ok(completed.events.some((event) => event.status === "cancelled"));
   assert.ok(
     completed.events.some((event) => event.stage === "quality_check"),
@@ -331,7 +331,7 @@ async function verifyBoundedTicksResumeFromCheckpoint() {
     if (completed.job.status === "completed") break;
   }
   assert.equal(completed.job.status, "completed");
-  assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
+  assert.deepEqual(calls, { title: 1, introduction: 1 });
 }
 
 async function verifyTimeBudgetYieldsAfterCheckpoint() {
@@ -359,7 +359,7 @@ async function verifyTimeBudgetYieldsAfterCheckpoint() {
     if (completed.job.status === "completed") break;
   }
   assert.equal(completed.job.status, "completed");
-  assert.deepEqual(calls, { title: 1, introduction: 1, references: 1 });
+  assert.deepEqual(calls, { title: 1, introduction: 1 });
 }
 
 async function verifyPreciseResume() {

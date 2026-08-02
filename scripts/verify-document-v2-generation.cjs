@@ -67,6 +67,9 @@ const {
   FigureRequestSchema,
 } = require("../lib/document-v2/assets/contracts.ts");
 const {
+  deriveOrderedReferenceIds,
+} = require("../lib/document-v2/citations/manifest.ts");
+const {
   MatureDocumentComponentValidator,
 } = require("../lib/document-v2/generation/mature-content-validator.ts");
 const {
@@ -324,7 +327,7 @@ function maturePayload(component, repairFeedback) {
         ],
       };
     case "reference_list":
-      return { referenceIds: ["ref-2", "ref-1"] };
+      throw new Error("reference_list must be derived without a model call");
     default:
       throw new Error(`Unsupported component type ${component.type}`);
   }
@@ -531,9 +534,13 @@ async function verifyCompleteGenerationFlow() {
       "abstract",
       "keywords",
       "title",
-      "reference_list",
     ],
     "Generation must follow semantic dependencies, not Word display order.",
+  );
+  assert.equal(
+    modelCalls.reference_list ?? 0,
+    0,
+    "The final reference set must be derived from approved citations without a model call.",
   );
   assert.deepEqual(
     abstractApprovedContext,
@@ -1509,6 +1516,47 @@ async function verifyDeterministicChineseFigureRendering() {
   console.log(docxOutputPath);
 }
 
+function verifyDeterministicReferenceOrdering() {
+  const paragraph = (blockId, role, citationIds) => ({
+    blockId,
+    type: "paragraph",
+    role,
+    text: `Visible text for ${blockId}.`,
+    citationIds,
+    figureReferenceIds: [],
+  });
+  const blocks = [
+    paragraph("abstract-1", "abstract", ["ref-abstract"]),
+    paragraph("body-1", "body", ["ref-2", "ref-1", "ref-2"]),
+    paragraph("body-2", "body", ["ref-10", "ref-3", "ref-1"]),
+    paragraph("body-3", "body", ["ref-9", "ref-8", "ref-7", "ref-6"]),
+    paragraph("body-4", "body", ["ref-5", "ref-4", "ref-late"]),
+  ];
+
+  assert.deepEqual(
+    deriveOrderedReferenceIds({ blocks, includeAbstract: false }),
+    [
+      "ref-2",
+      "ref-1",
+      "ref-10",
+      "ref-3",
+      "ref-9",
+      "ref-8",
+      "ref-7",
+      "ref-6",
+      "ref-5",
+      "ref-4",
+      "ref-late",
+    ],
+    "References must be deduplicated in final reading order, including late citations.",
+  );
+  assert.deepEqual(
+    deriveOrderedReferenceIds({ blocks, includeAbstract: true }).slice(0, 2),
+    ["ref-abstract", "ref-2"],
+    "Abstract citations must participate only when the template policy enables them.",
+  );
+}
+
 async function main() {
   verifyPlanningOperationRecoveryRegistry();
   await verifyDeterministicChineseFigureRendering();
@@ -1520,6 +1568,7 @@ async function main() {
   verifyHierarchicalOutlineAssembly();
   verifyCaptionNormalization();
   await verifyManualFigureNumbersAreRejected();
+  verifyDeterministicReferenceOrdering();
   await verifyCompleteGenerationFlow();
   await verifyPlannerRejectsInvalidOutline();
   await verifyPlannerRepairsTemplateComponentLeakage();

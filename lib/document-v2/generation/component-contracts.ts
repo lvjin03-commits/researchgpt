@@ -421,8 +421,8 @@ const contracts: Record<
     schemaName: "document_reference_list_v2",
     modelOutputSchema: ReferenceListOutputSchema,
     example: { referenceIds: ["reference-01"] },
-    modelOwnedFields: ["referenceIds"],
-    programOwnedFields: sharedProgramOwnedFields,
+    modelOwnedFields: [],
+    programOwnedFields: [...sharedProgramOwnedFields, "referenceIds"],
     assemble(raw) {
       const output = ReferenceListOutputSchema.parse(raw);
       return { kind: "references", referenceIds: output.referenceIds };

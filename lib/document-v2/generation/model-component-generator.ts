@@ -229,7 +229,7 @@ export function buildComponentGenerationInstructions(
       conclusion:
         "Return only mature conclusion paragraphs composed of ordered citation segments. Do not return the planned heading, tables, figures, block types, or paragraph roles.",
       reference_list:
-        "Return only referenceIds actually cited in approved content.",
+        "This component is program-derived and must not invoke the model.",
     }[context.component.type],
   });
 

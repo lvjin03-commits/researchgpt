@@ -149,6 +149,65 @@ function captionFormatFailureFinding(
   };
 }
 
+const REFERENCE_CONSISTENCY_FAILURES = [
+  {
+    pattern: /Reference list does not include cited reference "([^"]+)"\.?/i,
+    code: "reference_manifest_missing_cited_id",
+    rule: "model_reference_list_omitted_approved_citation",
+  },
+  {
+    pattern: /Reference list includes uncited reference "([^"]+)"\.?/i,
+    code: "reference_manifest_contains_uncited_id",
+    rule: "model_reference_list_added_uncited_reference",
+  },
+] as const;
+
+function referenceConsistencyFailureFinding(
+  event: DiagnosticTimelineEvent | undefined,
+): BlockerDiagnosis | null {
+  if (
+    event?.componentKey !== "references" ||
+    event.error?.code !== "component_structure_invalid" ||
+    !event.error.message
+  ) {
+    return null;
+  }
+  const errorMessage = event.error.message;
+  const match = REFERENCE_CONSISTENCY_FAILURES.map((failure) => ({
+    ...failure,
+    match: errorMessage.match(failure.pattern),
+  })).find((failure) => failure.match);
+  if (!match?.match) return null;
+
+  return {
+    code: match.code,
+    severity: "error",
+    certainty: "deterministic",
+    location: {
+      stage: event.stage ?? "content_generation",
+      operation: event.operation ?? "component.failed",
+      componentKey: "references",
+    },
+    since: event.timestamp,
+    matchedRule: match.rule,
+    evidence: [
+      {
+        source: "event",
+        field: "failureCode",
+        value: event.error.code,
+      },
+      {
+        source: "event",
+        field: "referenceId",
+        value: match.match[1],
+      },
+    ],
+    missingEvidence: [],
+    recommendedNextInspection:
+      "Rebuild the references component deterministically from approved citation occurrences; preserve mature content and verified references.",
+  };
+}
+
 export function projectDocumentJobDiagnostics(
   sources: DiagnosticSources,
   now = new Date(),
@@ -451,9 +510,14 @@ export function projectDocumentJobDiagnostics(
     ["paused", "failed"].includes(sources.job.status)
       ? captionFormatFailureFinding(latestTimelineEvent)
       : null;
+  const referenceFinding =
+    ["paused", "failed"].includes(sources.job.status)
+      ? referenceConsistencyFailureFinding(latestTimelineEvent)
+      : null;
   const findings = [
     ...(planningFinding ? [planningFinding] : []),
     ...(captionFinding ? [captionFinding] : []),
+    ...(referenceFinding ? [referenceFinding] : []),
     ...diagnoseBlockers({
       now,
       job: jobSummary,
@@ -515,6 +579,8 @@ export function projectDocumentJobDiagnostics(
       ? "outline.section_index"
       : primary && DETERMINISTIC_CAPTION_FAILURES.has(primary.code)
         ? primary.location.componentKey
+        : primary?.code.startsWith("reference_manifest_")
+          ? "references"
       : null;
   const workerState =
     sources.job.status === "running" && sources.job.lease_expires_at

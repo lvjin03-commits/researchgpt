@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import type { FinalDocumentSpec } from "../contracts";
+import type {
+  ApprovedDocumentBlock,
+  FinalDocumentSpec,
+} from "../contracts";
 
 export type CitationOccurrence = {
   blockId: string;
@@ -35,14 +38,14 @@ function sha256(value: unknown): string {
   return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
-export function deriveCitationManifest(
-  spec: FinalDocumentSpec,
-): CitationManifest {
-  const policy = spec.templateSnapshot.citationPolicy;
+export function deriveCitationOccurrences(input: {
+  blocks: ReadonlyArray<ApprovedDocumentBlock>;
+  includeAbstract: boolean;
+}): CitationOccurrence[] {
   const occurrences: CitationOccurrence[] = [];
-  for (const block of spec.blocks) {
+  for (const block of input.blocks) {
     if (block.type !== "paragraph") continue;
-    if (block.role === "abstract" && !policy.includeAbstract) continue;
+    if (block.role === "abstract" && !input.includeAbstract) continue;
     if (block.citationGranularity === "segment") {
       for (const segment of block.segments) {
         for (const referenceId of segment.citationIds) {
@@ -65,6 +68,30 @@ export function deriveCitationManifest(
       });
     }
   }
+  return occurrences;
+}
+
+export function deriveOrderedReferenceIds(input: {
+  blocks: ReadonlyArray<ApprovedDocumentBlock>;
+  includeAbstract: boolean;
+}): string[] {
+  return [
+    ...new Set(
+      deriveCitationOccurrences(input).map(
+        (occurrence) => occurrence.referenceId,
+      ),
+    ),
+  ];
+}
+
+export function deriveCitationManifest(
+  spec: FinalDocumentSpec,
+): CitationManifest {
+  const policy = spec.templateSnapshot.citationPolicy;
+  const occurrences = deriveCitationOccurrences({
+    blocks: spec.blocks,
+    includeAbstract: policy.includeAbstract,
+  });
 
   return {
     policyVersion: policy.policyVersion,

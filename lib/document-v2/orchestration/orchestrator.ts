@@ -10,6 +10,7 @@ import {
   resolveFigureRenderStrategy,
 } from "../assets/render-policy";
 import { normalizeGeneratedComponentContent } from "../generation/content-normalizer";
+import { deriveOrderedReferenceIds } from "../citations/manifest";
 import {
   DocumentPlanSchema,
   DocumentRequestSchema,
@@ -660,6 +661,26 @@ function listApprovedComponents(
     );
 }
 
+function deriveReferenceListPayload(input: {
+  plan: DocumentPlan;
+  approvedComponents: ReadonlyArray<{
+    componentKey: string;
+    content: ApprovedComponent;
+  }>;
+}): GeneratedComponentPayload {
+  const blocks = input.approvedComponents.flatMap(({ content }) =>
+    content.kind === "blocks" ? content.blocks : [],
+  );
+  return GeneratedComponentPayloadSchema.parse({
+    kind: "references",
+    referenceIds: deriveOrderedReferenceIds({
+      blocks,
+      includeAbstract:
+        input.plan.templateSnapshot.citationPolicy.includeAbstract,
+    }),
+  });
+}
+
 function nextRunnableComponentIndex(
   state: DocumentOrchestrationState,
 ): number | undefined {
@@ -959,30 +980,37 @@ export async function runDocumentOrchestration(
 
     let payload: GeneratedComponentPayload;
     try {
-      payload = GeneratedComponentPayloadSchema.parse(
-        await options.generator.generate({
-          request: state.request,
-          plan: state.plan,
-          component,
-          componentIndex,
-          figureSlots: state.plan.figureSlots.filter(
-            (slot) => slot.componentKey === component.componentKey,
-          ),
-          generationRevision: componentState.generationRevision,
-          attempt: contentAttempt,
-          repairFeedback:
-            componentState.lastError &&
-            componentState.lastError.code !== "component_generation_transient"
-            ? {
-                code: componentState.lastError.code,
-                message: componentState.lastError.message,
-              }
-            : undefined,
-          approvedComponents,
-          verifiedReferences: state.verifiedReferences,
-          evidenceBundle: state.evidenceBundle,
-        }),
-      );
+      payload =
+        component.type === "reference_list"
+          ? deriveReferenceListPayload({
+              plan: state.plan,
+              approvedComponents,
+            })
+          : GeneratedComponentPayloadSchema.parse(
+              await options.generator.generate({
+                request: state.request,
+                plan: state.plan,
+                component,
+                componentIndex,
+                figureSlots: state.plan.figureSlots.filter(
+                  (slot) => slot.componentKey === component.componentKey,
+                ),
+                generationRevision: componentState.generationRevision,
+                attempt: contentAttempt,
+                repairFeedback:
+                  componentState.lastError &&
+                  componentState.lastError.code !==
+                    "component_generation_transient"
+                    ? {
+                        code: componentState.lastError.code,
+                        message: componentState.lastError.message,
+                      }
+                    : undefined,
+                approvedComponents,
+                verifiedReferences: state.verifiedReferences,
+                evidenceBundle: state.evidenceBundle,
+              }),
+            );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown generation failure.";
