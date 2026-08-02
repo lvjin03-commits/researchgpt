@@ -31,6 +31,16 @@ import {
   type NormalizedAuxiliaryContent,
   type NormalizedContentState,
 } from "./provider-response-adapter";
+import {
+  createContentFingerprint,
+  createLegacyExecutionFingerprint,
+} from "./model-execution/fingerprints";
+import {
+  buildStructuredRecoveryInstruction,
+  schemaIssuePaths,
+  selectStructuredRecoveryAction,
+  type StructuredRecoveryAction,
+} from "./model-execution/recovery-engine";
 
 export type DocumentModelUsage = {
   provider: "deepseek" | "openai";
@@ -55,10 +65,7 @@ export type DocumentModelUsage = {
   durationMs: number;
 };
 
-export type StructuredRecoveryAction =
-  | "regenerate_once"
-  | "repair_once"
-  | "pause";
+export type { StructuredRecoveryAction } from "./model-execution/recovery-engine";
 
 export type StructuredOperationRecoveryPolicy = Readonly<{
   onNoJsonObject?: StructuredRecoveryAction;
@@ -146,66 +153,6 @@ export class DocumentModelOperationError extends Error {
   }
 }
 
-function schemaIssuePaths(
-  diagnostics: ReadonlyArray<StructuredResponseCandidateDiagnostic>,
-): string[] {
-  const widestCandidate = [...diagnostics]
-    .filter((candidate) => candidate.parseStatus === "valid")
-    .sort(
-      (left, right) =>
-        right.endOffset -
-        right.startOffset -
-        (left.endOffset - left.startOffset),
-    )[0];
-  return [...new Set(widestCandidate?.schemaIssuePaths ?? [])].slice(0, 20);
-}
-
-function recoveryActionFor(
-  error: DocumentModelOperationError,
-  policy: StructuredOperationRecoveryPolicy | undefined,
-): StructuredRecoveryAction {
-  if (!policy) return "pause";
-  if (error.failureCategory === "no_json_object") {
-    return policy.onNoJsonObject ?? "pause";
-  }
-  if (error.failureCategory === "truncated_json") {
-    return policy.onTruncatedJson ?? "pause";
-  }
-  if (error.failureCategory === "json_syntax_error") {
-    return policy.onJsonSyntaxError ?? "pause";
-  }
-  if (error.failureCategory === "schema_validation_failed") {
-    const paths = schemaIssuePaths(
-      error.recoveryEvidence?.candidateDiagnostics ?? [],
-    );
-    return paths.includes("$invariant")
-      ? (policy.onInvariantFailure ?? "pause")
-      : (policy.onSchemaValidationFailed ?? "pause");
-  }
-  return "pause";
-}
-
-function recoveryInstruction(input: {
-  attemptPurpose: "initial" | "regenerate" | "repair" | "capacity_escalation";
-  recoveryContext?: Readonly<{
-    failureCategory: DocumentModelFailureCategory;
-    providerContent: string;
-    schemaIssuePaths: ReadonlyArray<string>;
-  }>;
-}): string | undefined {
-  if (input.attemptPurpose !== "repair" || !input.recoveryContext) {
-    return undefined;
-  }
-  return [
-    "Repair the previous structured response and return one complete replacement JSON object.",
-    "Preserve valid semantic content and ordering. Change only fields required to satisfy the schema.",
-    "Do not omit required fields, introduce program-owned fields, or return a patch/diff.",
-    `Failure category: ${input.recoveryContext.failureCategory}.`,
-    `Invalid schema paths: ${input.recoveryContext.schemaIssuePaths.join(", ") || "unknown"}.`,
-    `Previous response:\n${input.recoveryContext.providerContent.slice(0, 50_000)}`,
-  ].join("\n\n");
-}
-
 type StoredExecution = {
   status:
     | "running"
@@ -224,28 +171,6 @@ type StoredExecution = {
   schema_version: string | null;
   lease_expires_at: string | null;
 };
-
-function contentFingerprint(input: {
-  operation: string;
-  componentKey?: string;
-  schemaName: string;
-  systemInstruction: string;
-  userInstruction: string;
-}) {
-  return sha256Canonical(input);
-}
-
-function legacyExecutionFingerprint(input: {
-  profile: DocumentTextExecutionProfile;
-  operation: string;
-  componentKey?: string;
-  schemaName: string;
-  systemInstruction: string;
-  userInstruction: string;
-  maxOutputTokens: number;
-}) {
-  return sha256Canonical(input);
-}
 
 export class ProviderDocumentTextExecutor
   implements DocumentStructuredTextExecutor
@@ -332,7 +257,7 @@ export class ProviderDocumentTextExecutor
       operationBudget.reasoningPolicy !== "inherit"
         ? operationBudget.reasoningPolicy
         : (this.profile.reasoningEffort ?? "none");
-    const inputFingerprint = contentFingerprint({
+    const inputFingerprint = createContentFingerprint({
       operation: input.operation,
       componentKey: input.componentKey,
       schemaName: input.schemaName,
@@ -373,7 +298,7 @@ export class ProviderDocumentTextExecutor
           input.maxOutputTokens ?? this.profile.maxOutputTokens,
           this.profile.maxOutputTokens,
         );
-        const legacyInputFingerprint = legacyExecutionFingerprint({
+        const legacyInputFingerprint = createLegacyExecutionFingerprint({
           profile: this.profile,
           operation: input.operation,
           componentKey: input.componentKey,
@@ -590,7 +515,7 @@ export class ProviderDocumentTextExecutor
     let auxiliaryContent: NormalizedAuxiliaryContent[] = [];
     let responseSource: "content" | "auxiliary_content" | null = null;
     let recoveryMode: string | null = null;
-    const boundedRecoveryInstruction = recoveryInstruction(attempt);
+    const boundedRecoveryInstruction = buildStructuredRecoveryInstruction(attempt);
     const effectiveSystemInstruction = boundedRecoveryInstruction
       ? `${input.systemInstruction}\n\n${boundedRecoveryInstruction}`
       : input.systemInstruction;
@@ -994,7 +919,11 @@ export class ProviderDocumentTextExecutor
       }
       const structuredRecoveryAction =
         error instanceof DocumentModelOperationError
-          ? recoveryActionFor(error, input.recoveryPolicy)
+          ? selectStructuredRecoveryAction({
+              failureCategory: error.failureCategory,
+              diagnostics: error.recoveryEvidence?.candidateDiagnostics ?? [],
+              policy: input.recoveryPolicy,
+            })
           : "pause";
       if (
         attempt.attemptPurpose === "initial" &&

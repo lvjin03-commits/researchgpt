@@ -966,8 +966,17 @@ async function main() {
       `${sourcePath} must not silently skip document worker dispatch.`,
     );
   }
+  const chatCommandRouteSource = fs.readFileSync(
+    path.join(projectRoot, "app/api/chat/route.ts"),
+    "utf8",
+  );
+  assert.match(
+    chatCommandRouteSource,
+    /executeDocumentCommand/,
+    "The chat route must delegate an explicit document command to the gateway.",
+  );
   for (const sourcePath of [
-    "app/api/chat/route.ts",
+    "lib/document-v2-production/command-gateway.ts",
     "app/api/document-v2/jobs/route.ts",
   ]) {
     const source = fs.readFileSync(path.join(projectRoot, sourcePath), "utf8");
@@ -1049,6 +1058,10 @@ async function main() {
     path.join(projectRoot, "lib/document-v2-production/worker.ts"),
     "utf8",
   );
+  const intakeStageSource = fs.readFileSync(
+    path.join(projectRoot, "lib/document-v2-production/stages/intake.ts"),
+    "utf8",
+  );
   assert.match(
     workerSource,
     /job\.checkpoint\.textExecution/,
@@ -1065,13 +1078,17 @@ async function main() {
     "The production worker must reuse the authoritative dispatch claim.",
   );
   assert.match(
-    workerSource,
+    intakeStageSource,
     /\.\.\.\(intake\.verifiedReferences\s*\?\?\s*\[\]\)/,
     "Planning must retain explicitly verified references.",
   );
+  const figureMaterializerSource = fs.readFileSync(
+    path.join(projectRoot, "lib/document-v2-production/figure-materializer.ts"),
+    "utf8",
+  );
   assert.match(
-    workerSource,
-    /if\s*\(\s*!config\.openAiApiKey\s*\)/,
+    figureMaterializerSource,
+    /if\s*\(\s*!input\.openAiApiKey\s*\)/,
     "The image provider must be initialized only at an image execution boundary.",
   );
   const runtimeConfigSource = fs.readFileSync(
@@ -1169,17 +1186,13 @@ async function main() {
     /const shouldUsePrevious\s*=\s*\n?\s*bundle\.contentSource === "previous_assistant_output"/,
     "A stale context bundle must not override the current user message.",
   );
-  const productionWorkerSource = fs.readFileSync(
-    path.join(projectRoot, "lib/document-v2-production/worker.ts"),
-    "utf8",
-  );
   assert.match(
-    productionWorkerSource,
+    figureMaterializerSource,
     /timeout:\s*75_000/,
     "Model calls must finish before the worker platform timeout.",
   );
   assert.match(
-    productionWorkerSource,
+    intakeStageSource,
     /planning\.request\.userRequirements\.visualIntent === "forbidden"[\s\S]*?\{ figures: \[\] \}[\s\S]*?: await planner\.planFigureIntents/,
     "A no-image request must bypass the figure-intent model call.",
   );

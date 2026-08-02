@@ -27,6 +27,7 @@ import {
   resumeDocumentJob,
   DocumentJobNotFoundError,
 } from "./controls";
+import { documentFailureUserMessageForCode } from "../domain/failures";
 
 export interface FinalDocumentArtifact {
   artifactId: string;
@@ -82,21 +83,6 @@ function progressFor(job: DocumentJob, stage = job.stage): number {
     artifact_storage: 98,
   };
   return Math.min(99, stageBonus[stage] ?? 10);
-}
-
-function userErrorMessage(code: string): string {
-  if (code.includes("timeout")) {
-    return "模型响应超时，系统已完成技术重试，请稍后从保存进度继续。";
-  }
-  if (code.includes("unavailable")) {
-    return "模型服务暂时不可用，当前进度已保存，请稍后继续。";
-  }
-  if (code.includes("figure_asset")) return "图片生成未通过质量检查。";
-  if (code.includes("validation") || code.includes("structure")) {
-    return "当前部分的内容未通过质量检查。";
-  }
-  if (code.includes("render")) return "Word 文档排版失败。";
-  return "文档生成在当前阶段停止，请查看详情后重试。";
 }
 
 export class DocumentV2JobService {
@@ -452,7 +438,7 @@ export class DocumentV2JobService {
             orchestration.status === "failed"
               ? {
                   code: orchestration.failure!.code,
-                  userMessage: userErrorMessage(orchestration.failure!.code),
+                  userMessage: documentFailureUserMessageForCode(orchestration.failure!.code),
                   technicalMessage: orchestration.failure!.message,
                   failedStage: activeStage,
                   componentKey: orchestration.failure!.componentKey,
@@ -690,7 +676,7 @@ export class DocumentV2JobService {
           resumable: true,
           error: {
             code: "document_finalization_failed",
-            userMessage: userErrorMessage("render"),
+            userMessage: documentFailureUserMessageForCode("render"),
             technicalMessage,
             failedStage: job.stage,
           },

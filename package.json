@@ -18,6 +18,7 @@
     "check:mojibake": "node scripts/check-encoding.mjs",
     "check:document-architecture": "node scripts/check-document-v2-imports.mjs",
     "check:document-diagnostics": "node scripts/check-document-v2-diagnostics-boundary.mjs",
+    "check:document-production-boundaries": "node scripts/check-document-v2-production-boundaries.mjs",
     "check:document-v2-env": "node scripts/check-document-v2-env.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -35,7 +36,7 @@
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "test:word-visuals": "node scripts/verify-word-visuals.cjs",
     "smoke:document-v2": "node scripts/smoke-document-v2.mjs",
-    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-job-binding && npm run test:document-v2-runtime && npm run test:document-v2-diagnostics && npm run test:document-v2-provider-failure && npm run test:document-v2-structured-parser && npm run test:document-v2-references && npm run check:document-architecture && npm run check:document-diagnostics && npm run build"
+    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-job-binding && npm run test:document-v2-runtime && npm run test:document-v2-diagnostics && npm run test:document-v2-provider-failure && npm run test:document-v2-structured-parser && npm run test:document-v2-references && npm run check:document-architecture && npm run check:document-diagnostics && npm run check:document-production-boundaries && npm run build"
   },
   "build": {
     "appId": "com.researchgpt.localconnector",

@@ -1,7 +1,6 @@
 import { validateChatMessages } from "@/lib/ai/provider";
 import { openResponsesChatStream } from "@/lib/ai/openai";
-import { createHash, randomUUID } from "node:crypto";
-import { after } from "next/server";
+import { createHash } from "node:crypto";
 import type { ChatMessage } from "@/lib/ai/types";
 import { getTextFromMessageContent } from "@/lib/ai/types";
 import {
@@ -85,13 +84,7 @@ import { getToolLabel } from "@/lib/chat/tool-registry";
 import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 import { createClient } from "@/lib/supabase/server";
 import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/uploads/storage-constants";
-import { SupabaseDocumentJobRepository } from "@/lib/document-v2/runtime/supabase-repository";
-import { DocumentV2JobService } from "@/lib/document-v2/runtime/job-service";
-import {
-  dispatchDocumentV2Worker,
-  logDocumentV2DispatchFailure,
-  recordDocumentV2DispatchFailure,
-} from "@/lib/document-v2-production/dispatch";
+import { executeDocumentCommand } from "@/lib/document-v2-production/command-gateway";
 import {
   inspectDocumentV2Runtime,
   requireDocumentV2PublicRuntime,
@@ -150,39 +143,6 @@ function generatedImageUrl(path: string): string {
   return `/api/chat/generated-images?path=${encodeURIComponent(path)}`;
 }
 
-const QUERY_EXPORT_FORMATS: Array<{
-  format: ExportFormat;
-  pattern: RegExp;
-}> = [
-  { format: "docx", pattern: /\b(docx|word)\b|Word\s*文档|word\s*文档|文档/i },
-  { format: "xlsx", pattern: /\b(xlsx|excel)\b|Excel\s*(文件|文档|表格)|excel\s*(文件|文档|表格)|电子表格/i },
-  { format: "pptx", pattern: /\b(pptx|ppt|slides?)\b|PPT|幻灯片|演示文稿/i },
-  { format: "pdf", pattern: /\bpdf\b|PDF\s*(文件|文档)|pdf\s*(文件|文档)/i },
-  { format: "md", pattern: /\b(markdown|md)\b|Markdown/i },
-  { format: "txt", pattern: /\b(txt|text)\b|纯文本/i },
-  { format: "json", pattern: /\bjson\b/i },
-  { format: "svg", pattern: /\bsvg\b/i },
-  { format: "png", pattern: /\bpng\b/i },
-];
-
-function inferRequestedExportFormats(
-  query: string,
-  plan: IntentPlan,
-): ExportFormat[] {
-  const formats = new Set<ExportFormat>();
-  for (const item of QUERY_EXPORT_FORMATS) {
-    if (item.pattern.test(query)) {
-      formats.add(item.format);
-    }
-  }
-
-  if (plan.outputType === "word") formats.add("docx");
-  if (plan.outputType === "excel") formats.add("xlsx");
-  if (plan.outputType === "ppt") formats.add("pptx");
-  if (plan.outputType === "pdf") formats.add("pdf");
-
-  return Array.from(formats);
-}
 
 function shouldAutoCreateExports(query: string, plan: IntentPlan): boolean {
   if (plan.intent === "create_artifact") return true;
@@ -192,15 +152,6 @@ function shouldAutoCreateExports(query: string, plan: IntentPlan): boolean {
   );
 }
 
-function createExportTitle(query: string): string {
-  const cleaned = query
-    .replace(/[\r\n]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!cleaned) return "ResearchGPT 生成文件";
-  return cleaned.length > 48 ? cleaned.slice(0, 48) : cleaned;
-}
 
 const CLEAN_QUERY_EXPORT_FORMATS: Array<{
   format: ExportFormat;
@@ -236,13 +187,6 @@ function inferCleanRequestedExportFormats(
   return Array.from(formats);
 }
 
-function shouldCleanAutoCreateExports(query: string, plan: IntentPlan): boolean {
-  if (plan.intent === "create_artifact") return true;
-  if (["word", "excel", "ppt", "pdf"].includes(plan.outputType)) return true;
-  return /(生成|输出|导出|制作|创建|保存|下载|给我|做成).{0,30}(文件|文档|表格|报告|Word|Excel|PPT|PDF|docx|xlsx|pptx|pdf)|\b(word|excel|ppt|pdf|docx|xlsx|pptx)\b.{0,30}(文件|文档|表格|报告|输出|导出|生成|下载)/i.test(
-    query,
-  );
-}
 
 function createCleanExportTitle(query: string): string {
   const cleaned = query
@@ -913,21 +857,6 @@ function createArtifactExportTitle(query: string, content: string): string {
   );
 }
 
-function buildAutoExportInstruction(formats: ExportFormat[]): ChatMessage {
-  const names = formats.map((format) => format.toUpperCase()).join("、");
-  return {
-    role: "system",
-    content: [
-      `用户本次明确要求生成可下载文件，目标格式：${names}。`,
-      "服务器会在回答结束后自动调用文件生成工具并返回下载链接。",
-      "你只需要输出可以直接渲染为文件的正文内容。",
-      "不要告诉用户去点击 Generate file，不要要求用户复制 Markdown，不要输出手动生成步骤。",
-      "如果是 Word/PDF，请使用清晰标题、段落、列表和 Markdown 表格。",
-      "如果是 Excel，必须先判断表格主题和字段，再输出机器可读表格数据；优先输出一个 ```json 代码块，结构为 {\"sheets\":[{\"name\":\"工作表名\",\"columns\":[\"字段1\",\"字段2\"],\"rows\":[{\"字段1\":\"值\",\"字段2\":\"值\"}]}]}，也可输出干净 CSV。禁止把多条记录塞进一个单元格，禁止把说明文字混入表格数据。",
-      "如果同时生成多种文件，请输出一份结构清晰、可复用的正式内容。",
-    ].join("\n"),
-  };
-}
 
 function isQuotaOrRateLimitError(error: unknown): boolean {
   if (!(error instanceof AIProviderError)) return false;
@@ -1226,56 +1155,7 @@ function formatTokenEstimate(plan: IntentPlan): string {
   return pieces.join("；");
 }
 
-function formatIntentPlanCard(plan: IntentPlan): string {
-  const estimate = plan.tokenEstimate;
-  const notes = estimate.notes.length
-    ? `\n> ${estimate.notes.join(" ")}`
-    : "";
 
-  return [
-    "### 本次任务执行计划",
-    "",
-    `- **识别任务**：${INTENT_LABELS[plan.intent]}（置信度 ${Math.round(plan.confidence * 100)}%）`,
-    `- **读取范围**：${SCOPE_LABELS[plan.inputScope]}`,
-    `- **输出结果**：${OUTPUT_LABELS[plan.outputType]}`,
-    `- **预计 token**：输入约 ${estimate.inputTokens.toLocaleString("zh-CN")}，输出约 ${estimate.expectedOutputTokens.toLocaleString("zh-CN")}，合计约 ${estimate.totalTokens.toLocaleString("zh-CN")}`,
-    notes,
-    "",
-    "---",
-    "",
-  ]
-    .filter((line) => line !== undefined)
-    .join("\n");
-}
-
-function formatToolPlanCard(plan: ToolPlan): string {
-  const steps = plan.steps
-    .slice(0, 8)
-    .map((item, index) => {
-      const tools = item.tools.length ? `（${item.tools.join(", ")}）` : "";
-      return `${index + 1}. **${item.title}**${tools}：${item.detail}`;
-    })
-    .join("\n");
-  const warnings = plan.warnings.length
-    ? `\n\n> ${plan.warnings.join(" ")}`
-    : "";
-  const blockers = plan.blockers.length
-    ? `\n\n**需要先补充/确认**：${plan.blockers.join(" ")}`
-    : "";
-
-  return [
-    "### 工具执行规划",
-    "",
-    steps,
-    warnings,
-    blockers,
-    "",
-    "---",
-    "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
 
 function formatCompactPlanDisclosure(
   intentPlan: IntentPlan,
@@ -2114,61 +1994,25 @@ export async function POST(request: Request) {
             const previousContent = shouldExportPreviousAssistant
               ? previousAssistantExportSource.trim()
               : "";
-            const instruction = [
-              query,
-              previousContent
-                ? "以下是本次请求承接的上一轮助手内容。请将它作为待完善的内容来源，而不是直接复制聊天文本："
-                : "",
-              previousContent.slice(0, 6_000),
-            ]
-              .filter(Boolean)
-              .join("\n\n")
-              .slice(0, 8_000);
-            const jobId = randomUUID();
-            const repository = new SupabaseDocumentJobRepository(
+            const commandResult = await executeDocumentCommand({
               supabase,
-              user.id,
-            );
-            const service = new DocumentV2JobService(
-              repository,
-              {
-                generator: {
-                  async generate() {
-                    throw new Error("Chat intake does not execute components.");
-                  },
+              command: {
+                type: "create_document",
+                ownerId: user.id,
+                instruction: query,
+                previousAssistantContent: previousContent || undefined,
+                requestUrl: request.url,
+                textExecution: {
+                  provider: modelOption.provider,
+                  requestedModelId: modelOption.model,
+                  resolvedModelId: modelOption.model,
+                  maxOutputTokens: modelOption.maxOutputTokens,
+                  reasoningEffort: modelOption.reasoningEffort,
+                  allowProviderFallback: false,
                 },
-                validator: {
-                  async validate() {
-                    return { accepted: true };
-                  },
-                },
-              },
-              {
-                async renderAndStore() {
-                  throw new Error("Chat intake does not render documents.");
-                },
-                async validateArtifact() {
-                  throw new Error("Chat intake does not validate artifacts.");
-                },
-              },
-            );
-            await service.createIntake({
-              ownerId: user.id,
-              jobId,
-              instruction,
-              source: {
-                kind: previousContent ? "previous_message" : "prompt",
-                sourceIds: previousContent ? ["previous-assistant-message"] : [],
-              },
-              textExecution: {
-                provider: modelOption.provider,
-                requestedModelId: modelOption.model,
-                resolvedModelId: modelOption.model,
-                maxOutputTokens: modelOption.maxOutputTokens,
-                reasoningEffort: modelOption.reasoningEffort,
-                allowProviderFallback: false,
               },
             });
+            const jobId = commandResult.jobId;
             await documentTrace?.event({
               stage: "pipeline_selection",
               status: "info",
@@ -2178,25 +2022,6 @@ export async function POST(request: Request) {
                 reason: "dedicated_docx_request",
               },
             });
-            try {
-              await dispatchDocumentV2Worker({
-                cause: "job_created",
-                requestUrl: request.url,
-                jobId,
-              });
-            } catch (dispatchError) {
-              logDocumentV2DispatchFailure({
-                cause: "job_created",
-                jobId,
-                error: dispatchError,
-              });
-              await recordDocumentV2DispatchFailure({
-                repository,
-                cause: "job_created",
-                jobId,
-                error: dispatchError,
-              });
-            }
             controller.enqueue(
               encodeChatStreamEvent({
                 type: "document_job",
