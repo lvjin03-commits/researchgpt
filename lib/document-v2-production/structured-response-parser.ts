@@ -16,7 +16,9 @@ export type StructuredResponseRepairStep =
   | "markdown_fence_removed"
   | "surrounding_text_removed"
   | "trailing_comma_removed"
-  | "out_of_scope_fields_removed";
+  | "out_of_scope_fields_removed"
+  | "program_owned_fields_removed"
+  | "deterministic_type_coerced";
 
 export type StructuredResponseCandidateNormalization = Readonly<{
   value: unknown;

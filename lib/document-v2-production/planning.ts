@@ -10,12 +10,12 @@ import type { HierarchicalOutlinePlanner } from "@/lib/document-v2/planning/plan
 import {
   DocumentFigureIntentsDraftSchema,
   normalizeFigureIntentCandidate,
-  DocumentSectionIndexDraftSchema,
   DocumentThesisDraftSchema,
   SectionPlanDraftSchema,
 } from "@/lib/document-v2/planning/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
 import { createDocumentPlanningLanguageContract } from "@/lib/document-v2/planning/language-contract";
+import { createSectionIndexOperationContract } from "./structured-operation-contracts";
 
 function planningContext(input: {
   request: DocumentRequest;
@@ -202,15 +202,12 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
       planningRevision: input.planningRevision,
     });
     const repair = input.repair;
+    const contract = createSectionIndexOperationContract({
+      minimumSections: input.minimumSections,
+      maximumSections: input.maximumSections,
+    });
     return this.executor.generate({
-      operation: "outline.section_index",
-      budgetKey: "outline.section_index",
-      componentKey: "document-section-index",
-      schemaName: "document_section_index_v1",
-      schema: DocumentSectionIndexDraftSchema.refine(
-        (value) => value.sections.length >= input.minimumSections && value.sections.length <= input.maximumSections,
-        "Section count is outside the template limits.",
-      ),
+      ...contract,
       systemInstruction: [
         repair
           ? "Repair only the language of the identified invalid headings in an existing body-section index."

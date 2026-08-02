@@ -46,6 +46,7 @@ export type DocumentModelUsage = {
   inputFingerprint: string;
   generationConfigFingerprint: string;
   attemptNumber: number;
+  attemptPurpose: "initial" | "regenerate" | "capacity_escalation";
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -69,6 +70,9 @@ export type DocumentStructuredGenerationInput<T> = {
     normalizeCandidate?: (
       value: unknown,
     ) => StructuredResponseCandidateNormalization;
+    recoveryPolicy?: Readonly<{
+      regenerateOnNoJsonObject?: boolean;
+    }>;
 };
 
 export interface DocumentStructuredTextExecutor {
@@ -207,13 +211,17 @@ export class ProviderDocumentTextExecutor
   }
 
   async generate<T>(input: DocumentStructuredGenerationInput<T>): Promise<T> {
-    return this.generateAttempt(input, { attemptNumber: 1 });
+    return this.generateAttempt(input, {
+      attemptNumber: 1,
+      attemptPurpose: "initial",
+    });
   }
 
   private async generateAttempt<T>(
     input: DocumentStructuredGenerationInput<T>,
     attempt: {
       attemptNumber: number;
+      attemptPurpose: "initial" | "regenerate" | "capacity_escalation";
       parentExecutionKey?: string;
       maxOutputTokensOverride?: number;
       escalationReason?: string;
@@ -261,6 +269,7 @@ export class ProviderDocumentTextExecutor
       modelCapabilityVersion:
         this.executionBudget.modelCapability.capabilityVersion,
       attemptNumber: attempt.attemptNumber,
+      attemptPurpose: attempt.attemptPurpose,
     });
     const executionKey = sha256Canonical({
       jobId: this.persistence?.jobId ?? "unpersisted",
@@ -808,6 +817,7 @@ export class ProviderDocumentTextExecutor
         inputFingerprint,
         generationConfigFingerprint,
         attemptNumber: attempt.attemptNumber,
+        attemptPurpose: attempt.attemptPurpose,
         inputTokens,
         cachedInputTokens,
         outputTokens,
@@ -820,6 +830,9 @@ export class ProviderDocumentTextExecutor
       const outputWasTruncated =
         error instanceof DocumentModelOperationError &&
         error.failureCategory === "output_truncated";
+      const outputHasNoJsonObject =
+        error instanceof DocumentModelOperationError &&
+        error.failureCategory === "no_json_object";
       const canEscalate =
         outputWasTruncated &&
         operationBudget !== undefined &&
@@ -878,6 +891,7 @@ export class ProviderDocumentTextExecutor
         if (canEscalate) {
           return this.generateAttempt(input, {
             attemptNumber: 2,
+            attemptPurpose: "capacity_escalation",
             parentExecutionKey: executionKey,
             maxOutputTokensOverride:
               operationBudget.effectiveHardMaxOutputTokens,
@@ -885,6 +899,18 @@ export class ProviderDocumentTextExecutor
           });
         }
         throw terminalFailure;
+      }
+      if (
+        outputHasNoJsonObject &&
+        input.recoveryPolicy?.regenerateOnNoJsonObject === true &&
+        attempt.attemptPurpose === "initial"
+      ) {
+        return this.generateAttempt(input, {
+          attemptNumber: 2,
+          attemptPurpose: "regenerate",
+          parentExecutionKey: executionKey,
+          escalationReason: "model_output_json_missing",
+        });
       }
       throw error;
     }

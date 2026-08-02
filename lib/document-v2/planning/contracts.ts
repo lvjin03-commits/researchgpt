@@ -39,6 +39,79 @@ export const DocumentSectionIndexDraftSchema = z
   })
   .strict();
 
+const SECTION_INDEX_PROGRAM_OWNED_ROOT_KEYS = ["schemaVersion"] as const;
+const SECTION_INDEX_PROGRAM_OWNED_SECTION_KEYS = [
+  "sectionId",
+  "order",
+] as const;
+
+/**
+ * Normalizes only deterministic section-index differences. Semantic fields are
+ * deliberately never invented or removed here.
+ */
+export function normalizeSectionIndexCandidate(value: unknown): {
+  value: unknown;
+  repairSteps: Array<
+    "program_owned_fields_removed" | "deterministic_type_coerced"
+  >;
+  normalizationPaths: string[];
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { value, repairSteps: [], normalizationPaths: [] };
+  }
+  const payload = { ...(value as Record<string, unknown>) };
+  const normalizationPaths: string[] = [];
+  let removedProgramOwnedField = false;
+  let coercedDeterministicType = false;
+
+  for (const key of SECTION_INDEX_PROGRAM_OWNED_ROOT_KEYS) {
+    if (Object.hasOwn(payload, key)) {
+      delete payload[key];
+      normalizationPaths.push(key);
+      removedProgramOwnedField = true;
+    }
+  }
+
+  if (Array.isArray(payload.sections)) {
+    payload.sections = payload.sections.map((section, index) => {
+      if (!section || typeof section !== "object" || Array.isArray(section)) {
+        return section;
+      }
+      const normalizedSection = { ...(section as Record<string, unknown>) };
+      for (const key of SECTION_INDEX_PROGRAM_OWNED_SECTION_KEYS) {
+        if (Object.hasOwn(normalizedSection, key)) {
+          delete normalizedSection[key];
+          normalizationPaths.push(`sections[${index}].${key}`);
+          removedProgramOwnedField = true;
+        }
+      }
+      if (
+        typeof normalizedSection.relativeWeight === "string" &&
+        normalizedSection.relativeWeight.trim() !== ""
+      ) {
+        const numericWeight = Number(normalizedSection.relativeWeight);
+        if (
+          Number.isFinite(numericWeight) &&
+          numericWeight > 0 &&
+          numericWeight <= 100
+        ) {
+          normalizedSection.relativeWeight = numericWeight;
+          normalizationPaths.push(`sections[${index}].relativeWeight`);
+          coercedDeterministicType = true;
+        }
+      }
+      return normalizedSection;
+    });
+  }
+
+  const repairSteps: Array<
+    "program_owned_fields_removed" | "deterministic_type_coerced"
+  > = [];
+  if (removedProgramOwnedField) repairSteps.push("program_owned_fields_removed");
+  if (coercedDeterministicType) repairSteps.push("deterministic_type_coerced");
+  return { value: payload, repairSteps, normalizationPaths };
+}
+
 export const DocumentFigureIntentsDraftSchema = z
   .object({
     figures: z

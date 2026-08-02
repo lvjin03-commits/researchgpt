@@ -28,7 +28,9 @@ const {
 } = require("../lib/document-v2-production/structured-response-parser.ts");
 const {
   DocumentFigureIntentsDraftSchema,
+  DocumentSectionIndexDraftSchema,
   normalizeFigureIntentCandidate,
+  normalizeSectionIndexCandidate,
 } = require("../lib/document-v2/planning/contracts.ts");
 
 const schema = z.object({ ready: z.boolean(), topic: z.string() }).strict();
@@ -78,6 +80,68 @@ assert.equal(bracesInString.value.topic, "literal { value } and ,}");
 const truncated = parse('{"ready":true,"topic":"LLM"');
 assert.equal(truncated.ok, false);
 assert.equal(truncated.failureCategory, "truncated_json");
+
+const sectionIndexWithProgramFields = parseStructuredResponse({
+  content: JSON.stringify({
+    schemaVersion: 99,
+    sections: [
+      {
+        sectionId: "model-owned-id",
+        order: 7,
+        heading: "Introduction",
+        question: "What is the scope?",
+        purpose: "Define the scope.",
+        owns: ["scope"],
+        excludes: ["applications"],
+        relativeWeight: "0.2",
+      },
+    ],
+  }),
+  schema: DocumentSectionIndexDraftSchema,
+  normalizeCandidate: normalizeSectionIndexCandidate,
+});
+assert.equal(sectionIndexWithProgramFields.ok, true);
+assert.equal(sectionIndexWithProgramFields.value.sections[0].relativeWeight, 0.2);
+assert.equal(
+  Object.hasOwn(sectionIndexWithProgramFields.parsedResponse, "schemaVersion"),
+  false,
+);
+assert.equal(
+  Object.hasOwn(
+    sectionIndexWithProgramFields.parsedResponse.sections[0],
+    "sectionId",
+  ),
+  false,
+);
+assert.deepEqual(sectionIndexWithProgramFields.repairSteps, [
+  "program_owned_fields_removed",
+  "deterministic_type_coerced",
+]);
+
+const sectionIndexMissingSemanticField = parseStructuredResponse({
+  content: JSON.stringify({
+    sections: [
+      {
+        heading: "Introduction",
+        question: "What is the scope?",
+        owns: [],
+        excludes: [],
+        relativeWeight: 0.2,
+      },
+    ],
+  }),
+  schema: DocumentSectionIndexDraftSchema,
+  normalizeCandidate: normalizeSectionIndexCandidate,
+});
+assert.equal(sectionIndexMissingSemanticField.ok, false);
+assert.equal(
+  sectionIndexMissingSemanticField.failureCategory,
+  "schema_validation_failed",
+);
+assert.deepEqual(
+  sectionIndexMissingSemanticField.candidateDiagnostics[0].schemaIssuePaths,
+  ["sections.0.purpose"],
+);
 
 const missingField = parse('{"ready":true}');
 assert.equal(missingField.ok, false);

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const Module = require("node:module");
@@ -142,6 +143,116 @@ function createExecutor(response) {
   return { executor, persistence, calls };
 }
 
+function createSequencedExecutor(responses) {
+  const created = createExecutor(responses[0]);
+  created.executor.client.chat.completions.create = async (input) => {
+    const response = responses[created.calls.count];
+    created.calls.count += 1;
+    created.calls.lastInput = input;
+    assert.ok(response, "The executor made an unexpected extra call.");
+    return response;
+  };
+  return created;
+}
+
+async function verifyBoundedMissingJsonRegeneration() {
+  const noJson = {
+    id: "section-index-attempt-1",
+    model: "deepseek-v4-flash",
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: "I could not produce the requested object.", tool_calls: [] },
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 8 },
+  };
+  const valid = {
+    id: "section-index-attempt-2",
+    model: "deepseek-v4-flash",
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: '{"value":"recovered"}', tool_calls: [] },
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 4 },
+  };
+  const recovered = createSequencedExecutor([noJson, valid]);
+  const result = await recovered.executor.generate({
+    operation: "outline.section_index",
+    componentKey: "document-section-index",
+    schemaName: "provider_failure_test",
+    schema: z.object({ value: z.string() }).strict(),
+    systemInstruction: "Return test JSON.",
+    userInstruction: "Test.",
+    recoveryPolicy: { regenerateOnNoJsonObject: true },
+  });
+  assert.deepEqual(result, { value: "recovered" });
+  assert.equal(recovered.calls.count, 2);
+  const rows = [...recovered.persistence.rows.values()];
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].failure_category, "no_json_object");
+  assert.equal(rows[1].attempt_number, 2);
+  assert.equal(rows[1].parent_execution_key, rows[0].execution_key);
+  assert.equal(rows[1].escalation_reason, "model_output_json_missing");
+
+  const terminal = createSequencedExecutor([noJson, noJson]);
+  await assert.rejects(
+    () => terminal.executor.generate({
+      operation: "outline.section_index",
+      componentKey: "document-section-index",
+      schemaName: "provider_failure_test",
+      schema: z.object({ value: z.string() }).strict(),
+      systemInstruction: "Return test JSON.",
+      userInstruction: "Test.",
+      recoveryPolicy: { regenerateOnNoJsonObject: true },
+    }),
+    (error) =>
+      error instanceof DocumentModelOperationError &&
+      error.failureCategory === "no_json_object",
+  );
+  assert.equal(terminal.calls.count, 2, "A third provider call is forbidden.");
+
+  const noPolicy = createSequencedExecutor([noJson, valid]);
+  await assert.rejects(() => noPolicy.executor.generate({
+    operation: "outline.section_index",
+    componentKey: "document-section-index",
+    schemaName: "provider_failure_test",
+    schema: z.object({ value: z.string() }).strict(),
+    systemInstruction: "Return test JSON.",
+    userInstruction: "Test.",
+  }));
+  assert.equal(noPolicy.calls.count, 1, "Regeneration requires an operation policy.");
+
+  const schemaInvalid = {
+    id: "section-index-schema-invalid",
+    model: "deepseek-v4-flash",
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: '{"wrong":"shape"}', tool_calls: [] },
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 4 },
+  };
+  const schemaFailure = createSequencedExecutor([schemaInvalid, valid]);
+  await assert.rejects(() => schemaFailure.executor.generate({
+    operation: "outline.section_index",
+    componentKey: "document-section-index",
+    schemaName: "provider_failure_test",
+    schema: z.object({ value: z.string() }).strict(),
+    systemInstruction: "Return test JSON.",
+    userInstruction: "Test.",
+    recoveryPolicy: { regenerateOnNoJsonObject: true },
+  }));
+  assert.equal(
+    schemaFailure.calls.count,
+    1,
+    "Schema failures must not be hidden by full regeneration.",
+  );
+}
+
 async function executeCase({ operation, response, schema }) {
   const { executor, persistence, calls } = createExecutor(response);
   let caught;
@@ -276,6 +387,7 @@ async function verifyControlledCapacityEscalation() {
 }
 
 (async () => {
+  await verifyBoundedMissingJsonRegeneration();
   await verifyControlledCapacityEscalation();
   const empty = await executeCase({
     operation: "outline.plan.empty",
