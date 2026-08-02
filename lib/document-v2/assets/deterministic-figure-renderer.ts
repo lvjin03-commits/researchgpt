@@ -123,7 +123,9 @@ export async function renderDeterministicScientificFigure(
   const shapes = cardShapesSvg({
     layouts,
     height,
-    processFlow: request.figureType === "process_flow",
+    processFlow:
+      request.figureType === "process_flow" ||
+      request.figureType === "mechanism_diagram",
   });
   const textLayers = await Promise.all(
     layouts.map(async ({ label, x, y, width, height: labelHeight }, index) => ({
@@ -147,6 +149,7 @@ export async function renderDeterministicScientificFigure(
     format: "png",
     data: png,
     provenance: {
+      textRenderingMode: request.textRenderingMode ?? "native_deterministic",
       labelRendererVersion: LABEL_RENDERER_VERSION,
       fontPolicyVersion: FONT_POLICY_VERSION,
     },
@@ -157,6 +160,16 @@ export async function overlayFigureLabels(input: {
   request: FigureRequest;
   basePng: Uint8Array;
   baseAssetProvider: string;
+  baseAssetFingerprint?: string;
+  providerRequestId?: string;
+  resolvedModel?: string;
+  resolvedSize?: string;
+  resolvedQuality?: string;
+  cacheHit?: boolean;
+  estimatedCostUsd?: number;
+  costSource?: "provider_usage" | "rate_card_estimate";
+  rateCardVersion?: string;
+  capabilityVersion?: string;
 }): Promise<GeneratedFigureBinary> {
   const labels = effectiveLabels(input.request);
   const columns = labels.length <= 3 ? 1 : 2;
@@ -201,6 +214,18 @@ export async function overlayFigureLabels(input: {
     data: png,
     provenance: {
       baseAssetProvider: input.baseAssetProvider,
+      baseAssetFingerprint: input.baseAssetFingerprint,
+      providerRequestId: input.providerRequestId,
+      resolvedModel: input.resolvedModel,
+      resolvedSize: input.resolvedSize,
+      resolvedQuality: input.resolvedQuality,
+      cacheHit: input.cacheHit,
+      estimatedCostUsd: input.estimatedCostUsd,
+      costSource: input.costSource,
+      rateCardVersion: input.rateCardVersion,
+      capabilityVersion: input.capabilityVersion,
+      textRenderingMode:
+        input.request.textRenderingMode ?? "program_overlay",
       labelRendererVersion: LABEL_RENDERER_VERSION,
       fontPolicyVersion: FONT_POLICY_VERSION,
     },

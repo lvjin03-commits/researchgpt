@@ -67,6 +67,12 @@ const {
   FigureRequestSchema,
 } = require("../lib/document-v2/assets/contracts.ts");
 const {
+  createImageExecutionProfile,
+} = require("../lib/document-v2/assets/execution-policy.ts");
+const {
+  resolveFigureRenderStrategy,
+} = require("../lib/document-v2/assets/render-policy.ts");
+const {
   deriveOrderedReferenceIds,
 } = require("../lib/document-v2/citations/manifest.ts");
 const {
@@ -1394,6 +1400,7 @@ async function verifyDeterministicChineseFigureRendering() {
   };
   let providerCalls = 0;
   let providerPrompt = "";
+  const baseAssetCache = new Map();
   const basePng = await sharp({
     create: {
       width: 1536,
@@ -1414,7 +1421,18 @@ async function verifyDeterministicChineseFigureRendering() {
         },
       },
     },
-    "test-image-model",
+    createImageExecutionProfile({
+      visualIntent: "auto",
+      frozenAt: "2026-08-02T00:00:00.000Z",
+    }),
+    {
+      async load(fingerprint) {
+        return baseAssetCache.get(fingerprint) ?? null;
+      },
+      async save(fingerprint, record) {
+        baseAssetCache.set(fingerprint, record);
+      },
+    },
   );
   const deterministicRequest = FigureRequestSchema.parse(baseRequest);
   assert.equal(figureGenerator.requiresProviderCall(deterministicRequest), false);
@@ -1454,8 +1472,19 @@ async function verifyDeterministicChineseFigureRendering() {
     renderStrategy: "textless_raster_overlay",
   });
   assert.equal(figureGenerator.requiresProviderCall(rasterRequest), true);
-  const raster = await figureGenerator.generate(rasterRequest);
+  let rasterProviderCalls = 0;
+  const raster = await figureGenerator.generate(rasterRequest, {
+    onProviderCall: () => { rasterProviderCalls += 1; },
+  });
   assert.equal(providerCalls, 1);
+  assert.equal(rasterProviderCalls, 1);
+  assert.equal(raster.provenance.cacheHit, false);
+  const cachedRaster = await figureGenerator.generate(rasterRequest, {
+    onProviderCall: () => { rasterProviderCalls += 1; },
+  });
+  assert.equal(providerCalls, 1, "A cached base asset must not call the provider twice.");
+  assert.equal(rasterProviderCalls, 1);
+  assert.equal(cachedRaster.provenance.cacheHit, true);
   assert.match(
     providerPrompt,
     /Do not render any text, letters, numbers, symbols, labels, legend/,
@@ -1463,6 +1492,24 @@ async function verifyDeterministicChineseFigureRendering() {
   const rasterMetadata = await sharp(raster.data).metadata();
   assert.equal(rasterMetadata.width, 1800);
   assert((rasterMetadata.height ?? 0) > 1000);
+  assert.equal(
+    resolveFigureRenderStrategy({
+      ...baseRequest,
+      figureType: "mechanism_diagram",
+    }),
+    "deterministic_svg",
+    "A node-and-arrow mechanism must use deterministic rendering.",
+  );
+  assert.equal(
+    resolveFigureRenderStrategy({
+      ...baseRequest,
+      figureType: "mechanism_diagram",
+      contentBrief:
+        "Show a three-dimensional porous microstructure and molecular chain morphology.",
+    }),
+    "generative_raster_standard",
+    "A morphology-dependent mechanism may use the standard raster tier.",
+  );
 
   const outputDirectory = fs.mkdtempSync(
     path.join(os.tmpdir(), "researchgpt-document-v2-figure-zh-"),

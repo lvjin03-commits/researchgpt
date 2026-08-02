@@ -819,6 +819,12 @@ export class DocumentV2JobService {
       componentState?.approved?.kind === "blocks"
         ? componentState.approved.assets.length
         : 0;
+    const figureState = componentKey
+      ? orchestration?.figures.findLast(
+          (figure) => figure.request.componentKey === componentKey,
+        )
+      : undefined;
+    const figureProvenance = figureState?.asset?.provenance;
     const category: NonNullable<DocumentJobEvent["category"]> =
       stage === "content_generation"
         ? status === "started"
@@ -850,6 +856,23 @@ export class DocumentV2JobService {
         ...(componentPlan ? { componentType: componentPlan.type } : {}),
         ...(componentState
           ? { componentStatus: componentState.status, assetCount }
+          : {}),
+        ...(figureState
+          ? {
+              figureRequestId: figureState.request.requestId,
+              requestedRenderStrategy:
+                figureState.request.renderStrategy ?? null,
+              resolvedRenderStrategy:
+                figureProvenance?.renderStrategy ?? null,
+              imageModel: figureProvenance?.resolvedModel ?? null,
+              imageQuality: figureProvenance?.resolvedQuality ?? null,
+              imageSize: figureProvenance?.resolvedSize ?? null,
+              imageCacheHit: figureProvenance?.cacheHit ?? false,
+              imageEstimatedCostUsd:
+                figureProvenance?.estimatedCostUsd ?? 0,
+              imageRateCardVersion:
+                figureProvenance?.rateCardVersion ?? null,
+            }
           : {}),
         ...(errorCode === undefined ? {} : { errorCode }),
         ...(job.checkpoint.budget

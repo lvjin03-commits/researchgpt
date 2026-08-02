@@ -16,6 +16,34 @@ This document is authoritative for step 6 of the document-v2 migration.
 No stage after the figure generator may reinterpret the scientific meaning of
 the image.
 
+## Render and cost policy
+
+Document V2 freezes one image execution profile per job. It does not reuse the
+general chat image model setting.
+
+| Strategy | Intended use | Provider call |
+|---|---|---|
+| `deterministic_svg` | flows, frameworks, comparisons, and node-arrow mechanisms | no |
+| `verified_data_plot` | plots backed by verified structured numeric data | no |
+| `generative_raster_standard` | morphology or spatial illustrations that cannot be represented deterministically | standard tier |
+| `generative_raster_premium` | explicitly authorized premium illustrations | premium tier |
+
+`textless_raster_overlay` remains readable only for checkpoints created before
+the tiered policy and resolves to the standard tier. New requests do not emit
+that value.
+
+The default standard configuration is `gpt-image-1-mini`, medium quality, at
+1536 x 1024. Premium defaults to `gpt-image-2`, high quality, but is disabled
+unless the task freezes explicit authorization. Provider capability and rate
+card versions are stored with the job instead of being re-resolved by each
+worker.
+
+The base raster is keyed by a canonical semantic fingerprint that excludes
+figure numbers, captions, visible labels, file paths, and asset revisions.
+Changing labels therefore re-renders the program-owned text layer without
+paying to regenerate the visual base. The cache is scoped to the document
+owner.
+
 ## Figure request
 
 The Figure Plan freezes:
@@ -54,9 +82,10 @@ The validated pipeline enforces:
   preference;
 - SHA-256 checksum over primary and fallback media.
 
-The figure generator receives up to two local attempts by default. A
-low-quality image retries the image generator only; it does not regenerate the
-approved chapter text.
+The production worker performs at most one paid provider call for a base-asset
+fingerprint. Provider output is stored before label overlay and final asset
+upload. Conversion, label, upload, or DOCX failures resume from the stored base
+asset and never regenerate approved chapter text.
 
 ## Figure numbering and text references
 
@@ -127,10 +156,7 @@ visually inspected.
 
 ## Not yet implemented
 
-- deterministic SVG templates for supported scientific mechanisms and
-  workflows;
 - data-plot renderer driven by verified numeric datasets;
 - native Word `REF` fields for cross-references;
-- persistent asset storage and deduplication;
 - figure-level UI progress and preview;
-- production route integration.
+- task UI for premium image authorization.

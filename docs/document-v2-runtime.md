@@ -101,7 +101,9 @@ Required server-only environment variables:
 - `SUPABASE_SERVICE_ROLE_KEY` for claiming jobs and storing artifacts;
 - `CRON_SECRET` for the internal worker endpoint;
 - `OPENAI_API_KEY` for structured component and final figure generation;
-- optional `OPENAI_DOCUMENT_MODEL` and `OPENAI_IMAGE_MODEL` overrides.
+- optional `OPENAI_DOCUMENT_MODEL`, `OPENAI_IMAGE_STANDARD_MODEL`, and
+  `OPENAI_IMAGE_PREMIUM_MODEL` overrides. `OPENAI_IMAGE_MODEL` remains the
+  general chat-image setting and is not the Document V2 execution profile.
 - optional `DOCUMENT_V2_WORKER_BUDGET_MS` wall-clock budget (45 seconds by
   default, capped at 240 seconds).
 

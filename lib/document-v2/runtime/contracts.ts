@@ -8,6 +8,7 @@ import {
   ReferencePipelineResultSchema,
   ReferenceWarningSchema,
 } from "../references/contracts";
+import { ImageExecutionProfileSchema } from "../assets/contracts";
 
 const IdentifierSchema = z.string().trim().min(1).max(120);
 const DateTimeSchema = z.iso.datetime({ offset: true });
@@ -313,6 +314,7 @@ export const DocumentJobCheckpointSchema = z
     referenceExecution: ReferenceExecutionProfileSchema.optional(),
     referenceResult: ReferencePipelineResultSchema.optional(),
     textExecution: DocumentTextExecutionProfileSchema.optional(),
+    imageExecution: ImageExecutionProfileSchema.optional(),
     executionBudget: DocumentExecutionBudgetSnapshotSchema.optional(),
     dispatchToken: z.string().min(32).max(200).optional(),
     budget: DocumentJobBudgetSchema.optional(),

@@ -16,6 +16,7 @@ import type { ExportRecord } from "@/lib/export/types";
 import {
   OpenAIFinalFigureGenerator,
   OpenAIStructuredComponentModel,
+  type FigureBaseAssetCache,
 } from "./openai-adapters";
 import {
   ProviderDocumentTextExecutor,
@@ -46,6 +47,11 @@ import {
 } from "@/lib/document-v2/runtime/token-budgets";
 import { createDocumentOrchestrationState } from "@/lib/document-v2/orchestration/orchestrator";
 import type { FigureAsset } from "@/lib/document-v2/assets/contracts";
+import {
+  createImageExecutionProfile,
+  isGenerativeRenderStrategy,
+} from "@/lib/document-v2/assets/execution-policy";
+import { renderDeterministicScientificFigure } from "@/lib/document-v2/assets/deterministic-figure-renderer";
 import type { FinalDocumentSpec } from "@/lib/document-v2/contracts";
 import {
   createReferenceExecutionProfile,
@@ -266,6 +272,10 @@ async function prepareIntake(input: {
       ...job,
       checkpoint: {
         ...job.checkpoint,
+        imageExecution: createImageExecutionProfile({
+          visualIntent: request.userRequirements.visualIntent,
+          frozenAt: new Date().toISOString(),
+        }),
         referenceExecution,
         referenceResult,
       },
@@ -655,6 +665,60 @@ async function hydrateFigureAssets(
   return { ...spec, assets };
 }
 
+function createFigureBaseAssetCache(input: {
+  supabase: SupabaseClient;
+  ownerId: string;
+}): FigureBaseAssetCache {
+  const bucket = input.supabase.storage.from(CHAT_ATTACHMENTS_BUCKET);
+  const basePath = (fingerprint: string) =>
+    `${input.ownerId}/document-v2/image-base-cache/${fingerprint}`;
+  return {
+    async load(fingerprint) {
+      const image = await bucket.download(`${basePath(fingerprint)}.png`);
+      if (image.error || !image.data) return null;
+      const metadata = await bucket.download(`${basePath(fingerprint)}.json`);
+      let parsed: Record<string, string> = {};
+      if (!metadata.error && metadata.data) {
+        try {
+          parsed = JSON.parse(await metadata.data.text()) as Record<string, string>;
+        } catch {
+          parsed = {};
+        }
+      }
+      return {
+        data: Buffer.from(await image.data.arrayBuffer()),
+        providerRequestId: parsed.providerRequestId,
+        resolvedModel: parsed.resolvedModel,
+        resolvedSize: parsed.resolvedSize,
+        resolvedQuality: parsed.resolvedQuality,
+      };
+    },
+    async save(fingerprint, record) {
+      const imagePath = `${basePath(fingerprint)}.png`;
+      const image = await bucket.upload(imagePath, record.data, {
+        contentType: "image/png",
+        upsert: false,
+      });
+      if (image.error && !/already exists/i.test(image.error.message)) {
+        throw image.error;
+      }
+      const metadata = await bucket.upload(
+        `${basePath(fingerprint)}.json`,
+        Buffer.from(JSON.stringify({
+          providerRequestId: record.providerRequestId,
+          resolvedModel: record.resolvedModel,
+          resolvedSize: record.resolvedSize,
+          resolvedQuality: record.resolvedQuality,
+        }), "utf8"),
+        { contentType: "application/json; charset=utf-8", upsert: false },
+      );
+      if (metadata.error && !/already exists/i.test(metadata.error.message)) {
+        throw metadata.error;
+      }
+    },
+  };
+}
+
 export async function executeOneDocumentV2Tick(jobId?: string) {
   const config = requireDocumentV2WorkerConfig();
   const supabase = adminClient();
@@ -792,6 +856,26 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       progress: preparedJob.progress,
     };
   }
+  if (!preparedJob.checkpoint.imageExecution) {
+    const savedAt = new Date().toISOString();
+    preparedJob = await repository.save(
+      DocumentJobSchema.parse({
+        ...preparedJob,
+        checkpoint: {
+          ...preparedJob.checkpoint,
+          imageExecution: createImageExecutionProfile({
+            visualIntent:
+              preparedJob.checkpoint.orchestration.request.userRequirements
+                .visualIntent,
+            frozenAt: savedAt,
+          }),
+          savedAt,
+        },
+        updatedAt: savedAt,
+      }),
+      preparedJob.revision,
+    );
+  }
   const orchestration = preparedJob.checkpoint.orchestration;
   if (
     orchestration?.figures.some(
@@ -834,25 +918,80 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
       validator: new MatureDocumentComponentValidator(),
       figureAssetMaterializer: {
         async materialize(request, context) {
+          const imageExecution = preparedJob.checkpoint.imageExecution;
+          if (!imageExecution) {
+            throw new Error("document_image_execution_profile_missing");
+          }
+          const materializeDeterministic = () =>
+            new ValidatedFigureAssetPipeline(
+              {
+                async generate(fallbackRequest) {
+                  return renderDeterministicScientificFigure(fallbackRequest);
+                },
+              },
+              1,
+            ).materialize({
+              ...request,
+              renderStrategy: "deterministic_svg",
+              textRenderingMode: "native_deterministic",
+            });
+          const providerRequired = isGenerativeRenderStrategy(
+            request.renderStrategy,
+          );
+          if (!providerRequired) {
+            return storeFigureAsset(
+              supabase,
+              preparedJob.ownerId,
+              preparedJob.jobId,
+              await materializeDeterministic(),
+            );
+          }
           if (!config.openAiApiKey) {
+            if (
+              imageExecution.failurePolicy ===
+              "deliver_with_deterministic_fallback"
+            ) {
+              return storeFigureAsset(
+                supabase,
+                preparedJob.ownerId,
+                preparedJob.jobId,
+                await materializeDeterministic(),
+              );
+            }
             throw new Error(
               "openai_image_provider_not_configured: this job requires a complex image but OPENAI_API_KEY is unavailable.",
             );
           }
-          const validatedFigurePipeline = new ValidatedFigureAssetPipeline(
-            new OpenAIFinalFigureGenerator(
+          const figureGenerator = new OpenAIFinalFigureGenerator(
               new OpenAI({
                 apiKey: config.openAiApiKey,
                 timeout: 75_000,
                 maxRetries: 0,
               }),
-              process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5",
-            ),
+              imageExecution,
+              createFigureBaseAssetCache({
+                supabase,
+                ownerId: preparedJob.ownerId,
+              }),
+            );
+          const validatedFigurePipeline = new ValidatedFigureAssetPipeline(
+            figureGenerator,
+            1,
           );
-          const asset = await validatedFigurePipeline.materialize(
-            request,
-            context,
-          );
+          let asset: FigureAsset;
+          try {
+            asset = await validatedFigurePipeline.materialize(request, context);
+          } catch (error) {
+            if (
+              imageExecution.failurePolicy !==
+                "deliver_with_deterministic_fallback" ||
+              request.renderStrategy === "deterministic_svg" ||
+              request.renderStrategy === "verified_data_plot"
+            ) {
+              throw error;
+            }
+            asset = await materializeDeterministic();
+          }
           return storeFigureAsset(
             supabase,
             preparedJob.ownerId,

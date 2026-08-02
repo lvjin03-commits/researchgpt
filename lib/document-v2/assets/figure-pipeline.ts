@@ -20,13 +20,27 @@ export interface GeneratedFigureBinary {
   fallbackPng?: Uint8Array;
   provenance?: Readonly<{
     baseAssetProvider?: string;
+    baseAssetFingerprint?: string;
+    providerRequestId?: string;
+    resolvedModel?: string;
+    resolvedSize?: string;
+    resolvedQuality?: string;
+    cacheHit?: boolean;
+    estimatedCostUsd?: number;
+    costSource?: "provider_usage" | "rate_card_estimate";
+    rateCardVersion?: string;
+    capabilityVersion?: string;
+    textRenderingMode?: FigureRequest["textRenderingMode"];
     labelRendererVersion?: string;
     fontPolicyVersion?: string;
   }>;
 }
 
 export interface FinalFigureGenerator {
-  generate(request: FigureRequest): Promise<GeneratedFigureBinary>;
+  generate(
+    request: FigureRequest,
+    context?: { onProviderCall?(): void },
+  ): Promise<GeneratedFigureBinary>;
   requiresProviderCall?(request: FigureRequest): boolean;
 }
 
@@ -114,10 +128,7 @@ export class ValidatedFigureAssetPipeline
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       try {
-        if (this.generator.requiresProviderCall?.(request) ?? true) {
-          context?.onProviderCall?.();
-        }
-        return await this.generateAndValidate(request);
+        return await this.generateAndValidate(request, context);
       } catch (error) {
         lastError = error;
       }
@@ -129,8 +140,9 @@ export class ValidatedFigureAssetPipeline
 
   private async generateAndValidate(
     request: FigureRequest,
+    context?: { onProviderCall?(): void },
   ): Promise<FigureAsset> {
-    const generated = await this.generator.generate(request);
+    const generated = await this.generator.generate(request, context);
     assertFileSize(generated.data, generated.format.toUpperCase());
 
     let pngData: Uint8Array;
@@ -215,7 +227,19 @@ export class ValidatedFigureAssetPipeline
       altText: request.altText,
       provenance: {
         renderStrategy,
+        textRenderingMode:
+          generated.provenance?.textRenderingMode ?? request.textRenderingMode,
         baseAssetProvider: generated.provenance?.baseAssetProvider,
+        baseAssetFingerprint: generated.provenance?.baseAssetFingerprint,
+        providerRequestId: generated.provenance?.providerRequestId,
+        resolvedModel: generated.provenance?.resolvedModel,
+        resolvedSize: generated.provenance?.resolvedSize,
+        resolvedQuality: generated.provenance?.resolvedQuality,
+        cacheHit: generated.provenance?.cacheHit,
+        estimatedCostUsd: generated.provenance?.estimatedCostUsd,
+        costSource: generated.provenance?.costSource,
+        rateCardVersion: generated.provenance?.rateCardVersion,
+        capabilityVersion: generated.provenance?.capabilityVersion,
         labelRendererVersion:
           generated.provenance?.labelRendererVersion ?? "figure-label-renderer-v1",
         fontPolicyVersion:

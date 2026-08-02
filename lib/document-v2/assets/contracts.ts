@@ -4,9 +4,65 @@ const IdentifierSchema = z.string().min(1).max(120);
 
 export const FigureRenderStrategySchema = z.enum([
   "deterministic_svg",
+  "generative_raster_standard",
+  "generative_raster_premium",
+  // Compatibility value for jobs created before the tiered image policy.
   "textless_raster_overlay",
   "verified_data_plot",
 ]);
+
+export const FigureTextRenderingModeSchema = z.enum([
+  "native_deterministic",
+  "program_overlay",
+  "numbered_legend",
+]);
+
+export const FigureComplexityAssessmentSchema = z
+  .object({
+    topologyComplexity: z.number().int().min(0).max(10),
+    spatialIllustrationRequired: z.boolean(),
+    realisticMorphologyRequired: z.boolean(),
+    dataDriven: z.boolean(),
+    labelCount: z.number().int().min(0).max(24),
+    deterministicRenderability: z.number().min(0).max(1),
+  })
+  .strict();
+
+export const ImageProviderConfigSchema = z
+  .object({
+    provider: z.literal("openai"),
+    requestedModelId: IdentifierSchema,
+    resolvedModelId: IdentifierSchema,
+    size: z.enum(["1024x1024", "1024x1536", "1536x1024"]),
+    quality: z.enum(["low", "medium", "high"]),
+    outputFormat: z.literal("png"),
+    capabilityVersion: IdentifierSchema,
+  })
+  .strict();
+
+export const ImageExecutionProfileSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    standard: ImageProviderConfigSchema,
+    premium: ImageProviderConfigSchema,
+    premiumAuthorization: z
+      .object({
+        enabled: z.boolean(),
+        maximumFigures: z.number().int().nonnegative(),
+        maximumEstimatedCostUsd: z.number().nonnegative(),
+      })
+      .strict(),
+    failurePolicy: z.enum([
+      "deliver_without_failed_figures",
+      "deliver_with_deterministic_fallback",
+      "pause_before_delivery",
+    ]),
+    rateCardVersion: IdentifierSchema,
+    frozenAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export type ImageExecutionProfile = z.infer<typeof ImageExecutionProfileSchema>;
 
 export const FigureLabelSpecSchema = z
   .object({
@@ -90,6 +146,8 @@ export const FigureRequestSchema = FigureRequestDraftSchema.extend({
   componentKey: IdentifierSchema,
   documentLanguage: z.enum(["zh", "en"]).optional(),
   renderStrategy: FigureRenderStrategySchema.optional(),
+  textRenderingMode: FigureTextRenderingModeSchema.optional(),
+  complexityAssessment: FigureComplexityAssessmentSchema.optional(),
   labels: z.array(FigureLabelSpecSchema).max(24).default([]),
 })
   .strict()
@@ -144,7 +202,18 @@ export const FigureAssetSchema = z
     provenance: z
       .object({
         renderStrategy: FigureRenderStrategySchema,
+        textRenderingMode: FigureTextRenderingModeSchema.optional(),
         baseAssetProvider: z.string().trim().min(1).max(120).optional(),
+        baseAssetFingerprint: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+        providerRequestId: z.string().trim().min(1).max(240).optional(),
+        resolvedModel: z.string().trim().min(1).max(120).optional(),
+        resolvedSize: z.string().trim().min(1).max(120).optional(),
+        resolvedQuality: z.string().trim().min(1).max(120).optional(),
+        cacheHit: z.boolean().optional(),
+        estimatedCostUsd: z.number().nonnegative().optional(),
+        costSource: z.enum(["provider_usage", "rate_card_estimate"]).optional(),
+        rateCardVersion: z.string().trim().min(1).max(120).optional(),
+        capabilityVersion: z.string().trim().min(1).max(120).optional(),
         labelRendererVersion: z.string().trim().min(1).max(120),
         fontPolicyVersion: z.string().trim().min(1).max(120),
         labelSpecHash: z.string().regex(/^[a-f0-9]{64}$/i),

@@ -6,7 +6,9 @@ import {
 } from "../assets/contracts";
 import type { FigureAssetMaterializer } from "../assets/figure-pipeline";
 import {
+  assessFigureComplexity,
   createFigureLabelSpecs,
+  resolveFigureTextRenderingMode,
   resolveFigureRenderStrategy,
 } from "../assets/render-policy";
 import { normalizeGeneratedComponentContent } from "../generation/content-normalizer";
@@ -434,12 +436,18 @@ function structurallyApprovePayload(input: {
       const requestId = draft.slotId
         ? stableFigureRequestId(draft.slotId, 0)
         : stableFigureRequestId(input.component.componentKey, index);
+      const renderStrategy = resolveFigureRenderStrategy(draft);
       return FigureRequestSchema.parse({
         ...draft,
         requestId,
         componentKey: input.component.componentKey,
         documentLanguage: input.documentLanguage,
-        renderStrategy: resolveFigureRenderStrategy(draft.figureType),
+        renderStrategy,
+        complexityAssessment: assessFigureComplexity(draft),
+        textRenderingMode: resolveFigureTextRenderingMode({
+          ...draft,
+          renderStrategy,
+        }),
         labels: createFigureLabelSpecs({
           requestId,
           claimsRepresented: draft.claimsRepresented,
