@@ -51,6 +51,14 @@ const {
   ModelHierarchicalOutlinePlanner,
 } = require("../lib/document-v2-production/planning.ts");
 const {
+  createFigureIntentsOperationContract,
+  createRequestUnderstandOperationContract,
+  createSectionIndexOperationContract,
+  createSectionPlanOperationContract,
+  createTemplateMatchOperationContract,
+  createThesisOperationContract,
+} = require("../lib/document-v2-production/structured-operation-contracts.ts");
+const {
   FigureAssetQualityError,
   ValidatedFigureAssetPipeline,
 } = require("../lib/document-v2/assets/figure-pipeline.ts");
@@ -1316,7 +1324,37 @@ function verifyCaptionNormalization() {
   assert.equal(empty.issues[0].code, "table_caption_empty");
 }
 
+function verifyPlanningOperationRecoveryRegistry() {
+  const passthroughSchema = z.object({ value: z.string() }).strict();
+  const expectedRecoveryPolicy = {
+    onNoJsonObject: "regenerate_once",
+    onTruncatedJson: "regenerate_once",
+    onJsonSyntaxError: "regenerate_once",
+    onSchemaValidationFailed: "repair_once",
+    onInvariantFailure: "pause",
+  };
+  const contracts = [
+    createRequestUnderstandOperationContract({ schema: passthroughSchema }),
+    createTemplateMatchOperationContract({ schema: passthroughSchema }),
+    createThesisOperationContract(),
+    createSectionIndexOperationContract({
+      minimumSections: 1,
+      maximumSections: 8,
+    }),
+    createFigureIntentsOperationContract(),
+    createSectionPlanOperationContract({
+      componentKey: "section-01",
+      availableEvidenceIds: ["evidence-01"],
+    }),
+  ];
+
+  for (const contract of contracts) {
+    assert.deepEqual(contract.recoveryPolicy, expectedRecoveryPolicy);
+  }
+}
+
 async function main() {
+  verifyPlanningOperationRecoveryRegistry();
   verifyCitationMarkerNormalization();
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();

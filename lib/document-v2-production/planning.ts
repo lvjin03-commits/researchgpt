@@ -7,15 +7,16 @@ import {
 } from "@/lib/document-v2/contracts";
 import type { DocumentTemplateMatcher } from "@/lib/document-v2/templates/resolver";
 import type { HierarchicalOutlinePlanner } from "@/lib/document-v2/planning/planner";
-import {
-  DocumentFigureIntentsDraftSchema,
-  normalizeFigureIntentCandidate,
-  DocumentThesisDraftSchema,
-  SectionPlanDraftSchema,
-} from "@/lib/document-v2/planning/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
 import { createDocumentPlanningLanguageContract } from "@/lib/document-v2/planning/language-contract";
-import { createSectionIndexOperationContract } from "./structured-operation-contracts";
+import {
+  createFigureIntentsOperationContract,
+  createRequestUnderstandOperationContract,
+  createSectionIndexOperationContract,
+  createSectionPlanOperationContract,
+  createTemplateMatchOperationContract,
+  createThesisOperationContract,
+} from "./structured-operation-contracts";
 
 function planningContext(input: {
   request: DocumentRequest;
@@ -80,10 +81,9 @@ export async function understandDocumentRequest(
     throw new Error("Document instruction must contain 1-8000 characters.");
   }
   const understood = await executor.generate({
-    operation: "request.understand",
-    budgetKey: "request.understand",
-    schemaName: "document_request_v1",
-    schema: UnderstoodRequestSchema,
+    ...createRequestUnderstandOperationContract({
+      schema: UnderstoodRequestSchema,
+    }),
     systemInstruction: [
       "Understand the user's complete document request semantically.",
       "A continuation such as 'generate it' must be interpreted from the supplied instruction/context, never by keyword routing.",
@@ -148,10 +148,7 @@ export class OpenAITemplateMatcher implements DocumentTemplateMatcher {
       rationale: z.string().min(1).max(1000),
     }).strict();
     return this.executor.generate({
-      operation: "template.match",
-      budgetKey: "template.match",
-      schemaName: "template_match_v1",
-      schema: CandidateDecision,
+      ...createTemplateMatchOperationContract({ schema: CandidateDecision }),
       systemInstruction:
         "Select exactly one compatible document template from the closed candidate list. Never invent a template.",
       userInstruction: JSON.stringify(input),
@@ -171,11 +168,7 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
       planningRevision: input.planningRevision,
     });
     return this.executor.generate({
-      operation: "outline.thesis",
-      budgetKey: "outline.thesis",
-      componentKey: "document-thesis",
-      schemaName: "document_thesis_v1",
-      schema: DocumentThesisDraftSchema,
+      ...createThesisOperationContract(),
       systemInstruction: [
         "Define only the central thesis and scope of one SCI review document.",
         "Return one review thesis, one scope boundary, the principal review questions, and a conclusion heading.",
@@ -253,12 +246,7 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
       planningRevision: input.planningRevision,
     });
     return this.executor.generate({
-      operation: "outline.figure_intents",
-      budgetKey: "outline.figure_intents",
-      componentKey: "document-figure-intents",
-      schemaName: "document_figure_intents_v1",
-      schema: DocumentFigureIntentsDraftSchema,
-      normalizeCandidate: normalizeFigureIntentCandidate,
+      ...createFigureIntentsOperationContract(),
       systemInstruction: [
         "Plan only essential scientific figure intents for the already-approved document structure.",
         "Return at most four figures and use the one-based sectionOrder supplied by the program.",
@@ -301,17 +289,10 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
       planningRevision: input.planningRevision,
     });
     return this.executor.generate({
-      operation: "outline.section_plan",
-      budgetKey: "outline.section_plan",
-      componentKey: input.section.sectionId,
-      schemaName: "document_section_plan_v1",
-      schema: SectionPlanDraftSchema,
-      validateCandidate: (candidate) => {
-        const available = new Set(input.availableEvidenceIds);
-        for (const id of candidate.requiredEvidenceIds) {
-          if (!available.has(id)) throw new Error(`Unavailable evidence ID: ${id}`);
-        }
-      },
+      ...createSectionPlanOperationContract({
+        componentKey: input.section.sectionId,
+        availableEvidenceIds: input.availableEvidenceIds,
+      }),
       systemInstruction: [
         "Plan the mature scientific argument for exactly one already-approved body section.",
         "Do not rename, split, reorder, or add sections and do not write prose paragraphs.",

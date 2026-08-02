@@ -46,7 +46,7 @@ export type DocumentModelUsage = {
   inputFingerprint: string;
   generationConfigFingerprint: string;
   attemptNumber: number;
-  attemptPurpose: "initial" | "regenerate" | "capacity_escalation";
+  attemptPurpose: "initial" | "regenerate" | "repair" | "capacity_escalation";
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -54,6 +54,19 @@ export type DocumentModelUsage = {
   calculatedCostUsd: number;
   durationMs: number;
 };
+
+export type StructuredRecoveryAction =
+  | "regenerate_once"
+  | "repair_once"
+  | "pause";
+
+export type StructuredOperationRecoveryPolicy = Readonly<{
+  onNoJsonObject?: StructuredRecoveryAction;
+  onTruncatedJson?: StructuredRecoveryAction;
+  onJsonSyntaxError?: StructuredRecoveryAction;
+  onSchemaValidationFailed?: StructuredRecoveryAction;
+  onInvariantFailure?: StructuredRecoveryAction;
+}>;
 
 const DOCUMENT_MODEL_PRICING_VERSION = "document-model-pricing-v1";
 
@@ -70,9 +83,7 @@ export type DocumentStructuredGenerationInput<T> = {
     normalizeCandidate?: (
       value: unknown,
     ) => StructuredResponseCandidateNormalization;
-    recoveryPolicy?: Readonly<{
-      regenerateOnNoJsonObject?: boolean;
-    }>;
+    recoveryPolicy?: StructuredOperationRecoveryPolicy;
 };
 
 export interface DocumentStructuredTextExecutor {
@@ -125,10 +136,74 @@ export class DocumentModelOperationError extends Error {
     message: string,
     readonly failureCategory: DocumentModelFailureCategory,
     readonly operation?: string,
+    readonly recoveryEvidence?: Readonly<{
+      providerContent: string;
+      candidateDiagnostics: ReadonlyArray<StructuredResponseCandidateDiagnostic>;
+    }>,
   ) {
     super(message);
     this.name = "DocumentModelOperationError";
   }
+}
+
+function schemaIssuePaths(
+  diagnostics: ReadonlyArray<StructuredResponseCandidateDiagnostic>,
+): string[] {
+  const widestCandidate = [...diagnostics]
+    .filter((candidate) => candidate.parseStatus === "valid")
+    .sort(
+      (left, right) =>
+        right.endOffset -
+        right.startOffset -
+        (left.endOffset - left.startOffset),
+    )[0];
+  return [...new Set(widestCandidate?.schemaIssuePaths ?? [])].slice(0, 20);
+}
+
+function recoveryActionFor(
+  error: DocumentModelOperationError,
+  policy: StructuredOperationRecoveryPolicy | undefined,
+): StructuredRecoveryAction {
+  if (!policy) return "pause";
+  if (error.failureCategory === "no_json_object") {
+    return policy.onNoJsonObject ?? "pause";
+  }
+  if (error.failureCategory === "truncated_json") {
+    return policy.onTruncatedJson ?? "pause";
+  }
+  if (error.failureCategory === "json_syntax_error") {
+    return policy.onJsonSyntaxError ?? "pause";
+  }
+  if (error.failureCategory === "schema_validation_failed") {
+    const paths = schemaIssuePaths(
+      error.recoveryEvidence?.candidateDiagnostics ?? [],
+    );
+    return paths.includes("$invariant")
+      ? (policy.onInvariantFailure ?? "pause")
+      : (policy.onSchemaValidationFailed ?? "pause");
+  }
+  return "pause";
+}
+
+function recoveryInstruction(input: {
+  attemptPurpose: "initial" | "regenerate" | "repair" | "capacity_escalation";
+  recoveryContext?: Readonly<{
+    failureCategory: DocumentModelFailureCategory;
+    providerContent: string;
+    schemaIssuePaths: ReadonlyArray<string>;
+  }>;
+}): string | undefined {
+  if (input.attemptPurpose !== "repair" || !input.recoveryContext) {
+    return undefined;
+  }
+  return [
+    "Repair the previous structured response and return one complete replacement JSON object.",
+    "Preserve valid semantic content and ordering. Change only fields required to satisfy the schema.",
+    "Do not omit required fields, introduce program-owned fields, or return a patch/diff.",
+    `Failure category: ${input.recoveryContext.failureCategory}.`,
+    `Invalid schema paths: ${input.recoveryContext.schemaIssuePaths.join(", ") || "unknown"}.`,
+    `Previous response:\n${input.recoveryContext.providerContent.slice(0, 50_000)}`,
+  ].join("\n\n");
 }
 
 type StoredExecution = {
@@ -221,10 +296,19 @@ export class ProviderDocumentTextExecutor
     input: DocumentStructuredGenerationInput<T>,
     attempt: {
       attemptNumber: number;
-      attemptPurpose: "initial" | "regenerate" | "capacity_escalation";
+      attemptPurpose:
+        | "initial"
+        | "regenerate"
+        | "repair"
+        | "capacity_escalation";
       parentExecutionKey?: string;
       maxOutputTokensOverride?: number;
       escalationReason?: string;
+      recoveryContext?: Readonly<{
+        failureCategory: DocumentModelFailureCategory;
+        providerContent: string;
+        schemaIssuePaths: ReadonlyArray<string>;
+      }>;
     },
   ): Promise<T> {
     const startedAt = Date.now();
@@ -270,6 +354,9 @@ export class ProviderDocumentTextExecutor
         this.executionBudget.modelCapability.capabilityVersion,
       attemptNumber: attempt.attemptNumber,
       attemptPurpose: attempt.attemptPurpose,
+      recoveryContextFingerprint: attempt.recoveryContext
+        ? sha256Canonical(attempt.recoveryContext)
+        : null,
     });
     const executionKey = sha256Canonical({
       jobId: this.persistence?.jobId ?? "unpersisted",
@@ -503,6 +590,10 @@ export class ProviderDocumentTextExecutor
     let auxiliaryContent: NormalizedAuxiliaryContent[] = [];
     let responseSource: "content" | "auxiliary_content" | null = null;
     let recoveryMode: string | null = null;
+    const boundedRecoveryInstruction = recoveryInstruction(attempt);
+    const effectiveSystemInstruction = boundedRecoveryInstruction
+      ? `${input.systemInstruction}\n\n${boundedRecoveryInstruction}`
+      : input.systemInstruction;
 
     try {
       if (this.persistence) {
@@ -518,7 +609,7 @@ export class ProviderDocumentTextExecutor
       if (this.profile.provider === "openai") {
         const response = await this.client.responses.parse({
           model: this.profile.resolvedModelId,
-          instructions: input.systemInstruction,
+          instructions: effectiveSystemInstruction,
           input: input.userInstruction,
           max_output_tokens: effectiveMaxOutputTokens,
           reasoning: { effort: effectiveReasoningEffort },
@@ -552,7 +643,7 @@ export class ProviderDocumentTextExecutor
             {
               role: "system",
               content: [
-                input.systemInstruction,
+                effectiveSystemInstruction,
                 `Return one JSON object matching this schema exactly: ${JSON.stringify(z.toJSONSchema(input.schema))}`,
                 "Return only that JSON object in message.content. Do not include Markdown fences, explanations, examples, introductions, or trailing text. Do not place the final answer only in reasoning_content.",
               ].join("\n\n"),
@@ -734,6 +825,10 @@ export class ProviderDocumentTextExecutor
               : parseResult.message,
             failureCategory,
             input.operation,
+            {
+              providerContent: parseContent,
+              candidateDiagnostics: parseResult.candidateDiagnostics,
+            },
           );
         }
         rawResponse = parseResult.parsedResponse;
@@ -830,9 +925,6 @@ export class ProviderDocumentTextExecutor
       const outputWasTruncated =
         error instanceof DocumentModelOperationError &&
         error.failureCategory === "output_truncated";
-      const outputHasNoJsonObject =
-        error instanceof DocumentModelOperationError &&
-        error.failureCategory === "no_json_object";
       const canEscalate =
         outputWasTruncated &&
         operationBudget !== undefined &&
@@ -900,16 +992,39 @@ export class ProviderDocumentTextExecutor
         }
         throw terminalFailure;
       }
+      const structuredRecoveryAction =
+        error instanceof DocumentModelOperationError
+          ? recoveryActionFor(error, input.recoveryPolicy)
+          : "pause";
       if (
-        outputHasNoJsonObject &&
-        input.recoveryPolicy?.regenerateOnNoJsonObject === true &&
-        attempt.attemptPurpose === "initial"
+        attempt.attemptPurpose === "initial" &&
+        (structuredRecoveryAction === "regenerate_once" ||
+          structuredRecoveryAction === "repair_once") &&
+        error instanceof DocumentModelOperationError
       ) {
+        const paths = schemaIssuePaths(
+          error.recoveryEvidence?.candidateDiagnostics ?? [],
+        );
         return this.generateAttempt(input, {
           attemptNumber: 2,
-          attemptPurpose: "regenerate",
+          attemptPurpose:
+            structuredRecoveryAction === "repair_once"
+              ? "repair"
+              : "regenerate",
           parentExecutionKey: executionKey,
-          escalationReason: "model_output_json_missing",
+          escalationReason:
+            structuredRecoveryAction === "repair_once"
+              ? `structured_repair:${error.failureCategory}`
+              : `structured_regenerate:${error.failureCategory}`,
+          recoveryContext:
+            structuredRecoveryAction === "repair_once" &&
+            error.recoveryEvidence
+              ? {
+                  failureCategory: error.failureCategory,
+                  providerContent: error.recoveryEvidence.providerContent,
+                  schemaIssuePaths: paths,
+                }
+              : undefined,
         });
       }
       throw error;

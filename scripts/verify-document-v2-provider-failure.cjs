@@ -186,7 +186,7 @@ async function verifyBoundedMissingJsonRegeneration() {
     schema: z.object({ value: z.string() }).strict(),
     systemInstruction: "Return test JSON.",
     userInstruction: "Test.",
-    recoveryPolicy: { regenerateOnNoJsonObject: true },
+    recoveryPolicy: { onNoJsonObject: "regenerate_once" },
   });
   assert.deepEqual(result, { value: "recovered" });
   assert.equal(recovered.calls.count, 2);
@@ -195,7 +195,7 @@ async function verifyBoundedMissingJsonRegeneration() {
   assert.equal(rows[0].failure_category, "no_json_object");
   assert.equal(rows[1].attempt_number, 2);
   assert.equal(rows[1].parent_execution_key, rows[0].execution_key);
-  assert.equal(rows[1].escalation_reason, "model_output_json_missing");
+  assert.equal(rows[1].escalation_reason, "structured_regenerate:no_json_object");
 
   const terminal = createSequencedExecutor([noJson, noJson]);
   await assert.rejects(
@@ -206,7 +206,7 @@ async function verifyBoundedMissingJsonRegeneration() {
       schema: z.object({ value: z.string() }).strict(),
       systemInstruction: "Return test JSON.",
       userInstruction: "Test.",
-      recoveryPolicy: { regenerateOnNoJsonObject: true },
+      recoveryPolicy: { onNoJsonObject: "regenerate_once" },
     }),
     (error) =>
       error instanceof DocumentModelOperationError &&
@@ -236,20 +236,67 @@ async function verifyBoundedMissingJsonRegeneration() {
     ],
     usage: { prompt_tokens: 10, completion_tokens: 4 },
   };
-  const schemaFailure = createSequencedExecutor([schemaInvalid, valid]);
-  await assert.rejects(() => schemaFailure.executor.generate({
+  const schemaRepair = createSequencedExecutor([schemaInvalid, valid]);
+  const schemaResult = await schemaRepair.executor.generate({
     operation: "outline.section_index",
     componentKey: "document-section-index",
     schemaName: "provider_failure_test",
     schema: z.object({ value: z.string() }).strict(),
     systemInstruction: "Return test JSON.",
     userInstruction: "Test.",
-    recoveryPolicy: { regenerateOnNoJsonObject: true },
+    recoveryPolicy: { onSchemaValidationFailed: "repair_once" },
+  });
+  assert.deepEqual(schemaResult, { value: "recovered" });
+  assert.equal(
+    schemaRepair.calls.count,
+    2,
+    "A schema failure may use one bounded repair attempt.",
+  );
+  const schemaRows = [...schemaRepair.persistence.rows.values()];
+  assert.equal(
+    schemaRows[1].escalation_reason,
+    "structured_repair:schema_validation_failed",
+  );
+  assert.match(
+    schemaRepair.calls.lastInput.messages[0].content,
+    /Previous response:/,
+  );
+  assert.match(
+    schemaRepair.calls.lastInput.messages[0].content,
+    /Invalid schema paths: value/,
+  );
+
+  const invariantInvalid = {
+    id: "section-index-invariant-invalid",
+    model: "deepseek-v4-flash",
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: '{"value":"unavailable-id"}', tool_calls: [] },
+      },
+    ],
+    usage: { prompt_tokens: 10, completion_tokens: 4 },
+  };
+  const invariantFailure = createSequencedExecutor([invariantInvalid, valid]);
+  await assert.rejects(() => invariantFailure.executor.generate({
+    operation: "outline.section_plan",
+    componentKey: "section-01",
+    schemaName: "provider_failure_test",
+    schema: z.object({ value: z.string() }).strict(),
+    validateCandidate: () => {
+      throw new Error("Unavailable evidence ID");
+    },
+    systemInstruction: "Return test JSON.",
+    userInstruction: "Test.",
+    recoveryPolicy: {
+      onSchemaValidationFailed: "repair_once",
+      onInvariantFailure: "pause",
+    },
   }));
   assert.equal(
-    schemaFailure.calls.count,
+    invariantFailure.calls.count,
     1,
-    "Schema failures must not be hidden by full regeneration.",
+    "Unsafe business invariant failures must not be retried.",
   );
 }
 
