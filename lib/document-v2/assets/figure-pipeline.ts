@@ -6,6 +6,7 @@ import {
   type FigureAsset,
   type FigureRequest,
 } from "./contracts";
+import { resolveFigureRenderStrategy } from "./render-policy";
 
 const MINIMUM_WIDTH_PX = 900;
 const MINIMUM_HEIGHT_PX = 400;
@@ -17,10 +18,16 @@ export interface GeneratedFigureBinary {
   format: "png" | "svg";
   data: Uint8Array;
   fallbackPng?: Uint8Array;
+  provenance?: Readonly<{
+    baseAssetProvider?: string;
+    labelRendererVersion?: string;
+    fontPolicyVersion?: string;
+  }>;
 }
 
 export interface FinalFigureGenerator {
   generate(request: FigureRequest): Promise<GeneratedFigureBinary>;
+  requiresProviderCall?(request: FigureRequest): boolean;
 }
 
 export interface FigureAssetMaterializer {
@@ -107,7 +114,9 @@ export class ValidatedFigureAssetPipeline
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       try {
-        context?.onProviderCall?.();
+        if (this.generator.requiresProviderCall?.(request) ?? true) {
+          context?.onProviderCall?.();
+        }
         return await this.generateAndValidate(request);
       } catch (error) {
         lastError = error;
@@ -178,6 +187,11 @@ export class ValidatedFigureAssetPipeline
       .update(generated.data)
       .update(generated.fallbackPng ?? new Uint8Array())
       .digest("hex");
+    const labelSpecHash = createHash("sha256")
+      .update(JSON.stringify(request.labels))
+      .digest("hex");
+    const renderStrategy =
+      request.renderStrategy ?? resolveFigureRenderStrategy(request.figureType);
 
     return FigureAssetSchema.parse({
       id: `${request.requestId}-asset`,
@@ -199,6 +213,16 @@ export class ValidatedFigureAssetPipeline
       sha256: hash,
       title: request.title,
       altText: request.altText,
+      provenance: {
+        renderStrategy,
+        baseAssetProvider: generated.provenance?.baseAssetProvider,
+        labelRendererVersion:
+          generated.provenance?.labelRendererVersion ?? "figure-label-renderer-v1",
+        fontPolicyVersion:
+          generated.provenance?.fontPolicyVersion ?? "noto-cjk-v1",
+        labelSpecHash,
+        finalAssetHash: hash,
+      },
     });
   }
 }

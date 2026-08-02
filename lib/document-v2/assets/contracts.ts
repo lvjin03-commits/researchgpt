@@ -2,6 +2,34 @@ import { z } from "zod";
 
 const IdentifierSchema = z.string().min(1).max(120);
 
+export const FigureRenderStrategySchema = z.enum([
+  "deterministic_svg",
+  "textless_raster_overlay",
+  "verified_data_plot",
+]);
+
+export const FigureLabelSpecSchema = z
+  .object({
+    labelId: IdentifierSchema,
+    text: z.string().trim().min(1).max(500),
+    role: z.enum(["node", "edge", "callout", "legend", "axis", "annotation"]),
+    anchorId: IdentifierSchema,
+    preferredPlacement: z.enum([
+      "inside",
+      "above",
+      "below",
+      "left",
+      "right",
+      "auto",
+    ]),
+    maxLines: z.number().int().min(1).max(8).optional(),
+    maxWidthRatio: z.number().positive().max(1).optional(),
+    priority: z.enum(["required", "optional"]),
+  })
+  .strict();
+
+export type FigureLabelSpec = z.infer<typeof FigureLabelSpecSchema>;
+
 export const FigureRequestDraftSchema = z
   .object({
     slotId: IdentifierSchema.nullable().default(null),
@@ -60,7 +88,31 @@ export type FigureRequestDraft = z.infer<typeof FigureRequestDraftSchema>;
 export const FigureRequestSchema = FigureRequestDraftSchema.extend({
   requestId: IdentifierSchema,
   componentKey: IdentifierSchema,
-}).strict();
+  documentLanguage: z.enum(["zh", "en"]).optional(),
+  renderStrategy: FigureRenderStrategySchema.optional(),
+  labels: z.array(FigureLabelSpecSchema).max(24).default([]),
+})
+  .strict()
+  .superRefine((request, context) => {
+    const labelIds = new Set<string>();
+    request.labels.forEach((label, index) => {
+      if (labelIds.has(label.labelId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["labels", index, "labelId"],
+          message: "Figure label IDs must be unique.",
+        });
+      }
+      labelIds.add(label.labelId);
+      if (/\uFFFD|[\u0000-\u0008\u000B\u000C\u000E-\u001F]/u.test(label.text)) {
+        context.addIssue({
+          code: "custom",
+          path: ["labels", index, "text"],
+          message: "Figure labels cannot contain replacement or control characters.",
+        });
+      }
+    });
+  });
 
 export type FigureRequest = z.infer<typeof FigureRequestSchema>;
 
@@ -89,6 +141,17 @@ export const FigureAssetSchema = z
     sha256: z.string().regex(/^[a-f0-9]{64}$/i),
     title: z.string().trim().min(1).max(500),
     altText: z.string().trim().min(1).max(1_000),
+    provenance: z
+      .object({
+        renderStrategy: FigureRenderStrategySchema,
+        baseAssetProvider: z.string().trim().min(1).max(120).optional(),
+        labelRendererVersion: z.string().trim().min(1).max(120),
+        fontPolicyVersion: z.string().trim().min(1).max(120),
+        labelSpecHash: z.string().regex(/^[a-f0-9]{64}$/i),
+        finalAssetHash: z.string().regex(/^[a-f0-9]{64}$/i),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((asset, context) => {
@@ -125,6 +188,16 @@ export const FigureAssetSchema = z
         code: "custom",
         path: ["minimumReadableWidthMm"],
         message: "Minimum readable width cannot exceed preferred width.",
+      });
+    }
+    if (
+      asset.provenance &&
+      asset.provenance.finalAssetHash !== asset.sha256
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["provenance", "finalAssetHash"],
+        message: "Figure provenance must reference the published asset hash.",
       });
     }
   });

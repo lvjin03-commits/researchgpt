@@ -7,6 +7,11 @@ import type {
   GeneratedFigureBinary,
 } from "@/lib/document-v2/assets/figure-pipeline";
 import type { FigureRequest } from "@/lib/document-v2/assets/contracts";
+import {
+  overlayFigureLabels,
+  renderDeterministicScientificFigure,
+} from "@/lib/document-v2/assets/deterministic-figure-renderer";
+import { resolveFigureRenderStrategy } from "@/lib/document-v2/assets/render-policy";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
 import type { DocumentOperationBudgetKey } from "@/lib/document-v2/runtime/token-budgets";
 
@@ -43,7 +48,25 @@ export class OpenAIFinalFigureGenerator implements FinalFigureGenerator {
     private readonly model = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5",
   ) {}
 
+  requiresProviderCall(request: FigureRequest): boolean {
+    return (
+      (request.renderStrategy ??
+        resolveFigureRenderStrategy(request.figureType)) ===
+      "textless_raster_overlay"
+    );
+  }
+
   async generate(request: FigureRequest): Promise<GeneratedFigureBinary> {
+    const renderStrategy =
+      request.renderStrategy ?? resolveFigureRenderStrategy(request.figureType);
+    if (renderStrategy === "deterministic_svg") {
+      return renderDeterministicScientificFigure(request);
+    }
+    if (renderStrategy === "verified_data_plot") {
+      throw new Error(
+        "verified_data_plot_requires_structured_data: data plots cannot be generated from prose claims.",
+      );
+    }
     const response = await this.client.images.generate({
       model: this.model,
       size: "1536x1024",
@@ -58,12 +81,11 @@ export class OpenAIFinalFigureGenerator implements FinalFigureGenerator {
         `Claims represented: ${request.claimsRepresented.join("; ")}.`,
         `Content: ${request.contentBrief}.`,
         `Accessibility description: ${request.altText}.`,
-        "Use the same natural language as the supplied title and content for every visible label. Do not translate labels into a second language.",
         request.evidenceMode === "conceptual"
           ? "This is a conceptual schematic: do not invent measurements, numeric axes, data points, or quantitative precision."
           : "Represent only the supplied evidence-backed claims and do not invent unsupported measurements.",
-        "Use a white background, restrained scientific colors, clear visual hierarchy, Arial labels at readable size, and no decorative elements.",
-        "Do not embed a figure number, caption, prompt, evidence IDs, citations, or raw metadata in the image.",
+        "Use a white background, restrained scientific colors, clear visual hierarchy, and no decorative elements.",
+        "Generate the visual layer only. Do not render any text, letters, numbers, symbols, labels, legend, watermark, figure number, caption, prompt, evidence IDs, citations, or raw metadata anywhere in the image.",
       ].join(" "),
     });
     const encoded = response.data?.[0]?.b64_json;
@@ -72,6 +94,10 @@ export class OpenAIFinalFigureGenerator implements FinalFigureGenerator {
       .png()
       .withMetadata({ density: 300 })
       .toBuffer();
-    return { format: "png", data: png };
+    return overlayFigureLabels({
+      request,
+      basePng: png,
+      baseAssetProvider: this.model,
+    });
   }
 }

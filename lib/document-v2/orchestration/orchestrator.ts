@@ -5,6 +5,10 @@ import {
   type FigureRequest,
 } from "../assets/contracts";
 import type { FigureAssetMaterializer } from "../assets/figure-pipeline";
+import {
+  createFigureLabelSpecs,
+  resolveFigureRenderStrategy,
+} from "../assets/render-policy";
 import { normalizeGeneratedComponentContent } from "../generation/content-normalizer";
 import {
   DocumentPlanSchema,
@@ -247,6 +251,7 @@ function validateBlockRoles(
 
 function structurallyApprovePayload(input: {
   plan: DocumentPlan;
+  documentLanguage: "zh" | "en";
   component: PlannedComponent;
   payload: GeneratedComponentPayload;
   approvedComponents: ReadonlyArray<{
@@ -416,12 +421,19 @@ function structurallyApprovePayload(input: {
           `Data plot ${index + 1} requires verified source evidence.`,
         );
       }
+      const requestId = draft.slotId
+        ? stableFigureRequestId(draft.slotId, 0)
+        : stableFigureRequestId(input.component.componentKey, index);
       return FigureRequestSchema.parse({
         ...draft,
-        requestId: draft.slotId
-          ? stableFigureRequestId(draft.slotId, 0)
-          : stableFigureRequestId(input.component.componentKey, index),
+        requestId,
         componentKey: input.component.componentKey,
+        documentLanguage: input.documentLanguage,
+        renderStrategy: resolveFigureRenderStrategy(draft.figureType),
+        labels: createFigureLabelSpecs({
+          requestId,
+          claimsRepresented: draft.claimsRepresented,
+        }),
       });
     },
   );
@@ -1071,6 +1083,7 @@ export async function runDocumentOrchestration(
     try {
       structuralApproval = structurallyApprovePayload({
         plan: state.plan,
+        documentLanguage: state.request.language,
         component,
         payload,
         approvedComponents,

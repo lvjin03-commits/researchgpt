@@ -45,6 +45,7 @@ const {
   ModelDocumentComponentGenerator,
 } = require("../lib/document-v2/generation/model-component-generator.ts");
 const {
+  OpenAIFinalFigureGenerator,
   OpenAIStructuredComponentModel,
 } = require("../lib/document-v2-production/openai-adapters.ts");
 const {
@@ -62,6 +63,9 @@ const {
   FigureAssetQualityError,
   ValidatedFigureAssetPipeline,
 } = require("../lib/document-v2/assets/figure-pipeline.ts");
+const {
+  FigureRequestSchema,
+} = require("../lib/document-v2/assets/contracts.ts");
 const {
   MatureDocumentComponentValidator,
 } = require("../lib/document-v2/generation/mature-content-validator.ts");
@@ -1353,8 +1357,161 @@ function verifyPlanningOperationRecoveryRegistry() {
   }
 }
 
+async function verifyDeterministicChineseFigureRendering() {
+  const baseRequest = {
+    slotId: "figure-slot-zh",
+    requestId: "figure-request-zh",
+    componentKey: "section-01",
+    figureType: "process_flow",
+    title: "物理凝胶制备流程",
+    caption: "温度变化驱动可逆网络形成",
+    altText: "展示冷却、成核和网络稳定过程。",
+    contentBrief: "展示三个连续阶段。",
+    questionAnswered: "物理凝胶如何形成？",
+    evidenceMode: "conceptual",
+    claimsRepresented: ["溶液冷却", "物理交联点形成", "网络结构稳定"],
+    placementAfterBlockIndex: 0,
+    sourceEvidenceIds: [],
+    documentLanguage: "zh",
+    renderStrategy: "deterministic_svg",
+    labels: [],
+  };
+  let providerCalls = 0;
+  let providerPrompt = "";
+  const basePng = await sharp({
+    create: {
+      width: 1536,
+      height: 1024,
+      channels: 4,
+      background: "#eef4ff",
+    },
+  })
+    .png()
+    .toBuffer();
+  const figureGenerator = new OpenAIFinalFigureGenerator(
+    {
+      images: {
+        async generate(input) {
+          providerCalls += 1;
+          providerPrompt = input.prompt;
+          return { data: [{ b64_json: basePng.toString("base64") }] };
+        },
+      },
+    },
+    "test-image-model",
+  );
+  const deterministicRequest = FigureRequestSchema.parse(baseRequest);
+  assert.equal(figureGenerator.requiresProviderCall(deterministicRequest), false);
+  let countedProviderCalls = 0;
+  const materializer = new ValidatedFigureAssetPipeline(figureGenerator, 1);
+  const deterministicAsset = await materializer.materialize(
+    deterministicRequest,
+    { onProviderCall: () => { countedProviderCalls += 1; } },
+  );
+  const deterministic = await figureGenerator.generate(deterministicRequest);
+  assert.equal(providerCalls, 0);
+  assert.equal(countedProviderCalls, 0);
+  assert.equal(
+    deterministicAsset.provenance.renderStrategy,
+    "deterministic_svg",
+  );
+  assert.equal(deterministic.format, "png");
+  const deterministicMetadata = await sharp(deterministic.data).metadata();
+  assert.equal(deterministicMetadata.width, 1800);
+  assert((deterministicMetadata.height ?? 0) >= 520);
+
+  const variant = await figureGenerator.generate(
+    FigureRequestSchema.parse({
+      ...baseRequest,
+      claimsRepresented: ["升温溶解", "冷却成核", "动态网络重排"],
+    }),
+  );
+  assert.notDeepEqual(
+    Buffer.from(variant.data),
+    Buffer.from(deterministic.data),
+    "Program-rendered Chinese labels must affect the final pixels.",
+  );
+
+  const rasterRequest = FigureRequestSchema.parse({
+    ...baseRequest,
+    figureType: "mechanism_diagram",
+    renderStrategy: "textless_raster_overlay",
+  });
+  assert.equal(figureGenerator.requiresProviderCall(rasterRequest), true);
+  const raster = await figureGenerator.generate(rasterRequest);
+  assert.equal(providerCalls, 1);
+  assert.match(
+    providerPrompt,
+    /Do not render any text, letters, numbers, symbols, labels, legend/,
+  );
+  const rasterMetadata = await sharp(raster.data).metadata();
+  assert.equal(rasterMetadata.width, 1800);
+  assert((rasterMetadata.height ?? 0) > 1000);
+
+  const outputDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "researchgpt-document-v2-figure-zh-"),
+  );
+  const outputPath = path.join(outputDirectory, "deterministic-zh.png");
+  const rasterOutputPath = path.join(outputDirectory, "mechanism-zh.png");
+  const docxOutputPath = path.join(outputDirectory, "deterministic-zh.docx");
+  fs.writeFileSync(outputPath, deterministic.data);
+  fs.writeFileSync(rasterOutputPath, raster.data);
+  const resolvedTemplate = await resolveTemplate();
+  const docx = await renderFinalDocumentSpecToDocx({
+    requestId: "a8e9ee9a-201a-45cf-8068-9c82903de704",
+    schemaVersion: 1,
+    templateSnapshot: resolvedTemplate.snapshot,
+    metadata: {
+      title: "物理凝胶制备流程",
+      language: "zh",
+      documentType: "sci_review",
+      referencesStatus: "not_available",
+    },
+    blocks: [
+      {
+        id: "heading-01",
+        type: "heading",
+        level: 1,
+        text: "制备流程",
+      },
+      {
+        id: "paragraph-01",
+        type: "paragraph",
+        role: "body",
+        text: "该图展示物理凝胶网络形成的三个连续阶段。",
+        citationIds: [],
+        figureAssetIds: [deterministicAsset.id],
+      },
+      {
+        id: "figure-01",
+        type: "figure",
+        caption: "温度变化驱动可逆网络形成",
+        assetId: deterministicAsset.id,
+      },
+    ],
+    references: [],
+    assets: [deterministicAsset],
+  });
+  fs.writeFileSync(docxOutputPath, docx);
+  const docxZip = await JSZip.loadAsync(docx);
+  const embeddedFigure = Object.values(docxZip.files).find(
+    (entry) => !entry.dir && /word\/media\/.+\.png$/i.test(entry.name),
+  );
+  assert(embeddedFigure, "The generated DOCX must contain the Chinese figure PNG.");
+  const embeddedFigureBytes = await embeddedFigure.async("nodebuffer");
+  assert.deepEqual(
+    embeddedFigureBytes,
+    Buffer.from(deterministicAsset.dataBase64, "base64"),
+    "DOCX rendering must embed the approved deterministic figure without rewriting its pixels.",
+  );
+  console.log(outputPath);
+  console.log(rasterOutputPath);
+  console.log(docxOutputPath);
+}
+
 async function main() {
   verifyPlanningOperationRecoveryRegistry();
+  await verifyDeterministicChineseFigureRendering();
   verifyCitationMarkerNormalization();
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
