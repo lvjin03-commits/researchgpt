@@ -78,6 +78,16 @@ export const DocumentRequestSchema = z
         visualIntent: z
           .enum(["auto", "required", "forbidden"])
           .default("auto"),
+        citationRequirement: z
+          .enum(["required", "optional", "forbidden"])
+          .default("optional"),
+        referencePolicy: z
+          .enum([
+            "user_sources_only",
+            "user_sources_plus_web",
+            "web_search_only",
+          ])
+          .default("user_sources_plus_web"),
         specialInstructions: z
           .array(z.string().trim().min(1).max(500))
           .max(20)

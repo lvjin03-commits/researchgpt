@@ -546,6 +546,35 @@ export class DocumentV2JobService {
 
     const spec = job.checkpoint.orchestration?.finalSpec;
     if (!spec) throw new Error("Completed orchestration has no final document spec.");
+    const citationRequirement =
+      job.checkpoint.orchestration.request.userRequirements.citationRequirement;
+    if (citationRequirement !== "forbidden") {
+      const actualOutcome =
+        spec.references.length === 0
+          ? "unavailable"
+          : job.checkpoint.referenceResult?.outcome === "partial"
+            ? "partial"
+            : "complete";
+      const referenceWarnings = [...job.referenceWarnings];
+      if (
+        citationRequirement === "required" &&
+        spec.references.length === 0 &&
+        !referenceWarnings.some(
+          (warning) => warning.code === "references_not_cited",
+        )
+      ) {
+        referenceWarnings.push({
+          code: "references_not_cited",
+          message:
+            "本次正文没有形成可验证的引用关系，为避免虚构文献，已生成无参考文献版本。",
+        });
+      }
+      job = DocumentJobSchema.parse({
+        ...job,
+        referenceOutcome: actualOutcome,
+        referenceWarnings,
+      });
+    }
     let artifact: FinalDocumentArtifact | undefined;
     try {
       const existingArtifactId = job.checkpoint.renderedArtifactId;

@@ -31,10 +31,11 @@
     "test:document-v2-structured-parser": "node scripts/verify-document-v2-structured-parser.cjs",
     "test:document-job-binding": "node scripts/verify-document-job-binding.cjs",
     "test:document-v2-docx": "node scripts/verify-document-v2-docx.cjs",
+    "test:document-v2-references": "node scripts/verify-document-v2-references.cjs",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "test:word-visuals": "node scripts/verify-word-visuals.cjs",
     "smoke:document-v2": "node scripts/smoke-document-v2.mjs",
-    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-job-binding && npm run test:document-v2-runtime && npm run test:document-v2-diagnostics && npm run test:document-v2-provider-failure && npm run test:document-v2-structured-parser && npm run check:document-architecture && npm run check:document-diagnostics && npm run build"
+    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-job-binding && npm run test:document-v2-runtime && npm run test:document-v2-diagnostics && npm run test:document-v2-provider-failure && npm run test:document-v2-structured-parser && npm run test:document-v2-references && npm run check:document-architecture && npm run check:document-diagnostics && npm run build"
   },
   "build": {
     "appId": "com.researchgpt.localconnector",

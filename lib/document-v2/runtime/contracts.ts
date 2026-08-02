@@ -3,6 +3,11 @@ import { DocumentOrchestrationStateSchema } from "../orchestration/contracts";
 import { DocumentRequestSchema, VerifiedReferenceSchema } from "../contracts";
 import { TemplateResolutionSchema } from "../templates/contracts";
 import { DocumentSkeletonSchema, SectionPlanSchema } from "../planning/contracts";
+import {
+  ReferenceExecutionProfileSchema,
+  ReferencePipelineResultSchema,
+  ReferenceWarningSchema,
+} from "../references/contracts";
 
 const IdentifierSchema = z.string().trim().min(1).max(120);
 const DateTimeSchema = z.iso.datetime({ offset: true });
@@ -305,6 +310,8 @@ export const DocumentJobCheckpointSchema = z
       .strict()
       .optional(),
     executionSnapshot: DocumentExecutionSnapshotSchema.optional(),
+    referenceExecution: ReferenceExecutionProfileSchema.optional(),
+    referenceResult: ReferencePipelineResultSchema.optional(),
     textExecution: DocumentTextExecutionProfileSchema.optional(),
     executionBudget: DocumentExecutionBudgetSnapshotSchema.optional(),
     dispatchToken: z.string().min(32).max(200).optional(),
@@ -355,6 +362,10 @@ export const DocumentJobSchema = z
       .strict()
       .optional(),
     artifactId: IdentifierSchema.optional(),
+    referenceOutcome: z
+      .enum(["complete", "partial", "unavailable"])
+      .optional(),
+    referenceWarnings: z.array(ReferenceWarningSchema).max(50).default([]),
     checkpoint: DocumentJobCheckpointSchema,
     createdAt: DateTimeSchema,
     updatedAt: DateTimeSchema,

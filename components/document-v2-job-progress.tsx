@@ -2,6 +2,7 @@
 
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   CircleStop,
@@ -135,6 +136,26 @@ export function DocumentV2JobProgress({
             <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800">
               {job.error.userMessage}
             </p>
+          ) : null}
+          {job.status === "completed" &&
+          job.referenceOutcome &&
+          job.referenceOutcome !== "complete" ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <p className="flex items-center gap-1.5 font-medium">
+                <AlertTriangle className="size-4 shrink-0" />
+                {job.referenceOutcome === "partial"
+                  ? "文档已生成，但参考文献不完整"
+                  : "文档已生成，但未包含参考文献"}
+              </p>
+              {job.referenceWarnings.length > 0 ? (
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  {job.referenceWarnings
+                    .map((warning) => (
+                      <li key={warning.code}>{warning.message}</li>
+                    ))}
+                </ul>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>

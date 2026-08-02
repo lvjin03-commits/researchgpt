@@ -37,6 +37,12 @@ const UnderstoodRequestSchema = z
     topic: z.string().trim().min(1).max(500).nullable(),
     language: z.enum(["zh", "en"]).nullable(),
     visualIntent: z.enum(["auto", "required", "forbidden"]),
+    citationRequirement: z.enum(["required", "optional", "forbidden"]),
+    referencePolicy: z.enum([
+      "user_sources_only",
+      "user_sources_plus_web",
+      "web_search_only",
+    ]),
     specialInstructions: z
       .array(z.string().trim().min(1).max(500))
       .max(20),
@@ -82,11 +88,16 @@ export async function understandDocumentRequest(
       "A continuation such as 'generate it' must be interpreted from the supplied instruction/context, never by keyword routing.",
       "Extract the actual scientific topic, requested output language, and content requirements.",
       "Set visualIntent=forbidden when the user explicitly requests no images or figures, required when figures are explicitly required, otherwise auto.",
+      "Set citationRequirement=required when references or citations are explicitly requested, forbidden when explicitly prohibited, otherwise optional.",
+      "Set referencePolicy=user_sources_only only when the user explicitly restricts citations to supplied sources; use user_sources_plus_web when supplied sources may be supplemented; use web_search_only when citations are requested and no supplied literature is available.",
       "Set ready=false only when the scientific topic or document scope cannot be determined without changing the requested document.",
       "Do not ask about optional language, length, figures, authors, or formatting when safe defaults exist.",
       "Do not write document content yet.",
     ].join(" "),
-    userInstruction: instruction,
+    userInstruction: JSON.stringify({
+      instruction,
+      hasUserReferences: (input.verifiedReferences?.length ?? 0) > 0,
+    }),
   });
   if (!understood.ready) {
     if (!understood.question || !understood.reason) {
@@ -112,6 +123,8 @@ export async function understandDocumentRequest(
       topic: understood.topic,
       targetLength: input.targetLength,
       visualIntent: understood.visualIntent,
+      citationRequirement: understood.citationRequirement,
+      referencePolicy: understood.referencePolicy,
       specialInstructions: understood.specialInstructions,
     },
   });
@@ -314,6 +327,10 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
         section: input.section,
         neighboringSections: input.skeleton.sections.map(({ sectionId, heading, question }) => ({ sectionId, heading, question })),
         availableEvidenceIds: input.availableEvidenceIds,
+        availableEvidence: (input.availableEvidence ?? []).map((item) => ({
+          evidenceId: item.evidenceId,
+          excerpt: item.excerpt.slice(0, 800),
+        })),
       }),
     });
   }

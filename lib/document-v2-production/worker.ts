@@ -45,6 +45,13 @@ import {
 import { createDocumentOrchestrationState } from "@/lib/document-v2/orchestration/orchestrator";
 import type { FigureAsset } from "@/lib/document-v2/assets/contracts";
 import type { FinalDocumentSpec } from "@/lib/document-v2/contracts";
+import {
+  createReferenceExecutionProfile,
+} from "@/lib/document-v2/references/contracts";
+import {
+  acquireDocumentReferences,
+  createReferencePipelineFallback,
+} from "@/lib/document-v2/references/acquisition";
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -226,6 +233,22 @@ async function prepareIntake(input: {
     const evidenceSnapshotId = intake.evidence.length > 0
       ? `evidence-${createHash("sha256").update(JSON.stringify(intake.evidence)).digest("hex").slice(0, 24)}`
       : undefined;
+    const referenceExecution = createReferenceExecutionProfile({
+      requirement: request.userRequirements.citationRequirement,
+      policy: request.userRequirements.referencePolicy,
+      hasUserReferences:
+        evidenceReferences.length > 0 || intake.evidence.length > 0,
+      runtimeEnabled:
+        process.env.DOCUMENT_V2_REFERENCE_PIPELINE_ENABLED !== "false",
+    });
+    const referenceResult = referenceExecution.enabled
+      ? undefined
+      : await acquireDocumentReferences({
+          profile: referenceExecution,
+          topic: request.userRequirements.topic ?? "",
+          existingReferences: evidenceReferences,
+          existingEvidence: intake.evidence,
+        });
     planning = {
       schemaVersion: 1,
       request,
@@ -237,6 +260,14 @@ async function prepareIntake(input: {
       sectionPlans: [],
       planningInvalidations: [],
     };
+    job = DocumentJobSchema.parse({
+      ...job,
+      checkpoint: {
+        ...job.checkpoint,
+        referenceExecution,
+        referenceResult,
+      },
+    });
     job = await saveAndContinue(planning, 5);
     await logSaved("planning.context.saved", "Document request, template, and evidence context were saved.", {
       templateId: template.snapshot.templateId, evidenceCount: evidenceReferences.length,
@@ -283,6 +314,119 @@ async function prepareIntake(input: {
     return job;
   }
 
+  const referenceExecution = job.checkpoint.referenceExecution;
+  if (referenceExecution?.enabled && !job.checkpoint.referenceResult) {
+    const acquisitionStartedAt = new Date().toISOString();
+    job = await input.repository.save(
+      DocumentJobSchema.parse({
+        ...job,
+        status: "running",
+        stage: "evidence_acquisition",
+        progress: 7,
+        updatedAt: acquisitionStartedAt,
+      }),
+      job.revision,
+    );
+    await input.repository.appendEvent({
+      eventId: randomUUID(),
+      jobId: job.jobId,
+      stage: "evidence_acquisition",
+      status: "started",
+      message: "正在获取并核验可用于正文引用的参考文献。",
+      category: "lifecycle",
+      operation: "references.acquire",
+      correlationId: job.jobId,
+      createdAt: acquisitionStartedAt,
+    });
+    let referenceResult;
+    let referenceFailureMessage: string | undefined;
+    try {
+      referenceResult = await acquireDocumentReferences({
+        profile: referenceExecution,
+        topic: planning.request.userRequirements.topic ?? "",
+        existingReferences: planning.evidenceReferences,
+        existingEvidence: intake.evidence,
+      });
+    } catch (error) {
+      referenceFailureMessage =
+        error instanceof Error ? error.message : String(error);
+      referenceResult = createReferencePipelineFallback({
+        existingReferences: planning.evidenceReferences,
+        existingEvidence: intake.evidence,
+      });
+    }
+    const evidenceReferences = referenceResult.verifiedReferences;
+    const evidenceSnapshotId =
+      referenceResult.evidence.length > 0
+        ? `evidence-${createHash("sha256")
+            .update(JSON.stringify(referenceResult.evidence))
+            .digest("hex")
+            .slice(0, 24)}`
+        : planning.evidenceSnapshotId;
+    planning = {
+      ...planning,
+      evidenceReferences,
+      evidenceSnapshotId,
+    };
+    const savedAt = new Date().toISOString();
+    job = await input.repository.save(
+      DocumentJobSchema.parse({
+        ...job,
+        status: "queued",
+        stage: "planning",
+        progress: 7,
+        leaseOwner: undefined,
+        leaseExpiresAt: undefined,
+        referenceOutcome: referenceResult.outcome,
+        referenceWarnings: referenceResult.warnings,
+        checkpoint: {
+          ...job.checkpoint,
+          planning,
+          referenceResult,
+          savedAt,
+        },
+        updatedAt: savedAt,
+      }),
+      job.revision,
+    );
+    await input.repository.appendEvent({
+      eventId: randomUUID(),
+      jobId: job.jobId,
+      stage: "evidence_acquisition",
+      status:
+        referenceResult.outcome === "complete" ? "succeeded" : "progress",
+      message:
+        referenceResult.outcome === "complete"
+          ? `已获得${referenceResult.verifiedReferences.length}篇可验证参考文献。`
+          : referenceResult.warnings.at(-1)?.message ??
+            "参考文献获取已完成，将按当前可用结果继续生成文档。",
+      category: "validation",
+      operation: "references.acquire.completed",
+      correlationId: job.jobId,
+      metadata: {
+        outcome: referenceResult.outcome,
+        candidateCount: referenceResult.candidateCount,
+        verifiedCount: referenceResult.verifiedReferences.length,
+        providerCalls: referenceResult.providerCalls,
+        durationMs: referenceResult.durationMs,
+      },
+      errorCode: referenceFailureMessage
+        ? "reference_pipeline_failed"
+        : undefined,
+      technicalMessage: referenceFailureMessage?.slice(0, 2_000),
+      createdAt: savedAt,
+    });
+    return job;
+  }
+
+  const availableEvidence = [
+    ...intake.evidence,
+    ...(job.checkpoint.referenceResult?.evidence ?? []),
+  ];
+  const availableEvidenceIds = [
+    ...new Set(availableEvidence.map((item) => item.evidenceId)),
+  ];
+
   if (!planning.figureIntentsCompleted) {
     const figureDraft =
       planning.request.userRequirements.visualIntent === "forbidden"
@@ -291,9 +435,7 @@ async function prepareIntake(input: {
             request: planning.request,
             template: planning.template,
             skeleton: planning.skeleton,
-            availableEvidenceIds: planning.evidenceReferences.map(
-              (item) => item.id,
-            ),
+            availableEvidenceIds,
             planningRevision: planning.planningRevision,
           });
     const skeleton = materializeFigureIntents({
@@ -328,7 +470,11 @@ async function prepareIntake(input: {
       sectionId: section.sectionId,
       draft: await planner.planSection({
         request: planning.request, template: planning.template, skeleton, section,
-        availableEvidenceIds: planning.evidenceReferences.map((item) => item.id),
+        availableEvidenceIds,
+        availableEvidence: availableEvidence.map((item) => ({
+          evidenceId: item.evidenceId,
+          excerpt: item.excerpt,
+        })),
         planningRevision: planning.planningRevision,
       }),
     });
@@ -344,12 +490,16 @@ async function prepareIntake(input: {
   const proposal = assembleSemanticOutline({ skeleton, sectionPlans: planning.sectionPlans });
   const plan = createDocumentPlanFromProposal({
     request: planning.request, template: planning.template, proposal,
-    availableEvidenceIds: planning.evidenceReferences.map((item) => item.id),
+    availableEvidenceIds,
   });
   const orchestration = createDocumentOrchestrationState({
     jobId: job.jobId, request: planning.request, plan,
     verifiedReferences: planning.evidenceReferences,
-    evidenceBundle: intake.evidence.map((item) => ({ evidenceId: item.evidenceId, excerpt: item.excerpt, locator: item.locator })),
+    evidenceBundle: availableEvidence.map((item) => ({
+      evidenceId: item.evidenceId,
+      excerpt: item.excerpt,
+      locator: item.locator,
+    })),
   });
   const now = new Date().toISOString();
   job = await input.repository.save(DocumentJobSchema.parse({
