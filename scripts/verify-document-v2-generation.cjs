@@ -73,6 +73,10 @@ const {
   MatureDocumentComponentValidator,
 } = require("../lib/document-v2/generation/mature-content-validator.ts");
 const {
+  assertCurrentComponentContractOwnership,
+  getComponentContract,
+} = require("../lib/document-v2/generation/component-contracts.ts");
+const {
   normalizeGeneratedComponentContent,
 } = require("../lib/document-v2/generation/content-normalizer.ts");
 const {
@@ -249,7 +253,6 @@ function maturePayload(component, repairFeedback) {
                 "Flow diagram connecting preparation routes to gel network structures.",
               contentBrief:
                 "Show preparation routes converging on distinct junction-domain structures.",
-              placementAfterParagraphIndex: 0,
             },
           ],
         };
@@ -292,7 +295,6 @@ function maturePayload(component, repairFeedback) {
                       "Aggregated network",
                     ],
                   ],
-                  placementAfterParagraphIndex: 0,
                 },
               ]
             : [],
@@ -308,7 +310,6 @@ function maturePayload(component, repairFeedback) {
                     "Flow diagram connecting freeze-thaw and solvent exchange routes to different physical gel network structures.",
                   contentBrief:
                     "Draw two preparation routes converging on distinct junction-domain structures; use publication-ready labels and no raw data.",
-                  placementAfterParagraphIndex: 0,
                 },
               ]
             : [],
@@ -418,16 +419,16 @@ async function verifyCompleteGenerationFlow() {
   });
   const generator = new ModelDocumentComponentGenerator({
     async generate({ schemaName, schema, systemInstruction, componentInstruction }) {
-      assert.match(schemaName, /^document_.+_v[23]$/);
+      assert.match(schemaName, /^document_.+_v[234]$/);
       assert.match(systemInstruction, /publication-ready/);
       const instruction = JSON.parse(componentInstruction);
       assert.equal(
         instruction.componentContract.contractVersion,
-        ["abstract", "section", "conclusion"].includes(
-          instruction.component.type,
-        )
-          ? 3
-          : 2,
+        instruction.component.type === "section"
+          ? 4
+          : ["abstract", "conclusion"].includes(instruction.component.type)
+            ? 3
+            : 2,
       );
       assert.equal(
         instruction.componentContract.modelOwnedFields.includes("kind"),
@@ -474,7 +475,11 @@ async function verifyCompleteGenerationFlow() {
       completed,
       orchestrationOptions,
     );
-    assert.equal(completed.status, "paused");
+    assert.equal(
+      completed.status,
+      "paused",
+      JSON.stringify(completed.failure ?? completed.events.at(-1)),
+    );
   }
   assert.equal(
     completed.components.filter((component) => component.status === "approved")
@@ -570,8 +575,12 @@ async function verifyCompleteGenerationFlow() {
     sectionTwo.normalizationRecords.map(
       (record) => record.rulesApplied[0],
     ),
-    ["strip_table_number_prefix", "strip_figure_number_prefix"],
-    "The orchestration checkpoint must retain caption normalization evidence.",
+    [
+      "table_placement_section_fallback",
+      "strip_table_number_prefix",
+      "strip_figure_number_prefix",
+    ],
+    "The orchestration checkpoint must retain layout and caption normalization evidence.",
   );
   assert.equal(
     completed.figures[0].request.caption,
@@ -1557,6 +1566,118 @@ function verifyDeterministicReferenceOrdering() {
   );
 }
 
+async function verifyLayoutContractMigration() {
+  const template = await resolveTemplate();
+  const plan = await createPlan(template);
+  const section = plan.components.find(
+    (component) => component.componentKey === "section-01",
+  );
+  assert(section);
+
+  assertCurrentComponentContractOwnership();
+  const currentContract = getComponentContract(section, 4);
+  assert.equal(currentContract.contractVersion, 4);
+  assert.equal(
+    JSON.stringify(z.toJSONSchema(currentContract.modelOutputSchema)).includes(
+      "placementAfterParagraphIndex",
+    ),
+    false,
+    "The current model contract must not expose absolute layout indexes.",
+  );
+
+  const legacyContract = getComponentContract(section, 3);
+  const legacyResult = legacyContract.assemble(
+    {
+      paragraphs: [
+        {
+          segments: [{ text: "First paragraph.", citationIds: [] }],
+          figureReferenceIds: [],
+        },
+        {
+          segments: [{ text: "Second paragraph.", citationIds: [] }],
+          figureReferenceIds: [],
+        },
+      ],
+      tables: [
+        {
+          caption: "Comparison",
+          columns: ["A"],
+          rows: [["B"]],
+          placementAfterParagraphIndex: 7,
+        },
+      ],
+      figureRequests: [],
+    },
+    { component: section, figureSlots: [], allowedCitationIds: [] },
+  );
+  assert.deepEqual(
+    legacyResult.normalizationRecords.map(
+      (record) => record.rulesApplied[0],
+    ),
+    ["legacy_table_placement_clamped"],
+  );
+  assert.equal(
+    legacyResult.payload.kind === "blocks"
+      ? legacyResult.payload.blocks.at(-1).type
+      : null,
+    "table",
+    "Legacy out-of-range tables must be placed after the last valid paragraph.",
+  );
+
+  let legacyProviderInput;
+  const legacyGenerator = new ModelDocumentComponentGenerator({
+    async generate(input) {
+      legacyProviderInput = input;
+      return input.schema.parse({
+        paragraphs: [
+          {
+            segments: [{ text: "Legacy paragraph.", citationIds: [] }],
+            figureReferenceIds: [],
+          },
+        ],
+        tables: [],
+        figureRequests: [],
+      });
+    },
+  });
+  await legacyGenerator.generate({
+    request,
+    plan,
+    componentContractEpoch: 3,
+    component: section,
+    componentIndex: plan.components.indexOf(section),
+    figureSlots: [],
+    generationRevision: 1,
+    attempt: 1,
+    approvedComponents: [],
+    verifiedReferences,
+    evidenceBundle: [],
+  });
+  const legacyInstruction = JSON.parse(
+    legacyProviderInput.componentInstruction,
+  );
+  assert.equal(
+    legacyInstruction.componentContract.contractVersion,
+    3,
+    "Existing jobs must retain the historical section contract version.",
+  );
+  assert.equal(
+    "fieldOwnership" in legacyInstruction.componentContract,
+    false,
+    "Existing job fingerprints must not change because of new contract metadata.",
+  );
+  assert.match(
+    legacyProviderInput.systemInstruction,
+    /placementAfterParagraphIndex/,
+    "Existing jobs must retain the historical figure instruction for raw-response reuse.",
+  );
+  assert.doesNotMatch(
+    legacyProviderInput.systemInstruction,
+    /program derives placement/,
+    "Current placement instructions must not leak into legacy execution fingerprints.",
+  );
+}
+
 async function main() {
   verifyPlanningOperationRecoveryRegistry();
   await verifyDeterministicChineseFigureRendering();
@@ -1569,6 +1690,7 @@ async function main() {
   verifyCaptionNormalization();
   await verifyManualFigureNumbersAreRejected();
   verifyDeterministicReferenceOrdering();
+  await verifyLayoutContractMigration();
   await verifyCompleteGenerationFlow();
   await verifyPlannerRejectsInvalidOutline();
   await verifyPlannerRepairsTemplateComponentLeakage();

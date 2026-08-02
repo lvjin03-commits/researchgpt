@@ -182,6 +182,12 @@ export async function resumeDocumentJob(
     );
     if (failedIndex >= 0) {
       const failedComponent = orchestration.components[failedIndex];
+      const isLegacyPlacementFailure =
+        orchestration.componentContractEpoch === 3 &&
+        failedComponent.lastError?.code === "component_generation_failed" &&
+        /(?:Table|Figure) placement \d+ is outside the paragraph list\./i.test(
+          failedComponent.lastError.message,
+        );
       validationCode = failedComponent.lastError?.code ?? validationCode;
       orchestration.status = "paused";
       orchestration.failure = undefined;
@@ -189,15 +195,21 @@ export async function resumeDocumentJob(
       orchestration.components[failedIndex] = {
         componentKey: failedComponent.componentKey,
         status: "pending",
-        generationRevision: failedComponent.generationRevision + 1,
+        generationRevision:
+          failedComponent.generationRevision +
+          (isLegacyPlacementFailure ? 0 : 1),
         attempts: 0,
         transientFailures: 0,
-        lastError: failedComponent.lastError,
+        lastError: isLegacyPlacementFailure
+          ? undefined
+          : failedComponent.lastError,
         normalizationRecords: failedComponent.normalizationRecords,
         revisions: failedComponent.revisions,
       };
       resumeStage = "content_generation";
-      resumeScope = "component_revision";
+      resumeScope = isLegacyPlacementFailure
+        ? "component_parser_replay"
+        : "component_revision";
     } else {
       const failedFigureIndex = orchestration.figures.findIndex(
         (figure) => figure.status === "failed",

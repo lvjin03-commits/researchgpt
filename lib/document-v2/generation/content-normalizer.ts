@@ -19,7 +19,7 @@ export type ContentNormalizationRecord = {
   rawPreview: string;
   normalizedValue: string;
   rulesApplied: string[];
-  normalizerVersion: typeof CONTENT_NORMALIZER_VERSION;
+  normalizerVersion: string;
 };
 
 export type ContentNormalizationIssue = {

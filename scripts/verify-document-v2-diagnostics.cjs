@@ -413,6 +413,63 @@ assert.match(
   /Resume from: references/,
 );
 
+const placementFailureDiagnostic = projectDocumentJobDiagnostics(
+  {
+    job: {
+      ...diagnosticFixtureJob(),
+      id: "91b7a729-b110-4e9f-9322-4809766980ea",
+      status: "failed",
+      stage: "content_generation",
+      revision: 34,
+      updated_at: "2026-08-02T05:04:00.000Z",
+    },
+    events: [
+      {
+        sequence: 1,
+        stage: "content_generation",
+        status: "failed",
+        created_at: "2026-08-02T05:03:15.000Z",
+        event_payload: {
+          stage: "content_generation",
+          status: "failed",
+          operation: "component.failed",
+          componentKey: "section-02",
+          category: "validation",
+          errorCode: "component_generation_failed",
+          technicalMessage:
+            "Table placement 7 is outside the paragraph list.",
+          createdAt: "2026-08-02T05:03:15.000Z",
+        },
+      },
+    ],
+    executions: [],
+    outbox: [],
+  },
+  new Date("2026-08-02T05:04:30.000Z"),
+);
+assert.equal(
+  placementFailureDiagnostic.currentBlocker.code,
+  "table_placement_out_of_bounds",
+);
+assert.equal(
+  placementFailureDiagnostic.currentBlocker.certainty,
+  "deterministic",
+);
+assert.equal(
+  placementFailureDiagnostic.codexSummary.safeResumeFrom,
+  "section-02",
+);
+assert.equal(
+  placementFailureDiagnostic.currentBlocker.evidence.some(
+    (item) => item.field === "requestedPlacementIndex" && item.value === 7,
+  ),
+  true,
+);
+assert.match(
+  placementFailureDiagnostic.humanReadableReport,
+  /Code: table_placement_out_of_bounds/,
+);
+
 console.log("Document v2 diagnostics projection tests passed.");
 
 function diagnosticFixtureJob() {

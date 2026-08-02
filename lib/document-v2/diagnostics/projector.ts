@@ -208,6 +208,62 @@ function referenceConsistencyFailureFinding(
   };
 }
 
+const LEGACY_PLACEMENT_FAILURES = [
+  {
+    pattern: /Table placement (\d+) is outside the paragraph list\.?/i,
+    code: "table_placement_out_of_bounds",
+    rule: "legacy_model_table_index_exceeds_paragraph_count",
+  },
+  {
+    pattern: /Figure placement (\d+) is outside the paragraph list\.?/i,
+    code: "figure_placement_out_of_bounds",
+    rule: "legacy_model_figure_index_exceeds_paragraph_count",
+  },
+] as const;
+
+function legacyPlacementFailureFinding(
+  event: DiagnosticTimelineEvent | undefined,
+): BlockerDiagnosis | null {
+  if (
+    event?.error?.code !== "component_generation_failed" ||
+    !event.error.message
+  ) {
+    return null;
+  }
+  const match = LEGACY_PLACEMENT_FAILURES.map((failure) => ({
+    ...failure,
+    match: event.error!.message!.match(failure.pattern),
+  })).find((failure) => failure.match);
+  if (!match?.match) return null;
+  return {
+    code: match.code,
+    severity: "warning",
+    certainty: "deterministic",
+    location: {
+      stage: event.stage ?? "content_generation",
+      operation: event.operation ?? "component.failed",
+      componentKey: event.componentKey ?? null,
+    },
+    since: event.timestamp,
+    matchedRule: match.rule,
+    evidence: [
+      {
+        source: "event",
+        field: "requestedPlacementIndex",
+        value: Number(match.match[1]),
+      },
+      {
+        source: "system",
+        field: "availableRecoveryMechanism",
+        value: "legacy-layout-parser-replay-v1",
+      },
+    ],
+    missingEvidence: [],
+    recommendedNextInspection:
+      "Reparse the saved component response, derive a valid layout anchor deterministically, and continue without another model call.",
+  };
+}
+
 export function projectDocumentJobDiagnostics(
   sources: DiagnosticSources,
   now = new Date(),
@@ -514,10 +570,15 @@ export function projectDocumentJobDiagnostics(
     ["paused", "failed"].includes(sources.job.status)
       ? referenceConsistencyFailureFinding(latestTimelineEvent)
       : null;
+  const placementFinding =
+    ["paused", "failed"].includes(sources.job.status)
+      ? legacyPlacementFailureFinding(latestTimelineEvent)
+      : null;
   const findings = [
     ...(planningFinding ? [planningFinding] : []),
     ...(captionFinding ? [captionFinding] : []),
     ...(referenceFinding ? [referenceFinding] : []),
+    ...(placementFinding ? [placementFinding] : []),
     ...diagnoseBlockers({
       now,
       job: jobSummary,
@@ -581,6 +642,9 @@ export function projectDocumentJobDiagnostics(
         ? primary.location.componentKey
         : primary?.code.startsWith("reference_manifest_")
           ? "references"
+          : primary?.code === "table_placement_out_of_bounds" ||
+              primary?.code === "figure_placement_out_of_bounds"
+            ? primary.location.componentKey
       : null;
   const workerState =
     sources.job.status === "running" && sources.job.lease_expires_at

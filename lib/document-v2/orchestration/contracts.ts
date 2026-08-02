@@ -355,6 +355,7 @@ export const DocumentOrchestrationStateSchema = z
   .object({
     jobId: z.uuid(),
     schemaVersion: z.literal(1),
+    componentContractEpoch: z.union([z.literal(3), z.literal(4)]).default(3),
     request: DocumentRequestSchema,
     plan: DocumentPlanSchema,
     verifiedReferences: z.array(VerifiedReferenceSchema).max(500),

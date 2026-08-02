@@ -420,6 +420,66 @@ async function verifyPreciseResume() {
   );
 }
 
+async function verifyLegacyPlacementParserReplay() {
+  const repository = new InMemoryDocumentJobRepository();
+  const service = makeService(repository, {});
+  const created = await service.create({
+    ownerId: "user-1",
+    request,
+    plan,
+    verifiedReferences: references,
+  });
+  let failed = await repository.get(created.job.jobId);
+  const orchestration = structuredClone(failed.checkpoint.orchestration);
+  orchestration.componentContractEpoch = 3;
+  orchestration.status = "failed";
+  orchestration.currentComponentIndex = 1;
+  orchestration.failure = {
+    code: "component_generation_failed",
+    message: "Table placement 7 is outside the paragraph list.",
+    componentKey: "introduction",
+  };
+  orchestration.components[1] = {
+    ...orchestration.components[1],
+    status: "failed",
+    generationRevision: 1,
+    attempts: 2,
+    lastError: {
+      code: "component_generation_failed",
+      message: "Table placement 7 is outside the paragraph list.",
+    },
+  };
+  failed = await repository.save(
+    {
+      ...failed,
+      status: "failed",
+      stage: "content_generation",
+      error: {
+        code: "component_generation_failed",
+        userMessage: "Content failed validation.",
+        technicalMessage: "Table placement 7 is outside the paragraph list.",
+        failedStage: "content_generation",
+        componentKey: "introduction",
+      },
+      checkpoint: { ...failed.checkpoint, orchestration },
+    },
+    failed.revision,
+  );
+
+  const resumed = await service.resume(failed.jobId);
+  const resumedState = await repository.get(failed.jobId);
+  const component = resumedState.checkpoint.orchestration.components[1];
+  assert.equal(resumed.job.status, "queued");
+  assert.equal(component.generationRevision, 1);
+  assert.equal(component.lastError, undefined);
+  assert.equal(component.attempts, 0);
+  assert.equal(
+    resumed.events.at(-1).metadata.resumeScope,
+    "component_parser_replay",
+    "Legacy placement failures must reparse saved output without creating a new model revision.",
+  );
+}
+
 async function verifyPlanningRevisionResume() {
   const repository = new InMemoryDocumentJobRepository();
   const service = makeService(repository, {});
@@ -1129,6 +1189,7 @@ async function main() {
   await verifyBoundedTicksResumeFromCheckpoint();
   await verifyTimeBudgetYieldsAfterCheckpoint();
   await verifyPreciseResume();
+  await verifyLegacyPlacementParserReplay();
   await verifyPlanningRevisionResume();
   await verifyLanguagePlanningRevisionResume();
   await verifyImageCallsAndAssetsUseSeparateBudgets();

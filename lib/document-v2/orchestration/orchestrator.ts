@@ -10,6 +10,7 @@ import {
   resolveFigureRenderStrategy,
 } from "../assets/render-policy";
 import { normalizeGeneratedComponentContent } from "../generation/content-normalizer";
+import type { ContentNormalizationRecord } from "../generation/content-normalizer";
 import { deriveOrderedReferenceIds } from "../citations/manifest";
 import {
   DocumentPlanSchema,
@@ -37,6 +38,7 @@ type PlannedComponent = DocumentPlan["components"][number];
 export interface ComponentGenerationContext {
   request: DocumentRequest;
   plan: DocumentPlan;
+  componentContractEpoch: 3 | 4;
   component: PlannedComponent;
   componentIndex: number;
   figureSlots: ReadonlyArray<DocumentPlan["figureSlots"][number]>;
@@ -61,7 +63,13 @@ export interface ComponentGenerationContext {
 export interface DocumentComponentGenerator {
   generate(
     context: ComponentGenerationContext,
-  ): Promise<GeneratedComponentPayload>;
+  ): Promise<
+    | GeneratedComponentPayload
+    | {
+        payload: GeneratedComponentPayload;
+        normalizationRecords: ContentNormalizationRecord[];
+      }
+  >;
 }
 
 export interface DocumentComponentValidator {
@@ -174,6 +182,7 @@ export function createDocumentOrchestrationState(input: {
   return DocumentOrchestrationStateSchema.parse({
     jobId: input.jobId,
     schemaVersion: 1,
+    componentContractEpoch: 4,
     request,
     plan,
     verifiedReferences: input.verifiedReferences ?? [],
@@ -979,17 +988,18 @@ export async function runDocumentOrchestration(
     });
 
     let payload: GeneratedComponentPayload;
+    let generatorNormalizationRecords: ContentNormalizationRecord[] = [];
     try {
-      payload =
-        component.type === "reference_list"
-          ? deriveReferenceListPayload({
-              plan: state.plan,
-              approvedComponents,
-            })
-          : GeneratedComponentPayloadSchema.parse(
-              await options.generator.generate({
+      if (component.type === "reference_list") {
+        payload = deriveReferenceListPayload({
+          plan: state.plan,
+          approvedComponents,
+        });
+      } else {
+        const generated = await options.generator.generate({
                 request: state.request,
                 plan: state.plan,
+                componentContractEpoch: state.componentContractEpoch,
                 component,
                 componentIndex,
                 figureSlots: state.plan.figureSlots.filter(
@@ -1009,8 +1019,14 @@ export async function runDocumentOrchestration(
                 approvedComponents,
                 verifiedReferences: state.verifiedReferences,
                 evidenceBundle: state.evidenceBundle,
-              }),
-            );
+              });
+        if ("kind" in generated) {
+          payload = GeneratedComponentPayloadSchema.parse(generated);
+        } else {
+          payload = GeneratedComponentPayloadSchema.parse(generated.payload);
+          generatorNormalizationRecords = generated.normalizationRecords;
+        }
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown generation failure.";
@@ -1069,7 +1085,7 @@ export async function runDocumentOrchestration(
     payload = normalization.payload;
     componentState.normalizationRecords = [
       ...componentState.normalizationRecords,
-      ...normalization.records.map((record) => ({
+      ...[...generatorNormalizationRecords, ...normalization.records].map((record) => ({
         ...record,
         generationRevision: componentState.generationRevision,
         attempt: contentAttempt,
