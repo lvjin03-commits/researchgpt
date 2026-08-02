@@ -193,8 +193,12 @@ function maturePayload(component, repairFeedback) {
       return {
         paragraphs: [
           {
-            text: "This review examines preparation-dependent structure formation in physical gels.",
-            citationIds: ["ref-1"],
+            segments: [
+              {
+                text: "This review examines preparation-dependent structure formation in physical gels.",
+                citationIds: [],
+              },
+            ],
           },
         ],
       };
@@ -210,8 +214,12 @@ function maturePayload(component, repairFeedback) {
         return {
           paragraphs: [
             {
-              text: "TODO: insert raw evidenceType=aistructure here.",
-              citationIds: ["ref-1"],
+              segments: [
+                {
+                  text: "TODO: insert raw evidenceType=aistructure here.",
+                  citationIds: ["ref-1"],
+                },
+              ],
               figureReferenceIds: ["figure-slot-01"],
             },
           ],
@@ -234,12 +242,16 @@ function maturePayload(component, repairFeedback) {
       return {
         paragraphs: [
           {
-            text:
-              component.heading === "1 Introduction"
-                ? "Physical gels rely on reversible junctions whose topology depends on processing history."
-                : "Freeze-thaw cycling and solvent exchange create distinct junction domains and network morphologies.",
-            citationIds:
-              component.heading === "1 Introduction" ? ["ref-1"] : ["ref-2"],
+            segments: [
+              {
+                text:
+                  component.heading === "1 Introduction"
+                    ? "Physical gels rely on reversible junctions whose topology depends on processing history."
+                    : "Freeze-thaw cycling and solvent exchange create distinct junction domains and network morphologies.",
+                citationIds:
+                  component.heading === "1 Introduction" ? ["ref-1"] : ["ref-2"],
+              },
+            ],
             figureReferenceIds:
               component.heading === "2 Preparation Routes"
                 ? ["figure-slot-01"]
@@ -290,8 +302,12 @@ function maturePayload(component, repairFeedback) {
       return {
         paragraphs: [
           {
-            text: "Future studies should quantify links among processing, topology, and performance.",
-            citationIds: [],
+            segments: [
+              {
+                text: "Future studies should quantify links among processing, topology, and performance.",
+                citationIds: [],
+              },
+            ],
           },
         ],
       };
@@ -387,10 +403,17 @@ async function verifyCompleteGenerationFlow() {
   });
   const generator = new ModelDocumentComponentGenerator({
     async generate({ schemaName, schema, systemInstruction, componentInstruction }) {
-      assert.match(schemaName, /^document_.+_v2$/);
+      assert.match(schemaName, /^document_.+_v[23]$/);
       assert.match(systemInstruction, /publication-ready/);
       const instruction = JSON.parse(componentInstruction);
-      assert.equal(instruction.componentContract.contractVersion, 2);
+      assert.equal(
+        instruction.componentContract.contractVersion,
+        ["abstract", "section", "conclusion"].includes(
+          instruction.component.type,
+        )
+          ? 3
+          : 2,
+      );
       assert.equal(
         instruction.componentContract.modelOwnedFields.includes("kind"),
         false,
@@ -1165,6 +1188,54 @@ async function verifyManualFigureNumbersAreRejected() {
   assert.equal(result.code, "manual_cross_reference");
 }
 
+function verifyCitationMarkerNormalization() {
+  const normalized = normalizeGeneratedComponentContent({
+    kind: "blocks",
+    blocks: [
+      {
+        type: "paragraph",
+        role: "body",
+        text: "A supported claim [citation:ref-1].",
+        citationIds: ["ref-1"],
+        citationGranularity: "segment",
+        segments: [
+          {
+            text: "A supported claim [citation:ref-1].",
+            citationIds: ["ref-1"],
+          },
+        ],
+        figureRequestIndexes: [],
+      },
+    ],
+    figureRequests: [],
+  });
+  assert.equal(normalized.issues.length, 0);
+  assert.equal(normalized.records.length, 1);
+  assert.equal(normalized.payload.blocks[0].text, "A supported claim.");
+
+  const unbound = normalizeGeneratedComponentContent({
+    kind: "blocks",
+    blocks: [
+      {
+        type: "paragraph",
+        role: "body",
+        text: "An unsupported claim [citation:ref-2].",
+        citationIds: ["ref-1"],
+        citationGranularity: "segment",
+        segments: [
+          {
+            text: "An unsupported claim [citation:ref-2].",
+            citationIds: ["ref-1"],
+          },
+        ],
+        figureRequestIndexes: [],
+      },
+    ],
+    figureRequests: [],
+  });
+  assert.equal(unbound.issues[0].code, "citation_marker_unbound");
+}
+
 function verifyCaptionNormalization() {
   const input = {
     kind: "blocks",
@@ -1246,6 +1317,7 @@ function verifyCaptionNormalization() {
 }
 
 async function main() {
+  verifyCitationMarkerNormalization();
   await verifyOpenAiComponentSchemaHasObjectRoot();
   await verifyOutlineSchemaUsesTemplateBounds();
   await verifySectionIndexLanguageContractAndBoundedRepair();

@@ -236,6 +236,17 @@ async function inspectDocx(buffer, expectedTitle, language) {
   assert(footerXml.includes("PAGE"), "Centered page-number field is missing.");
 }
 
+function visibleDocumentText(documentXml) {
+  return [...documentXml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)]
+    .map((match) =>
+      match[1]
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">"),
+    )
+    .join("");
+}
+
 async function main() {
   const outputDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "researchgpt-document-v2-"),
@@ -249,6 +260,70 @@ async function main() {
     fs.writeFileSync(outputPath, buffer);
     console.log(outputPath);
   }
+
+  const segmentSpec = fixture("en");
+  segmentSpec.templateSnapshot = {
+    ...segmentSpec.templateSnapshot,
+    templateVersion: "2",
+    citationPolicy: {
+      policyVersion: "sci-citation-v1",
+      placement: "before_terminal_punctuation",
+      display: "bracketed",
+      includeAbstract: false,
+      includeFigureCaptions: false,
+      includeTableCaptions: false,
+      includeAppendices: true,
+    },
+  };
+  segmentSpec.blocks[0].citationIds = [];
+  const body = segmentSpec.blocks.find((block) => block.id === "intro-body");
+  body.text =
+    "Processing history controls topology. A second claim describes performance.";
+  body.citationIds = ["ref-1", "ref-2"];
+  body.citationGranularity = "segment";
+  body.segments = [
+    {
+      segmentId: "citation-segment-one",
+      order: 0,
+      text: "Processing history controls topology.",
+      citationIds: ["ref-1"],
+    },
+    {
+      segmentId: "citation-segment-two",
+      order: 1,
+      text: "A second claim describes performance.",
+      citationIds: ["ref-2"],
+    },
+  ];
+  segmentSpec.references.push({
+    id: "ref-2",
+    title: "Second verified source",
+    authors: ["C. Researcher"],
+    year: 2024,
+    venue: "Polymer Science",
+    verifiedBy: "literature_service",
+    sourceId: "source-2",
+  });
+  const segmentBuffer = await renderFinalDocumentSpecToDocx(segmentSpec);
+  const segmentArchive = await JSZip.loadAsync(segmentBuffer);
+  const segmentXml = await segmentArchive
+    .file("word/document.xml")
+    .async("string");
+  const segmentText = visibleDocumentText(segmentXml);
+  assert(
+    segmentText.includes(
+      "Processing history controls topology [1]. A second claim describes performance [2].",
+    ),
+    "Segment citations must render at their supported claim boundaries.",
+  );
+  assert(
+    !segmentText.includes("citation:ref-") &&
+      !segmentText.includes("evidence:ref-"),
+    "Internal reference markers must never enter visible DOCX text.",
+  );
+  const segmentOutputPath = path.join(outputDir, "sci-review-segment-citations.docx");
+  fs.writeFileSync(segmentOutputPath, segmentBuffer);
+  console.log(segmentOutputPath);
 
   const figureSpec = fixture("en");
   figureSpec.blocks.push({

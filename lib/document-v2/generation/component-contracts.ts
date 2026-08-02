@@ -1,6 +1,7 @@
 import { z, type ZodType } from "zod";
 import type { DocumentPlan } from "../contracts";
 import type { GeneratedComponentPayload } from "../orchestration/contracts";
+import { joinCitationSegmentTexts } from "../citations/segments";
 
 type PlannedComponent = DocumentPlan["components"][number];
 type FigureSlot = DocumentPlan["figureSlots"][number];
@@ -12,10 +13,16 @@ const FigureReferenceIdsSchema = z
   .max(100)
   .default([]);
 
-const SemanticTextParagraphSchema = z
+const SemanticCitationSegmentSchema = z
   .object({
     text: z.string().trim().min(1),
     citationIds: CitationIdsSchema,
+  })
+  .strict();
+
+const SemanticTextParagraphSchema = z
+  .object({
+    segments: z.array(SemanticCitationSegmentSchema).min(1).max(2_000),
   })
   .strict();
 
@@ -103,7 +110,7 @@ export type ComponentContractContext = {
 
 export type ComponentContractDefinition = {
   contractId: string;
-  contractVersion: 2;
+  contractVersion: 2 | 3;
   schemaName: string;
   modelOutputSchema: ZodType;
   example: unknown;
@@ -114,6 +121,22 @@ export type ComponentContractDefinition = {
     context: ComponentContractContext,
   ): GeneratedComponentPayload;
 };
+
+function projectSegments(
+  segments: ReadonlyArray<{ text: string; citationIds: string[] }>,
+) {
+  return {
+    text: joinCitationSegmentTexts(segments),
+    citationIds: [
+      ...new Set(segments.flatMap((segment) => segment.citationIds)),
+    ],
+    citationGranularity: "segment" as const,
+    segments: segments.map((segment) => ({
+      text: segment.text,
+      citationIds: [...segment.citationIds],
+    })),
+  };
+}
 
 function assembleBody(
   raw: unknown,
@@ -153,6 +176,8 @@ function assembleBody(
         role: "body" | "conclusion";
         text: string;
         citationIds: string[];
+        citationGranularity: "segment";
+        segments: Array<{ text: string; citationIds: string[] }>;
         figureRequestIndexes: number[];
       }
     | {
@@ -177,8 +202,7 @@ function assembleBody(
     blocks.push({
       type: "paragraph",
       role: paragraphRole,
-      text: paragraph.text,
-      citationIds: paragraph.citationIds,
+      ...projectSegments(paragraph.segments),
       figureRequestIndexes,
     });
     blockIndexAfterParagraph.set(paragraphIndex, blocks.length - 1);
@@ -253,20 +277,24 @@ const contracts: Record<
   },
   abstract: {
     contractId: "abstract",
-    contractVersion: 2,
-    schemaName: "document_abstract_v2",
+    contractVersion: 3,
+    schemaName: "document_abstract_v3",
     modelOutputSchema: AbstractOutputSchema,
     example: {
       paragraphs: [
         {
-          text: "Publication-ready abstract content.",
-          citationIds: [],
+          segments: [
+            {
+              text: "Publication-ready abstract content.",
+              citationIds: [],
+            },
+          ],
         },
       ],
     },
     modelOwnedFields: [
-      "paragraphs[].text",
-      "paragraphs[].citationIds",
+      "paragraphs[].segments[].text",
+      "paragraphs[].segments[].citationIds",
     ],
     programOwnedFields: [...sharedProgramOwnedFields, "paragraphRole"],
     assemble(raw) {
@@ -276,8 +304,7 @@ const contracts: Record<
         blocks: output.paragraphs.map((paragraph) => ({
           type: "paragraph" as const,
           role: "abstract" as const,
-          text: paragraph.text,
-          citationIds: paragraph.citationIds,
+          ...projectSegments(paragraph.segments),
           figureRequestIndexes: [],
         })),
         figureRequests: [],
@@ -305,14 +332,18 @@ const contracts: Record<
   },
   section: {
     contractId: "section_body",
-    contractVersion: 2,
-    schemaName: "document_section_body_v2",
+    contractVersion: 3,
+    schemaName: "document_section_body_v3",
     modelOutputSchema: BodyOutputSchema,
     example: {
       paragraphs: [
         {
-          text: "Publication-ready body paragraph.",
-          citationIds: [],
+          segments: [
+            {
+              text: "Publication-ready body paragraph.",
+              citationIds: [],
+            },
+          ],
           figureReferenceIds: [],
         },
       ],
@@ -320,8 +351,8 @@ const contracts: Record<
       figureRequests: [],
     },
     modelOwnedFields: [
-      "paragraphs[].text",
-      "paragraphs[].citationIds",
+      "paragraphs[].segments[].text",
+      "paragraphs[].segments[].citationIds",
       "paragraphs[].figureReferenceIds",
       "tables",
       "figureRequests[].title",
@@ -341,20 +372,24 @@ const contracts: Record<
   },
   conclusion: {
     contractId: "conclusion_body",
-    contractVersion: 2,
-    schemaName: "document_conclusion_body_v2",
+    contractVersion: 3,
+    schemaName: "document_conclusion_body_v3",
     modelOutputSchema: ConclusionOutputSchema,
     example: {
       paragraphs: [
         {
-          text: "Publication-ready conclusion content.",
-          citationIds: [],
+          segments: [
+            {
+              text: "Publication-ready conclusion content.",
+              citationIds: [],
+            },
+          ],
         },
       ],
     },
     modelOwnedFields: [
-      "paragraphs[].text",
-      "paragraphs[].citationIds",
+      "paragraphs[].segments[].text",
+      "paragraphs[].segments[].citationIds",
     ],
     programOwnedFields: [...sharedProgramOwnedFields, "paragraphRole"],
     assemble(raw, context) {
@@ -372,8 +407,7 @@ const contracts: Record<
           ...output.paragraphs.map((paragraph) => ({
             type: "paragraph" as const,
             role: "conclusion" as const,
-            text: paragraph.text,
-            citationIds: paragraph.citationIds,
+            ...projectSegments(paragraph.segments),
             figureRequestIndexes: [],
           })),
         ],

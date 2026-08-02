@@ -7,8 +7,9 @@ import type {
 } from "../orchestration/orchestrator";
 
 const INTERNAL_CONTENT_PATTERN =
-  /visualSpecs|evidenceType|aistructure|figure placeholder|TODO|TBD|\{\{[^}]+\}\}|```|system prompt|tool call/i;
-const MANUAL_CITATION_PATTERN = /\[(?:\d+)(?:\s*[-,]\s*\d+)*\]/;
+  /visualSpecs|evidenceType|aistructure|figure placeholder|TODO|TBD|\{\{[^}]+\}\}|```|system prompt|tool call|\[(?:citation|evidence|reference)\s*:[^\]]+\]/i;
+const MANUAL_CITATION_PATTERN =
+  /\[\s*(?:\d+)(?:\s*[-,\u2013]\s*\d+)*\s*\]/;
 const MANUAL_FIGURE_REFERENCE_PATTERN =
   /(?:\bfig(?:ure)?\.?\s*\d+\b|图\s*\d+|\[\s*(?:fig(?:ure)?\.?|图)\s*\d+\s*\])/i;
 const MANUAL_TABLE_REFERENCE_PATTERN =
@@ -71,6 +72,15 @@ export class MatureDocumentComponentValidator
       return reject(
         "internal_content_leak",
         "Remove internal fields, prompts, placeholders, TODO text, and code fences.",
+      );
+    }
+    const leakedReferenceId = input.verifiedReferences.find((reference) =>
+      contentTexts.some((text) => text.includes(reference.id)),
+    );
+    if (leakedReferenceId) {
+      return reject(
+        "internal_reference_id_leak",
+        `Remove internal reference ID "${leakedReferenceId.id}" from visible prose and keep it only in segment citationIds.`,
       );
     }
     if (contentTexts.some((text) => MANUAL_CITATION_PATTERN.test(text))) {

@@ -11,8 +11,16 @@ import {
   FinalDocumentSpecSchema,
   VerifiedReferenceSchema,
 } from "../contracts";
+import { joinCitationSegmentTexts } from "../citations/segments";
 
 const IdentifierSchema = z.string().min(1).max(120);
+
+export const CitationSegmentDraftSchema = z
+  .object({
+    text: z.string().trim().min(1),
+    citationIds: z.array(IdentifierSchema).max(500),
+  })
+  .strict();
 
 export const EvidenceSnippetSchema = z
   .object({
@@ -42,11 +50,59 @@ export const GeneratedBlockDraftSchema = z.discriminatedUnion("type", [
       role: z.enum(["abstract", "body", "conclusion"]),
       text: z.string().trim().min(1),
       citationIds: z.array(IdentifierSchema),
+      citationGranularity: z
+        .enum(["paragraph_legacy", "segment"])
+        .default("paragraph_legacy"),
+      segments: z.array(CitationSegmentDraftSchema).max(2_000).default([]),
       figureRequestIndexes: z
         .array(z.number().int().min(0).max(99))
         .default([]),
     })
-    .strict(),
+    .strict()
+    .superRefine((paragraph, context) => {
+      if (paragraph.citationGranularity === "paragraph_legacy") {
+        if (paragraph.segments.length > 0) {
+          context.addIssue({
+            code: "custom",
+            path: ["segments"],
+            message: "Legacy paragraphs cannot contain citation segments.",
+          });
+        }
+        return;
+      }
+      if (paragraph.segments.length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["segments"],
+          message: "Segment-level paragraphs require at least one segment.",
+        });
+        return;
+      }
+      const projectedText = joinCitationSegmentTexts(paragraph.segments);
+      if (projectedText !== paragraph.text) {
+        context.addIssue({
+          code: "custom",
+          path: ["text"],
+          message: "Paragraph text must equal the ordered segment projection.",
+        });
+      }
+      const projectedCitationIds = [
+        ...new Set(paragraph.segments.flatMap((segment) => segment.citationIds)),
+      ];
+      if (
+        projectedCitationIds.length !== paragraph.citationIds.length ||
+        projectedCitationIds.some(
+          (citationId, index) => citationId !== paragraph.citationIds[index],
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["citationIds"],
+          message:
+            "Paragraph citation IDs must equal the ordered segment projection.",
+        });
+      }
+    }),
   z
     .object({
       type: z.literal("keywords"),

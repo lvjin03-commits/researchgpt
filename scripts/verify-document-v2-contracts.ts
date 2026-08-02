@@ -144,4 +144,54 @@ assert.equal(
   false,
 );
 
+const segmentSpec = FinalDocumentSpecSchema.parse({
+  ...spec,
+  blocks: [
+    {
+      id: "body-segmented",
+      type: "paragraph",
+      role: "body",
+      text: "First supported claim. Second supported claim.",
+      citationIds: ["ref-1"],
+      citationGranularity: "segment",
+      segments: [
+        {
+          segmentId: "citation-segment-first",
+          order: 0,
+          text: "First supported claim.",
+          citationIds: ["ref-1"],
+        },
+        {
+          segmentId: "citation-segment-second",
+          order: 1,
+          text: "Second supported claim.",
+          citationIds: [],
+        },
+      ],
+    },
+  ],
+});
+assert.equal(segmentSpec.blocks[0].type, "paragraph");
+
+assert.equal(
+  FinalDocumentSpecSchema.safeParse({
+    ...segmentSpec,
+    blocks: [
+      {
+        ...segmentSpec.blocks[0],
+        text: "First claim [citation:ref-1].",
+        segments: [
+          {
+            segmentId: "citation-segment-leak",
+            order: 0,
+            text: "First claim [citation:ref-1].",
+            citationIds: ["ref-1"],
+          },
+        ],
+      },
+    ],
+  }).success,
+  false,
+);
+
 console.log("Document v2 contract tests passed.");

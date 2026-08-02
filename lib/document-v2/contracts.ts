@@ -1,7 +1,33 @@
 import { z } from "zod";
 import { FigureAssetSchema } from "./assets/contracts.ts";
+import { joinCitationSegmentTexts } from "./citations/segments";
 
 const IdentifierSchema = z.string().min(1).max(120);
+
+export const CitationPlacementPolicySchema = z
+  .object({
+    policyVersion: z.string().min(1).max(40),
+    placement: z.enum([
+      "before_terminal_punctuation",
+      "after_terminal_punctuation",
+    ]),
+    display: z.enum(["bracketed", "superscript"]),
+    includeAbstract: z.boolean(),
+    includeFigureCaptions: z.boolean(),
+    includeTableCaptions: z.boolean(),
+    includeAppendices: z.boolean(),
+  })
+  .strict();
+
+const LEGACY_CITATION_POLICY = {
+  policyVersion: "legacy-v1",
+  placement: "after_terminal_punctuation",
+  display: "bracketed",
+  includeAbstract: true,
+  includeFigureCaptions: false,
+  includeTableCaptions: false,
+  includeAppendices: true,
+} as const;
 
 export const ResolvedTemplateSnapshotSchema = z
   .object({
@@ -45,6 +71,9 @@ export const ResolvedTemplateSnapshotSchema = z
         tableCaptionPosition: z.literal("above"),
       })
       .strict(),
+    citationPolicy: CitationPlacementPolicySchema.default(
+      LEGACY_CITATION_POLICY,
+    ),
   })
   .strict();
 
@@ -363,6 +392,15 @@ export const VerifiedReferenceSchema = z
 
 export type VerifiedReference = z.infer<typeof VerifiedReferenceSchema>;
 
+export const MatureCitationSegmentSchema = z
+  .object({
+    segmentId: IdentifierSchema,
+    order: z.number().int().min(0).max(10_000),
+    text: z.string().trim().min(1),
+    citationIds: z.array(IdentifierSchema).max(500),
+  })
+  .strict();
+
 export const ApprovedDocumentBlockSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -379,9 +417,65 @@ export const ApprovedDocumentBlockSchema = z.discriminatedUnion("type", [
       role: z.enum(["abstract", "body", "conclusion"]),
       text: z.string().trim().min(1),
       citationIds: z.array(IdentifierSchema),
+      citationGranularity: z
+        .enum(["paragraph_legacy", "segment"])
+        .default("paragraph_legacy"),
+      segments: z.array(MatureCitationSegmentSchema).max(2_000).default([]),
       figureAssetIds: z.array(IdentifierSchema).default([]),
     })
-    .strict(),
+    .strict()
+    .superRefine((paragraph, context) => {
+      if (paragraph.citationGranularity === "paragraph_legacy") {
+        if (paragraph.segments.length > 0) {
+          context.addIssue({
+            code: "custom",
+            path: ["segments"],
+            message: "Legacy paragraphs cannot contain citation segments.",
+          });
+        }
+        return;
+      }
+      if (paragraph.segments.length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["segments"],
+          message: "Segment-level paragraphs require at least one segment.",
+        });
+        return;
+      }
+      const orders = paragraph.segments.map((segment) => segment.order);
+      if (orders.some((order, index) => order !== index)) {
+        context.addIssue({
+          code: "custom",
+          path: ["segments"],
+          message: "Citation segment order must be continuous and start at zero.",
+        });
+      }
+      const projectedText = joinCitationSegmentTexts(paragraph.segments);
+      if (projectedText !== paragraph.text) {
+        context.addIssue({
+          code: "custom",
+          path: ["text"],
+          message: "Paragraph text must equal the ordered segment projection.",
+        });
+      }
+      const projectedCitationIds = [
+        ...new Set(paragraph.segments.flatMap((segment) => segment.citationIds)),
+      ];
+      if (
+        projectedCitationIds.length !== paragraph.citationIds.length ||
+        projectedCitationIds.some(
+          (citationId, index) => citationId !== paragraph.citationIds[index],
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["citationIds"],
+          message:
+            "Paragraph citation IDs must equal the ordered segment projection.",
+        });
+      }
+    }),
   z
     .object({
       id: IdentifierSchema,
@@ -468,6 +562,48 @@ export const FinalDocumentSpecSchema = z
       }
       blockIds.add(block.id);
       if (block.type === "paragraph") {
+        const visibleTexts = [
+          block.text,
+          ...block.segments.map((segment) => segment.text),
+        ];
+        const manualNumericCitationPattern =
+          /\[\s*\d+(?:\s*[,\-\u2013]\s*\d+)*\s*\]/;
+        const internalCitationMarkerPattern =
+          /\[(?:citation|evidence|reference)\s*:[^\]]+\]/i;
+        if (
+          visibleTexts.some(
+            (text) =>
+              manualNumericCitationPattern.test(text) ||
+              internalCitationMarkerPattern.test(text),
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["blocks", index, "text"],
+            message:
+              "Visible paragraph text cannot contain manual citations or internal citation markers.",
+          });
+        }
+        for (const referenceId of referenceIds) {
+          if (visibleTexts.some((text) => text.includes(referenceId))) {
+            context.addIssue({
+              code: "custom",
+              path: ["blocks", index, "text"],
+              message: `Internal reference ID ${referenceId} leaked into visible text.`,
+            });
+          }
+        }
+        if (
+          block.role === "abstract" &&
+          !spec.templateSnapshot.citationPolicy.includeAbstract &&
+          block.citationIds.length > 0
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["blocks", index, "citationIds"],
+            message: "This template forbids citations in the abstract.",
+          });
+        }
         if (manualCrossReferencePattern.test(block.text)) {
           context.addIssue({
             code: "custom",

@@ -22,6 +22,8 @@ import {
   type FinalDocumentSpec,
   type VerifiedReference,
 } from "../contracts";
+import { deriveCitationManifest } from "../citations/manifest";
+import { citationSegmentSeparator } from "../citations/segments";
 
 const TWIPS_PER_POINT = 20;
 const A4_WIDTH_DXA = 11_906;
@@ -99,6 +101,62 @@ function citationSuffix(
     return number;
   });
   return ` [${numbers.join(", ")}]`;
+}
+
+const TERMINAL_PUNCTUATION_PATTERN = /([.!?;。！？；])$/u;
+
+function citationMarkerRun(input: {
+  citationIds: string[];
+  referenceNumbers: ReadonlyMap<string, number>;
+  language: FinalDocumentSpec["metadata"]["language"];
+  display: FinalDocumentSpec["templateSnapshot"]["citationPolicy"]["display"];
+}): TextRun | undefined {
+  if (input.citationIds.length === 0) return undefined;
+  const numbers = [...new Set(input.citationIds)].map((id) => {
+    const number = input.referenceNumbers.get(id);
+    if (!number) {
+      throw new DocumentV2RenderError(
+        `Citation "${id}" has no verified reference number.`,
+      );
+    }
+    return number;
+  });
+  return new TextRun({
+    text: `${input.language === "en" ? " " : ""}[${numbers.join(", ")}]`,
+    superScript: input.display === "superscript",
+  });
+}
+
+function segmentCitationRuns(input: {
+  text: string;
+  citationIds: string[];
+  first: boolean;
+  previousText?: string;
+  referenceNumbers: ReadonlyMap<string, number>;
+  language: FinalDocumentSpec["metadata"]["language"];
+  policy: FinalDocumentSpec["templateSnapshot"]["citationPolicy"];
+}): TextRun[] {
+  const separator = input.first
+    ? ""
+    : citationSegmentSeparator(input.previousText ?? "", input.text);
+  const marker = citationMarkerRun({
+    citationIds: input.citationIds,
+    referenceNumbers: input.referenceNumbers,
+    language: input.language,
+    display: input.policy.display,
+  });
+  if (!marker) return [new TextRun({ text: `${separator}${input.text}` })];
+  if (input.policy.placement === "before_terminal_punctuation") {
+    const match = input.text.match(TERMINAL_PUNCTUATION_PATTERN);
+    if (match) {
+      return [
+        new TextRun({ text: `${separator}${input.text.slice(0, -1)}` }),
+        marker,
+        new TextRun({ text: match[1] }),
+      ];
+    }
+  }
+  return [new TextRun({ text: `${separator}${input.text}` }), marker];
 }
 
 function figureCitationSuffix(
@@ -254,8 +312,21 @@ export async function renderFinalDocumentSpecToDocx(
   const spec = FinalDocumentSpecSchema.parse(input);
   const styleIds = spec.templateSnapshot.typography;
   const documentFonts = fonts(spec.metadata.language);
+  const citationManifest = deriveCitationManifest(spec);
+  const referenceById = new Map(
+    spec.references.map((reference) => [reference.id, reference]),
+  );
+  const orderedReferences = citationManifest.orderedReferenceIds.map((id) => {
+    const reference = referenceById.get(id);
+    if (!reference) {
+      throw new DocumentV2RenderError(
+        `Citation "${id}" has no verified reference.`,
+      );
+    }
+    return reference;
+  });
   const referenceNumbers = new Map(
-    spec.references.map((reference, index) => [reference.id, index + 1]),
+    orderedReferences.map((reference, index) => [reference.id, index + 1]),
   );
   const assetsById = new Map(spec.assets.map((asset) => [asset.id, asset]));
   const figureNumbers = new Map<string, number>();
@@ -285,7 +356,24 @@ export async function renderFinalDocumentSpecToDocx(
     }
 
     if (block.type === "paragraph") {
-      const suffix = citationSuffix(block.citationIds, referenceNumbers);
+      const citationRuns =
+        block.citationGranularity === "segment"
+          ? block.segments.flatMap((segment, index) =>
+              segmentCitationRuns({
+                text: segment.text,
+                citationIds: segment.citationIds,
+                first: index === 0,
+                previousText: block.segments[index - 1]?.text,
+                referenceNumbers,
+                language: spec.metadata.language,
+                policy: spec.templateSnapshot.citationPolicy,
+              }),
+            )
+          : [
+              new TextRun({
+                text: `${block.text}${citationSuffix(block.citationIds, referenceNumbers)}`,
+              }),
+            ];
       const figureSuffix = figureCitationSuffix(
         block.figureAssetIds,
         figureNumbers,
@@ -301,7 +389,8 @@ export async function renderFinalDocumentSpecToDocx(
                 bold: true,
                 font: documentFonts.title,
               }),
-              new TextRun({ text: `${block.text}${suffix}${figureSuffix}` }),
+              ...citationRuns,
+              ...(figureSuffix ? [new TextRun({ text: figureSuffix })] : []),
             ],
           }),
         );
@@ -309,7 +398,10 @@ export async function renderFinalDocumentSpecToDocx(
         children.push(
           new Paragraph({
             style: styleIds.bodyStyle,
-            text: `${block.text}${suffix}${figureSuffix}`,
+            children: [
+              ...citationRuns,
+              ...(figureSuffix ? [new TextRun({ text: figureSuffix })] : []),
+            ],
           }),
         );
       }
@@ -441,13 +533,13 @@ export async function renderFinalDocumentSpecToDocx(
     );
   }
 
-  if (spec.references.length > 0) {
+  if (orderedReferences.length > 0) {
     children.push(
       new Paragraph({
         style: styleIds.heading1Style,
         text: spec.metadata.language === "zh" ? "参考文献" : "References",
       }),
-      ...spec.references.map(
+      ...orderedReferences.map(
         (reference, index) =>
           new Paragraph({
             style: styleIds.referenceStyle,

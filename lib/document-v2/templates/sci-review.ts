@@ -45,7 +45,7 @@ const AI_RESPONSIBILITIES = [
 
 export const SCI_REVIEW_TEMPLATE: DocumentTemplateDefinition = {
   templateId: "sci-review",
-  templateVersion: "1",
+  templateVersion: "2",
   status: "active",
   displayName: "SCI Review Word",
   description:
@@ -128,7 +128,7 @@ export const SCI_REVIEW_TEMPLATE: DocumentTemplateDefinition = {
   fixedRulesDocument: "docs/templates/sci-review-v1.md",
   snapshotSeed: {
     templateId: "sci-review",
-    templateVersion: "1",
+    templateVersion: "2",
     origin: { kind: "system" },
     renderingProfile: "sci_word_v1",
     contentProfile: "sci_review_v1",
@@ -150,6 +150,15 @@ export const SCI_REVIEW_TEMPLATE: DocumentTemplateDefinition = {
       headingDepth: 3,
       figureCaptionPosition: "below",
       tableCaptionPosition: "above",
+    },
+    citationPolicy: {
+      policyVersion: "sci-citation-v1",
+      placement: "before_terminal_punctuation",
+      display: "bracketed",
+      includeAbstract: false,
+      includeFigureCaptions: false,
+      includeTableCaptions: false,
+      includeAppendices: true,
     },
   },
 };

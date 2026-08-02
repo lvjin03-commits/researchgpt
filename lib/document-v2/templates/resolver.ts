@@ -128,6 +128,7 @@ export async function resolveDocumentTemplate(
       typography: analysis.typography,
       layout: analysis.layout,
       rules: analysis.rules,
+      citationPolicy: SCI_REVIEW_TEMPLATE.snapshotSeed.citationPolicy,
     });
     return deepFreeze(
       TemplateResolutionSchema.parse({

@@ -328,6 +328,15 @@ function structurallyApprovePayload(input: {
   );
   for (const draft of blockPayload.blocks) {
     if (draft.type !== "paragraph") continue;
+    if (
+      draft.role === "abstract" &&
+      !input.plan.templateSnapshot.citationPolicy.includeAbstract &&
+      draft.citationIds.length > 0
+    ) {
+      throw new DocumentPlanInvariantError(
+        "The selected template forbids citations in the abstract.",
+      );
+    }
     for (const citationId of draft.citationIds) {
       if (!availableReferenceIds.has(citationId)) {
         throw new DocumentPlanInvariantError(
@@ -446,9 +455,39 @@ function structurallyApprovePayload(input: {
         }
         const { figureRequestIndexes: _figureRequestIndexes, ...paragraph } =
           block;
+        void _figureRequestIndexes;
+        const blockId = `${input.component.componentKey}-${index + 1}`;
+        const duplicateCountByFingerprint = new Map<string, number>();
         return {
           ...paragraph,
-          id: `${input.component.componentKey}-${index + 1}`,
+          id: blockId,
+          segments:
+            paragraph.citationGranularity === "segment"
+              ? paragraph.segments.map((segment, segmentIndex) => {
+                  const fingerprint = createHash("sha256")
+                    .update(segment.text)
+                    .update("\0")
+                    .update(segment.citationIds.join("\0"))
+                    .digest("hex");
+                  const duplicateOrdinal =
+                    duplicateCountByFingerprint.get(fingerprint) ?? 0;
+                  duplicateCountByFingerprint.set(
+                    fingerprint,
+                    duplicateOrdinal + 1,
+                  );
+                  return {
+                    segmentId: stableCitationSegmentId({
+                      blockId,
+                      text: segment.text,
+                      citationIds: segment.citationIds,
+                      duplicateOrdinal,
+                    }),
+                    order: segmentIndex,
+                    text: segment.text,
+                    citationIds: segment.citationIds,
+                  };
+                })
+              : [],
           figureAssetIds: [],
         };
       }),
@@ -457,6 +496,25 @@ function structurallyApprovePayload(input: {
     figureRequests,
     paragraphFigureRefs,
   };
+}
+
+function stableCitationSegmentId(input: {
+  blockId: string;
+  text: string;
+  citationIds: ReadonlyArray<string>;
+  duplicateOrdinal: number;
+}): string {
+  const digest = createHash("sha256")
+    .update(input.blockId)
+    .update("\0")
+    .update(input.text)
+    .update("\0")
+    .update(input.citationIds.join("\0"))
+    .update("\0")
+    .update(String(input.duplicateOrdinal))
+    .digest("hex")
+    .slice(0, 24);
+  return `citation-segment-${digest}`;
 }
 
 function stableFigureRequestId(componentKey: string, index: number): string {
