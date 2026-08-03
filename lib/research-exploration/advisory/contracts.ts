@@ -32,6 +32,7 @@ export const ResearchExplorationAdvisoryResolutionSchema = z
     hints: ResearchExplorationAdvisoryHintsSchema.optional(),
     warningCode: z
       .enum([
+        "runtime_disabled",
         "exploration_pending",
         "exploration_failed",
         "exploration_result_unavailable",

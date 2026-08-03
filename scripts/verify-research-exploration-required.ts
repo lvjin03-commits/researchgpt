@@ -12,6 +12,7 @@ import {
 import {
   ResearchExplorationRequiredPlanningError,
 } from "../lib/research-exploration/required/contracts.ts";
+import { resolveResearchExplorationRuntime } from "../lib/research-exploration/runtime-policy.ts";
 
 const execution = ResearchExplorationExecutionSchema.parse({
   schemaVersion: 1,
@@ -77,8 +78,15 @@ const capability: ResearchExplorationCapability = {
   async loadResult() { return proposal; },
   async cancel() { return execution; },
 };
+const requiredRuntime = resolveResearchExplorationRuntime({
+  globallyApproved: true,
+  mode: "required",
+});
 
-const available = await new ResearchExplorationRequiredGateway(capability).resolve(
+const available = await new ResearchExplorationRequiredGateway(
+  capability,
+  requiredRuntime,
+).resolve(
   execution.executionId,
 );
 assert.equal(available.outcome, "available");
@@ -109,7 +117,7 @@ function withStatus(status: ResearchExplorationExecution["status"]) {
 const waiting = await new ResearchExplorationRequiredGateway({
   ...capability,
   async inspect() { return withStatus("running"); },
-}).resolve(execution.executionId);
+}, requiredRuntime).resolve(execution.executionId);
 assert.equal(waiting.outcome, "waiting");
 assert.throws(
   () => requireResearchExplorationForPlanning(waiting),
@@ -125,7 +133,7 @@ for (const [status, failureCode] of [
   const blocked = await new ResearchExplorationRequiredGateway({
     ...capability,
     async inspect() { return withStatus(status); },
-  }).resolve(execution.executionId);
+  }, requiredRuntime).resolve(execution.executionId);
   assert.equal(blocked.outcome, "blocked");
   assert.equal(blocked.failureCode, failureCode);
 }
@@ -133,7 +141,7 @@ for (const [status, failureCode] of [
 const unavailable = await new ResearchExplorationRequiredGateway({
   ...capability,
   async loadResult() { throw new Error("missing durable result"); },
-}).resolve(execution.executionId);
+}, requiredRuntime).resolve(execution.executionId);
 assert.equal(unavailable.outcome, "blocked");
 assert.equal(unavailable.failureCode, "exploration_result_unavailable");
 

@@ -21,6 +21,12 @@ for (const file of files) {
   if (/BackgroundTasks/.test(source)) failures.push(`${label}: runs long work in FastAPI BackgroundTasks`);
   if (/do_generate_article\s*=\s*True/.test(source)) failures.push(`${label}: enables STORM article generation`);
   if (/do_polish_article\s*=\s*True/.test(source)) failures.push(`${label}: enables STORM article polishing`);
+  if (
+    source.includes("STORM_RUNTIME_APPROVED") &&
+    !label.replaceAll("\\", "/").endsWith("app/storm_adapter/runner_factory.py")
+  ) {
+    failures.push(`${label}: reads the global runtime switch outside runner_factory.py`);
+  }
 }
 
 if (failures.length) {

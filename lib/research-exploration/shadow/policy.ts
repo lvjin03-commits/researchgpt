@@ -19,6 +19,7 @@ export type ResearchExplorationShadowSelection = Readonly<{
   selected: boolean;
   reason:
     | "selected"
+    | "runtime_disabled"
     | "disabled"
     | "production_forbidden"
     | "sampled_out"

@@ -39,6 +39,19 @@ for await (const absolute of walk(moduleRoot)) {
   }
 }
 
+for await (const absolute of walk(path.join(root, "lib"))) {
+  const relative = path.relative(root, absolute).replaceAll("\\", "/");
+  const source = await readFile(absolute, "utf8");
+  if (
+    source.includes("STORM_RUNTIME_APPROVED") &&
+    relative !== "lib/research-exploration/runtime-policy.ts"
+  ) {
+    violations.push(
+      `${relative}: the global STORM switch may only be read by runtime-policy.ts`,
+    );
+  }
+}
+
 const planningIntegrationOwners = new Set([
   "lib/document-v2/planning/planner.ts",
   "lib/document-v2-production/planning.ts",

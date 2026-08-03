@@ -6,6 +6,7 @@ import {
 } from "../lib/research-exploration/contracts.ts";
 import { ResearchExplorationAdvisoryGateway } from "../lib/research-exploration/advisory/gateway.ts";
 import { deriveResearchExplorationAdvisoryHints } from "../lib/research-exploration/advisory/hints.ts";
+import { resolveResearchExplorationRuntime } from "../lib/research-exploration/runtime-policy.ts";
 
 const proposal = ResearchExplorationProposalSchema.parse({
   schemaVersion: 1,
@@ -80,7 +81,14 @@ const capability: ResearchExplorationCapability = {
   async loadResult() { return proposal; },
   async cancel() { return execution; },
 };
-const available = await new ResearchExplorationAdvisoryGateway(capability).resolve(
+const advisoryRuntime = resolveResearchExplorationRuntime({
+  globallyApproved: true,
+  mode: "advisory",
+});
+const available = await new ResearchExplorationAdvisoryGateway(
+  capability,
+  advisoryRuntime,
+).resolve(
   execution.executionId,
 );
 assert.equal(available.outcome, "available");
@@ -89,7 +97,7 @@ assert.equal(available.hints?.suggestedSections[0]?.heading, "Processing history
 const pendingGateway = new ResearchExplorationAdvisoryGateway({
   ...capability,
   async inspect() { return ResearchExplorationExecutionSchema.parse({ ...execution, status: "running", resultLocation: undefined }); },
-});
+}, advisoryRuntime);
 assert.deepEqual(
   await pendingGateway.resolve(execution.executionId),
   { mode: "advisory", outcome: "fallback", warningCode: "exploration_pending" },
@@ -98,7 +106,7 @@ assert.deepEqual(
 const failedGateway = new ResearchExplorationAdvisoryGateway({
   ...capability,
   async inspect() { throw new Error("service unavailable"); },
-});
+}, advisoryRuntime);
 assert.deepEqual(
   await failedGateway.resolve(execution.executionId),
   { mode: "advisory", outcome: "fallback", warningCode: "exploration_result_unavailable" },

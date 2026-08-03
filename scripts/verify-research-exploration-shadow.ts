@@ -8,6 +8,7 @@ import {
 import { evaluateResearchExplorationShadow } from "../lib/research-exploration/evaluation/comparator.ts";
 import { ResearchExplorationShadowCoordinator } from "../lib/research-exploration/shadow/coordinator.ts";
 import { selectResearchExplorationShadow } from "../lib/research-exploration/shadow/policy.ts";
+import { resolveResearchExplorationRuntime } from "../lib/research-exploration/runtime-policy.ts";
 
 const policy = {
   policyVersion: "research-exploration-shadow-v1" as const,
@@ -146,15 +147,24 @@ const capability: ResearchExplorationCapability = {
   },
 };
 const coordinator = new ResearchExplorationShadowCoordinator(capability);
+const shadowRuntime = resolveResearchExplorationRuntime({
+  globallyApproved: true,
+  mode: "shadow",
+});
 const launched = await coordinator.launch({
   policy,
   sampleSubjectId: "job-1",
   activeExecutionCount: 0,
   exploration: explorationInput,
+  runtimeDecision: shadowRuntime,
 });
 assert.equal(launched.executionId, execution.executionId);
 assert.equal(startCalls, 1);
-const collected = await coordinator.collect({ executionId: execution.executionId, baseline });
+const collected = await coordinator.collect({
+  executionId: execution.executionId,
+  baseline,
+  runtimeDecision: shadowRuntime,
+});
 assert.equal(collected.status, "evaluated");
 assert.equal(collected.evaluation?.baselineId, baseline.baselineId);
 
@@ -171,6 +181,7 @@ const isolatedFailure = await new ResearchExplorationShadowCoordinator(
   sampleSubjectId: "job-2",
   activeExecutionCount: 0,
   exploration: explorationInput,
+  runtimeDecision: shadowRuntime,
 });
 assert.equal(isolatedFailure.failureCode, "shadow_start_failed");
 

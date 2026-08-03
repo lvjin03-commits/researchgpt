@@ -15,6 +15,7 @@ import {
   type ResearchExplorationShadowPolicy,
   type ResearchExplorationShadowSelection,
 } from "./policy.ts";
+import type { ResearchExplorationRuntimeDecision } from "../runtime-policy.ts";
 
 export type ResearchExplorationShadowLaunch = Readonly<{
   selection: ResearchExplorationShadowSelection;
@@ -24,9 +25,9 @@ export type ResearchExplorationShadowLaunch = Readonly<{
 
 export type ResearchExplorationShadowCollection = Readonly<{
   status: "pending" | "evaluated" | "unavailable";
-  execution: ResearchExplorationExecution;
+  execution?: ResearchExplorationExecution;
   evaluation?: ResearchExplorationShadowEvaluation;
-  failureCode?: "shadow_result_unavailable";
+  failureCode?: "runtime_disabled" | "shadow_result_unavailable";
 }>;
 
 /**
@@ -45,7 +46,17 @@ export class ResearchExplorationShadowCoordinator {
     sampleSubjectId: string;
     activeExecutionCount: number;
     exploration: ResearchExplorationInput;
+    runtimeDecision: ResearchExplorationRuntimeDecision;
   }): Promise<ResearchExplorationShadowLaunch> {
+    if (
+      !input.runtimeDecision.enabled ||
+      input.runtimeDecision.mode !== "shadow"
+    ) {
+      const selection = selectResearchExplorationShadow(input);
+      return {
+        selection: { ...selection, selected: false, reason: "runtime_disabled" },
+      };
+    }
     const selection = selectResearchExplorationShadow(input);
     if (!selection.selected) return { selection };
     try {
@@ -59,7 +70,14 @@ export class ResearchExplorationShadowCoordinator {
   async collect(input: {
     executionId: string;
     baseline: ResearchExplorationShadowBaseline;
+    runtimeDecision: ResearchExplorationRuntimeDecision;
   }): Promise<ResearchExplorationShadowCollection> {
+    if (
+      !input.runtimeDecision.enabled ||
+      input.runtimeDecision.mode !== "shadow"
+    ) {
+      return { status: "unavailable", failureCode: "runtime_disabled" };
+    }
     const execution = await this.capability.inspect(input.executionId);
     if (["queued", "running", "unknown_outcome"].includes(execution.status)) {
       return { status: "pending", execution };

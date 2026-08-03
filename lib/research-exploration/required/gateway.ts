@@ -7,6 +7,7 @@ import {
   ResearchExplorationRequiredResolutionSchema,
   type ResearchExplorationRequiredResolution,
 } from "./contracts.ts";
+import type { ResearchExplorationRuntimeDecision } from "../runtime-policy.ts";
 
 function terminalFailureCode(status: ResearchExplorationStatus) {
   switch (status) {
@@ -27,12 +28,26 @@ function terminalFailureCode(status: ResearchExplorationStatus) {
  */
 export class ResearchExplorationRequiredGateway {
   private readonly capability: ResearchExplorationCapability;
+  private readonly runtimeDecision: ResearchExplorationRuntimeDecision;
 
-  constructor(capability: ResearchExplorationCapability) {
+  constructor(
+    capability: ResearchExplorationCapability,
+    runtimeDecision: ResearchExplorationRuntimeDecision,
+  ) {
     this.capability = capability;
+    this.runtimeDecision = runtimeDecision;
   }
 
   async resolve(executionId: string): Promise<ResearchExplorationRequiredResolution> {
+    if (!this.runtimeDecision.enabled || this.runtimeDecision.mode !== "required") {
+      return ResearchExplorationRequiredResolutionSchema.parse({
+        mode: "required",
+        outcome: "blocked",
+        executionId,
+        executionStatus: "cancelled",
+        failureCode: "runtime_disabled",
+      });
+    }
     let execution;
     try {
       execution = await this.capability.inspect(executionId);

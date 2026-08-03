@@ -20,6 +20,7 @@ export const ResearchExplorationRequiredResolutionSchema = z
     nextCheckAt: z.iso.datetime({ offset: true }).optional(),
     failureCode: z
       .enum([
+        "runtime_disabled",
         "exploration_failed",
         "exploration_unknown_outcome",
         "exploration_expired",
