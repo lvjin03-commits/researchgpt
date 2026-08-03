@@ -8,6 +8,10 @@ admitted. `services/storm-exploration/requirements.txt` deliberately excludes
 `knowledge-storm`, and `create_real_runner()` deliberately stops before
 provider configuration.
 
+The current dependency decision is recorded in
+`docs/storm-runtime-admission-2026-08-02.md` and the machine-readable
+`services/storm-exploration/runtime-admission.json`.
+
 Setting `STORM_RUNTIME_APPROVED=true` now is not an activation procedure. It
 would only move execution to the next explicit safety failure.
 

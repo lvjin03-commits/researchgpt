@@ -8,7 +8,11 @@ from fastapi import FastAPI
 from app.api.explorations import router
 from app.service import ExplorationService
 from app.storage.execution_store import SqliteExecutionStore
-from app.storm_adapter.runner_factory import dependency_available, runtime_approved
+from app.storm_adapter.runner_factory import (
+    admission_status,
+    dependency_available,
+    runtime_approved,
+)
 
 
 def create_app(database_path: Path | None = None) -> FastAPI:
@@ -24,6 +28,7 @@ def create_app(database_path: Path | None = None) -> FastAPI:
     def health() -> dict[str, object]:
         return {
             "status": "ok",
+            "runtimeAdmissionStatus": admission_status(),
             "runtimeApproved": runtime_approved(),
             "stormDependencyAvailable": dependency_available(),
             "productionReady": runtime_approved() and dependency_available(),

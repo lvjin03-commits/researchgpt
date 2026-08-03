@@ -1,0 +1,8 @@
+# Production-runtime admission input.
+#
+# Keep the service boundary dependencies explicit and pin the upstream STORM
+# package. The generated requirements-runtime.lock is the only dependency file
+# that may be used to build a real STORM runtime image.
+fastapi==0.141.1
+uvicorn==0.52.1
+knowledge-storm==1.1.1

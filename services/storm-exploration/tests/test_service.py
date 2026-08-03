@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.domain.contracts import (
@@ -12,6 +13,10 @@ from app.domain.contracts import (
     QuestionCandidate,
 )
 from app.main import create_app
+from app.storm_adapter.runner_factory import (
+    StormDependencyUnavailable,
+    create_real_runner,
+)
 from app.worker import ExplorationWorker
 
 
@@ -144,9 +149,19 @@ def test_contract_rejects_unknown_fields(tmp_path: Path) -> None:
     assert client.post("/v1/explorations", json=payload).status_code == 422
 
 
-def test_health_exposes_runtime_gate_without_loading_storm(tmp_path: Path) -> None:
+def test_health_exposes_runtime_gate_without_loading_storm(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("STORM_RUNTIME_APPROVED", "true")
     app = create_app(tmp_path / "store.sqlite3")
     payload = TestClient(app).get("/health").json()
     assert payload["status"] == "ok"
+    assert payload["runtimeAdmissionStatus"] == "blocked"
     assert payload["runtimeApproved"] is False
     assert payload["productionReady"] is False
+
+
+def test_environment_flag_cannot_bypass_blocked_admission(monkeypatch) -> None:
+    monkeypatch.setenv("STORM_RUNTIME_APPROVED", "true")
+    with pytest.raises(StormDependencyUnavailable, match="dependency audit"):
+        create_real_runner()
