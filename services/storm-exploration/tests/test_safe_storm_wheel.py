@@ -111,6 +111,7 @@ def test_builds_safe_reproducible_wheel(
             entry.compress_type == zipfile.ZIP_STORED
             for entry in archive.infolist()
         )
+        assert all(entry.create_system == 3 for entry in archive.infolist())
         metadata = archive.read(f"{LOCAL_DIST_INFO}/METADATA").decode("utf-8")
         lm_source = archive.read("knowledge_storm/lm.py").decode("utf-8")
         encoder_source = archive.read("knowledge_storm/encoder.py").decode("utf-8")

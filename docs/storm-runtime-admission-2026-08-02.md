@@ -14,10 +14,10 @@ on the verified runtime-off path and is not coupled to STORM availability.
 | Upstream | `knowledge-storm==1.1.1` |
 | Upstream wheel SHA-256 | `85e9ca115463bfe0731620d7b95b630b7509ba3b665e6e02d90b7fb7baef13d2` |
 | Scoped derivative | `knowledge-storm==1.1.1+researchgpt.4` |
-| Derivative wheel SHA-256 | `e5fd380b1e65689af3645063d8c02a5a88d74d0fa7c7a0c5353ea6ba0083c4c1` |
+| Derivative wheel SHA-256 | `6dd4c93b1bc3227551d598acb3bf1bceba9846b83592d930f8559ea1c9a3dd37` |
 | Target | Python 3.11, Linux amd64 |
 | Lock | `requirements-runtime.lock` |
-| Lock SHA-256 | `f6f180ddc513dbb692c4b37f264dfbd5c230f5ab4b1967f2c658b4392b35f557` |
+| Lock SHA-256 | `953dd65d8ab4d0ffcd8c0ed5139617999e4485490738a317f2e775db6b502832` |
 | License inventory | `runtime-licenses.json` |
 
 The derivative is built only from the exact upstream wheel. The builder fails
