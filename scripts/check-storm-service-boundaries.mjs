@@ -90,8 +90,14 @@ if (!fs.existsSync(dockerfilePath)) {
 }
 if (!fs.existsSync(runtimeExamplePath)) {
   failures.push("STORM runtime environment example is missing");
-} else if (!fs.readFileSync(runtimeExamplePath, "utf8").includes("STORM_RUNTIME_APPROVED=false")) {
-  failures.push("STORM runtime environment example must default to disabled");
+} else {
+  const runtimeExample = fs.readFileSync(runtimeExamplePath, "utf8");
+  if (!runtimeExample.includes("STORM_RUNTIME_APPROVED=false")) {
+    failures.push("STORM runtime environment example must default to disabled");
+  }
+  if (!runtimeExample.includes("STORM_CANARY_APPROVED=false")) {
+    failures.push("STORM canary environment example must default to disabled");
+  }
 }
 
 const runnerFactorySource = fs.readFileSync(runnerFactoryPath, "utf8");

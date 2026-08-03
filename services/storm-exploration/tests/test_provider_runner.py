@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
+from app.domain.contracts import ProviderCallEvidence
 from app.storm_adapter.provider_runner import (
+    EvidenceSearchClient,
+    ProviderEvidenceCollector,
     SharedCallBudget,
     StormBudgetExceeded,
     StormProviderConfig,
@@ -81,3 +86,53 @@ def test_missing_provider_setting_fails_before_call(monkeypatch) -> None:
 
     with pytest.raises(StormProviderConfigurationError, match="STORM_SEARCH_API_KEY"):
         StormProviderConfig.from_environment()
+
+
+def test_provider_evidence_is_persisted_without_prompts_or_secrets(tmp_path) -> None:
+    collector = ProviderEvidenceCollector(tmp_path / "provider-calls.jsonl")
+    now = datetime.now(UTC)
+    collector.record(
+        ProviderCallEvidence(
+            provider="deepseek",
+            kind="model",
+            operation="outline_generation",
+            model="deepseek-chat",
+            providerRequestId="request-123",
+            status="succeeded",
+            inputTokens=12,
+            outputTokens=7,
+            estimatedCostUsd=0.001,
+            startedAt=now,
+            finishedAt=now,
+        )
+    )
+
+    stored = (tmp_path / "provider-calls.jsonl").read_text(encoding="utf-8")
+    assert "request-123" in stored
+    assert "prompt" not in stored.lower()
+    assert collector.snapshot()[0].estimated_cost_usd == 0.001
+
+
+class FakeSearchClient:
+    def __init__(self, should_fail: bool = False) -> None:
+        self.should_fail = should_fail
+
+    def search(self, query: str) -> dict:
+        if self.should_fail:
+            raise TimeoutError("provider result unknown")
+        return {"request_id": "tavily-request-1", "results": []}
+
+
+def test_search_proxy_records_request_id_and_unknown_outcome(tmp_path) -> None:
+    collector = ProviderEvidenceCollector(tmp_path / "provider-calls.jsonl")
+    proxy = EvidenceSearchClient(FakeSearchClient(), collector, "tavily")
+    assert proxy.search("gel") == {
+        "request_id": "tavily-request-1",
+        "results": [],
+    }
+    assert collector.snapshot()[0].provider_request_id == "tavily-request-1"
+
+    failing = EvidenceSearchClient(FakeSearchClient(True), collector, "tavily")
+    with pytest.raises(TimeoutError):
+        failing.search("gel")
+    assert collector.snapshot()[1].status == "unknown_outcome"

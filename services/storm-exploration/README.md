@@ -52,5 +52,26 @@ check, runtime-off admission gate, writable data volume, and absence of the
 removed cache/local-ML dependencies. It uses no provider credentials and does
 not publish or deploy the image.
 
+The credentialed provider canary is a separate, default-deny command. It is
+fixed to one perspective, one question, at most eight model calls, two search
+queries, and a three-minute Linux wall-time. It records provider request IDs,
+tokens, estimated cost, and call outcome without storing prompts or API keys,
+and writes only a non-authoritative report:
+
+```text
+docker run --rm --env-file <private-canary-env> researchgpt-storm-canary \
+  python -m tools.run_provider_canary --report /data/canary-report.json
+```
+
+The private environment must explicitly set `STORM_CANARY_APPROVED=true`.
+`STORM_RUNTIME_APPROVED` remains false; the canary cannot publish into Document
+V2 or activate the service runtime.
+
+For shared verification, manually run the `STORM provider canary` GitHub
+Actions workflow after configuring the protected `storm-canary` Environment
+with `STORM_LLM_API_KEY` and `STORM_SEARCH_API_KEY`. The workflow never runs on
+push, never publishes its image, and retains the non-authoritative evidence
+artifact for 14 days.
+
 Use `runtime.env.example` only as a field list. Never commit populated secrets,
 and keep `STORM_RUNTIME_APPROVED=false` until the admission record is approved.

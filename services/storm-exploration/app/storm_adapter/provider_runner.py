@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 import threading
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from app.domain.contracts import ExplorationRequest, ExplorationResult
+from app.domain.contracts import (
+    ExplorationRequest,
+    ExplorationResult,
+    ProviderCallEvidence,
+)
 from app.storm_adapter.runner import StormWikiExplorationRunner
 
 
@@ -16,6 +23,81 @@ class StormProviderConfigurationError(RuntimeError):
 
 class StormBudgetExceeded(RuntimeError):
     pass
+
+
+class ProviderEvidenceCollector:
+    """Persist non-secret provider evidence as each remote call resolves."""
+
+    def __init__(self, journal_path: Path) -> None:
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        self.journal_path = journal_path
+        self._calls: list[ProviderCallEvidence] = []
+        self._lock = threading.Lock()
+
+    def record(self, evidence: ProviderCallEvidence) -> None:
+        payload = evidence.model_dump(mode="json", by_alias=True)
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n"
+        with self._lock:
+            with self.journal_path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            self._calls.append(evidence)
+
+    def snapshot(self) -> list[ProviderCallEvidence]:
+        with self._lock:
+            return list(self._calls)
+
+
+def _request_id(response: Any) -> str | None:
+    if not isinstance(response, dict):
+        return None
+    for key in ("id", "request_id", "requestId"):
+        value = response.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()[:500]
+    return None
+
+
+class EvidenceSearchClient:
+    def __init__(
+        self,
+        client: object,
+        collector: ProviderEvidenceCollector,
+        provider: str,
+    ) -> None:
+        self._client = client
+        self._collector = collector
+        self._provider = provider
+
+    def search(self, *args, **kwargs):
+        started_at = datetime.now(UTC)
+        try:
+            response = self._client.search(*args, **kwargs)  # type: ignore[attr-defined]
+        except Exception:
+            self._collector.record(
+                ProviderCallEvidence(
+                    provider=self._provider,
+                    kind="search",
+                    operation="search",
+                    status="unknown_outcome",
+                    startedAt=started_at,
+                    finishedAt=datetime.now(UTC),
+                )
+            )
+            raise
+        self._collector.record(
+            ProviderCallEvidence(
+                provider=self._provider,
+                kind="search",
+                operation="search",
+                providerRequestId=_request_id(response),
+                status="succeeded",
+                startedAt=started_at,
+                finishedAt=datetime.now(UTC),
+            )
+        )
+        return response
 
 
 def _required_environment(name: str) -> str:
@@ -129,10 +211,17 @@ class ProviderBackedStormExplorationRunner:
 
     def run(self, request: ExplorationRequest, output_dir: Path) -> ExplorationResult:
         self.config.validate_request(request)
-        upstream = self._create_upstream_runner(request, output_dir)
+        collector = ProviderEvidenceCollector(output_dir / "provider-calls.jsonl")
+        upstream = self._create_upstream_runner(request, output_dir, collector)
+        setattr(upstream, "_researchgpt_provider_evidence", collector)
         return StormWikiExplorationRunner(upstream).run(request, output_dir)
 
-    def _create_upstream_runner(self, request: ExplorationRequest, output_dir: Path):
+    def _create_upstream_runner(
+        self,
+        request: ExplorationRequest,
+        output_dir: Path,
+        collector: ProviderEvidenceCollector | None = None,
+    ):
         from knowledge_storm import (
             STORMWikiLMConfigs,
             STORMWikiRunner,
@@ -147,11 +236,61 @@ class ProviderBackedStormExplorationRunner:
         search_budget = SharedCallBudget(
             request.limits.max_search_queries, label="search-query"
         )
+        collector = collector or ProviderEvidenceCollector(
+            output_dir / "provider-calls.jsonl"
+        )
+        model_provider = self.config.request_provider
 
         class BudgetedLitellmModel(LitellmModel):
+            def __init__(self, *args, operation: str, **kwargs):
+                self._researchgpt_operation = operation
+                super().__init__(*args, **kwargs)
+
             def __call__(self, prompt=None, messages=None, **kwargs):
                 model_budget.consume()
-                return super().__call__(prompt=prompt, messages=messages, **kwargs)
+                started_at = datetime.now(UTC)
+                try:
+                    outputs = super().__call__(
+                        prompt=prompt,
+                        messages=messages,
+                        **kwargs,
+                    )
+                except Exception:
+                    collector.record(
+                        ProviderCallEvidence(
+                            provider=model_provider,
+                            kind="model",
+                            operation=self._researchgpt_operation,
+                            model=str(getattr(self, "model", "")) or None,
+                            status="unknown_outcome",
+                            startedAt=started_at,
+                            finishedAt=datetime.now(UTC),
+                        )
+                    )
+                    raise
+                history_entry = self.history[-1] if self.history else {}
+                response = history_entry.get("response", {})
+                usage = response.get("usage", {}) if isinstance(response, dict) else {}
+                collector.record(
+                    ProviderCallEvidence(
+                        provider=model_provider,
+                        kind="model",
+                        operation=self._researchgpt_operation,
+                        model=str(getattr(self, "model", "")) or None,
+                        providerRequestId=_request_id(response),
+                        status="succeeded",
+                        inputTokens=int(usage.get("prompt_tokens", 0) or 0),
+                        outputTokens=int(usage.get("completion_tokens", 0) or 0),
+                        estimatedCostUsd=(
+                            float(history_entry["cost"])
+                            if history_entry.get("cost") is not None
+                            else None
+                        ),
+                        startedAt=started_at,
+                        finishedAt=datetime.now(UTC),
+                    )
+                )
+                return outputs
 
         class BudgetedTavilySearchRM(TavilySearchRM):
             def forward(self, query_or_queries, exclude_urls=None):
@@ -177,11 +316,13 @@ class ProviderBackedStormExplorationRunner:
         question_model = BudgetedLitellmModel(
             model=self.config.question_model,
             max_tokens=800,
+            operation="research_question",
             **shared_kwargs,
         )
         outline_model = BudgetedLitellmModel(
             model=self.config.outline_model,
             max_tokens=1_600,
+            operation="outline_generation",
             **shared_kwargs,
         )
         lm_configs = STORMWikiLMConfigs()
@@ -216,5 +357,10 @@ class ProviderBackedStormExplorationRunner:
             k=search_top_k,
             webpage_helper_max_threads=self.config.max_threads,
             include_raw_content=False,
+        )
+        retriever.tavily_client = EvidenceSearchClient(
+            retriever.tavily_client,
+            collector,
+            self.config.search_provider,
         )
         return STORMWikiRunner(arguments, lm_configs, retriever)

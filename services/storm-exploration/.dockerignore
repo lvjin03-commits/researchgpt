@@ -1,4 +1,5 @@
 .dist
+.canary-output
 .pytest_cache
 .storm-exploration-data
 .venv

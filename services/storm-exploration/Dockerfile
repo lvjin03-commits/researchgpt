@@ -34,6 +34,7 @@ WORKDIR /srv/storm
 
 COPY --from=builder /opt/storm-venv /opt/storm-venv
 COPY app app
+COPY tools/run_provider_canary.py tools/run_provider_canary.py
 COPY runtime-admission.json runtime-admission.json
 
 RUN useradd --system --uid 10001 --create-home storm \

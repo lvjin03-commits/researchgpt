@@ -66,6 +66,11 @@ jobs:
           test "$(docker exec researchgpt-storm-smoke id -u)" = "10001"
           docker exec researchgpt-storm-smoke python -c "import importlib.util; import knowledge_storm; assert importlib.util.find_spec('diskcache') is None; assert importlib.util.find_spec('transformers') is None; assert importlib.util.find_spec('sentence_transformers') is None"
           docker exec researchgpt-storm-smoke python -c "from pathlib import Path; p=Path('/data/runtime-smoke'); p.write_text('ok', encoding='utf-8'); assert p.read_text(encoding='utf-8') == 'ok'; p.unlink()"
+          if docker exec researchgpt-storm-smoke python -m tools.run_provider_canary --report /data/must-not-exist.json; then
+            echo "Provider canary ran without explicit approval"
+            exit 1
+          fi
+          docker exec researchgpt-storm-smoke test ! -e /data/must-not-exist.json
 
       - name: Show container logs on failure
         if: failure()

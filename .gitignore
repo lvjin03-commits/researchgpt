@@ -43,6 +43,7 @@ yarn-error.log*
 /services/storm-exploration/.venv/
 /services/storm-exploration/.storm-exploration-data/
 /services/storm-exploration/.dist/
+/services/storm-exploration/.canary-output/
 __pycache__/
 *.py[cod]
 .pytest_cache/

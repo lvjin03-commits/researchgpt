@@ -1,0 +1,85 @@
+name: STORM provider canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: Cost-capped research topic
+        required: true
+        default: Reversible physical gel preparation mechanisms
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storm-provider-canary
+  cancel-in-progress: false
+
+jobs:
+  provider-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: storm-canary
+    defaults:
+      run:
+        working-directory: services/storm-exploration
+    env:
+      CANARY_TOPIC: ${{ inputs.topic }}
+      STORM_RUNTIME_APPROVED: "false"
+      STORM_CANARY_APPROVED: "true"
+      STORM_REQUEST_PROVIDER: deepseek
+      STORM_REQUEST_MODEL: deepseek-chat
+      STORM_QUESTION_LITELLM_MODEL: deepseek/deepseek-chat
+      STORM_OUTLINE_LITELLM_MODEL: deepseek/deepseek-chat
+      STORM_LLM_API_BASE: https://api.deepseek.com
+      STORM_SEARCH_PROVIDER: tavily
+      STORM_PROVIDER_TIMEOUT_SECONDS: "60"
+      STORM_MAX_THREADS: "2"
+      STORM_MAX_MODEL_CALLS: "8"
+      STORM_MAX_SEARCH_QUERIES: "2"
+      STORM_LLM_API_KEY: ${{ secrets.STORM_LLM_API_KEY }}
+      STORM_SEARCH_API_KEY: ${{ secrets.STORM_SEARCH_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build admitted canary image
+        run: docker build --pull --tag researchgpt-storm-canary:${{ github.sha }} .
+
+      - name: Prepare private evidence directory
+        run: |
+          mkdir -p .canary-output
+          chmod 0777 .canary-output
+
+      - name: Run cost-capped provider canary
+        run: |
+          docker run --rm \
+            --volume "$PWD/.canary-output:/data" \
+            --env STORM_RUNTIME_APPROVED \
+            --env STORM_CANARY_APPROVED \
+            --env STORM_REQUEST_PROVIDER \
+            --env STORM_REQUEST_MODEL \
+            --env STORM_QUESTION_LITELLM_MODEL \
+            --env STORM_OUTLINE_LITELLM_MODEL \
+            --env STORM_LLM_API_BASE \
+            --env STORM_LLM_API_KEY \
+            --env STORM_SEARCH_PROVIDER \
+            --env STORM_SEARCH_API_KEY \
+            --env STORM_PROVIDER_TIMEOUT_SECONDS \
+            --env STORM_MAX_THREADS \
+            --env STORM_MAX_MODEL_CALLS \
+            --env STORM_MAX_SEARCH_QUERIES \
+            researchgpt-storm-canary:${{ github.sha }} \
+            python -m tools.run_provider_canary \
+              --topic "$CANARY_TOPIC" \
+              --report /data/canary-report.json
+
+      - name: Upload non-authoritative canary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storm-provider-canary-${{ github.run_id }}
+          path: services/storm-exploration/.canary-output
+          if-no-files-found: error
+          retention-days: 14

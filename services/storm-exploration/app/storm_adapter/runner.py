@@ -196,12 +196,15 @@ def _collect_usage(runner: object) -> UsagePayload:
     retriever = getattr(runner, "retriever", None)
     if retriever is not None and hasattr(retriever, "collect_and_reset_rm_usage"):
         search_calls = sum(retriever.collect_and_reset_rm_usage().values())
+    collector = getattr(runner, "_researchgpt_provider_evidence", None)
+    provider_calls = collector.snapshot() if collector is not None else []
     return UsagePayload(
         modelCalls=model_calls,
         searchCalls=search_calls,
         inputTokens=input_tokens,
         outputTokens=output_tokens,
         estimatedCostUsd=estimated_cost,
+        providerCalls=provider_calls,
     )
 
 

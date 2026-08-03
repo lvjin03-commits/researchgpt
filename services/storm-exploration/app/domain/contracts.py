@@ -173,12 +173,33 @@ class OutlineCandidate(StrictModel):
     sections: list[OutlineSectionCandidate] = Field(min_length=1, max_length=40)
 
 
+class ProviderCallEvidence(StrictModel):
+    provider: str = Field(min_length=1, max_length=160)
+    kind: Literal["model", "search"]
+    operation: str = Field(min_length=1, max_length=160)
+    model: str | None = Field(default=None, max_length=160)
+    provider_request_id: str | None = Field(
+        default=None, alias="providerRequestId", max_length=500
+    )
+    status: Literal["succeeded", "failed", "unknown_outcome"]
+    input_tokens: int | None = Field(default=None, alias="inputTokens", ge=0)
+    output_tokens: int | None = Field(default=None, alias="outputTokens", ge=0)
+    estimated_cost_usd: float | None = Field(
+        default=None, alias="estimatedCostUsd", ge=0
+    )
+    started_at: datetime = Field(alias="startedAt")
+    finished_at: datetime = Field(alias="finishedAt")
+
+
 class UsagePayload(StrictModel):
     model_calls: int = Field(default=0, alias="modelCalls", ge=0)
     search_calls: int = Field(default=0, alias="searchCalls", ge=0)
     input_tokens: int | None = Field(default=None, alias="inputTokens", ge=0)
     output_tokens: int | None = Field(default=None, alias="outputTokens", ge=0)
     estimated_cost_usd: float | None = Field(default=None, alias="estimatedCostUsd", ge=0)
+    provider_calls: list[ProviderCallEvidence] = Field(
+        default_factory=list, alias="providerCalls", max_length=500
+    )
 
 
 class ExplorationResult(StrictModel):
