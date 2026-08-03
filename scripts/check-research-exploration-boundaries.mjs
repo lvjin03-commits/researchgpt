@@ -39,10 +39,11 @@ for await (const absolute of walk(moduleRoot)) {
   }
 }
 
-const advisoryImportOwners = new Set([
+const planningIntegrationOwners = new Set([
   "lib/document-v2/planning/planner.ts",
   "lib/document-v2-production/planning.ts",
   "lib/document-v2-production/stages/intake.ts",
+  "lib/document-v2-production/failure-mapper.ts",
 ]);
 for (const authoritativeRoot of [
   path.join(root, "lib", "document-v2"),
@@ -52,9 +53,9 @@ for (const authoritativeRoot of [
     const source = await readFile(absolute, "utf8");
     if (source.includes("research-exploration")) {
       const relative = path.relative(root, absolute).replaceAll("\\", "/");
-      if (advisoryImportOwners.has(relative)) continue;
+      if (planningIntegrationOwners.has(relative)) continue;
       violations.push(
-        `${relative}: only the planner input boundary may consume advisory research hints`,
+        `${relative}: only the approved planning boundary may consume research exploration`,
       );
     }
   }

@@ -24,15 +24,25 @@ import {
   createReferencePipelineFallback,
 } from "@/lib/document-v2/references/acquisition";
 import type { ResearchExplorationAdvisoryHints } from "@/lib/research-exploration/advisory/contracts";
+import {
+  requireResearchExplorationForPlanning,
+} from "@/lib/research-exploration/required/gateway";
+import type {
+  ResearchExplorationRequiredResolution,
+} from "@/lib/research-exploration/required/contracts";
 
 export async function prepareIntake(input: {
   job: DocumentJob;
   repository: SupabaseDocumentJobRepository;
   textExecutor: DocumentStructuredTextExecutor;
   researchExplorationAdvisory?: ResearchExplorationAdvisoryHints;
+  researchExplorationRequired?: ResearchExplorationRequiredResolution;
 }): Promise<DocumentJob> {
   const intake = input.job.checkpoint.intake;
   if (!intake) throw new Error("Document intake payload is missing.");
+  if (input.researchExplorationAdvisory && input.researchExplorationRequired) {
+    throw new Error("research_exploration_modes_conflict");
+  }
   let job = input.job;
   const saveAndContinue = async (
     planning: NonNullable<DocumentJob["checkpoint"]["planning"]>,
@@ -163,6 +173,9 @@ export async function prepareIntake(input: {
     return job;
   }
 
+  const researchExplorationHints = input.researchExplorationRequired
+    ? requireResearchExplorationForPlanning(input.researchExplorationRequired)
+    : input.researchExplorationAdvisory;
   const sectionBlueprint = planning.template.componentBlueprints.find((item) => item.type === "section");
   if (!sectionBlueprint) throw new Error("Resolved template does not contain a section blueprint.");
   if (!planning.thesis) {
@@ -170,7 +183,7 @@ export async function prepareIntake(input: {
       request: planning.request,
       template: planning.template,
       planningRevision: planning.planningRevision,
-      advisoryHints: input.researchExplorationAdvisory,
+      advisoryHints: researchExplorationHints,
     });
     planning = { ...planning, thesis };
     job = await saveAndContinue(planning, 6);
@@ -189,7 +202,7 @@ export async function prepareIntake(input: {
       minimumSections: sectionBlueprint.minimumCount,
       maximumSections: sectionBlueprint.maximumCount,
       planningRevision: planning.planningRevision,
-      advisoryHints: input.researchExplorationAdvisory,
+      advisoryHints: researchExplorationHints,
     });
     const skeleton = materializeDocumentStructure({
       thesis: planning.thesis,

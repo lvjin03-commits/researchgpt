@@ -7,8 +7,34 @@ import {
   DocumentModelExecutionRequiresReviewError,
   DocumentModelOperationError,
 } from "./text-executor";
+import {
+  ResearchExplorationRequiredPlanningError,
+} from "@/lib/research-exploration/required/contracts";
 
 export function mapWorkerFailure(error: unknown): DocumentFailure {
+  if (error instanceof ResearchExplorationRequiredPlanningError) {
+    const resolution = error.resolution;
+    const failureCode = resolution.failureCode ?? "exploration_pending";
+    return {
+      code: `research_${failureCode}`,
+      category: "domain",
+      diagnosticCategory: "research_exploration_required",
+      operation: "research.exploration.required",
+      stage: "planning",
+      safeResumeFrom: "research.exploration.required",
+      retryability: resolution.outcome === "waiting" ? "safe" : "none",
+      userMessageCode: "document.worker_paused",
+      technicalMessage: error.message,
+      details: {
+        executionId: resolution.executionId,
+        executionStatus: resolution.executionStatus,
+        outcome: resolution.outcome,
+        nextCheckAt: resolution.nextCheckAt,
+        failureCode,
+      },
+      cause: { name: error.name, message: error.message },
+    };
+  }
   if (error instanceof OutlineLanguageMismatchError) {
     return {
       code: error.failureCategory,
