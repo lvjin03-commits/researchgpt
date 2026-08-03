@@ -75,3 +75,7 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
 
 Until the remaining blockers are cleared, `approved` stays false and
 `STORM_RUNTIME_APPROVED` must remain false in production.
+
+The `STORM image smoke` GitHub Actions workflow is the verification mechanism
+for blocker 1. Merely adding the workflow does not clear the blocker; a passing
+run for the exact candidate commit is required.

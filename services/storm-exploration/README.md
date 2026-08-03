@@ -45,5 +45,11 @@ lock:
 docker build -t researchgpt-storm-canary .
 ```
 
+The repository also contains `STORM image smoke`, an isolated GitHub Actions
+workflow that builds the Linux image and verifies the non-root user, health
+check, runtime-off admission gate, writable data volume, and absence of the
+removed cache/local-ML dependencies. It uses no provider credentials and does
+not publish or deploy the image.
+
 Use `runtime.env.example` only as a field list. Never commit populated secrets,
 and keep `STORM_RUNTIME_APPROVED=false` until the admission record is approved.

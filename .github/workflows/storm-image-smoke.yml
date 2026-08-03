@@ -1,0 +1,76 @@
+name: STORM image smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/storm-image-smoke.yml"
+      - "scripts/check-storm-service-boundaries.mjs"
+      - "services/storm-exploration/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/storm-image-smoke.yml"
+      - "scripts/check-storm-service-boundaries.mjs"
+      - "services/storm-exploration/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storm-image-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: services/storm-exploration
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build locked Linux image
+        run: docker build --pull --tag researchgpt-storm-smoke:${{ github.sha }} .
+
+      - name: Verify immutable image boundary
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' researchgpt-storm-smoke:${{ github.sha }})" = "10001"
+          test "$(docker image inspect --format '{{.Config.Healthcheck.Test}}' researchgpt-storm-smoke:${{ github.sha }})" != "[]"
+
+      - name: Start runtime with admission disabled
+        run: |
+          docker run --detach \
+            --name researchgpt-storm-smoke \
+            --publish 127.0.0.1:18000:8000 \
+            --env STORM_RUNTIME_APPROVED=false \
+            researchgpt-storm-smoke:${{ github.sha }}
+
+      - name: Verify health, isolation, and dependency surface
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/health > /tmp/storm-health.json; then
+              break
+            fi
+            if [ "$attempt" = "30" ]; then
+              docker logs researchgpt-storm-smoke
+              exit 1
+            fi
+            sleep 2
+          done
+
+          python -c "import json; p=json.load(open('/tmp/storm-health.json')); assert p['status']=='ok'; assert p['runtimeApproved'] is False; assert p['productionReady'] is False"
+          test "$(docker exec researchgpt-storm-smoke id -u)" = "10001"
+          docker exec researchgpt-storm-smoke python -c "import importlib.util; import knowledge_storm; assert importlib.util.find_spec('diskcache') is None; assert importlib.util.find_spec('transformers') is None; assert importlib.util.find_spec('sentence_transformers') is None"
+          docker exec researchgpt-storm-smoke python -c "from pathlib import Path; p=Path('/data/runtime-smoke'); p.write_text('ok', encoding='utf-8'); assert p.read_text(encoding='utf-8') == 'ok'; p.unlink()"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs researchgpt-storm-smoke || true
+
+      - name: Remove smoke container
+        if: always()
+        run: docker rm --force researchgpt-storm-smoke || true
