@@ -39,6 +39,22 @@ for await (const absolute of walk(moduleRoot)) {
   }
 }
 
+// Shadow evaluation is deliberately offline in this phase. Advisory mode must
+// replace this guard explicitly when its production integration is approved.
+for (const authoritativeRoot of [
+  path.join(root, "lib", "document-v2"),
+  path.join(root, "lib", "document-v2-production"),
+]) {
+  for await (const absolute of walk(authoritativeRoot)) {
+    const source = await readFile(absolute, "utf8");
+    if (source.includes("research-exploration")) {
+      violations.push(
+        `${path.relative(root, absolute).replaceAll("\\", "/")}: shadow evaluation must not enter the authoritative document path`,
+      );
+    }
+  }
+}
+
 if (violations.length > 0) {
   console.error(violations.join("\n"));
   process.exitCode = 1;
