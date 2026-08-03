@@ -1,93 +1,77 @@
-# STORM runtime admission — 2026-08-02
+# STORM runtime admission — updated 2026-08-03
 
 ## Decision
 
-**Blocked. Do not enable the real STORM runtime.**
+**Dependency preparation passed; production activation remains blocked.**
 
-This decision applies only to the isolated service under
-`services/storm-exploration`. Document V2 remains on the verified runtime-off
-path and is not changed by this admission review.
+This decision applies only to `services/storm-exploration`. Document V2 stays
+on the verified runtime-off path and is not coupled to STORM availability.
 
-## Candidate evaluated
+## Admitted build candidate
 
 | Item | Value |
 | --- | --- |
-| Package | `knowledge-storm` |
-| Candidate version | `1.1.1` |
-| PyPI wheel SHA-256 | `85e9ca115463bfe0731620d7b95b630b7509ba3b665e6e02d90b7fb7baef13d2` |
-| Target runtime | Python 3.11, Linux amd64 |
-| Upstream maturity | Alpha |
+| Upstream | `knowledge-storm==1.1.1` |
+| Upstream wheel SHA-256 | `85e9ca115463bfe0731620d7b95b630b7509ba3b665e6e02d90b7fb7baef13d2` |
+| Scoped derivative | `knowledge-storm==1.1.1+researchgpt.4` |
+| Derivative wheel SHA-256 | `41864d4d63d7b710b2903b9980867561835edf683411dcd447de68024271bb6a` |
+| Target | Python 3.11, Linux amd64 |
+| Lock | `requirements-runtime.lock` |
+| Lock SHA-256 | `79c6c7dcb2f3c6dfe36222682fc4a8a55aa329cd0781aa439326811e36374b45` |
+| License inventory | `runtime-licenses.json` |
 
-PyPI 1.1.1 was selected instead of the older 1.1.0 baseline because it is the
-latest published package. Its package metadata still fixes `dspy_ai==2.4.9`
-and `wikipedia==1.4.0`, while leaving most large dependencies unbounded.
+The derivative is built only from the exact upstream wheel. The builder fails
+closed if the upstream hash or any expected patch target changes, writes
+provenance into the wheel, rebuilds RECORD hashes, and emits reproducible bytes.
 
-## Blocking findings
+## Safety changes
 
-### 1. Mandatory DiskCache dependency has no admitted fixed release
+- Removed the vulnerable mandatory DiskCache dependency and all persistent
+  LiteLLM cache initialization.
+- Forced DSPy cache use off before any upstream import and redirected DSPy's
+  unavoidable import-time cache object to a service-private temporary path.
+- Removed unused local sentence-transformer, Torch, Transformers, Qdrant and
+  LangChain vector dependencies from the research-and-outline runtime.
+- Changed Hugging Face tokenization and local semantic retrieval to explicit
+  optional capabilities that fail with a clear error if invoked.
+- Removed eager Co-STORM loading. Co-STORM is outside this runtime's scope.
+- Kept article generation and article polishing disabled at the adapter boundary.
 
-`knowledge-storm` requires `diskcache`. The latest published DiskCache release,
-5.6.3, is affected by `GHSA-w8v5-vhqr-4h9v`: unsafe pickle deserialization can
-execute code when an attacker can write to the cache directory and the service
-later reads it.
+## Dependency and license review
 
-This is not merely an unused transitive package: STORM configures LiteLLM disk
-caches in both `knowledge_storm/lm.py` and `knowledge_storm/encoder.py`.
+The Python 3.11/Linux lock contains 102 packages and full hashes. A clean Python
+3.11 environment installed the same versions and imported the scoped STORM
+Runner API without DiskCache, Transformers, sentence-transformers, or Co-STORM.
 
-The isolated service data directory reduces exposure but does not remove the
-vulnerable dependency. A production admission must not turn a mitigation into
-an assertion that the dependency is fixed.
+The license inventory contains 104 installed distributions on the Windows
+compatibility run, with zero unknown licenses. `tld` offers MPL-1.1 as one of
+its alternatives; no proprietary or unknown license was found.
 
-### 2. The upstream dependency graph is not reproducible as published
+`pip-audit` reports 12 advisories for LiteLLM 1.80.0. Every reported advisory
+affects LiteLLM Proxy HTTP/JWT/OIDC/MCP/admin routes. ResearchGPT never starts
+or exposes LiteLLM Proxy; LiteLLM is used only as an outbound client library.
+Newer LiteLLM releases require OpenAI SDK 2.x, which conflicts with upstream's
+pinned DSPy 2.4.9 (`openai<2`). This is recorded as an accepted unreachable
+advisory set, not represented as a claim that LiteLLM itself has no advisories.
 
-The Python 3.11/Linux resolver reached extensive backtracking across Qdrant,
-LangChain, Hugging Face, LiteLLM and related packages. Most of those packages
-are not bounded by STORM 1.1.1. Choosing a random successful resolution would
-make ResearchGPT the maintainer of an untested compatibility fork.
+## Remaining blockers
 
-No runtime lock file was admitted. `requirements-runtime.in` is an evaluation
-input, not a production installation file.
-
-### 3. Real provider wiring remains intentionally absent
-
-Even after dependency admission, `create_real_runner()` still needs explicit
-language-model, retrieval-provider, credential, timeout and egress policies.
-Provider wiring must be implemented and tested inside the isolated service; it
-must not be inferred from Document V2 configuration.
-
-## Controls implemented
-
-- `runtime-admission.json` is the machine-readable decision record.
-- `STORM_RUNTIME_APPROVED=true` is no longer sufficient by itself.
-- The runner requires both the environment flag and an approved admission
-  record containing a hash-lock filename.
-- The repository boundary check rejects an approved admission if its hash lock
-  is missing or unhashed.
-- The health endpoint exposes `runtimeAdmissionStatus`.
+1. Build and run the final Linux image from the hash lock.
+2. Run a credentialed, cost-capped DeepSeek-compatible + Tavily canary and
+   persist provider request IDs alongside usage and cost.
+3. Replace development SQLite or prove a single-worker persistent-volume
+   deployment with restart and lease-recovery tests.
+4. Run a cost-capped canary that can publish only a non-authoritative Proposal.
 
 ## Evidence verified
 
-- Official PyPI metadata and wheel hash for `knowledge-storm==1.1.1`.
-- Official GitHub release history and project maturity information.
-- Python 3.11/Linux dependency resolution using wheel-only platform targets,
-  with a locally built wheel only for upstream's pure-Python
-  `wikipedia==1.4.0` source distribution.
-- Existing deterministic Proposal conversion fixtures remain the compatibility
-  boundary; no model, search provider or Document V2 call is needed for them.
+- Safe wheel builder unit tests and deterministic output.
+- Full isolated service test suite.
+- Clean Python 3.11 import of the actual derivative wheel and Runner API.
+- DiskCache and local ML dependencies absent from the installed runtime.
+- DSPy and LiteLLM disk caches disabled.
+- Proposal conversion boundary tests.
+- Runtime-off isolation plus real Document V2 DOCX generation.
 
-## Conditions for a later approval
-
-All conditions are required:
-
-1. Use a fixed DiskCache release or remove/replace the vulnerable cache path in
-   a small, reviewed STORM fork.
-2. Maintain a Python 3.11/Linux compatibility constraint set.
-3. Produce a complete `--hash=sha256:` runtime lock.
-4. Pass `pip-audit` with no unaccepted runtime vulnerability.
-5. Produce and review a transitive license inventory.
-6. Install the lock in a clean image and run import, API and Proposal fixture
-   tests without provider credentials.
-7. Add provider/search configuration and run a cost-capped canary that cannot
-   publish authoritative evidence or mutate Document V2.
-
-Until then, the correct state is `blocked`, not partially enabled.
+Until the remaining blockers are cleared, `approved` stays false and
+`STORM_RUNTIME_APPROVED` must remain false in production.

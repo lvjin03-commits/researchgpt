@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const root = process.cwd();
 const serviceRoot = path.join(root, "services", "storm-exploration");
@@ -32,8 +33,26 @@ if (!fs.existsSync(admissionPath)) {
   }
   const runtimeInput = fs.readFileSync(runtimeInputPath, "utf8");
   const pinnedVersion = runtimeInput.match(/^knowledge-storm==([^\s]+)$/m)?.[1];
-  if (pinnedVersion !== admission.upstream?.version) {
+  if (pinnedVersion !== admission.runtime?.packageVersion) {
     failures.push("STORM runtime input and admission version differ");
+  }
+  const runtimeLock = admission.runtime?.lockFile;
+  if (!runtimeLock) {
+    failures.push("STORM runtime admission lacks a runtime lock file");
+  } else {
+    const runtimeLockPath = path.join(serviceRoot, runtimeLock);
+    if (!fs.existsSync(runtimeLockPath)) {
+      failures.push("STORM runtime lock file is missing");
+    } else {
+      const lockBytes = fs.readFileSync(runtimeLockPath);
+      const lockHash = crypto.createHash("sha256").update(lockBytes).digest("hex");
+      if (lockHash !== admission.runtime?.lockSha256) {
+        failures.push("STORM runtime lock hash differs from admission record");
+      }
+      if (!lockBytes.toString("utf8").includes("--hash=sha256:")) {
+        failures.push("STORM runtime lock is not hash-locked");
+      }
+    }
   }
   if (admission.approved === true) {
     if (admission.status !== "approved" || !admission.lockFile) {
@@ -54,6 +73,25 @@ if (!fs.existsSync(admissionPath)) {
   ) {
     failures.push("Blocked STORM admission must retain blockers and runtime-off policy");
   }
+}
+
+const dockerfilePath = path.join(serviceRoot, "Dockerfile");
+const runtimeExamplePath = path.join(serviceRoot, "runtime.env.example");
+if (!fs.existsSync(dockerfilePath)) {
+  failures.push("STORM Linux Dockerfile is missing");
+} else {
+  const dockerfile = fs.readFileSync(dockerfilePath, "utf8");
+  if (!dockerfile.includes("--require-hashes")) {
+    failures.push("STORM Dockerfile does not install from the hash lock");
+  }
+  if (!dockerfile.includes('USER 10001')) {
+    failures.push("STORM Dockerfile does not use the admitted non-root user");
+  }
+}
+if (!fs.existsSync(runtimeExamplePath)) {
+  failures.push("STORM runtime environment example is missing");
+} else if (!fs.readFileSync(runtimeExamplePath, "utf8").includes("STORM_RUNTIME_APPROVED=false")) {
+  failures.push("STORM runtime environment example must default to disabled");
 }
 
 const runnerFactorySource = fs.readFileSync(runnerFactoryPath, "utf8");

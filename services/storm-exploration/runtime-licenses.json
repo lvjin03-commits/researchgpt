@@ -1,0 +1,631 @@
+{
+  "schemaVersion": "storm-runtime-license-inventory-v1",
+  "packageCount": 104,
+  "unknownLicenseCount": 0,
+  "packages": [
+    {
+      "name": "aiohappyeyeballs",
+      "version": "2.7.1",
+      "license": "PSF-2.0",
+      "homepage": "Bug Tracker, https://github.com/aio-libs/aiohappyeyeballs/issues"
+    },
+    {
+      "name": "aiohttp",
+      "version": "3.14.3",
+      "license": "Apache-2.0 AND MIT",
+      "homepage": "Homepage, https://github.com/aio-libs/aiohttp"
+    },
+    {
+      "name": "aiosignal",
+      "version": "1.4.0",
+      "license": "Apache 2.0",
+      "homepage": "https://github.com/aio-libs/aiosignal"
+    },
+    {
+      "name": "alembic",
+      "version": "1.18.5",
+      "license": "MIT",
+      "homepage": "Homepage, https://alembic.sqlalchemy.org"
+    },
+    {
+      "name": "annotated-doc",
+      "version": "0.0.5",
+      "license": "MIT",
+      "homepage": "Homepage, https://github.com/fastapi/annotated-doc"
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.8.0",
+      "license": "MIT",
+      "homepage": "Homepage, https://github.com/annotated-types/annotated-types"
+    },
+    {
+      "name": "anyio",
+      "version": "4.14.2",
+      "license": "MIT",
+      "homepage": "Documentation, https://anyio.readthedocs.io/en/latest/"
+    },
+    {
+      "name": "attrs",
+      "version": "26.1.0",
+      "license": "MIT",
+      "homepage": "Documentation, https://www.attrs.org/"
+    },
+    {
+      "name": "babel",
+      "version": "2.18.0",
+      "license": "BSD-3-Clause",
+      "homepage": "https://babel.pocoo.org/"
+    },
+    {
+      "name": "backoff",
+      "version": "2.2.1",
+      "license": "MIT",
+      "homepage": "https://github.com/litl/backoff"
+    },
+    {
+      "name": "beautifulsoup4",
+      "version": "4.15.0",
+      "license": "MIT License",
+      "homepage": "Download, https://www.crummy.com/software/BeautifulSoup/bs4/download/"
+    },
+    {
+      "name": "certifi",
+      "version": "2026.7.22",
+      "license": "MPL-2.0",
+      "homepage": "https://github.com/certifi/python-certifi"
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.4.9",
+      "license": "MIT",
+      "homepage": "Changelog, https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md"
+    },
+    {
+      "name": "click",
+      "version": "8.4.2",
+      "license": "BSD-3-Clause",
+      "homepage": "Changes, https://click.palletsprojects.com/page/changes/"
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "license": "BSD License",
+      "homepage": "Homepage, https://github.com/tartley/colorama"
+    },
+    {
+      "name": "colorlog",
+      "version": "6.12.0",
+      "license": "MIT License",
+      "homepage": "https://github.com/borntyping/python-colorlog"
+    },
+    {
+      "name": "courlan",
+      "version": "1.4.0",
+      "license": "Apache-2.0",
+      "homepage": "Homepage, https://github.com/adbar/courlan"
+    },
+    {
+      "name": "datasets",
+      "version": "2.14.7",
+      "license": "Apache 2.0",
+      "homepage": "https://github.com/huggingface/datasets"
+    },
+    {
+      "name": "dateparser",
+      "version": "1.4.1",
+      "license": "BSD-3-Clause",
+      "homepage": "Source, https://github.com/scrapinghub/dateparser"
+    },
+    {
+      "name": "dill",
+      "version": "0.3.7",
+      "license": "BSD-3-Clause",
+      "homepage": "https://github.com/uqfoundation/dill"
+    },
+    {
+      "name": "distro",
+      "version": "1.9.0",
+      "license": "Apache License, Version 2.0",
+      "homepage": "https://github.com/python-distro/distro"
+    },
+    {
+      "name": "dspy-ai",
+      "version": "2.4.9",
+      "license": "MIT License",
+      "homepage": "https://github.com/stanfordnlp/dsp"
+    },
+    {
+      "name": "fastapi",
+      "version": "0.141.1",
+      "license": "MIT",
+      "homepage": "Homepage, https://github.com/fastapi/fastapi"
+    },
+    {
+      "name": "fastuuid",
+      "version": "0.14.0",
+      "license": "BSD License",
+      "homepage": "homepage, https://github.com/thedrow/fastuuid/"
+    },
+    {
+      "name": "filelock",
+      "version": "3.32.2",
+      "license": "MIT",
+      "homepage": "Documentation, https://py-filelock.readthedocs.io"
+    },
+    {
+      "name": "frozenlist",
+      "version": "1.8.0",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/aio-libs/frozenlist"
+    },
+    {
+      "name": "fsspec",
+      "version": "2023.10.0",
+      "license": "BSD",
+      "homepage": "https://github.com/fsspec/filesystem_spec"
+    },
+    {
+      "name": "greenlet",
+      "version": "3.5.4",
+      "license": "MIT AND PSF-2.0",
+      "homepage": "Homepage, https://greenlet.readthedocs.io"
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "license": "MIT",
+      "homepage": "https://github.com/python-hyper/h11"
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.5.2",
+      "license": "Apache-2.0",
+      "homepage": "Documentation, https://huggingface.co/docs/hub/xet/index"
+    },
+    {
+      "name": "htmldate",
+      "version": "1.10.0",
+      "license": "Apache-2.0",
+      "homepage": "Homepage, https://htmldate.readthedocs.io"
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "license": "BSD-3-Clause",
+      "homepage": "Documentation, https://www.encode.io/httpcore"
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "license": "BSD-3-Clause",
+      "homepage": "Changelog, https://github.com/encode/httpx/blob/master/CHANGELOG.md"
+    },
+    {
+      "name": "huggingface_hub",
+      "version": "0.36.2",
+      "license": "Apache",
+      "homepage": "https://github.com/huggingface/huggingface_hub"
+    },
+    {
+      "name": "idna",
+      "version": "3.18",
+      "license": "BSD-3-Clause",
+      "homepage": "Changelog, https://github.com/kjd/idna/blob/master/HISTORY.md"
+    },
+    {
+      "name": "importlib_metadata",
+      "version": "9.0.0",
+      "license": "Apache-2.0",
+      "homepage": "Source, https://github.com/python/importlib_metadata"
+    },
+    {
+      "name": "Jinja2",
+      "version": "3.1.6",
+      "license": "BSD License",
+      "homepage": "Changes, https://jinja.palletsprojects.com/changes/"
+    },
+    {
+      "name": "jiter",
+      "version": "0.16.0",
+      "license": "MIT",
+      "homepage": "https://github.com/pydantic/jiter/"
+    },
+    {
+      "name": "joblib",
+      "version": "1.3.2",
+      "license": "BSD 3-Clause",
+      "homepage": "Homepage, https://joblib.readthedocs.io"
+    },
+    {
+      "name": "jsonpatch",
+      "version": "1.33",
+      "license": "Modified BSD License",
+      "homepage": "https://github.com/stefankoegl/python-json-patch"
+    },
+    {
+      "name": "jsonpointer",
+      "version": "3.1.1",
+      "license": "Modified BSD License",
+      "homepage": "https://github.com/stefankoegl/python-json-pointer"
+    },
+    {
+      "name": "jsonschema",
+      "version": "4.26.0",
+      "license": "MIT",
+      "homepage": "Homepage, https://github.com/python-jsonschema/jsonschema"
+    },
+    {
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1",
+      "license": "MIT",
+      "homepage": "Documentation, https://jsonschema-specifications.readthedocs.io/"
+    },
+    {
+      "name": "jusText",
+      "version": "3.0.2",
+      "license": "The BSD 2-Clause License",
+      "homepage": "https://github.com/miso-belica/jusText"
+    },
+    {
+      "name": "knowledge-storm",
+      "version": "1.1.1+researchgpt.4",
+      "license": "MIT License",
+      "homepage": "https://github.com/stanford-oval/storm"
+    },
+    {
+      "name": "langchain-core",
+      "version": "1.5.3",
+      "license": "MIT",
+      "homepage": "Homepage, https://docs.langchain.com/"
+    },
+    {
+      "name": "langchain-protocol",
+      "version": "0.0.18",
+      "license": "MIT",
+      "homepage": "Homepage, https://github.com/langchain-ai/agent-protocol/tree/main/streaming"
+    },
+    {
+      "name": "langchain-text-splitters",
+      "version": "1.1.2",
+      "license": "MIT",
+      "homepage": "Homepage, https://docs.langchain.com/"
+    },
+    {
+      "name": "langsmith",
+      "version": "0.10.15",
+      "license": "MIT",
+      "homepage": "Homepage, https://smith.langchain.com/"
+    },
+    {
+      "name": "litellm",
+      "version": "1.80.0",
+      "license": "MIT",
+      "homepage": "Documentation, https://docs.litellm.ai"
+    },
+    {
+      "name": "lxml",
+      "version": "6.1.1",
+      "license": "BSD-3-Clause",
+      "homepage": "https://lxml.de/"
+    },
+    {
+      "name": "lxml_html_clean",
+      "version": "0.4.5",
+      "license": "BSD-3-Clause",
+      "homepage": "https://github.com/fedora-python/lxml_html_clean/"
+    },
+    {
+      "name": "Mako",
+      "version": "1.3.12",
+      "license": "MIT",
+      "homepage": "https://www.makotemplates.org/"
+    },
+    {
+      "name": "MarkupSafe",
+      "version": "3.0.3",
+      "license": "BSD-3-Clause",
+      "homepage": "Donate, https://palletsprojects.com/donate"
+    },
+    {
+      "name": "multidict",
+      "version": "6.7.1",
+      "license": "Apache License 2.0",
+      "homepage": "https://github.com/aio-libs/multidict"
+    },
+    {
+      "name": "multiprocess",
+      "version": "0.70.15",
+      "license": "BSD-3-Clause",
+      "homepage": "https://github.com/uqfoundation/multiprocess"
+    },
+    {
+      "name": "numpy",
+      "version": "2.4.6",
+      "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "homepage": "homepage, https://numpy.org"
+    },
+    {
+      "name": "openai",
+      "version": "1.109.1",
+      "license": "Apache-2.0",
+      "homepage": "Homepage, https://github.com/openai/openai-python"
+    },
+    {
+      "name": "optuna",
+      "version": "4.9.0",
+      "license": "MIT License",
+      "homepage": "homepage, https://optuna.org/"
+    },
+    {
+      "name": "orjson",
+      "version": "3.11.9",
+      "license": "MPL-2.0 AND (Apache-2.0 OR MIT)",
+      "homepage": "changelog, https://github.com/ijl/orjson/blob/master/CHANGELOG.md"
+    },
+    {
+      "name": "packaging",
+      "version": "26.2",
+      "license": "Apache-2.0 OR BSD-2-Clause",
+      "homepage": "Documentation, https://packaging.pypa.io/"
+    },
+    {
+      "name": "pandas",
+      "version": "3.0.5",
+      "license": "BSD 3-Clause License\n\n Copyright (c) 2008-2011, AQR Capital Management, LLC, Lambda Foundry, Inc. and PyData Development Team\n All rights reserved.\n\n Copyright (c) 2011-2026, Open source contributors.\n\n Redistribution and use in source and binary forms, with or without\n modification, are permitted provided that the following conditions are met:\n\n * Redistributions of source code must retain the above copyright notice, this\n   list of conditions and the following disclaimer.\n\n * Redistributions in binary form must reproduce the above copyright notice,\n   this list of conditions and the following disclaimer in the documentation\n   and/or other materials provided with the distribution.\n\n * Neither the name of the copyright holder nor the names of its\n   contributors may be used to endorse or promote products derived from\n   this software without specific prior written permission.\n\n THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"\n AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\n DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\n FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\n SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\n CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\n OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\n OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+      "homepage": "homepage, https://pandas.pydata.org"
+    },
+    {
+      "name": "propcache",
+      "version": "0.5.2",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/aio-libs/propcache"
+    },
+    {
+      "name": "pyarrow",
+      "version": "25.0.0",
+      "license": "Apache-2.0",
+      "homepage": "Homepage, https://arrow.apache.org/"
+    },
+    {
+      "name": "pyarrow-hotfix",
+      "version": "0.7",
+      "license": "Apache License, Version 2.0",
+      "homepage": "Documentation, https://github.com/pitrou/pyarrow-hotfix#readme"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.4",
+      "license": "MIT",
+      "homepage": "Homepage, https://github.com/pydantic/pydantic"
+    },
+    {
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "license": "MIT",
+      "homepage": "https://github.com/pydantic/pydantic"
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "license": "Dual License",
+      "homepage": "https://github.com/dateutil/dateutil"
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.2.2",
+      "license": "BSD-3-Clause",
+      "homepage": "Source, https://github.com/theskumar/python-dotenv"
+    },
+    {
+      "name": "pytz",
+      "version": "2026.3.post1",
+      "license": "MIT",
+      "homepage": "http://pythonhosted.org/pytz"
+    },
+    {
+      "name": "PyYAML",
+      "version": "6.0.3",
+      "license": "MIT",
+      "homepage": "https://pyyaml.org/"
+    },
+    {
+      "name": "referencing",
+      "version": "0.37.0",
+      "license": "MIT",
+      "homepage": "Documentation, https://referencing.readthedocs.io/"
+    },
+    {
+      "name": "regex",
+      "version": "2026.7.19",
+      "license": "Apache-2.0 AND CNRI-Python",
+      "homepage": "Homepage, https://github.com/mrabarnett/mrab-regex"
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2",
+      "license": "Apache-2.0",
+      "homepage": "Documentation, https://requests.readthedocs.io"
+    },
+    {
+      "name": "requests-toolbelt",
+      "version": "1.0.0",
+      "license": "Apache 2.0",
+      "homepage": "https://toolbelt.readthedocs.io/"
+    },
+    {
+      "name": "rpds-py",
+      "version": "2026.6.3",
+      "license": "MIT",
+      "homepage": "Documentation, https://rpds.readthedocs.io/"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "license": "MIT",
+      "homepage": "https://github.com/benjaminp/six"
+    },
+    {
+      "name": "sniffio",
+      "version": "1.3.1",
+      "license": "MIT OR Apache-2.0",
+      "homepage": "Homepage, https://github.com/python-trio/sniffio"
+    },
+    {
+      "name": "soupsieve",
+      "version": "2.9.1",
+      "license": "MIT",
+      "homepage": "Homepage, https://github.com/facelessuser/soupsieve"
+    },
+    {
+      "name": "SQLAlchemy",
+      "version": "2.0.51",
+      "license": "MIT",
+      "homepage": "https://www.sqlalchemy.org"
+    },
+    {
+      "name": "starlette",
+      "version": "1.3.1",
+      "license": "BSD-3-Clause",
+      "homepage": "Homepage, https://github.com/Kludex/starlette"
+    },
+    {
+      "name": "structlog",
+      "version": "26.1.0",
+      "license": "MIT OR Apache-2.0",
+      "homepage": "Documentation, https://www.structlog.org/"
+    },
+    {
+      "name": "tavily-python",
+      "version": "0.7.27",
+      "license": "MIT License",
+      "homepage": "https://github.com/tavily-ai/tavily-python"
+    },
+    {
+      "name": "tenacity",
+      "version": "9.1.4",
+      "license": "Apache 2.0",
+      "homepage": "https://github.com/jd/tenacity"
+    },
+    {
+      "name": "tiktoken",
+      "version": "0.13.0",
+      "license": "MIT License\n\nCopyright (c) 2022 OpenAI, Shantanu Jain\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
+      "homepage": "homepage, https://github.com/openai/tiktoken"
+    },
+    {
+      "name": "tld",
+      "version": "0.13.2",
+      "license": "MPL-1.1 OR GPL-2.0-only OR LGPL-2.1-or-later",
+      "homepage": "Bug Tracker, https://github.com/barseghyanartur/tld/issues"
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.23.1",
+      "license": "Apache Software License",
+      "homepage": "Homepage, https://github.com/huggingface/tokenizers"
+    },
+    {
+      "name": "toml",
+      "version": "0.10.2",
+      "license": "MIT",
+      "homepage": "https://github.com/uiri/toml"
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.0",
+      "license": "MPL-2.0 AND MIT",
+      "homepage": "homepage, https://tqdm.github.io"
+    },
+    {
+      "name": "trafilatura",
+      "version": "2.2.0",
+      "license": "Apache-2.0",
+      "homepage": "Homepage, https://trafilatura.readthedocs.io"
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "license": "MIT",
+      "homepage": "Homepage, https://github.com/pydantic/typing-inspection"
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "license": "PSF-2.0",
+      "homepage": "Bug Tracker, https://github.com/python/typing_extensions/issues"
+    },
+    {
+      "name": "tzdata",
+      "version": "2026.3",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/python/tzdata"
+    },
+    {
+      "name": "tzlocal",
+      "version": "5.4.4",
+      "license": "MIT",
+      "homepage": "Source code, https://github.com/regebro/tzlocal"
+    },
+    {
+      "name": "ujson",
+      "version": "5.13.0",
+      "license": "BSD-3-Clause AND TCL",
+      "homepage": "Download, https://github.com/ultrajson/ultrajson"
+    },
+    {
+      "name": "urllib3",
+      "version": "2.7.0",
+      "license": "MIT",
+      "homepage": "Changelog, https://github.com/urllib3/urllib3/blob/main/CHANGES.rst"
+    },
+    {
+      "name": "uuid_utils",
+      "version": "0.17.0",
+      "license": "BSD-3-Clause",
+      "homepage": "Documentation, https://github.com/aminalaee/uuid-utils"
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.52.1",
+      "license": "BSD-3-Clause",
+      "homepage": "Changelog, https://uvicorn.dev/release-notes"
+    },
+    {
+      "name": "websockets",
+      "version": "17.0.1",
+      "license": "BSD-3-Clause",
+      "homepage": "Homepage, https://github.com/python-websockets/websockets"
+    },
+    {
+      "name": "wikipedia",
+      "version": "1.4.0",
+      "license": "MIT",
+      "homepage": "https://github.com/goldsmith/Wikipedia"
+    },
+    {
+      "name": "xxhash",
+      "version": "3.8.1",
+      "license": "BSD-2-Clause",
+      "homepage": "https://github.com/ifduyue/python-xxhash"
+    },
+    {
+      "name": "yarl",
+      "version": "1.24.5",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/aio-libs/yarl"
+    },
+    {
+      "name": "zipp",
+      "version": "4.1.0",
+      "license": "MIT",
+      "homepage": "Source, https://github.com/jaraco/zipp"
+    },
+    {
+      "name": "zstandard",
+      "version": "0.25.0",
+      "license": "BSD-3-Clause",
+      "homepage": "Homepage, https://github.com/indygreg/python-zstandard"
+    }
+  ]
+}

@@ -65,7 +65,11 @@ def _extract_outline(text: str, topic: str) -> OutlineCandidate | None:
     )
 
 
-def adapt_storm_outputs(request: ExplorationRequest, output_dir: Path) -> ExplorationResult:
+def adapt_storm_outputs(
+    request: ExplorationRequest,
+    output_dir: Path,
+    usage: UsagePayload | None = None,
+) -> ExplorationResult:
     conversation = _read_json(output_dir / "conversation_log.json", [])
     raw_sources = _read_json(output_dir / "raw_search_results.json", {})
     outline_text = _read_text(output_dir / "storm_gen_outline.txt") or _read_text(
@@ -166,7 +170,38 @@ def adapt_storm_outputs(request: ExplorationRequest, output_dir: Path) -> Explor
         outlines=[outline] if outline else [],
         unresolvedQuestions=[],
         warnings=warnings,
-        usage=UsagePayload(),
+        usage=usage or UsagePayload(),
+    )
+
+
+def _collect_usage(runner: object) -> UsagePayload:
+    model_calls = 0
+    input_tokens = 0
+    output_tokens = 0
+    estimated_cost = 0.0
+    lm_configs = getattr(runner, "lm_configs", None)
+    if lm_configs is not None:
+        usage_by_model = lm_configs.collect_and_reset_lm_usage()
+        for usage in usage_by_model.values():
+            input_tokens += int(usage.get("prompt_tokens", 0) or 0)
+            output_tokens += int(usage.get("completion_tokens", 0) or 0)
+        history = lm_configs.collect_and_reset_lm_history()
+        model_calls = len(history)
+        estimated_cost = sum(
+            float(entry.get("cost") or 0)
+            for entry in history
+            if isinstance(entry, dict)
+        )
+    search_calls = 0
+    retriever = getattr(runner, "retriever", None)
+    if retriever is not None and hasattr(retriever, "collect_and_reset_rm_usage"):
+        search_calls = sum(retriever.collect_and_reset_rm_usage().values())
+    return UsagePayload(
+        modelCalls=model_calls,
+        searchCalls=search_calls,
+        inputTokens=input_tokens,
+        outputTokens=output_tokens,
+        estimatedCostUsd=estimated_cost,
     )
 
 
@@ -185,4 +220,11 @@ class StormWikiExplorationRunner:
             do_polish_article=False,
             remove_duplicate=False,
         )
-        return adapt_storm_outputs(request, output_dir)
+        actual_output_dir = Path(
+            getattr(self.runner, "article_output_dir", str(output_dir))
+        )
+        return adapt_storm_outputs(
+            request,
+            actual_output_dir,
+            usage=_collect_usage(self.runner),
+        )

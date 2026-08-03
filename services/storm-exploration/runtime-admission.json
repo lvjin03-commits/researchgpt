@@ -1,6 +1,6 @@
 {
   "schemaVersion": "storm-runtime-admission-v1",
-  "evaluatedAt": "2026-08-02",
+  "evaluatedAt": "2026-08-03",
   "upstream": {
     "package": "knowledge-storm",
     "version": "1.1.1",
@@ -11,23 +11,39 @@
     "python": "3.11",
     "platform": "linux/amd64"
   },
+  "runtime": {
+    "packageVersion": "1.1.1+researchgpt.4",
+    "wheelSha256": "41864d4d63d7b710b2903b9980867561835edf683411dcd447de68024271bb6a",
+    "lockFile": "requirements-runtime.lock",
+    "lockSha256": "79c6c7dcb2f3c6dfe36222682fc4a8a55aa329cd0781aa439326811e36374b45",
+    "licenseInventory": "runtime-licenses.json",
+    "dependencyReview": "passed_with_unreachable_proxy_advisories"
+  },
   "status": "blocked",
   "approved": false,
   "productionFlagMustRemainFalse": true,
-  "lockFile": null,
+  "lockFile": "requirements-runtime.lock",
   "blockers": [
     {
-      "code": "mandatory_dependency_vulnerability",
-      "package": "diskcache",
-      "affectedThrough": "5.6.3",
-      "advisory": "GHSA-w8v5-vhqr-4h9v",
-      "fixAvailable": false,
-      "reason": "knowledge-storm requires diskcache, whose latest published release is affected by unsafe pickle deserialization."
+      "code": "linux_image_verification_pending",
+      "reason": "The hash lock was resolved for Python 3.11/Linux amd64 and the same versions passed a clean Python 3.11 Windows import test, but the final Linux container image has not yet been built and exercised."
     },
     {
-      "code": "unbounded_dependency_graph",
-      "package": "knowledge-storm",
-      "reason": "Most transitive runtime dependencies are not version-bounded upstream; a reproducible, audited hash lock could not be admitted without maintaining a tested compatibility constraint set."
+      "code": "provider_canary_pending",
+      "reason": "DeepSeek-compatible LiteLLM and Tavily wiring, timeouts, concurrency and call budgets are implemented, but no real credentialed canary or provider request-ID persistence has been verified."
+    },
+    {
+      "code": "production_execution_store_missing",
+      "reason": "The service still uses development SQLite and has not passed a production restart and lease-recovery drill."
+    }
+  ],
+  "acceptedUnreachableAdvisories": [
+    {
+      "package": "litellm",
+      "version": "1.80.0",
+      "count": 12,
+      "scope": "LiteLLM Proxy HTTP, JWT/OIDC, MCP, guardrail, user, key, and admin routes",
+      "control": "ResearchGPT imports LiteLLM only as an outbound client library; it never starts or exposes LiteLLM Proxy."
     }
   ]
 }

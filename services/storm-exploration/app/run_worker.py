@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 from app.storage.execution_store import SqliteExecutionStore
-from app.storm_adapter.runner import StormWikiExplorationRunner
 from app.storm_adapter.runner_factory import create_real_runner
 from app.worker import ExplorationWorker
 
@@ -15,7 +14,7 @@ def main() -> int:
     store = SqliteExecutionStore(data_root / "explorations.sqlite3")
     worker = ExplorationWorker(
         store,
-        StormWikiExplorationRunner(create_real_runner()),
+        create_real_runner(),
         data_root / "outputs",
     )
     return 0 if worker.run_once() else 2

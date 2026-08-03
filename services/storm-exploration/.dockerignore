@@ -1,0 +1,8 @@
+.dist
+.pytest_cache
+.storm-exploration-data
+.venv
+__pycache__
+tests
+runtime-licenses.json
+*.pyc

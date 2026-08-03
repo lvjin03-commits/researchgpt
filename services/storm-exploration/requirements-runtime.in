@@ -1,8 +1,15 @@
 # Production-runtime admission input.
 #
-# Keep the service boundary dependencies explicit and pin the upstream STORM
-# package. The generated requirements-runtime.lock is the only dependency file
-# that may be used to build a real STORM runtime image.
+# Build the verified ResearchGPT safety wheel before compiling this file.
+# The generated requirements-runtime.lock is the only dependency file that may
+# be used to build a real STORM runtime image.
+--find-links .dist
+
 fastapi==0.141.1
 uvicorn==0.52.1
-knowledge-storm==1.1.1
+knowledge-storm==1.1.1+researchgpt.4
+# Newer LiteLLM releases require OpenAI SDK 2.x, while upstream STORM pins
+# DSPy 2.4.9, which requires OpenAI SDK <2. The isolated runtime imports
+# LiteLLM as a client library only and never starts or exposes LiteLLM Proxy.
+litellm==1.80.0
+tavily-python==0.7.27

@@ -11,6 +11,7 @@ from app.storage.execution_store import SqliteExecutionStore
 from app.storm_adapter.runner_factory import (
     admission_status,
     dependency_available,
+    provider_configuration_available,
     runtime_approved,
 )
 
@@ -26,12 +27,15 @@ def create_app(database_path: Path | None = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, object]:
+        dependency_ready = dependency_available()
+        provider_ready = provider_configuration_available()
         return {
             "status": "ok",
             "runtimeAdmissionStatus": admission_status(),
             "runtimeApproved": runtime_approved(),
-            "stormDependencyAvailable": dependency_available(),
-            "productionReady": runtime_approved() and dependency_available(),
+            "stormDependencyAvailable": dependency_ready,
+            "providerConfigured": provider_ready,
+            "productionReady": runtime_approved() and dependency_ready and provider_ready,
         }
 
     return app

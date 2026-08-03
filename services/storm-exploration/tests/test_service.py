@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from app.main import create_app
 from app.storm_adapter.runner_factory import (
     StormDependencyUnavailable,
     create_real_runner,
+    prepare_upstream_runtime_environment,
 )
 from app.worker import ExplorationWorker
 
@@ -158,6 +160,7 @@ def test_health_exposes_runtime_gate_without_loading_storm(
     assert payload["status"] == "ok"
     assert payload["runtimeAdmissionStatus"] == "blocked"
     assert payload["runtimeApproved"] is False
+    assert payload["providerConfigured"] is False
     assert payload["productionReady"] is False
 
 
@@ -165,3 +168,15 @@ def test_environment_flag_cannot_bypass_blocked_admission(monkeypatch) -> None:
     monkeypatch.setenv("STORM_RUNTIME_APPROVED", "true")
     with pytest.raises(StormDependencyUnavailable, match="dependency audit"):
         create_real_runner()
+
+
+def test_upstream_runtime_environment_forces_disk_cache_off(monkeypatch) -> None:
+    monkeypatch.setenv("DSP_CACHEBOOL", "true")
+    monkeypatch.setenv("DSP_CACHEDIR", "user-controlled")
+    monkeypatch.setenv("DSP_NOTEBOOK_CACHEDIR", "user-controlled")
+
+    prepare_upstream_runtime_environment()
+
+    assert os.environ["DSP_CACHEBOOL"] == "false"
+    assert "researchgpt-storm-disabled-cache" in os.environ["DSP_CACHEDIR"]
+    assert "DSP_NOTEBOOK_CACHEDIR" not in os.environ
