@@ -26,6 +26,20 @@ assert.equal(
   }).enabled,
   true,
 );
+assert.deepEqual(
+  resolveResearchExplorationRuntimeFromEnvironment({
+    environment: {
+      STORM_RUNTIME_APPROVED: "true",
+      STORM_RUNTIME_MODE: "shadow",
+    },
+  }),
+  {
+    policyVersion: "research-exploration-runtime-v1",
+    mode: "shadow",
+    enabled: true,
+    reason: "enabled",
+  },
+);
 assert.equal(
   resolveResearchExplorationRuntime({ globallyApproved: true, mode: "off" }).reason,
   "mode_off",

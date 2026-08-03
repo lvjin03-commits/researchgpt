@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
 from app.domain.contracts import FailurePayload
 from app.storage.execution_store import ExecutionStore
@@ -17,6 +18,20 @@ class ExplorationWorker:
         record = self.store.claim_next()
         if not record:
             return False
+        heartbeat_stop = threading.Event()
+        heartbeat_failure: list[Exception] = []
+
+        def maintain_lease() -> None:
+            while not heartbeat_stop.wait(20):
+                try:
+                    if not self.store.heartbeat(record):
+                        raise RuntimeError("STORM execution lease was lost")
+                except Exception as error:  # surfaced after the provider call returns
+                    heartbeat_failure.append(error)
+                    heartbeat_stop.set()
+
+        heartbeat_thread = threading.Thread(target=maintain_lease, daemon=True)
+        heartbeat_thread.start()
         try:
             if record.cancel_requested:
                 record.status = "cancelled"
@@ -33,11 +48,10 @@ class ExplorationWorker:
                 latest.phase = "cancelled"
                 self.store.save(latest)
                 return True
-            location = self.store.save_result(record.remote_execution_id, result)
-            record.result_location = location
-            record.status = result.status
-            record.phase = "complete" if result.status == "complete" else "partial"
-            self.store.save(record)
+            if heartbeat_failure:
+                raise heartbeat_failure[0]
+            if not self.store.complete(record, result):
+                raise RuntimeError("STORM completion was rejected by fencing token")
         except Exception as error:  # Worker boundary: persist failure evidence, never hide it.
             record.status = "failed"
             record.phase = "failed"
@@ -49,4 +63,7 @@ class ExplorationWorker:
                 userMessageCode="research_exploration_failed",
             ).model_dump(mode="json", by_alias=True)
             self.store.save(record)
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=2)
         return True

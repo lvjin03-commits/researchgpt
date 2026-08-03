@@ -42,9 +42,6 @@ export function selectResearchExplorationShadow(input: {
   const policy = ResearchExplorationShadowPolicySchema.parse(input.policy);
   const bucket = sampleBucket(policy.policyVersion, input.sampleSubjectId);
   if (!policy.enabled) return { selected: false, reason: "disabled", bucket };
-  if (policy.environment === "production") {
-    return { selected: false, reason: "production_forbidden", bucket };
-  }
   if (input.activeExecutionCount >= policy.maximumConcurrentExecutions) {
     return { selected: false, reason: "capacity_exhausted", bucket };
   }

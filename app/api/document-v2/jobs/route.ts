@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { after } from "next/server";
 import {
   DEFAULT_CHAT_MODEL_TIER,
   getChatModelOption,
@@ -21,6 +22,7 @@ import {
   DocumentV2PublicRuntimeDisabledError,
   requireDocumentV2PublicRuntime,
 } from "@/lib/document-v2-production/runtime-config";
+import { launchDocumentResearchExplorationShadow } from "@/lib/research-exploration-production/shadow-launcher";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -98,6 +100,14 @@ export async function POST(request: Request) {
         ? input.modelTier
         : DEFAULT_CHAT_MODEL_TIER,
     );
+    const textExecution = {
+      provider: modelOption.provider,
+      requestedModelId: modelOption.model,
+      resolvedModelId: modelOption.model,
+      maxOutputTokens: modelOption.maxOutputTokens,
+      reasoningEffort: modelOption.reasoningEffort,
+      allowProviderFallback: false,
+    } as const;
     const service = new DocumentV2JobService(
       repository,
       {
@@ -124,14 +134,7 @@ export async function POST(request: Request) {
         targetLength: input.targetLength,
         verifiedReferences: references,
         evidence: input.evidence,
-        textExecution: {
-          provider: modelOption.provider,
-          requestedModelId: modelOption.model,
-          resolvedModelId: modelOption.model,
-          maxOutputTokens: modelOption.maxOutputTokens,
-          reasoningEffort: modelOption.reasoningEffort,
-          allowProviderFallback: false,
-        },
+        textExecution,
       });
     } catch (creationError) {
       if (!(creationError instanceof DocumentJobConflictError)) throw creationError;
@@ -159,6 +162,14 @@ export async function POST(request: Request) {
         error: dispatchError,
       });
     }
+    after(async () => {
+      await launchDocumentResearchExplorationShadow({
+        ownerId: user.id,
+        jobId: snapshot.job.jobId,
+        instruction: input.instruction,
+        language: input.language,
+      });
+    });
     return Response.json(snapshot, {
       status: 202,
       headers: {

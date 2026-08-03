@@ -57,6 +57,9 @@ const planningIntegrationOwners = new Set([
   "lib/document-v2-production/planning.ts",
   "lib/document-v2-production/stages/intake.ts",
   "lib/document-v2-production/failure-mapper.ts",
+  // Creation may launch a non-authoritative Shadow job after the document
+  // task is durable. It cannot consume or publish exploration output.
+  "lib/document-v2-production/command-gateway.ts",
 ]);
 for (const authoritativeRoot of [
   path.join(root, "lib", "document-v2"),

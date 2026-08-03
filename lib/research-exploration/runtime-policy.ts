@@ -52,13 +52,15 @@ export function resolveResearchExplorationRuntime(input: {
 
 /** The only TypeScript boundary allowed to read the global STORM switch. */
 export function resolveResearchExplorationRuntimeFromEnvironment(input: {
-  mode: ResearchExplorationRuntimeMode;
+  mode?: ResearchExplorationRuntimeMode;
   environment?: Readonly<Record<string, string | undefined>>;
 }): ResearchExplorationRuntimeDecision {
   const environment = input.environment ?? process.env;
   return resolveResearchExplorationRuntime({
     globallyApproved:
       environment.STORM_RUNTIME_APPROVED?.trim().toLowerCase() === "true",
-    mode: input.mode,
+    mode: input.mode ?? ResearchExplorationRuntimeModeSchema.parse(
+      environment.STORM_RUNTIME_MODE?.trim().toLowerCase() || "off",
+    ),
   });
 }

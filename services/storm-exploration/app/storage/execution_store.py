@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+import httpx
+
 from app.domain.contracts import ExplorationRequest, ExplorationResult, ExplorationStatus
 
 
@@ -34,6 +36,8 @@ class ExecutionRecord:
         cancel_requested: bool = False,
         result_location: str | None = None,
         failure: dict | None = None,
+        lease_owner: str | None = None,
+        lease_token: int = 0,
         created_at: str | None = None,
         updated_at: str | None = None,
     ) -> None:
@@ -45,6 +49,8 @@ class ExecutionRecord:
         self.cancel_requested = cancel_requested
         self.result_location = result_location
         self.failure = failure
+        self.lease_owner = lease_owner
+        self.lease_token = lease_token
         self.created_at = created_at or utc_now()
         self.updated_at = updated_at or self.created_at
 
@@ -56,6 +62,8 @@ class ExecutionStore(Protocol):
     def save(self, record: ExecutionRecord) -> None: ...
     def save_result(self, remote_execution_id: str, result: ExplorationResult) -> str: ...
     def load_result(self, remote_execution_id: str) -> ExplorationResult | None: ...
+    def heartbeat(self, record: ExecutionRecord) -> bool: ...
+    def complete(self, record: ExecutionRecord, result: ExplorationResult) -> bool: ...
 
 
 class SqliteExecutionStore:
@@ -203,3 +211,153 @@ class SqliteExecutionStore:
         if not row or not row["result_json"]:
             return None
         return ExplorationResult.model_validate_json(row["result_json"])
+
+    def heartbeat(self, record: ExecutionRecord) -> bool:
+        return self.get(record.remote_execution_id) is not None
+
+    def complete(self, record: ExecutionRecord, result: ExplorationResult) -> bool:
+        location = self.save_result(record.remote_execution_id, result)
+        record.result_location = location
+        record.status = result.status
+        record.phase = "complete" if result.status == "complete" else "partial"
+        self.save(record)
+        return True
+
+
+class SupabaseExecutionStore:
+    """PostgREST-backed production store with database-owned leases."""
+
+    def __init__(
+        self,
+        *,
+        supabase_url: str,
+        service_role_key: str,
+        target_execution_id: str,
+        lease_owner: str,
+        lease_seconds: int = 120,
+        timeout_seconds: int = 30,
+    ) -> None:
+        self.target_execution_id = target_execution_id
+        self.lease_owner = lease_owner
+        self.lease_seconds = lease_seconds
+        self._client = httpx.Client(
+            base_url=supabase_url.rstrip("/") + "/rest/v1",
+            headers={
+                "apikey": service_role_key,
+                "Authorization": f"Bearer {service_role_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=timeout_seconds,
+        )
+
+    @staticmethod
+    def _row_to_record(row: dict) -> ExecutionRecord:
+        return ExecutionRecord(
+            remote_execution_id=str(row["execution_id"]),
+            request=ExplorationRequest.model_validate(row["input_payload"]),
+            request_fingerprint=row["input_fingerprint"],
+            status=row["status"],
+            phase=row["phase"],
+            result_location=row.get("result_location"),
+            failure=row.get("failure"),
+            lease_owner=row.get("lease_owner"),
+            lease_token=int(row.get("lease_token") or 0),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
+        )
+
+    def _rpc(self, name: str, payload: dict):
+        response = self._client.post(f"/rpc/{name}", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    def create_or_get(self, record: ExecutionRecord) -> tuple[ExecutionRecord, bool]:
+        existing = self.get(record.remote_execution_id)
+        return (existing or record), existing is None
+
+    def get(self, remote_execution_id: str) -> ExecutionRecord | None:
+        response = self._client.get(
+            "/research_exploration_executions",
+            params={
+                "execution_id": f"eq.{remote_execution_id}",
+                "select": "*",
+                "limit": "1",
+            },
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return self._row_to_record(rows[0]) if rows else None
+
+    def claim_next(self) -> ExecutionRecord | None:
+        rows = self._rpc(
+            "claim_research_exploration_execution",
+            {
+                "p_execution_id": self.target_execution_id,
+                "p_lease_owner": self.lease_owner,
+                "p_lease_seconds": self.lease_seconds,
+            },
+        )
+        return self._row_to_record(rows[0]) if rows else None
+
+    def save(self, record: ExecutionRecord) -> None:
+        if record.status != "failed":
+            raise RuntimeError("Supabase save only permits a fenced failure transition")
+        saved = self._rpc(
+            "fail_research_exploration_execution",
+            {
+                "p_execution_id": record.remote_execution_id,
+                "p_lease_owner": record.lease_owner or self.lease_owner,
+                "p_lease_token": record.lease_token,
+                "p_failure": record.failure,
+            },
+        )
+        if saved is not True:
+            raise RuntimeError("STORM failure write rejected by fencing token")
+
+    def save_result(self, remote_execution_id: str, result: ExplorationResult) -> str:
+        record = self.get(remote_execution_id)
+        if not record or not self.complete(record, result):
+            raise RuntimeError("STORM result write rejected by fencing token")
+        return f"research-exploration://{remote_execution_id}/result-v1"
+
+    def load_result(self, remote_execution_id: str) -> ExplorationResult | None:
+        response = self._client.get(
+            "/research_exploration_executions",
+            params={
+                "execution_id": f"eq.{remote_execution_id}",
+                "select": "result_payload",
+                "limit": "1",
+            },
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if not rows or not rows[0].get("result_payload"):
+            return None
+        return ExplorationResult.model_validate(rows[0]["result_payload"])
+
+    def heartbeat(self, record: ExecutionRecord) -> bool:
+        return bool(
+            self._rpc(
+                "heartbeat_research_exploration_execution",
+                {
+                    "p_execution_id": record.remote_execution_id,
+                    "p_lease_owner": record.lease_owner or self.lease_owner,
+                    "p_lease_token": record.lease_token,
+                    "p_lease_seconds": self.lease_seconds,
+                },
+            )
+        )
+
+    def complete(self, record: ExecutionRecord, result: ExplorationResult) -> bool:
+        return bool(
+            self._rpc(
+                "complete_research_exploration_execution",
+                {
+                    "p_execution_id": record.remote_execution_id,
+                    "p_lease_owner": record.lease_owner or self.lease_owner,
+                    "p_lease_token": record.lease_token,
+                    "p_status": result.status,
+                    "p_result": result.model_dump(mode="json", by_alias=True),
+                },
+            )
+        )

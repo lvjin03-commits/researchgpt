@@ -1,0 +1,77 @@
+name: Deploy STORM Cloud Run Job
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_approved:
+        description: Must remain false until the production lease drill passes
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: storm-cloud-run-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: storm-production
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      REPOSITORY: researchgpt-runtime
+      IMAGE_NAME: storm-exploration
+      JOB_NAME: researchgpt-storm-exploration
+      JOB_SERVICE_ACCOUNT: ${{ vars.GCP_JOB_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate without a stored Google key
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and publish immutable image
+        working-directory: services/storm-exploration
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
+          docker build --pull --tag "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy disabled-by-default Cloud Run Job
+        run: |
+          gcloud run jobs deploy "$JOB_NAME" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --image "$IMAGE" \
+            --service-account "$JOB_SERVICE_ACCOUNT" \
+            --command python \
+            --args=-m,app.run_worker \
+            --tasks 1 \
+            --max-retries 0 \
+            --task-timeout 15m \
+            --cpu 1 \
+            --memory 2Gi \
+            --set-env-vars "STORM_RUNTIME_APPROVED=${{ inputs.runtime_approved }},STORM_REQUEST_PROVIDER=deepseek,STORM_REQUEST_MODEL=deepseek-chat,STORM_QUESTION_LITELLM_MODEL=deepseek/deepseek-chat,STORM_OUTLINE_LITELLM_MODEL=deepseek/deepseek-chat,STORM_LLM_API_BASE=https://api.deepseek.com,STORM_SEARCH_PROVIDER=tavily,STORM_PROVIDER_TIMEOUT_SECONDS=60,STORM_MAX_THREADS=2,STORM_MAX_MODEL_CALLS=20,STORM_MAX_SEARCH_QUERIES=8" \
+            --set-secrets "STORM_LLM_API_KEY=storm-llm-api-key:latest,STORM_SEARCH_API_KEY=storm-search-api-key:latest,SUPABASE_URL=researchgpt-supabase-url:latest,SUPABASE_SERVICE_ROLE_KEY=researchgpt-supabase-service-role-key:latest" \
+            --quiet
+
+      - name: Verify deployed safety boundary
+        run: |
+          APPROVED="$(gcloud run jobs describe "$JOB_NAME" --project "$PROJECT_ID" --region "$REGION" --format=json | jq -r '.spec.template.template.containers[0].env[] | select(.name == "STORM_RUNTIME_APPROVED") | .value')"
+          test "${{ inputs.runtime_approved }}" = "$APPROVED"
+          gcloud run jobs describe "$JOB_NAME" --project "$PROJECT_ID" --region "$REGION" --format=yaml

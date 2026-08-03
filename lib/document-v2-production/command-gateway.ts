@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DocumentTextExecutionProfile } from "@/lib/document-v2/runtime/contracts";
 import { SupabaseDocumentJobRepository } from "@/lib/document-v2/runtime/supabase-repository";
@@ -8,6 +9,7 @@ import {
   logDocumentV2DispatchFailure,
   recordDocumentV2DispatchFailure,
 } from "./dispatch";
+import { launchDocumentResearchExplorationShadow } from "@/lib/research-exploration-production/shadow-launcher";
 
 export type CreateDocumentCommand = {
   type: "create_document";
@@ -15,6 +17,7 @@ export type CreateDocumentCommand = {
   instruction: string;
   previousAssistantContent?: string;
   textExecution: DocumentTextExecutionProfile;
+  language?: "zh" | "en";
   requestUrl: string;
 };
 
@@ -100,5 +103,13 @@ export async function executeDocumentCommand(input: {
       error: dispatchError,
     });
   }
+  after(async () => {
+    await launchDocumentResearchExplorationShadow({
+      ownerId: command.ownerId,
+      jobId,
+      instruction,
+      language: command.language,
+    });
+  });
   return { type: "document_job_created", jobId };
 }

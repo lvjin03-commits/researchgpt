@@ -30,8 +30,8 @@ assert.equal(
     policy: { ...policy, environment: "production" },
     sampleSubjectId: "job-1",
     activeExecutionCount: 0,
-  }).reason,
-  "production_forbidden",
+  }).selected,
+  true,
 );
 assert.equal(
   selectResearchExplorationShadow({

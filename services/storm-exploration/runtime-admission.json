@@ -25,12 +25,8 @@
   "lockFile": "requirements-runtime.lock",
   "blockers": [
     {
-      "code": "provider_canary_pending",
-      "reason": "DeepSeek-compatible LiteLLM and Tavily wiring, timeouts, concurrency and call budgets are implemented, but no real credentialed canary or provider request-ID persistence has been verified."
-    },
-    {
-      "code": "production_execution_store_missing",
-      "reason": "The service still uses development SQLite and has not passed a production restart and lease-recovery drill."
+      "code": "production_execution_store_not_verified",
+      "reason": "The Supabase lease and fencing store is implemented and migration 029 is applied, but the Cloud Run runtime-off and expired-lease recovery drills have not passed in production yet."
     }
   ],
   "acceptedUnreachableAdvisories": [
@@ -43,6 +39,19 @@
     }
   ],
   "verifiedEvidence": [
+    {
+      "code": "credentialed_provider_canary_passed",
+      "commit": "22193dd",
+      "workflowRunId": 30845468341,
+      "workflowJobId": 91792579057,
+      "checks": [
+        "deepseek_provider_requests",
+        "tavily_search_requests",
+        "provider_request_id_persistence",
+        "usage_and_cost_evidence",
+        "runtime_remained_disabled"
+      ]
+    },
     {
       "code": "linux_image_smoke_passed",
       "commit": "6bcff4dcea2ac9da87820f44315afcae5a85f514",

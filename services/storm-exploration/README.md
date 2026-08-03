@@ -2,7 +2,10 @@
 
 This isolated service exposes only STORM research and outline candidates. It does not generate articles, mutate Document V2, or publish evidence directly.
 
-The API queues work in SQLite. A separate worker claims one execution and publishes a versioned result. The HTTP process never runs STORM in a background task.
+The local API queues work in SQLite. Production Cloud Run Jobs use the durable
+Supabase execution store, claim one explicit execution with a fencing token,
+renew the lease while STORM runs, publish the versioned result atomically, and
+exit. The HTTP process never runs STORM in a background task.
 
 The official `knowledge-storm` 1.1.1 wheel is transformed by a reproducible,
 hash-verified safety builder into the scoped
@@ -10,13 +13,17 @@ hash-verified safety builder into the scoped
 persistent model caches, Co-STORM eager loading, and unused local ML/vector
 dependencies. Its Python 3.11/Linux dependency set is hash-locked, has a
 license inventory, and passed the isolated Linux image smoke test. The runtime
-remains `blocked` because the credentialed provider canary and production
-execution store are not admitted yet.
+remains `blocked` because the production Cloud Run lease/recovery drill has not
+passed yet. The credentialed DeepSeek + Tavily canary has passed and is recorded
+in `runtime-admission.json`.
 Production startup requires both an approved admission record and
 `STORM_RUNTIME_APPROVED=true`; the environment variable alone cannot enable it.
 Tests continue to use a deterministic fake runner.
 
-This step is an executable integration boundary, not a deployable STORM runtime. It intentionally does not contain provider credentials, a production process supervisor, or a Document V2 integration.
+The same image can be deployed as an on-demand Cloud Run Job by overriding the
+command to `python -m app.run_worker`. Provider and Supabase credentials must be
+mounted from Google Secret Manager. `STORM_EXECUTION_ID` is supplied only as an
+execution override and is never frozen into the Job template.
 
 Endpoints:
 
