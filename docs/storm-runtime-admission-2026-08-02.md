@@ -2,7 +2,7 @@
 
 ## Decision
 
-**Dependency preparation passed; production activation remains blocked.**
+**Dependency and Linux image preparation passed; production activation remains blocked.**
 
 This decision applies only to `services/storm-exploration`. Document V2 stays
 on the verified runtime-off path and is not coupled to STORM availability.
@@ -56,17 +56,19 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
 
 ## Remaining blockers
 
-1. Build and run the final Linux image from the hash lock.
-2. Run a credentialed, cost-capped DeepSeek-compatible + Tavily canary and
+1. Run a credentialed, cost-capped DeepSeek-compatible + Tavily canary and
    persist provider request IDs alongside usage and cost.
-3. Replace development SQLite or prove a single-worker persistent-volume
+2. Replace development SQLite or prove a single-worker persistent-volume
    deployment with restart and lease-recovery tests.
-4. Run a cost-capped canary that can publish only a non-authoritative Proposal.
+3. Run a cost-capped canary that can publish only a non-authoritative Proposal.
 
 ## Evidence verified
 
 - Safe wheel builder unit tests and deterministic output.
 - Full isolated service test suite.
+- Linux image build and runtime smoke on commit `6bcff4d` (workflow run
+  `30827243515`), including the non-root user, health check, runtime-off gate,
+  writable data volume, and removed dependency absence.
 - Clean Python 3.11 import of the actual derivative wheel and Runner API.
 - DiskCache and local ML dependencies absent from the installed runtime.
 - DSPy and LiteLLM disk caches disabled.
@@ -76,6 +78,5 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
 Until the remaining blockers are cleared, `approved` stays false and
 `STORM_RUNTIME_APPROVED` must remain false in production.
 
-The `STORM image smoke` GitHub Actions workflow is the verification mechanism
-for blocker 1. Merely adding the workflow does not clear the blocker; a passing
-run for the exact candidate commit is required.
+The `STORM image smoke` GitHub Actions workflow is the continuing regression
+gate for the admitted Linux image boundary.

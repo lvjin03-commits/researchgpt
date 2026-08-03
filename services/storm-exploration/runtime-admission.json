@@ -25,10 +25,6 @@
   "lockFile": "requirements-runtime.lock",
   "blockers": [
     {
-      "code": "linux_image_verification_pending",
-      "reason": "The hash lock was resolved for Python 3.11/Linux amd64 and the same versions passed a clean Python 3.11 Windows import test, but the final Linux container image has not yet been built and exercised."
-    },
-    {
       "code": "provider_canary_pending",
       "reason": "DeepSeek-compatible LiteLLM and Tavily wiring, timeouts, concurrency and call budgets are implemented, but no real credentialed canary or provider request-ID persistence has been verified."
     },
@@ -44,6 +40,21 @@
       "count": 12,
       "scope": "LiteLLM Proxy HTTP, JWT/OIDC, MCP, guardrail, user, key, and admin routes",
       "control": "ResearchGPT imports LiteLLM only as an outbound client library; it never starts or exposes LiteLLM Proxy."
+    }
+  ],
+  "verifiedEvidence": [
+    {
+      "code": "linux_image_smoke_passed",
+      "commit": "6bcff4dcea2ac9da87820f44315afcae5a85f514",
+      "workflowRunId": 30827243515,
+      "checks": [
+        "hash_locked_build",
+        "non_root_runtime",
+        "health_check",
+        "runtime_off_gate",
+        "writable_data_volume",
+        "removed_dependency_absence"
+      ]
     }
   ]
 }
