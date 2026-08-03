@@ -819,7 +819,7 @@ justext==3.0.2 \
     --hash=sha256:62b1c562b15c3c6265e121cc070874243a443bfd53060e869393f09d6b6cc9a7
     # via trafilatura
 knowledge-storm==1.1.1+researchgpt.4 \
-    --hash=sha256:41864d4d63d7b710b2903b9980867561835edf683411dcd447de68024271bb6a
+    --hash=sha256:e5fd380b1e65689af3645063d8c02a5a88d74d0fa7c7a0c5353ea6ba0083c4c1
     # via -r requirements-runtime.in
 langchain-core==1.5.3 \
     --hash=sha256:48b56fa580277209594dd7baf837f5b9a2a3651613f34ff9fb1728b429df015f \

@@ -215,17 +215,17 @@ def build_safe_wheel(input_wheel: Path, output_dir: Path) -> Path:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_wheel = output_dir / OUTPUT_NAME
-    with zipfile.ZipFile(
-        output_wheel,
-        "w",
-        compression=zipfile.ZIP_DEFLATED,
-        compresslevel=9,
-    ) as archive:
+    # Wheel bytes are part of the admitted runtime contract. Deflate output can
+    # vary across zlib versions even when every uncompressed entry is identical,
+    # which produced different hashes on Windows and Linux. The scoped wheel is
+    # small, so store entries verbatim to make the artifact cross-platform
+    # reproducible and keep strict hash installation meaningful.
+    with zipfile.ZipFile(output_wheel, "w", compression=zipfile.ZIP_STORED) as archive:
         for name in sorted(entries):
             info = zipfile.ZipInfo(name, FIXED_TIMESTAMP)
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = zipfile.ZIP_STORED
             info.external_attr = 0o644 << 16
-            archive.writestr(info, entries[name], compress_type=zipfile.ZIP_DEFLATED)
+            archive.writestr(info, entries[name], compress_type=zipfile.ZIP_STORED)
     return output_wheel
 
 
