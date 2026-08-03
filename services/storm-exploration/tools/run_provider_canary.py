@@ -8,9 +8,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from app.domain.contracts import ExplorationRequest
+from app.domain.contracts import ExplorationRequest, ProviderCallEvidence
 from app.storm_adapter.provider_runner import (
     ProviderBackedStormExplorationRunner,
+    StormBudgetExceeded,
     StormProviderConfig,
 )
 from app.storm_adapter.runner_factory import prepare_upstream_runtime_environment
@@ -68,6 +69,48 @@ def _timeout_handler(signum, frame) -> None:
     raise TimeoutError("STORM provider canary exceeded its hard wall-time limit")
 
 
+def _read_provider_calls(journal_path: Path) -> list[ProviderCallEvidence]:
+    if not journal_path.exists():
+        return []
+    return [
+        ProviderCallEvidence.model_validate_json(line)
+        for line in journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _usage_from_calls(calls: list[ProviderCallEvidence]) -> dict[str, object]:
+    costs = [call.estimated_cost_usd for call in calls if call.estimated_cost_usd]
+    return {
+        "modelCalls": sum(call.kind == "model" for call in calls),
+        "searchCalls": sum(call.kind == "search" for call in calls),
+        "inputTokens": sum(call.input_tokens or 0 for call in calls),
+        "outputTokens": sum(call.output_tokens or 0 for call in calls),
+        "estimatedCostUsd": sum(costs) if costs else None,
+        "providerCalls": [
+            call.model_dump(mode="json", by_alias=True) for call in calls
+        ],
+    }
+
+
+def _validate_provider_evidence(calls: list[ProviderCallEvidence]) -> dict[str, list[str]]:
+    missing_request_ids = [
+        call.operation
+        for call in calls
+        if call.status == "succeeded" and not call.provider_request_id
+    ]
+    unsafe_outcomes = [
+        call.operation for call in calls if call.status != "succeeded"
+    ]
+    observed_kinds = {call.kind for call in calls if call.status == "succeeded"}
+    missing_provider_kinds = sorted({"model", "search"} - observed_kinds)
+    return {
+        "missingProviderRequestIds": missing_request_ids,
+        "unsafeProviderOutcomes": unsafe_outcomes,
+        "missingProviderKinds": missing_provider_kinds,
+    }
+
+
 def run_canary(topic: str, report_path: Path) -> dict[str, object]:
     require_canary_approval()
     if not hasattr(signal, "SIGALRM"):
@@ -82,20 +125,32 @@ def run_canary(topic: str, report_path: Path) -> dict[str, object]:
     evidence_directory.mkdir(parents=True, exist_ok=False)
     signal.signal(signal.SIGALRM, _timeout_handler)
     signal.alarm(CANARY_MAX_WALL_SECONDS)
+    result = None
+    controlled_stop_reason = None
     try:
-        result = ProviderBackedStormExplorationRunner(config).run(
-            request,
-            evidence_directory,
-        )
+        try:
+            result = ProviderBackedStormExplorationRunner(config).run(
+                request,
+                evidence_directory,
+            )
+        except StormBudgetExceeded as error:
+            controlled_stop_reason = str(error)
     finally:
         signal.alarm(0)
 
-    calls = result.usage.provider_calls
-    missing_request_ids = [
-        call.operation
-        for call in calls
-        if call.status == "succeeded" and not call.provider_request_id
-    ]
+    journal_path = evidence_directory / "provider-calls.jsonl"
+    calls = result.usage.provider_calls if result is not None else _read_provider_calls(journal_path)
+    evidence_validation = _validate_provider_evidence(calls)
+    counts = (
+        {
+            "perspectives": len(result.perspectives),
+            "questions": len(result.questions),
+            "sources": len(result.sources),
+            "outlines": len(result.outlines),
+        }
+        if result is not None
+        else None
+    )
     report = {
         "schemaVersion": "storm-provider-canary-report-v1",
         "generatedAt": datetime.now(UTC).isoformat(),
@@ -103,15 +158,17 @@ def run_canary(topic: str, report_path: Path) -> dict[str, object]:
         "published": False,
         "explorationId": request.exploration_id,
         "evidenceDirectory": str(evidence_directory),
-        "resultStatus": result.status,
-        "counts": {
-            "perspectives": len(result.perspectives),
-            "questions": len(result.questions),
-            "sources": len(result.sources),
-            "outlines": len(result.outlines),
-        },
-        "usage": result.usage.model_dump(mode="json", by_alias=True),
-        "missingProviderRequestIds": missing_request_ids,
+        "resultStatus": (
+            result.status if result is not None else "budget_boundary_reached"
+        ),
+        "controlledStopReason": controlled_stop_reason,
+        "counts": counts,
+        "usage": (
+            result.usage.model_dump(mode="json", by_alias=True)
+            if result is not None
+            else _usage_from_calls(calls)
+        ),
+        **evidence_validation,
     }
     report_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n",
@@ -119,9 +176,9 @@ def run_canary(topic: str, report_path: Path) -> dict[str, object]:
     )
     if not calls:
         raise RuntimeError("Canary completed without provider call evidence.")
-    if missing_request_ids:
+    if any(evidence_validation.values()):
         raise RuntimeError(
-            "Canary provider calls did not expose all required request IDs."
+            "Canary provider evidence did not satisfy the admission contract."
         )
     return report
 

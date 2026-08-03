@@ -82,4 +82,5 @@ jobs:
           name: storm-provider-canary-${{ github.run_id }}
           path: services/storm-exploration/.canary-output
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
