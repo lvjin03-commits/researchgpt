@@ -23,11 +23,13 @@ import {
   acquireDocumentReferences,
   createReferencePipelineFallback,
 } from "@/lib/document-v2/references/acquisition";
+import type { ResearchExplorationAdvisoryHints } from "@/lib/research-exploration/advisory/contracts";
 
 export async function prepareIntake(input: {
   job: DocumentJob;
   repository: SupabaseDocumentJobRepository;
   textExecutor: DocumentStructuredTextExecutor;
+  researchExplorationAdvisory?: ResearchExplorationAdvisoryHints;
 }): Promise<DocumentJob> {
   const intake = input.job.checkpoint.intake;
   if (!intake) throw new Error("Document intake payload is missing.");
@@ -168,6 +170,7 @@ export async function prepareIntake(input: {
       request: planning.request,
       template: planning.template,
       planningRevision: planning.planningRevision,
+      advisoryHints: input.researchExplorationAdvisory,
     });
     planning = { ...planning, thesis };
     job = await saveAndContinue(planning, 6);
@@ -186,6 +189,7 @@ export async function prepareIntake(input: {
       minimumSections: sectionBlueprint.minimumCount,
       maximumSections: sectionBlueprint.maximumCount,
       planningRevision: planning.planningRevision,
+      advisoryHints: input.researchExplorationAdvisory,
     });
     const skeleton = materializeDocumentStructure({
       thesis: planning.thesis,
@@ -421,4 +425,3 @@ export async function prepareIntake(input: {
   });
   return job;
 }
-

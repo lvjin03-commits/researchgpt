@@ -39,8 +39,11 @@ for await (const absolute of walk(moduleRoot)) {
   }
 }
 
-// Shadow evaluation is deliberately offline in this phase. Advisory mode must
-// replace this guard explicitly when its production integration is approved.
+const advisoryImportOwners = new Set([
+  "lib/document-v2/planning/planner.ts",
+  "lib/document-v2-production/planning.ts",
+  "lib/document-v2-production/stages/intake.ts",
+]);
 for (const authoritativeRoot of [
   path.join(root, "lib", "document-v2"),
   path.join(root, "lib", "document-v2-production"),
@@ -48,8 +51,10 @@ for (const authoritativeRoot of [
   for await (const absolute of walk(authoritativeRoot)) {
     const source = await readFile(absolute, "utf8");
     if (source.includes("research-exploration")) {
+      const relative = path.relative(root, absolute).replaceAll("\\", "/");
+      if (advisoryImportOwners.has(relative)) continue;
       violations.push(
-        `${path.relative(root, absolute).replaceAll("\\", "/")}: shadow evaluation must not enter the authoritative document path`,
+        `${relative}: only the planner input boundary may consume advisory research hints`,
       );
     }
   }

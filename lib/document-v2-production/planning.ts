@@ -183,11 +183,15 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
         "Return one review thesis, one scope boundary, the principal review questions, and a conclusion heading.",
         "Do not plan sections, figures, evidence mappings, paragraphs, or internal IDs.",
         "Use the requested document language.",
+        input.advisoryHints
+          ? "Research exploration suggestions are non-authoritative coverage hints. Use only relevant suggestions, obey the document template and user scope, and do not treat them as verified evidence or citations."
+          : "No external research-exploration advice is available.",
       ].join(" "),
       userInstruction: JSON.stringify({
         planningContext: context,
         topic: input.request.userRequirements.topic,
         requirements: input.request.userRequirements.specialInstructions ?? [],
+        researchExplorationAdvisory: input.advisoryHints,
         fixedComponentsHandledByTemplate: input.template.componentBlueprints
           .filter((component) => component.type !== "section")
           .map((component) => component.type),
@@ -223,6 +227,9 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
           : "Use the requested language for headings.",
         "Stay within the supplied section limits.",
         "Do not plan figures, tables, captions, prompts, evidence mappings, prose, or internal IDs.",
+        input.advisoryHints
+          ? "Research exploration suggestions are optional coverage hints. The approved thesis, template, language, section limits, and user scope remain authoritative."
+          : "No external research-exploration advice is available.",
       ].join(" "),
       userInstruction: JSON.stringify({
         planningContext: context,
@@ -233,6 +240,7 @@ export class ModelHierarchicalOutlinePlanner implements HierarchicalOutlinePlann
         topic: input.request.userRequirements.topic,
         thesis: input.thesis,
         requirements: input.request.userRequirements.specialInstructions ?? [],
+        researchExplorationAdvisory: input.advisoryHints,
         minimumSections: input.minimumSections,
         maximumSections: input.maximumSections,
         fixedComponentsHandledByTemplate: input.template.componentBlueprints

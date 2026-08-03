@@ -23,6 +23,7 @@ import {
 } from "./contracts";
 import type { z } from "zod";
 import { headingUsesDocumentLanguage } from "./language-contract";
+import type { ResearchExplorationAdvisoryHints } from "../../research-exploration/advisory/contracts";
 
 export type OutlineLanguageViolation = Readonly<{
   sectionOrder: number;
@@ -42,6 +43,7 @@ export interface HierarchicalOutlinePlanner {
     request: DocumentRequest;
     template: TemplateResolution;
     planningRevision?: number;
+    advisoryHints?: ResearchExplorationAdvisoryHints;
   }): Promise<unknown>;
   createSectionIndex(input: {
     request: DocumentRequest;
@@ -50,6 +52,7 @@ export interface HierarchicalOutlinePlanner {
     minimumSections: number;
     maximumSections: number;
     planningRevision?: number;
+    advisoryHints?: ResearchExplorationAdvisoryHints;
     repair?: SectionIndexLanguageRepair;
   }): Promise<unknown>;
   planFigureIntents(input: {
@@ -252,6 +255,7 @@ export async function createValidatedSectionIndex(input: {
   minimumSections: number;
   maximumSections: number;
   planningRevision: number;
+  advisoryHints?: ResearchExplorationAdvisoryHints;
 }) {
   const generationInput = {
     request: input.request,
@@ -260,6 +264,7 @@ export async function createValidatedSectionIndex(input: {
     minimumSections: input.minimumSections,
     maximumSections: input.maximumSections,
     planningRevision: input.planningRevision,
+    advisoryHints: input.advisoryHints,
   };
   const original = await input.planner.createSectionIndex(generationInput);
   const violations = findSectionIndexLanguageViolations({
