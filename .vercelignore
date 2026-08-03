@@ -1,0 +1,22 @@
+# Local dependencies and build caches
+node_modules/
+.next/
+coverage/
+.tmp/
+.npm-cache/
+
+# Local test and diagnostic artifacts
+artifacts/
+
+# Electron packaging outputs are not part of the web deployment
+release/
+release-local/
+release-local-v2/
+release-installer/
+public/downloads/*.exe
+public/downloads/*.blockmap
+
+# Local environment and Vercel metadata
+.env*
+.vercel/
+supabase/.temp/
