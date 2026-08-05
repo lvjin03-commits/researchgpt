@@ -43,6 +43,7 @@ import {
   type ResolvedDocumentTemplate,
 } from "@/lib/export/document-templates";
 import { withExportGuidance } from "@/lib/chat/export-guidance";
+import { resolveRequestedExportFormats } from "@/lib/chat/export-format-policy";
 import { withModelIdentity } from "@/lib/chat/model-identity";
 import { sanitizeIncomingChatMessages } from "@/lib/chat/message-normalize";
 import { withResponseStyle } from "@/lib/chat/response-style";
@@ -283,21 +284,11 @@ function exportFormatsFromIntentPlan(
     return [];
   }
 
-  const formats = new Set<ExportFormat>();
-  if (plan.outputType === "word") formats.add("docx");
-  if (plan.outputType === "excel") formats.add("xlsx");
-  if (plan.outputType === "ppt") formats.add("pptx");
-  if (plan.outputType === "pdf") formats.add("pdf");
-
-  for (const format of inferReadableExportFormats(query, plan)) {
-    formats.add(format);
-  }
-
-  if (formats.size === 0 && queryExplicitlyRequestsFileCreation(query)) {
-    formats.add("docx");
-  }
-
-  return Array.from(formats);
+  return resolveRequestedExportFormats({
+    routedOutputType: plan.outputType,
+    fallbackFormats: inferReadableExportFormats(query, plan),
+    explicitlyRequestsFileCreation: queryExplicitlyRequestsFileCreation(query),
+  });
 }
 
 function stripGeneratedFileFooter(content: string): string {

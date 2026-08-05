@@ -41,6 +41,7 @@
     "test:research-exploration-required": "node --experimental-strip-types scripts/verify-research-exploration-required.ts",
     "test:storm-runtime-off": "node --experimental-strip-types scripts/verify-storm-runtime-off.ts && node scripts/verify-document-v2-generation.cjs",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
+    "test:chat-export-format-policy": "node --experimental-strip-types scripts/verify-chat-export-format-policy.ts",
     "test:word-visuals": "node scripts/verify-word-visuals.cjs",
     "smoke:document-v2": "node scripts/smoke-document-v2.mjs",
     "qa": "npm run check:encoding && npm run typecheck && npm run test:document-job-binding && npm run test:document-v2-runtime && npm run test:document-v2-diagnostics && npm run test:document-v2-provider-failure && npm run test:document-v2-structured-parser && npm run test:document-v2-references && npm run test:research-exploration && npm run test:research-exploration-shadow && npm run test:research-exploration-advisory && npm run test:research-exploration-required && npm run test:storm-runtime-off && npm run check:document-architecture && npm run check:document-diagnostics && npm run check:document-production-boundaries && npm run check:research-exploration-boundaries && npm run check:storm-service-boundaries && npm run build"
