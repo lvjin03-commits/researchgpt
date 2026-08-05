@@ -19,6 +19,7 @@ export type CreateDocumentCommand = {
   textExecution: DocumentTextExecutionProfile;
   language?: "zh" | "en";
   requestUrl: string;
+  vercelOidcToken?: string;
 };
 
 export type DocumentCommandResult = {
@@ -109,6 +110,7 @@ export async function executeDocumentCommand(input: {
       jobId,
       instruction,
       language: command.language,
+      vercelOidcToken: command.vercelOidcToken,
     });
   });
   return { type: "document_job_created", jobId };

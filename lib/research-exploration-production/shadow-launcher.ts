@@ -12,6 +12,7 @@ import { dispatchStormCloudRunJob } from "./cloud-run-dispatcher";
 import { requireResearchExplorationProductionConfig } from "./runtime-config";
 import { SupabaseResearchExplorationStore } from "./supabase-store";
 import type { ResearchExplorationProductionConfig } from "./runtime-config";
+import { RESEARCH_EXPLORATION_SHADOW_LIMITS } from "./shadow-profile";
 
 const VERSIONS = {
   packageVersion: "1.1.1+researchgpt.4",
@@ -25,7 +26,7 @@ export type ShadowLaunchObservation =
   | { selected: true; executionId: string; reused: boolean }
   | { selected: true; failureCode: "shadow_start_failed" };
 
-function buildInput(input: {
+export function buildResearchExplorationShadowInput(input: {
   jobId: string;
   instruction: string;
   language?: "zh" | "en";
@@ -41,15 +42,7 @@ function buildInput(input: {
       useUserDocuments: false,
       userResourceIds: [],
     },
-    limits: {
-      maxPerspectives: 3,
-      maxQuestionsPerPerspective: 3,
-      maxSearchQueries: 8,
-      maxSources: 24,
-      maximumWallTimeMs: 600_000,
-      maximumModelCalls: 20,
-      maximumInspectionCount: 20,
-    },
+    limits: RESEARCH_EXPLORATION_SHADOW_LIMITS,
     modelProfile: {
       provider: input.config.requestProvider,
       model: input.config.requestModel,
@@ -63,6 +56,7 @@ export async function launchDocumentResearchExplorationShadow(input: {
   jobId: string;
   instruction: string;
   language?: "zh" | "en";
+  vercelOidcToken?: string;
   environment?: NodeJS.ProcessEnv;
 }): Promise<ShadowLaunchObservation> {
   const environment = input.environment ?? process.env;
@@ -71,6 +65,9 @@ export async function launchDocumentResearchExplorationShadow(input: {
   });
   if (!runtime.enabled || runtime.mode !== "shadow") {
     return { selected: false, reason: runtime.reason };
+  }
+  if (!input.vercelOidcToken?.trim()) {
+    return { selected: true, failureCode: "shadow_start_failed" };
   }
   const supabaseUrl = environment.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const serviceRoleKey = environment.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -85,7 +82,7 @@ export async function launchDocumentResearchExplorationShadow(input: {
       }),
       input.ownerId,
     );
-    const exploration = buildInput({ ...input, config });
+    const exploration = buildResearchExplorationShadowInput({ ...input, config });
     const activeExecutionCount = await store.countActive();
     const selection = selectResearchExplorationShadow({
       policy: {
@@ -127,6 +124,7 @@ export async function launchDocumentResearchExplorationShadow(input: {
       await dispatchStormCloudRunJob({
         config,
         executionId: inserted.execution.executionId,
+        vercelOidcToken: input.vercelOidcToken,
       });
     } catch (error) {
       await store.markDispatchFailure(inserted.execution.executionId, error);

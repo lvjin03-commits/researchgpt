@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const RESEARCH_EXPLORATION_RUNTIME_APPROVAL_ENVIRONMENT_VARIABLE =
+  "STORM_RUNTIME_APPROVED";
+
 export const ResearchExplorationRuntimeModeSchema = z.enum([
   "off",
   "shadow",
@@ -58,7 +61,9 @@ export function resolveResearchExplorationRuntimeFromEnvironment(input: {
   const environment = input.environment ?? process.env;
   return resolveResearchExplorationRuntime({
     globallyApproved:
-      environment.STORM_RUNTIME_APPROVED?.trim().toLowerCase() === "true",
+      environment[RESEARCH_EXPLORATION_RUNTIME_APPROVAL_ENVIRONMENT_VARIABLE]
+        ?.trim()
+        .toLowerCase() === "true",
     mode: input.mode ?? ResearchExplorationRuntimeModeSchema.parse(
       environment.STORM_RUNTIME_MODE?.trim().toLowerCase() || "off",
     ),

@@ -9,6 +9,17 @@ import { evaluateResearchExplorationShadow } from "../lib/research-exploration/e
 import { ResearchExplorationShadowCoordinator } from "../lib/research-exploration/shadow/coordinator.ts";
 import { selectResearchExplorationShadow } from "../lib/research-exploration/shadow/policy.ts";
 import { resolveResearchExplorationRuntime } from "../lib/research-exploration/runtime-policy.ts";
+import { RESEARCH_EXPLORATION_SHADOW_LIMITS } from "../lib/research-exploration-production/shadow-profile.ts";
+
+assert.deepEqual(RESEARCH_EXPLORATION_SHADOW_LIMITS, {
+  maxPerspectives: 1,
+  maxQuestionsPerPerspective: 1,
+  maxSearchQueries: 2,
+  maxSources: 3,
+  maximumWallTimeMs: 180_000,
+  maximumModelCalls: 30,
+  maximumInspectionCount: 3,
+});
 
 const policy = {
   policyVersion: "research-exploration-shadow-v1" as const,

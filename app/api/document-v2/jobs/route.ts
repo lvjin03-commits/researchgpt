@@ -168,6 +168,7 @@ export async function POST(request: Request) {
         jobId: snapshot.job.jobId,
         instruction: input.instruction,
         language: input.language,
+        vercelOidcToken: request.headers.get("x-vercel-oidc-token") ?? undefined,
       });
     });
     return Response.json(snapshot, {

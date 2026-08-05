@@ -40,16 +40,20 @@ commit a Google service-account key for CI.
 STORM_RUNTIME_APPROVED=false
 STORM_RUNTIME_MODE=off
 GOOGLE_CLOUD_PROJECT_ID=
+GOOGLE_CLOUD_PROJECT_NUMBER=
 GOOGLE_CLOUD_RUN_REGION=
 STORM_CLOUD_RUN_JOB_NAME=researchgpt-storm-exploration
-GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON=
+GOOGLE_CLOUD_WORKLOAD_IDENTITY_POOL_ID=vercel
+GOOGLE_CLOUD_WORKLOAD_IDENTITY_PROVIDER_ID=vercel
+GOOGLE_CLOUD_SERVICE_ACCOUNT_EMAIL=
 STORM_SHADOW_SAMPLE_RATE_BASIS_POINTS=10000
 STORM_SHADOW_MAX_CONCURRENT=2
 ```
 
-`GOOGLE_CLOUD_SERVICE_ACCOUNT_JSON` belongs only in Vercel's encrypted server
-environment. The service account needs only permission to run the named job.
-Rotate the key after Workload Identity Federation from Vercel is introduced.
+Vercel OIDC is exchanged for short-lived Google credentials through Workload
+Identity Federation. Do not create or store a Google service-account key.
+The dedicated service account needs only permission to run the named job with
+per-execution overrides.
 
 ## Admission order
 

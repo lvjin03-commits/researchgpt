@@ -2002,6 +2002,8 @@ export async function POST(request: Request) {
                 instruction: query,
                 previousAssistantContent: previousContent || undefined,
                 requestUrl: request.url,
+                vercelOidcToken:
+                  request.headers.get("x-vercel-oidc-token") ?? undefined,
                 textExecution: {
                   provider: modelOption.provider,
                   requestedModelId: modelOption.model,
