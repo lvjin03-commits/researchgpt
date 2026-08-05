@@ -198,6 +198,14 @@ def _collect_usage(runner: object) -> UsagePayload:
         search_calls = sum(retriever.collect_and_reset_rm_usage().values())
     collector = getattr(runner, "_researchgpt_provider_evidence", None)
     provider_calls = collector.snapshot() if collector is not None else []
+    if provider_calls:
+        model_calls = sum(call.kind == "model" for call in provider_calls)
+        search_calls = sum(call.kind == "search" for call in provider_calls)
+        input_tokens = sum(call.input_tokens or 0 for call in provider_calls)
+        output_tokens = sum(call.output_tokens or 0 for call in provider_calls)
+        estimated_cost = sum(
+            call.estimated_cost_usd or 0 for call in provider_calls
+        )
     return UsagePayload(
         modelCalls=model_calls,
         searchCalls=search_calls,

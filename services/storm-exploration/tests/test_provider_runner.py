@@ -16,6 +16,7 @@ from app.storm_adapter.provider_runner import (
     queries_per_conversation_turn,
     required_model_calls,
 )
+from app.storm_adapter.runner import _collect_usage
 from tests.test_runner_boundary import request
 
 
@@ -139,6 +140,47 @@ def test_provider_evidence_is_persisted_without_prompts_or_secrets(tmp_path) -> 
     assert "request-123" in stored
     assert "prompt" not in stored.lower()
     assert collector.snapshot()[0].estimated_cost_usd == 0.001
+
+
+def test_provider_evidence_is_the_authoritative_usage_source(tmp_path) -> None:
+    collector = ProviderEvidenceCollector(tmp_path / "provider-calls.jsonl")
+    now = datetime.now(UTC)
+    collector.record(
+        ProviderCallEvidence(
+            provider="deepseek",
+            kind="model",
+            operation="research_question",
+            model="deepseek-chat",
+            providerRequestId="model-request-1",
+            status="succeeded",
+            inputTokens=12,
+            outputTokens=7,
+            estimatedCostUsd=0.001,
+            startedAt=now,
+            finishedAt=now,
+        )
+    )
+    collector.record(
+        ProviderCallEvidence(
+            provider="tavily",
+            kind="search",
+            operation="search",
+            providerRequestId="search-request-1",
+            status="succeeded",
+            startedAt=now,
+            finishedAt=now,
+        )
+    )
+    runner = type("ProviderRunner", (), {})()
+    runner._researchgpt_provider_evidence = collector
+
+    usage = _collect_usage(runner)
+
+    assert usage.model_calls == 1
+    assert usage.search_calls == 1
+    assert usage.input_tokens == 12
+    assert usage.output_tokens == 7
+    assert usage.estimated_cost_usd == 0.001
 
 
 class FakeSearchClient:

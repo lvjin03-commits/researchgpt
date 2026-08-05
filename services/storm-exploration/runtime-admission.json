@@ -35,6 +35,24 @@
   ],
   "verifiedEvidence": [
     {
+      "code": "production_proposal_canary_passed",
+      "commit": "a12884b",
+      "workflowRunId": 31026494809,
+      "workflowJobId": 92376214266,
+      "executionId": "00817808-a16e-4fc8-99dd-03c169d0f868",
+      "artifactId": 8938982016,
+      "artifactSha256": "8ee74b39d314ab0b19f3ed95a01765be7fb03e7bc4ce2e45b5b8abf9f43632da",
+      "checks": [
+        "isolated_non_authoritative_result_complete",
+        "one_perspective_and_question",
+        "three_sources_and_one_outline",
+        "eleven_model_provider_calls",
+        "two_search_provider_calls",
+        "all_provider_calls_succeeded_with_request_ids",
+        "document_v2_not_connected"
+      ]
+    },
+    {
       "code": "production_cloud_lease_recovery_drill_passed",
       "commit": "79c1d16",
       "workflowRunId": 31018997983,
