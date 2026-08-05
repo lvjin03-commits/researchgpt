@@ -1,6 +1,6 @@
 {
   "schemaVersion": "storm-runtime-admission-v1",
-  "evaluatedAt": "2026-08-03",
+  "evaluatedAt": "2026-08-05",
   "upstream": {
     "package": "knowledge-storm",
     "version": "1.1.1",
@@ -26,7 +26,7 @@
   "blockers": [
     {
       "code": "production_execution_store_not_verified",
-      "reason": "The Supabase lease and fencing store is implemented and migration 029 is applied, but the Cloud Run runtime-off and expired-lease recovery drills have not passed in production yet."
+      "reason": "The Supabase lease and fencing store is implemented and migration 029 is applied. The Cloud Run runtime-off drill passed on 2026-08-05, but the expired-lease recovery drill has not passed in production yet."
     }
   ],
   "acceptedUnreachableAdvisories": [
@@ -39,6 +39,20 @@
     }
   ],
   "verifiedEvidence": [
+    {
+      "code": "cloud_run_runtime_off_drill_passed",
+      "commit": "9408575",
+      "workflowRunId": 31014105918,
+      "workflowJobId": 92333551892,
+      "cloudRunExecutionId": "researchgpt-storm-exploration-zcqkd",
+      "checks": [
+        "github_environment_secrets_synchronized_to_secret_manager",
+        "cloud_run_job_deployed_with_runtime_approved_false",
+        "runtime_gate_failed_closed_before_worker_claim",
+        "no_provider_or_search_call",
+        "no_database_execution_claim"
+      ]
+    },
     {
       "code": "credentialed_provider_canary_passed",
       "commit": "22193dd",

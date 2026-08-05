@@ -56,11 +56,10 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
 
 ## Remaining blockers
 
-1. Run a credentialed, cost-capped DeepSeek-compatible + Tavily canary and
-   persist provider request IDs alongside usage and cost.
-2. Replace development SQLite or prove a single-worker persistent-volume
-   deployment with restart and lease-recovery tests.
-3. Run a cost-capped canary that can publish only a non-authoritative Proposal.
+1. Pass the production expired-lease recovery drill against the Supabase
+   execution store.
+2. Run a cost-capped Cloud Run canary that can publish only a non-authoritative
+   Proposal after the admission record is explicitly approved.
 
 ## Evidence verified
 
@@ -74,6 +73,11 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
 - DSPy and LiteLLM disk caches disabled.
 - Proposal conversion boundary tests.
 - Runtime-off isolation plus real Document V2 DOCX generation.
+- Cloud Run runtime-off production drill on commit `9408575` (workflow run
+  `31014105918`, execution `researchgpt-storm-exploration-zcqkd`). The job was
+  deployed with `STORM_RUNTIME_APPROVED=false` and failed closed in
+  `create_real_runner()` before any worker claim, provider call, search request,
+  or database write.
 
 Until the remaining blockers are cleared, `approved` stays false and
 `STORM_RUNTIME_APPROVED` must remain false in production.
