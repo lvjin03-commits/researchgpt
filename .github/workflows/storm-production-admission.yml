@@ -69,7 +69,7 @@ jobs:
           gcloud run jobs execute "$JOB_NAME" \
             --project "$PROJECT_ID" \
             --region "$REGION" \
-            --update-env-vars "STORM_EXECUTION_ID=${{ steps.proposal.outputs.execution_id }},STORM_MAX_MODEL_CALLS=30" \
+            --update-env-vars "STORM_EXECUTION_ID=${{ steps.proposal.outputs.execution_id }},STORM_RUNTIME_APPROVED=true,STORM_MAX_MODEL_CALLS=30" \
             --wait \
             --quiet
 
