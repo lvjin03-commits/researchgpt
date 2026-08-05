@@ -205,6 +205,16 @@ class SharedCallBudget:
             self.used += amount
 
 
+def queries_per_conversation_turn(
+    maximum_search_queries: int,
+    perspectives: int,
+    turns: int,
+) -> int:
+    """Reserve one search round for STORM's perspective discovery phase."""
+    research_rounds = 1 + perspectives * turns
+    return max(1, maximum_search_queries // research_rounds)
+
+
 @dataclass(frozen=True)
 class ProviderBackedStormExplorationRunner:
     config: StormProviderConfig
@@ -336,9 +346,10 @@ class ProviderBackedStormExplorationRunner:
 
         perspectives = request.limits.max_perspectives
         turns = request.limits.max_questions_per_perspective
-        queries_per_turn = max(
-            1,
-            math.ceil(request.limits.max_search_queries / (perspectives * turns)),
+        queries_per_turn = queries_per_conversation_turn(
+            request.limits.max_search_queries,
+            perspectives,
+            turns,
         )
         search_top_k = max(
             1,

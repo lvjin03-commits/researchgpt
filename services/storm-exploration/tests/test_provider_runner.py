@@ -12,6 +12,7 @@ from app.storm_adapter.provider_runner import (
     StormBudgetExceeded,
     StormProviderConfig,
     StormProviderConfigurationError,
+    queries_per_conversation_turn,
 )
 from tests.test_runner_boundary import request
 
@@ -78,6 +79,12 @@ def test_shared_call_budget_rejects_batch_overrun() -> None:
 
     with pytest.raises(StormBudgetExceeded, match="search-query"):
         budget.consume(2)
+
+
+def test_search_budget_reserves_the_perspective_discovery_round() -> None:
+    assert queries_per_conversation_turn(2, perspectives=1, turns=1) == 1
+    assert queries_per_conversation_turn(8, perspectives=1, turns=1) == 4
+    assert queries_per_conversation_turn(8, perspectives=2, turns=1) == 2
 
 
 def test_missing_provider_setting_fails_before_call(monkeypatch) -> None:
