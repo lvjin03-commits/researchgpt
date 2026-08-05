@@ -56,8 +56,9 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
 
 ## Remaining blockers
 
-1. Pass the production expired-lease recovery drill against the Supabase
-   execution store.
+1. Correct the `storm-production` GitHub Supabase secrets to use linked project
+   `xwbcdnifaygqueakmmds`; GitHub currently requires account re-authentication
+   before those encrypted values can be updated.
 2. Run a cost-capped Cloud Run canary that can publish only a non-authoritative
    Proposal after the admission record is explicitly approved.
 
@@ -78,6 +79,11 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
   deployed with `STORM_RUNTIME_APPROVED=false` and failed closed in
   `create_real_runner()` before any worker claim, provider call, search request,
   or database write.
+- Production Supabase lease recovery drill (execution
+  `d0a8a036-28f0-4a7e-9b0c-c416c6544027`) passed against linked project
+  `xwbcdnifaygqueakmmds`: token 1 was replaced by token 2 after simulated
+  expiry, stale heartbeat and completion writes were rejected, the recovered
+  owner could heartbeat, and no provider was called.
 
 Until the remaining blockers are cleared, `approved` stays false and
 `STORM_RUNTIME_APPROVED` must remain false in production.

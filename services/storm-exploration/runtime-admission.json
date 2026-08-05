@@ -25,8 +25,8 @@
   "lockFile": "requirements-runtime.lock",
   "blockers": [
     {
-      "code": "production_execution_store_not_verified",
-      "reason": "The Supabase lease and fencing store is implemented and migration 029 is applied. The Cloud Run runtime-off drill passed on 2026-08-05, but the expired-lease recovery drill has not passed in production yet."
+      "code": "production_cloud_credentials_mismatch",
+      "reason": "The production lease and fencing drill passed against linked project xwbcdnifaygqueakmmds, but the storm-production GitHub SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY currently target a different same-named Supabase project without the Document V2 and STORM migrations. GitHub requires account re-authentication before the encrypted secrets can be corrected."
     }
   ],
   "acceptedUnreachableAdvisories": [
@@ -39,6 +39,19 @@
     }
   ],
   "verifiedEvidence": [
+    {
+      "code": "production_lease_recovery_drill_passed",
+      "executionId": "d0a8a036-28f0-4a7e-9b0c-c416c6544027",
+      "checks": [
+        "initial_claim_token_1",
+        "expired_lease_reclaimed_with_token_2",
+        "recovery_count_incremented",
+        "stale_heartbeat_rejected",
+        "stale_completion_rejected",
+        "recovered_heartbeat_accepted",
+        "zero_provider_calls"
+      ]
+    },
     {
       "code": "cloud_run_runtime_off_drill_passed",
       "commit": "9408575",

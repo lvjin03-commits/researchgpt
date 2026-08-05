@@ -12,10 +12,11 @@ hash-verified safety builder into the scoped
 `1.1.1+researchgpt.4` research-and-outline runtime. The derivative removes
 persistent model caches, Co-STORM eager loading, and unused local ML/vector
 dependencies. Its Python 3.11/Linux dependency set is hash-locked, has a
-license inventory, and passed the isolated Linux image smoke test. The runtime
-remains `blocked` because the production Cloud Run lease/recovery drill has not
-passed yet. The credentialed DeepSeek + Tavily canary has passed and is recorded
-in `runtime-admission.json`.
+license inventory, and passed the isolated Linux image smoke test. The
+production Supabase lease/recovery drill and the credentialed DeepSeek + Tavily
+provider canary have passed and are recorded in `runtime-admission.json`. The
+runtime remains `blocked` until the Cloud Run production Supabase credentials
+are corrected and the isolated Proposal canary passes.
 Production startup requires both an approved admission record and
 `STORM_RUNTIME_APPROVED=true`; the environment variable alone cannot enable it.
 Tests continue to use a deterministic fake runner.
