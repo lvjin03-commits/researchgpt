@@ -53,7 +53,7 @@ function canaryRequest(explorationId) {
     limits: {
       maxPerspectives: 1,
       maxQuestionsPerPerspective: 1,
-      maxSearchQueries: 2,
+      maxSearchQueries: 4,
       maxSources: 3,
       maximumWallTimeMs: 180000,
       maximumModelCalls: 8,
@@ -215,7 +215,7 @@ async function verifyProposal() {
     throw new Error("Proposal canary crossed the non-authoritative isolation boundary.");
   }
   const usage = row.result_payload.usage || {};
-  if ((usage.modelCalls || 0) > 8 || (usage.searchCalls || 0) > 2) {
+  if ((usage.modelCalls || 0) > 8 || (usage.searchCalls || 0) > 4) {
     throw new Error("Proposal canary exceeded its frozen provider budget.");
   }
   const providerCalls = usage.providerCalls || [];
