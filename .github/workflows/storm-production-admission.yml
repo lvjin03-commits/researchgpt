@@ -1,0 +1,90 @@
+name: STORM production admission drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Isolated admission operation
+        required: true
+        default: lease_recovery
+        type: choice
+        options:
+          - lease_recovery
+          - proposal_canary
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: storm-production-admission
+  cancel-in-progress: false
+
+jobs:
+  admission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: storm-production
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      JOB_NAME: researchgpt-storm-exploration
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      STORM_ADMISSION_REPORT: .storm-admission-output/report.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare private evidence directory
+        run: mkdir -p .storm-admission-output
+
+      - name: Run expired-lease recovery drill
+        if: inputs.operation == 'lease_recovery'
+        run: node scripts/storm-production-admission-drill.mjs lease-recovery
+
+      - name: Verify proposal admission state
+        if: inputs.operation == 'proposal_canary'
+        run: |
+          node -e 'const a=require("./services/storm-exploration/runtime-admission.json"); if(a.status!=="approved"||a.approved!==true||a.productionFlagMustRemainFalse!==false) process.exit(1)'
+
+      - name: Authenticate without a stored Google key
+        if: inputs.operation == 'proposal_canary'
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: inputs.operation == 'proposal_canary'
+
+      - name: Prepare isolated non-authoritative Proposal
+        if: inputs.operation == 'proposal_canary'
+        id: proposal
+        run: node scripts/storm-production-admission-drill.mjs prepare-proposal
+
+      - name: Execute the Cloud Run Proposal canary
+        if: inputs.operation == 'proposal_canary'
+        run: |
+          gcloud run jobs execute "$JOB_NAME" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --update-env-vars "STORM_EXECUTION_ID=${{ steps.proposal.outputs.execution_id }}" \
+            --wait \
+            --quiet
+
+      - name: Verify durable Proposal and provider evidence
+        if: inputs.operation == 'proposal_canary'
+        env:
+          STORM_EXECUTION_ID: ${{ steps.proposal.outputs.execution_id }}
+        run: node scripts/storm-production-admission-drill.mjs verify-proposal
+
+      - name: Upload non-secret admission evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storm-production-admission-${{ inputs.operation }}-${{ github.run_id }}
+          path: .storm-admission-output
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
