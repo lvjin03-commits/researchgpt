@@ -2,7 +2,8 @@
 
 ## Decision
 
-**Dependency and Linux image preparation passed; production activation remains blocked.**
+**The isolated runtime is admitted for a cost-capped, non-authoritative Cloud
+Run Proposal canary. User-facing activation remains disabled.**
 
 This decision applies only to `services/storm-exploration`. Document V2 stays
 on the verified runtime-off path and is not coupled to STORM availability.
@@ -56,11 +57,8 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
 
 ## Remaining blockers
 
-1. Correct the `storm-production` GitHub Supabase secrets to use linked project
-   `xwbcdnifaygqueakmmds`; GitHub currently requires account re-authentication
-   before those encrypted values can be updated.
-2. Run a cost-capped Cloud Run canary that can publish only a non-authoritative
-   Proposal after the admission record is explicitly approved.
+1. Run the cost-capped Cloud Run canary that can publish only a
+   non-authoritative Proposal.
 
 ## Evidence verified
 
@@ -84,9 +82,14 @@ advisory set, not represented as a claim that LiteLLM itself has no advisories.
   `xwbcdnifaygqueakmmds`: token 1 was replaced by token 2 after simulated
   expiry, stale heartbeat and completion writes were rejected, the recovered
   owner could heartbeat, and no provider was called.
+- GitHub-hosted production lease recovery workflow run `31018997983` confirmed
+  the corrected `storm-production` Supabase credentials, the same fencing
+  behavior, and uploaded evidence with SHA-256
+  `dffd755e8dfe8121874dcd9ecb6d73e68420e07718a0450e5d39c60427e198fb`.
 
-Until the remaining blockers are cleared, `approved` stays false and
-`STORM_RUNTIME_APPROVED` must remain false in production.
+Approval permits only the isolated, cost-capped Proposal canary. Vercel remains
+`STORM_RUNTIME_MODE=off`; no Document V2 job may read the result until a later,
+separately authorized Shadow rollout.
 
 The `STORM image smoke` GitHub Actions workflow is the continuing regression
 gate for the admitted Linux image boundary.

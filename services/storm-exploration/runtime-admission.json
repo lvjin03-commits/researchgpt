@@ -19,16 +19,11 @@
     "licenseInventory": "runtime-licenses.json",
     "dependencyReview": "passed_with_unreachable_proxy_advisories"
   },
-  "status": "blocked",
-  "approved": false,
-  "productionFlagMustRemainFalse": true,
+  "status": "approved",
+  "approved": true,
+  "productionFlagMustRemainFalse": false,
   "lockFile": "requirements-runtime.lock",
-  "blockers": [
-    {
-      "code": "production_cloud_credentials_mismatch",
-      "reason": "The production lease and fencing drill passed against linked project xwbcdnifaygqueakmmds, but the storm-production GitHub SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY currently target a different same-named Supabase project without the Document V2 and STORM migrations. GitHub requires account re-authentication before the encrypted secrets can be corrected."
-    }
-  ],
+  "blockers": [],
   "acceptedUnreachableAdvisories": [
     {
       "package": "litellm",
@@ -39,6 +34,19 @@
     }
   ],
   "verifiedEvidence": [
+    {
+      "code": "production_cloud_lease_recovery_drill_passed",
+      "commit": "79c1d16",
+      "workflowRunId": 31018997983,
+      "workflowJobId": 92350517600,
+      "artifactSha256": "dffd755e8dfe8121874dcd9ecb6d73e68420e07718a0450e5d39c60427e198fb",
+      "checks": [
+        "correct_supabase_project_credentials",
+        "expired_lease_recovered",
+        "stale_writer_fenced",
+        "no_provider_calls"
+      ]
+    },
     {
       "code": "production_lease_recovery_drill_passed",
       "executionId": "d0a8a036-28f0-4a7e-9b0c-c416c6544027",
