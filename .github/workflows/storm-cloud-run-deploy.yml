@@ -107,6 +107,6 @@ jobs:
 
       - name: Verify deployed safety boundary
         run: |
-          APPROVED="$(gcloud run jobs describe "$JOB_NAME" --project "$PROJECT_ID" --region "$REGION" --format=json | jq -r '.template.template.containers[0].env[] | select(.name == "STORM_RUNTIME_APPROVED") | .value')"
+          APPROVED="$(gcloud run jobs describe "$JOB_NAME" --project "$PROJECT_ID" --region "$REGION" --format=json | jq -r '.spec.template.spec.template.spec.containers[0].env[] | select(.name == "STORM_RUNTIME_APPROVED") | .value')"
           test "${{ inputs.runtime_approved }}" = "$APPROVED"
           gcloud run jobs describe "$JOB_NAME" --project "$PROJECT_ID" --region "$REGION" --format=yaml
