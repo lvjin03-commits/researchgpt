@@ -29,6 +29,10 @@ jobs:
       IMAGE_NAME: storm-exploration
       JOB_NAME: researchgpt-storm-exploration
       JOB_SERVICE_ACCOUNT: ${{ vars.GCP_JOB_SERVICE_ACCOUNT }}
+      STORM_LLM_API_KEY: ${{ secrets.STORM_LLM_API_KEY }}
+      STORM_SEARCH_API_KEY: ${{ secrets.STORM_SEARCH_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +44,37 @@ jobs:
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Synchronize runtime secrets to Secret Manager
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -n "$STORM_LLM_API_KEY"
+          test -n "$STORM_SEARCH_API_KEY"
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+
+          printf '%s' "$STORM_LLM_API_KEY" \
+            | gcloud secrets versions add storm-llm-api-key \
+                --project "$PROJECT_ID" \
+                --data-file=- \
+                --quiet
+          printf '%s' "$STORM_SEARCH_API_KEY" \
+            | gcloud secrets versions add storm-search-api-key \
+                --project "$PROJECT_ID" \
+                --data-file=- \
+                --quiet
+          printf '%s' "$SUPABASE_URL" \
+            | gcloud secrets versions add researchgpt-supabase-url \
+                --project "$PROJECT_ID" \
+                --data-file=- \
+                --quiet
+          printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" \
+            | gcloud secrets versions add researchgpt-supabase-service-role-key \
+                --project "$PROJECT_ID" \
+                --data-file=- \
+                --quiet
 
       - name: Configure Artifact Registry
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
