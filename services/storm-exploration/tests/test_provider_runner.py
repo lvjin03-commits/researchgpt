@@ -13,6 +13,7 @@ from app.storm_adapter.provider_runner import (
     StormProviderConfig,
     StormProviderConfigurationError,
     queries_per_conversation_turn,
+    required_model_calls,
 )
 from tests.test_runner_boundary import request
 
@@ -85,6 +86,11 @@ def test_search_budget_reserves_the_perspective_discovery_round() -> None:
     assert queries_per_conversation_turn(2, perspectives=1, turns=1) == 1
     assert queries_per_conversation_turn(8, perspectives=1, turns=1) == 4
     assert queries_per_conversation_turn(8, perspectives=2, turns=1) == 2
+
+
+def test_model_budget_includes_default_persona_and_outline_calls() -> None:
+    assert required_model_calls(perspectives=1, turns=1) == 10
+    assert required_model_calls(perspectives=3, turns=3) == 40
 
 
 def test_missing_provider_setting_fails_before_call(monkeypatch) -> None:

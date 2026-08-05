@@ -62,7 +62,8 @@ removed cache/local-ML dependencies. It uses no provider credentials and does
 not publish or deploy the image.
 
 The credentialed provider canary is a separate, default-deny command. It is
-fixed to one perspective, one question, at most eight model calls, two search
+fixed to one generated perspective plus STORM's default perspective, one question
+per perspective, at most ten model calls, two search
 queries, and a three-minute Linux wall-time. It records provider request IDs,
 tokens, estimated cost, and call outcome without storing prompts or API keys,
 and writes only a non-authoritative report:

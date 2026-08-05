@@ -13,11 +13,12 @@ from app.storm_adapter.provider_runner import (
     ProviderBackedStormExplorationRunner,
     StormBudgetExceeded,
     StormProviderConfig,
+    required_model_calls,
 )
 from app.storm_adapter.runner_factory import prepare_upstream_runtime_environment
 
 
-CANARY_MAX_MODEL_CALLS = 8
+CANARY_MAX_MODEL_CALLS = required_model_calls(perspectives=1, turns=1)
 CANARY_MAX_SEARCH_QUERIES = 2
 CANARY_MAX_WALL_SECONDS = 180
 

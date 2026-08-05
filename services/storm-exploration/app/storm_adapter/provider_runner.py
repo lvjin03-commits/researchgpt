@@ -215,6 +215,16 @@ def queries_per_conversation_turn(
     return max(1, maximum_search_queries // research_rounds)
 
 
+def required_model_calls(perspectives: int, turns: int) -> int:
+    """Return the frozen STORM v1 call ceiling for research plus outline.
+
+    Upstream always adds one basic-fact persona to the requested generated
+    perspectives. Persona discovery uses two calls, every conversation turn
+    uses three calls, and outline generation uses two calls.
+    """
+    return 4 + 3 * (perspectives + 1) * turns
+
+
 @dataclass(frozen=True)
 class ProviderBackedStormExplorationRunner:
     config: StormProviderConfig

@@ -6,6 +6,7 @@ const supabaseUrl = required("SUPABASE_URL").replace(/\/$/, "");
 const serviceRoleKey = required("SUPABASE_SERVICE_ROLE_KEY");
 const reportPath = process.env.STORM_ADMISSION_REPORT || ".storm-admission-output/report.json";
 const command = process.argv[2];
+const PROPOSAL_CANARY_MAX_MODEL_CALLS = 10;
 
 const headers = {
   apikey: serviceRoleKey,
@@ -56,7 +57,7 @@ function canaryRequest(explorationId) {
       maxSearchQueries: 2,
       maxSources: 3,
       maximumWallTimeMs: 180000,
-      maximumModelCalls: 8,
+      maximumModelCalls: PROPOSAL_CANARY_MAX_MODEL_CALLS,
       maximumInspectionCount: 3,
     },
     modelProfile: { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "none" },
@@ -215,7 +216,7 @@ async function verifyProposal() {
     throw new Error("Proposal canary crossed the non-authoritative isolation boundary.");
   }
   const usage = row.result_payload.usage || {};
-  if ((usage.modelCalls || 0) > 8 || (usage.searchCalls || 0) > 2) {
+  if ((usage.modelCalls || 0) > PROPOSAL_CANARY_MAX_MODEL_CALLS || (usage.searchCalls || 0) > 2) {
     throw new Error("Proposal canary exceeded its frozen provider budget.");
   }
   const providerCalls = usage.providerCalls || [];
