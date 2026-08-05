@@ -194,15 +194,27 @@ class SharedCallBudget:
         self.maximum = maximum
         self.label = label
         self.used = 0
+        self.operation_counts: dict[str, int] = {}
         self._lock = threading.Lock()
 
-    def consume(self, amount: int = 1) -> None:
+    def consume(self, amount: int = 1, operation: str = "unspecified") -> None:
         with self._lock:
             if amount < 1 or self.used + amount > self.maximum:
+                counts = json.dumps(
+                    self.operation_counts,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
                 raise StormBudgetExceeded(
-                    f"The STORM {self.label} budget was exhausted"
+                    f"The STORM {self.label} budget was exhausted "
+                    f"(maximum={self.maximum}, used={self.used}, requested={amount}, "
+                    f"nextOperation={operation}, operationCounts={counts})"
                 )
             self.used += amount
+            self.operation_counts[operation] = (
+                self.operation_counts.get(operation, 0) + amount
+            )
 
 
 def queries_per_conversation_turn(
@@ -215,14 +227,24 @@ def queries_per_conversation_turn(
     return max(1, maximum_search_queries // research_rounds)
 
 
-def required_model_calls(perspectives: int, turns: int) -> int:
-    """Return the frozen STORM v1 call ceiling for research plus outline.
+def logical_model_calls(perspectives: int, turns: int) -> int:
+    """Return STORM v1's logical research-and-outline call count.
 
     Upstream always adds one basic-fact persona to the requested generated
     perspectives. Persona discovery uses two calls, every conversation turn
     uses three calls, and outline generation uses two calls.
     """
     return 4 + 3 * (perspectives + 1) * turns
+
+
+def required_model_calls(perspectives: int, turns: int) -> int:
+    """Return the hard provider-call ceiling for the pinned upstream stack.
+
+    DSPy 2.4.9 may recursively request a completion up to two additional
+    times when a generated response omits a required output field. Each
+    logical STORM call can therefore produce at most three provider calls.
+    """
+    return logical_model_calls(perspectives, turns) * 3
 
 
 @dataclass(frozen=True)
@@ -267,7 +289,7 @@ class ProviderBackedStormExplorationRunner:
                 super().__init__(*args, **kwargs)
 
             def __call__(self, prompt=None, messages=None, **kwargs):
-                model_budget.consume()
+                model_budget.consume(operation=self._researchgpt_operation)
                 started_at = datetime.now(UTC)
                 try:
                     outputs = super().__call__(
@@ -319,7 +341,7 @@ class ProviderBackedStormExplorationRunner:
                     if isinstance(query_or_queries, str)
                     else query_or_queries
                 )
-                search_budget.consume(len(queries))
+                search_budget.consume(len(queries), operation="search")
                 return super().forward(
                     query_or_queries=query_or_queries,
                     exclude_urls=exclude_urls or [],

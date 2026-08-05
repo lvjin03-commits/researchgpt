@@ -6,7 +6,9 @@ const supabaseUrl = required("SUPABASE_URL").replace(/\/$/, "");
 const serviceRoleKey = required("SUPABASE_SERVICE_ROLE_KEY");
 const reportPath = process.env.STORM_ADMISSION_REPORT || ".storm-admission-output/report.json";
 const command = process.argv[2];
-const PROPOSAL_CANARY_MAX_MODEL_CALLS = 10;
+// Ten logical STORM calls, each with DSPy 2.4.9's bounded three-attempt
+// completion recovery. This remains a hard physical provider-call ceiling.
+const PROPOSAL_CANARY_MAX_MODEL_CALLS = 30;
 
 const headers = {
   apikey: serviceRoleKey,

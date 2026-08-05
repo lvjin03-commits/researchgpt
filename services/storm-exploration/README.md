@@ -63,7 +63,8 @@ not publish or deploy the image.
 
 The credentialed provider canary is a separate, default-deny command. It is
 fixed to one generated perspective plus STORM's default perspective, one question
-per perspective, at most ten model calls, two search
+per perspective, ten logical model calls with a hard ceiling of thirty physical
+provider calls for DSPy field-completion recovery, two search
 queries, and a three-minute Linux wall-time. It records provider request IDs,
 tokens, estimated cost, and call outcome without storing prompts or API keys,
 and writes only a non-authoritative report:
