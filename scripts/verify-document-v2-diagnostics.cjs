@@ -194,7 +194,7 @@ const reasoningFindings = diagnoseBlockers({
       status: "failed",
       completedAt: "2026-07-31T03:14:00.000Z",
       failureCategory: "reasoning_budget_exhausted",
-      effectiveReasoningEffort: "none",
+      effectiveReasoningEffort: "enabled:high",
       reasoningTokens: 1_200,
       outputTokens: 1_200,
       contentLength: 0,
@@ -205,6 +205,35 @@ const reasoningFindings = diagnoseBlockers({
 });
 assert.equal(reasoningFindings[0].code, "reasoning_budget_exhausted");
 assert.equal(reasoningFindings[0].certainty, "deterministic");
+
+const thinkingToggleFindings = diagnoseBlockers({
+  now,
+  job: {
+    status: "paused",
+    stage: "content_generation",
+    leaseExpiresAt: null,
+    lastHeartbeatAt: null,
+    updatedAt: "2026-07-31T03:14:01.000Z",
+  },
+  executions: [
+    {
+      ...diagnostic.modelExecutions[0],
+      operation: "component.section",
+      status: "failed",
+      completedAt: "2026-07-31T03:14:00.000Z",
+      failureCategory: "provider_thinking_toggle_not_honored",
+      effectiveReasoningEffort: "disabled",
+      reasoningTokens: 1_200,
+      reasoningContentPresent: true,
+    },
+  ],
+  dispatches: [],
+});
+assert.equal(
+  thinkingToggleFindings[0].code,
+  "provider_thinking_toggle_not_honored",
+);
+assert.equal(thinkingToggleFindings[0].certainty, "deterministic");
 
 const cancellationWithDispatch = projectDocumentJobDiagnostics(
   {

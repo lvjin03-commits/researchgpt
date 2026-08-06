@@ -186,7 +186,41 @@ export function diagnoseBlockers(input: {
     });
   }
 
-  if (latestExecution?.failureCategory === "reasoning_budget_exhausted") {
+  if (
+    latestExecution?.failureCategory ===
+    "provider_thinking_toggle_not_honored"
+  ) {
+    findings.push({
+      code: "provider_thinking_toggle_not_honored",
+      severity: "error",
+      certainty: "deterministic",
+      location,
+      since: latestExecution.completedAt,
+      matchedRule: "disabled_thinking_returned_reasoning",
+      evidence: [
+        {
+          source: "model_execution",
+          field: "effectiveReasoningEffort",
+          value: latestExecution.effectiveReasoningEffort,
+        },
+        {
+          source: "model_execution",
+          field: "reasoningTokens",
+          value: latestExecution.reasoningTokens,
+        },
+        {
+          source: "model_execution",
+          field: "reasoningContentPresent",
+          value: latestExecution.reasoningContentPresent,
+        },
+      ],
+      missingEvidence: [],
+      recommendedNextInspection:
+        "Inspect the serialized DeepSeek request and provider response; do not retry this component until the thinking toggle is honored.",
+    });
+  } else if (
+    latestExecution?.failureCategory === "reasoning_budget_exhausted"
+  ) {
     findings.push({
       code: "reasoning_budget_exhausted",
       severity: "error",
@@ -218,7 +252,7 @@ export function diagnoseBlockers(input: {
       ],
       missingEvidence: [],
       recommendedNextInspection:
-        "Verify the operation reasoning policy and resume from the saved planning revision; increasing output capacity is not the first remedy.",
+        "Keep the node's required reasoning mode, inspect its capacity policy, and allow at most one bounded capacity escalation.",
     });
   } else if (latestExecution?.failureCategory === "split_required") {
     findings.push({

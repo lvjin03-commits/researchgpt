@@ -5,7 +5,7 @@ import {
 } from "./contracts";
 
 export const DOCUMENT_OPERATION_BUDGET_POLICY_VERSION =
-  "document-operation-budget-v2";
+  "document-operation-budget-v3";
 export const DOCUMENT_MODEL_CAPABILITY_VERSION =
   "document-model-capability-v1";
 export const DOCUMENT_PRODUCT_BUDGET_POLICY_VERSION =
@@ -80,14 +80,14 @@ export const DOCUMENT_OPERATION_BUDGETS = {
     preferredMaxOutputTokens: 4_500,
     hardMaxOutputTokens: 5_500,
     escalationAllowed: true,
-    reasoningPolicy: "inherit",
+    reasoningPolicy: "none",
   },
   "component.conclusion": {
     expectedOutputTokens: 1_500,
     preferredMaxOutputTokens: 1_800,
     hardMaxOutputTokens: 2_800,
     escalationAllowed: true,
-    reasoningPolicy: "inherit",
+    reasoningPolicy: "none",
   },
   "component.reference_list": {
     expectedOutputTokens: 500,

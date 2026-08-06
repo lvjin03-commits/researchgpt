@@ -28,6 +28,7 @@ process.env.DOCUMENT_V2_RESPONSE_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString(
 );
 
 const { z } = require("zod");
+const OpenAI = require("openai").default;
 const {
   DocumentModelOperationError,
   ProviderDocumentTextExecutor,
@@ -38,6 +39,11 @@ const {
 const {
   createDocumentExecutionBudgetSnapshot,
 } = require("../lib/document-v2/runtime/token-budgets.ts");
+const {
+  DeepSeekThinkingPolicySchema,
+  resolveProviderReasoningPolicy,
+  serializeDeepSeekReasoningPolicy,
+} = require("../lib/document-v2-production/provider-reasoning-policy.ts");
 
 class ExecutionTable {
   constructor() {
@@ -111,7 +117,7 @@ class ExecutionQuery {
   }
 }
 
-function createExecutor(response) {
+function createExecutor(response, profileOverrides = {}) {
   const persistence = new ExecutionTable();
   const calls = { count: 0 };
   const executor = new ProviderDocumentTextExecutor(
@@ -122,6 +128,7 @@ function createExecutor(response) {
       maxOutputTokens: 1_000,
       reasoningEffort: "none",
       allowProviderFallback: false,
+      ...profileOverrides,
     },
     undefined,
     {
@@ -135,6 +142,7 @@ function createExecutor(response) {
         create: async (input) => {
           calls.count += 1;
           calls.lastInput = input;
+          if (response instanceof Error) throw response;
           return response;
         },
       },
@@ -300,8 +308,11 @@ async function verifyBoundedMissingJsonRegeneration() {
   );
 }
 
-async function executeCase({ operation, response, schema }) {
-  const { executor, persistence, calls } = createExecutor(response);
+async function executeCase({ operation, response, schema, profileOverrides }) {
+  const { executor, persistence, calls } = createExecutor(
+    response,
+    profileOverrides,
+  );
   let caught;
   try {
     await executor.generate({
@@ -433,7 +444,95 @@ async function verifyControlledCapacityEscalation() {
   assert.equal(terminalRows[1].failure_category, "split_required");
 }
 
+function verifyProviderReasoningContracts() {
+  assert.deepEqual(
+    serializeDeepSeekReasoningPolicy({ mode: "disabled" }),
+    { thinking: { type: "disabled" } },
+  );
+  assert.deepEqual(
+    serializeDeepSeekReasoningPolicy({ mode: "enabled", effort: "high" }),
+    {
+      thinking: { type: "enabled" },
+      reasoning_effort: "high",
+    },
+  );
+  assert.equal(
+    DeepSeekThinkingPolicySchema.safeParse({
+      mode: "disabled",
+      effort: "high",
+    }).success,
+    false,
+    "Disabled thinking and reasoning_effort must be mutually exclusive.",
+  );
+  const profile = {
+    provider: "deepseek",
+    requestedModelId: "deepseek-v4-pro",
+    resolvedModelId: "deepseek-v4-pro",
+    maxOutputTokens: 4_500,
+    reasoningEffort: "low",
+    allowProviderFallback: false,
+  };
+  assert.deepEqual(
+    resolveProviderReasoningPolicy({
+      profile,
+      configuredPolicy: "inherit",
+      budgetKey: "component.section",
+      budgetPolicyVersion: "document-operation-budget-v2",
+    }),
+    { provider: "deepseek", thinking: { mode: "disabled" } },
+    "Legacy DeepSeek section snapshots must not inherit unsafe high thinking.",
+  );
+  assert.deepEqual(
+    resolveProviderReasoningPolicy({
+      profile,
+      configuredPolicy: "inherit",
+      budgetKey: "outline.thesis",
+      budgetPolicyVersion: "document-operation-budget-v3",
+    }),
+    {
+      provider: "deepseek",
+      thinking: { mode: "enabled", effort: "high" },
+    },
+  );
+}
+
+async function verifyDeepSeekWirePayload() {
+  let wireBody;
+  const client = new OpenAI({
+    apiKey: "test-only-key",
+    baseURL: "https://api.deepseek.com",
+    maxRetries: 0,
+    fetch: async (_url, init) => {
+      wireBody = JSON.parse(String(init.body));
+      return Response.json({
+        id: "wire-payload-test",
+        model: "deepseek-v4-pro",
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: '{"value":"ok"}' },
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      });
+    },
+  });
+  await client.chat.completions.create({
+    model: "deepseek-v4-pro",
+    messages: [{ role: "user", content: "Return JSON." }],
+    thinking: { type: "disabled" },
+  });
+  assert.deepEqual(wireBody.thinking, { type: "disabled" });
+  assert.equal(
+    Object.hasOwn(wireBody, "reasoning_effort"),
+    false,
+    "The SDK wire payload must omit reasoning_effort when thinking is disabled.",
+  );
+}
+
 (async () => {
+  verifyProviderReasoningContracts();
+  await verifyDeepSeekWirePayload();
   await verifyBoundedMissingJsonRegeneration();
   await verifyControlledCapacityEscalation();
   const empty = await executeCase({
@@ -460,16 +559,27 @@ async function verifyControlledCapacityEscalation() {
     schema: z.object({ value: z.string() }),
   });
   assert.ok(empty.error instanceof DocumentModelOperationError);
-  assert.equal(empty.error.failureCategory, "reasoning_budget_exhausted");
+  assert.equal(
+    empty.error.failureCategory,
+    "provider_thinking_toggle_not_honored",
+  );
   assert.equal(empty.row.status, "failed");
-  assert.equal(empty.row.failure_category, "reasoning_budget_exhausted");
+  assert.equal(
+    empty.row.failure_category,
+    "provider_thinking_toggle_not_honored",
+  );
   assert.equal(empty.row.finish_reason, "length");
   assert.equal(empty.row.choice_count, 1);
-  assert.equal(empty.row.effective_reasoning_effort, "none");
+  assert.equal(empty.row.effective_reasoning_effort, "disabled");
   assert.equal(empty.row.reasoning_tokens_observed, true);
   assert.equal(empty.row.cost_status, "calculated");
   assert.equal(typeof empty.row.calculated_cost_usd, "number");
-  assert.equal(empty.calls.lastInput.reasoning_effort, "none");
+  assert.deepEqual(empty.calls.lastInput.thinking, { type: "disabled" });
+  assert.equal(
+    Object.hasOwn(empty.calls.lastInput, "reasoning_effort"),
+    false,
+    "Disabled DeepSeek requests must omit reasoning_effort entirely.",
+  );
   assert.equal(empty.row.content_state, "null");
   assert.equal(empty.row.reasoning_content_present, true);
   assert.equal(empty.row.auxiliary_content_length, 18);
@@ -478,6 +588,72 @@ async function verifyControlledCapacityEscalation() {
   assert.ok(empty.row.response_received_at);
   assert.equal(empty.row.input_tokens, 120);
   assert.equal(empty.row.output_tokens, 80);
+
+  const invalidRequestError = Object.assign(
+    new Error(
+      "thinking options type cannot be disabled when reasoning_effort is set",
+    ),
+    { status: 400 },
+  );
+  const invalidRequest = await executeCase({
+    operation: "component.section.invalid_provider_contract",
+    response: invalidRequestError,
+    schema: z.object({ value: z.string() }),
+  });
+  assert.equal(
+    invalidRequest.error.failureCategory,
+    "provider_http_invalid_request",
+  );
+  assert.equal(
+    invalidRequest.row.failure_category,
+    "provider_http_invalid_request",
+  );
+  assert.equal(
+    invalidRequest.row.status,
+    "failed",
+    "A provider 400 has a known outcome and must not be mislabeled unknown_outcome.",
+  );
+  assert.equal(invalidRequest.calls.count, 1);
+
+  const enabledReasoningExhaustion = await executeCase({
+    operation: "outline.thesis.reasoning_exhausted",
+    response: {
+      id: "deepseek-enabled-reasoning-exhausted",
+      model: "deepseek-v4-pro",
+      choices: [
+        {
+          finish_reason: "length",
+          message: {
+            content: null,
+            reasoning_content: "long planning reasoning",
+            tool_calls: [],
+          },
+        },
+      ],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 1_000,
+        completion_tokens_details: { reasoning_tokens: 1_000 },
+      },
+    },
+    schema: z.object({ value: z.string() }),
+    profileOverrides: {
+      requestedModelId: "deepseek-v4-pro",
+      resolvedModelId: "deepseek-v4-pro",
+      reasoningEffort: "low",
+    },
+  });
+  assert.equal(
+    enabledReasoningExhaustion.error.failureCategory,
+    "reasoning_budget_exhausted",
+  );
+  assert.deepEqual(enabledReasoningExhaustion.calls.lastInput.thinking, {
+    type: "enabled",
+  });
+  assert.equal(
+    enabledReasoningExhaustion.calls.lastInput.reasoning_effort,
+    "high",
+  );
 
   const auxiliaryRecovery = createExecutor({
     id: "deepseek-auxiliary-recovery",
@@ -494,7 +670,7 @@ async function verifyControlledCapacityEscalation() {
       },
     ],
     usage: { prompt_tokens: 20, completion_tokens: 10 },
-  });
+  }, { reasoningEffort: "low" });
   const auxiliaryValue = await auxiliaryRecovery.executor.generate({
     operation: "outline.plan.auxiliary_recovery",
     schemaName: "provider_failure_test",
@@ -535,6 +711,7 @@ async function verifyControlledCapacityEscalation() {
       usage: { prompt_tokens: 20, completion_tokens: 10 },
     },
     schema: z.object({ value: z.string() }),
+    profileOverrides: { reasoningEffort: "low" },
   });
   assert.equal(
     ambiguousAuxiliary.error.failureCategory,

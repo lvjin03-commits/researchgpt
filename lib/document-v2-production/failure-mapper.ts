@@ -57,7 +57,11 @@ export function mapWorkerFailure(error: unknown): DocumentFailure {
       diagnosticCategory: error.failureCategory,
       operation: error.operation ?? "model.generate",
       retryability:
-        error.failureCategory === "provider_empty_response" ? "safe" : "none",
+        error.failureCategory === "provider_empty_response" ||
+        error.failureCategory === "provider_rate_limited" ||
+        error.failureCategory === "provider_transient_error"
+          ? "safe"
+          : "none",
       userMessageCode: "document.worker_paused",
       technicalMessage: error.message,
       details: { failureCategory: error.failureCategory },

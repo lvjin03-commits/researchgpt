@@ -41,6 +41,13 @@ import {
   selectStructuredRecoveryAction,
   type StructuredRecoveryAction,
 } from "./model-execution/recovery-engine";
+import {
+  assertProviderReasoningPolicyMatchesSnapshot,
+  providerReasoningIsEnabled,
+  providerReasoningLabel,
+  resolveProviderReasoningPolicy,
+  serializeDeepSeekReasoningPolicy,
+} from "./provider-reasoning-policy";
 
 export type DocumentModelUsage = {
   provider: "deepseek" | "openai";
@@ -128,6 +135,14 @@ export type DocumentModelFailureCategory =
   | "ambiguous_auxiliary_output"
   | "output_truncated"
   | "reasoning_budget_exhausted"
+  | "provider_thinking_toggle_not_honored"
+  | "provider_thinking_state_unknown"
+  | "component_attempt_budget_exhausted"
+  | "provider_contract_rejected_locally"
+  | "provider_http_invalid_request"
+  | "provider_http_auth_error"
+  | "provider_rate_limited"
+  | "provider_transient_error"
   | "split_required"
   | "no_json_object"
   | "truncated_json"
@@ -151,6 +166,51 @@ export class DocumentModelOperationError extends Error {
     super(message);
     this.name = "DocumentModelOperationError";
   }
+}
+
+function classifyProviderHttpError(
+  error: unknown,
+  operation: string,
+): DocumentModelOperationError | null {
+  if (!error || typeof error !== "object" || !("status" in error)) {
+    return null;
+  }
+  const status = (error as { status?: unknown }).status;
+  if (typeof status !== "number") return null;
+  const message = error instanceof Error ? error.message : String(error);
+  if (status === 401 || status === 403) {
+    return new DocumentModelOperationError(
+      message,
+      "provider_http_auth_error",
+      operation,
+    );
+  }
+  if (status === 429) {
+    return new DocumentModelOperationError(
+      message,
+      "provider_rate_limited",
+      operation,
+    );
+  }
+  if (status === 400 || status === 404 || status === 422) {
+    return new DocumentModelOperationError(
+      message,
+      "provider_http_invalid_request",
+      operation,
+    );
+  }
+  if (status >= 500 && status <= 599) {
+    return new DocumentModelOperationError(
+      message,
+      "provider_transient_error",
+      operation,
+    );
+  }
+  return new DocumentModelOperationError(
+    message,
+    "provider_rejected",
+    operation,
+  );
 }
 
 type StoredExecution = {
@@ -236,6 +296,13 @@ export class ProviderDocumentTextExecutor
       }>;
     },
   ): Promise<T> {
+    if (attempt.attemptNumber > 3) {
+      throw new DocumentModelOperationError(
+        "The component reached its provider request limit.",
+        "component_attempt_budget_exhausted",
+        input.operation,
+      );
+    }
     const startedAt = Date.now();
     const operationBudget = input.budgetKey
       ? getDocumentOperationBudget(this.executionBudget, input.budgetKey)
@@ -252,11 +319,20 @@ export class ProviderDocumentTextExecutor
       this.executionBudget.modelCapability.maxOutputTokens,
       this.executionBudget.productMaxOutputTokensPerOperation,
     );
-    const effectiveReasoningEffort =
-      operationBudget?.reasoningPolicy &&
-      operationBudget.reasoningPolicy !== "inherit"
-        ? operationBudget.reasoningPolicy
-        : (this.profile.reasoningEffort ?? "none");
+    const providerReasoningPolicy = resolveProviderReasoningPolicy({
+      profile: this.profile,
+      configuredPolicy: operationBudget?.reasoningPolicy,
+      budgetKey: input.budgetKey,
+      budgetPolicyVersion:
+        this.executionBudget.operationBudgetPolicyVersion,
+    });
+    assertProviderReasoningPolicyMatchesSnapshot({
+      policy: providerReasoningPolicy,
+      snapshot: this.executionBudget,
+    });
+    const effectiveReasoningEffort = providerReasoningLabel(
+      providerReasoningPolicy,
+    );
     const inputFingerprint = createContentFingerprint({
       operation: input.operation,
       componentKey: input.componentKey,
@@ -273,6 +349,7 @@ export class ProviderDocumentTextExecutor
       budgetKey: input.budgetKey,
       effectiveMaxOutputTokens,
       effectiveReasoningEffort,
+      providerReasoningPolicy,
       operationBudgetPolicyVersion:
         this.executionBudget.operationBudgetPolicyVersion,
       modelCapabilityVersion:
@@ -532,12 +609,19 @@ export class ProviderDocumentTextExecutor
         );
       }
       if (this.profile.provider === "openai") {
+        if (providerReasoningPolicy.provider !== "openai") {
+          throw new DocumentModelOperationError(
+            "The OpenAI request received a non-OpenAI reasoning policy.",
+            "provider_contract_rejected_locally",
+            input.operation,
+          );
+        }
         const response = await this.client.responses.parse({
           model: this.profile.resolvedModelId,
           instructions: effectiveSystemInstruction,
           input: input.userInstruction,
           max_output_tokens: effectiveMaxOutputTokens,
-          reasoning: { effort: effectiveReasoningEffort },
+          reasoning: { effort: providerReasoningPolicy.reasoning.effort },
           text: {
             format: zodTextFormat(input.schema, input.schemaName),
           },
@@ -559,10 +643,19 @@ export class ProviderDocumentTextExecutor
         providerContent = normalized.content ?? undefined;
         auxiliaryContent = normalized.auxiliaryContent;
       } else {
-        const response = await this.client.chat.completions.create({
+        if (providerReasoningPolicy.provider !== "deepseek") {
+          throw new DocumentModelOperationError(
+            "The DeepSeek request received a non-DeepSeek reasoning policy.",
+            "provider_contract_rejected_locally",
+            input.operation,
+          );
+        }
+        const deepSeekReasoning = serializeDeepSeekReasoningPolicy(
+          providerReasoningPolicy.thinking,
+        );
+        const deepSeekBaseRequest: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
           model: this.profile.resolvedModelId,
           max_tokens: effectiveMaxOutputTokens,
-          reasoning_effort: effectiveReasoningEffort,
           response_format: { type: "json_object" },
           messages: [
             {
@@ -575,7 +668,17 @@ export class ProviderDocumentTextExecutor
             },
             { role: "user", content: input.userInstruction },
           ],
-        });
+        };
+        const deepSeekRequest = {
+          ...deepSeekBaseRequest,
+          ...deepSeekReasoning,
+        };
+        const response = await this.client.chat.completions.create(
+          // The OpenAI SDK type does not include DeepSeek's `thinking` field
+          // or its `max` effort value. The provider-specific Zod contract
+          // above is the authoritative runtime validation at this boundary.
+          deepSeekRequest as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+        );
         const normalized = normalizeChatCompletionResponse(response);
         actualModelId = normalized.actualModelId ?? actualModelId;
         providerRequestId = normalized.providerRequestId;
@@ -659,7 +762,19 @@ export class ProviderDocumentTextExecutor
           ["request_started"],
         );
       }
+      const thinkingToggleNotHonored =
+        providerReasoningPolicy.provider === "deepseek" &&
+        providerReasoningPolicy.thinking.mode === "disabled" &&
+        (reasoningTokens > 0 || reasoningContentPresent);
+      if (thinkingToggleNotHonored) {
+        throw new DocumentModelOperationError(
+          "DeepSeek returned reasoning after the request explicitly disabled thinking.",
+          "provider_thinking_toggle_not_honored",
+          input.operation,
+        );
+      }
       const reasoningBudgetExhausted =
+        providerReasoningIsEnabled(providerReasoningPolicy) &&
         (finishReason === "length" || finishReason === "incomplete") &&
         outputTokens > 0 &&
         reasoningTokens / outputTokens >= 0.8 &&
@@ -847,11 +962,21 @@ export class ProviderDocumentTextExecutor
       });
       return parsed;
     } catch (error) {
+      const classifiedProviderError = classifyProviderHttpError(
+        error,
+        input.operation,
+      );
+      const effectiveError = classifiedProviderError ?? error;
       const outputWasTruncated =
-        error instanceof DocumentModelOperationError &&
-        error.failureCategory === "output_truncated";
+        effectiveError instanceof DocumentModelOperationError &&
+        effectiveError.failureCategory === "output_truncated";
+      const reasoningBudgetWasExhausted =
+        effectiveError instanceof DocumentModelOperationError &&
+        effectiveError.failureCategory === "reasoning_budget_exhausted";
+      const capacityFailure =
+        outputWasTruncated || reasoningBudgetWasExhausted;
       const canEscalate =
-        outputWasTruncated &&
+        capacityFailure &&
         operationBudget !== undefined &&
         attempt.attemptNumber === 1 &&
         operationBudget.escalationAllowed === true &&
@@ -866,7 +991,7 @@ export class ProviderDocumentTextExecutor
               "split_required",
               input.operation,
             )
-          : error;
+          : effectiveError;
       if (this.persistence) {
         const current = await this.getExecution(executionKey);
         if (
@@ -882,11 +1007,13 @@ export class ProviderDocumentTextExecutor
             executionKey,
             {
               status:
-                current.status === "request_started"
+                current.status === "request_started" &&
+                !classifiedProviderError
                   ? "unknown_outcome"
                   : "failed",
               failure_category:
-                current.status === "request_started"
+                current.status === "request_started" &&
+                !classifiedProviderError
                   ? "unknown_outcome"
                   : knownFailure ??
                     (current.status === "running"
@@ -903,8 +1030,8 @@ export class ProviderDocumentTextExecutor
           );
         }
       }
-      if (outputWasTruncated) {
-        if (!operationBudget) throw error;
+      if (capacityFailure) {
+        if (!operationBudget) throw effectiveError;
         if (canEscalate) {
           return this.generateAttempt(input, {
             attemptNumber: 2,
@@ -912,16 +1039,19 @@ export class ProviderDocumentTextExecutor
             parentExecutionKey: executionKey,
             maxOutputTokensOverride:
               operationBudget.effectiveHardMaxOutputTokens,
-            escalationReason: "output_truncated_near_budget",
+            escalationReason: reasoningBudgetWasExhausted
+              ? "reasoning_budget_exhausted"
+              : "output_truncated_near_budget",
           });
         }
         throw terminalFailure;
       }
       const structuredRecoveryAction =
-        error instanceof DocumentModelOperationError
+        effectiveError instanceof DocumentModelOperationError
           ? selectStructuredRecoveryAction({
-              failureCategory: error.failureCategory,
-              diagnostics: error.recoveryEvidence?.candidateDiagnostics ?? [],
+              failureCategory: effectiveError.failureCategory,
+              diagnostics:
+                effectiveError.recoveryEvidence?.candidateDiagnostics ?? [],
               policy: input.recoveryPolicy,
             })
           : "pause";
@@ -929,10 +1059,10 @@ export class ProviderDocumentTextExecutor
         attempt.attemptPurpose === "initial" &&
         (structuredRecoveryAction === "regenerate_once" ||
           structuredRecoveryAction === "repair_once") &&
-        error instanceof DocumentModelOperationError
+        effectiveError instanceof DocumentModelOperationError
       ) {
         const paths = schemaIssuePaths(
-          error.recoveryEvidence?.candidateDiagnostics ?? [],
+          effectiveError.recoveryEvidence?.candidateDiagnostics ?? [],
         );
         return this.generateAttempt(input, {
           attemptNumber: 2,
@@ -943,20 +1073,21 @@ export class ProviderDocumentTextExecutor
           parentExecutionKey: executionKey,
           escalationReason:
             structuredRecoveryAction === "repair_once"
-              ? `structured_repair:${error.failureCategory}`
-              : `structured_regenerate:${error.failureCategory}`,
+              ? `structured_repair:${effectiveError.failureCategory}`
+              : `structured_regenerate:${effectiveError.failureCategory}`,
           recoveryContext:
             structuredRecoveryAction === "repair_once" &&
-            error.recoveryEvidence
+            effectiveError.recoveryEvidence
               ? {
-                  failureCategory: error.failureCategory,
-                  providerContent: error.recoveryEvidence.providerContent,
+                  failureCategory: effectiveError.failureCategory,
+                  providerContent:
+                    effectiveError.recoveryEvidence.providerContent,
                   schemaIssuePaths: paths,
                 }
               : undefined,
         });
       }
-      throw error;
+      throw effectiveError;
     }
   }
 
