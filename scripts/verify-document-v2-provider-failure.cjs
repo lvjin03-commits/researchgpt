@@ -43,11 +43,13 @@ const {
   DeepSeekThinkingPolicySchema,
   resolveProviderReasoningPolicy,
   serializeDeepSeekReasoningPolicy,
+  projectProviderReasoningPolicyForStorage,
 } = require("../lib/document-v2-production/provider-reasoning-policy.ts");
 
 class ExecutionTable {
-  constructor() {
+  constructor(options = {}) {
     this.rows = new Map();
+    this.insertError = options.insertError ?? null;
   }
 
   from(table) {
@@ -81,10 +83,16 @@ class ExecutionQuery {
   }
 
   insert(values) {
+    if (this.table.insertError) {
+      return Promise.resolve({ error: this.table.insertError });
+    }
     const key = values.execution_key;
     if (this.table.rows.has(key)) {
-      return Promise.resolve({ error: { message: "duplicate" } });
+      return Promise.resolve({ error: { code: "23505", message: "duplicate" } });
     }
+    assert.match(values.effective_reasoning_effort, /^(none|low|medium|high|max)$/);
+    assert.match(values.provider_reasoning_mode, /^(disabled|enabled|effort)$/);
+    assert.equal(typeof values.provider_reasoning_policy, "object");
     this.table.rows.set(key, {
       raw_response: null,
       ...values,
@@ -117,8 +125,8 @@ class ExecutionQuery {
   }
 }
 
-function createExecutor(response, profileOverrides = {}) {
-  const persistence = new ExecutionTable();
+function createExecutor(response, profileOverrides = {}, persistenceOptions = {}) {
+  const persistence = new ExecutionTable(persistenceOptions);
   const calls = { count: 0 };
   const executor = new ProviderDocumentTextExecutor(
     {
@@ -494,6 +502,84 @@ function verifyProviderReasoningContracts() {
       thinking: { mode: "enabled", effort: "high" },
     },
   );
+  assert.deepEqual(
+    projectProviderReasoningPolicyForStorage({
+      provider: "deepseek",
+      thinking: { mode: "disabled" },
+    }),
+    {
+      mode: "disabled",
+      effort: "none",
+      policyVersion: "provider-reasoning-policy-v1",
+      policy: {
+        provider: "deepseek",
+        thinking: { mode: "disabled" },
+      },
+    },
+  );
+  assert.deepEqual(
+    projectProviderReasoningPolicyForStorage({
+      provider: "deepseek",
+      thinking: { mode: "enabled", effort: "max" },
+    }),
+    {
+      mode: "enabled",
+      effort: "max",
+      policyVersion: "provider-reasoning-policy-v1",
+      policy: {
+        provider: "deepseek",
+        thinking: { mode: "enabled", effort: "max" },
+      },
+    },
+  );
+  assert.deepEqual(
+    projectProviderReasoningPolicyForStorage({
+      provider: "openai",
+      reasoning: { mode: "effort", effort: "medium" },
+    }),
+    {
+      mode: "effort",
+      effort: "medium",
+      policyVersion: "provider-reasoning-policy-v1",
+      policy: {
+        provider: "openai",
+        reasoning: { mode: "effort", effort: "medium" },
+      },
+    },
+  );
+}
+
+async function verifyPersistenceErrorsAreNotMaskedAsConcurrency() {
+  const constraintFailure = createExecutor(
+    { choices: [] },
+    {},
+    {
+      insertError: {
+        code: "23514",
+        message: "violates check constraint",
+      },
+    },
+  );
+  await assert.rejects(
+    () =>
+      constraintFailure.executor.generate({
+        operation: "request.understand",
+        budgetKey: "request.understand",
+        schemaName: "provider_failure_test",
+        schema: z.object({ value: z.string() }),
+        systemInstruction: "Return JSON.",
+        userInstruction: "Test.",
+      }),
+    (error) =>
+      error instanceof DocumentModelOperationError &&
+      error.failureCategory === "model_execution_persistence_failed" &&
+      /23514/.test(error.message),
+  );
+  assert.equal(
+    constraintFailure.calls.count,
+    0,
+    "A persistence failure must stop before the provider is called.",
+  );
 }
 
 async function verifyDeepSeekWirePayload() {
@@ -532,6 +618,7 @@ async function verifyDeepSeekWirePayload() {
 
 (async () => {
   verifyProviderReasoningContracts();
+  await verifyPersistenceErrorsAreNotMaskedAsConcurrency();
   await verifyDeepSeekWirePayload();
   await verifyBoundedMissingJsonRegeneration();
   await verifyControlledCapacityEscalation();
@@ -570,7 +657,12 @@ async function verifyDeepSeekWirePayload() {
   );
   assert.equal(empty.row.finish_reason, "length");
   assert.equal(empty.row.choice_count, 1);
-  assert.equal(empty.row.effective_reasoning_effort, "disabled");
+  assert.equal(empty.row.effective_reasoning_effort, "none");
+  assert.equal(empty.row.provider_reasoning_mode, "disabled");
+  assert.deepEqual(empty.row.provider_reasoning_policy, {
+    provider: "deepseek",
+    thinking: { mode: "disabled" },
+  });
   assert.equal(empty.row.reasoning_tokens_observed, true);
   assert.equal(empty.row.cost_status, "calculated");
   assert.equal(typeof empty.row.calculated_cost_usd, "number");
@@ -859,6 +951,20 @@ async function verifyDeepSeekWirePayload() {
     ),
     "utf8",
   );
+  const providerReasoningMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/030_document_v2_provider_reasoning_policy.sql",
+    ),
+    "utf8",
+  );
+  const rollingCompatibilityMigration = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "supabase/migrations/031_document_v2_reasoning_policy_rolling_compatibility.sql",
+    ),
+    "utf8",
+  );
   assert.match(migration, /'response_received'/);
   assert.match(migration, /finalize_document_v2_worker_failure/);
   assert.match(
@@ -877,6 +983,14 @@ async function verifyDeepSeekWirePayload() {
   assert.match(outputCapacityMigration, /attempt_number INTEGER/);
   assert.match(reasoningObservabilityMigration, /effective_reasoning_effort TEXT/);
   assert.match(reasoningObservabilityMigration, /calculated_cost_usd NUMERIC/);
+  assert.match(providerReasoningMigration, /provider_reasoning_mode TEXT/);
+  assert.match(providerReasoningMigration, /provider_reasoning_policy JSONB/);
+  assert.match(providerReasoningMigration, /'high', 'max'/);
+  assert.match(
+    rollingCompatibilityMigration,
+    /'disabled', 'enabled:high', 'enabled:max'/,
+    "The database-first rollout must remain compatible with the preceding application release.",
+  );
   assert.match(outputCapacityMigration, /budget_escalation_count INTEGER/);
   assert.doesNotMatch(
     auxiliaryRecoveryMigration,

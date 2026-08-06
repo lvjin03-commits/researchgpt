@@ -45,6 +45,7 @@ import {
   assertProviderReasoningPolicyMatchesSnapshot,
   providerReasoningIsEnabled,
   providerReasoningLabel,
+  projectProviderReasoningPolicyForStorage,
   resolveProviderReasoningPolicy,
   serializeDeepSeekReasoningPolicy,
 } from "./provider-reasoning-policy";
@@ -143,6 +144,7 @@ export type DocumentModelFailureCategory =
   | "provider_http_auth_error"
   | "provider_rate_limited"
   | "provider_transient_error"
+  | "model_execution_persistence_failed"
   | "split_required"
   | "no_json_object"
   | "truncated_json"
@@ -333,6 +335,8 @@ export class ProviderDocumentTextExecutor
     const effectiveReasoningEffort = providerReasoningLabel(
       providerReasoningPolicy,
     );
+    const providerReasoningStorage =
+      projectProviderReasoningPolicyForStorage(providerReasoningPolicy);
     const inputFingerprint = createContentFingerprint({
       operation: input.operation,
       componentKey: input.componentKey,
@@ -545,13 +549,22 @@ export class ProviderDocumentTextExecutor
           resolved_model_id: this.profile.resolvedModelId,
           requested_reasoning_effort: this.profile.reasoningEffort,
           effective_reasoning_effort: effectiveReasoningEffort,
+          provider_reasoning_mode: providerReasoningStorage.mode,
+          provider_reasoning_policy: providerReasoningStorage.policy,
+          provider_reasoning_policy_version:
+            providerReasoningStorage.policyVersion,
           status: "running",
           lease_expires_at: leaseExpiresAt,
           started_at: new Date().toISOString(),
         });
       if (error) {
         const raced = await this.getExecution(executionKey);
-        if (raced?.status === "succeeded") {
+        const duplicateKey =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "23505";
+        if (duplicateKey && raced?.status === "succeeded") {
           return this.parseStoredResponse({
             executionKey,
             rawResponse: raced.raw_response,
@@ -560,7 +573,7 @@ export class ProviderDocumentTextExecutor
             normalizeCandidate: input.normalizeCandidate,
           });
         }
-        if (raced?.status === "raw_saved") {
+        if (duplicateKey && raced?.status === "raw_saved") {
           return this.parseStoredResponse({
             executionKey,
             rawResponse: raced.raw_response,
@@ -569,7 +582,37 @@ export class ProviderDocumentTextExecutor
             normalizeCandidate: input.normalizeCandidate,
           });
         }
-        throw new DocumentModelExecutionInProgressError(executionKey);
+        if (
+          duplicateKey &&
+          (raced?.status === "running" ||
+            raced?.status === "request_started")
+        ) {
+          throw new DocumentModelExecutionInProgressError(executionKey);
+        }
+        if (
+          duplicateKey &&
+          (raced?.status === "response_received" ||
+            raced?.status === "validation_failed" ||
+            raced?.status === "failed" ||
+            raced?.status === "unknown_outcome")
+        ) {
+          throw new DocumentModelExecutionRequiresReviewError(
+            executionKey,
+            raced.status,
+          );
+        }
+        const databaseCode =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          typeof error.code === "string"
+            ? error.code
+            : "unknown";
+        throw new DocumentModelOperationError(
+          `The durable model execution record could not be created (database code ${databaseCode}).`,
+          "model_execution_persistence_failed",
+          input.operation,
+        );
       }
     }
     let parsed: T;

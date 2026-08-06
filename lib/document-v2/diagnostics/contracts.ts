@@ -73,6 +73,9 @@ export type ModelExecutionDiagnostic = {
   resolvedModelId: string;
   requestedReasoningEffort: string | null;
   effectiveReasoningEffort: string | null;
+  providerReasoningMode: string | null;
+  providerReasoningPolicy: Record<string, unknown> | null;
+  providerReasoningPolicyVersion: string | null;
   reasoningTokensObserved: boolean;
   actualModelId: string | null;
   providerRequestFingerprint: string | null;

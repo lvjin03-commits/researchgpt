@@ -34,6 +34,13 @@ export type ProviderReasoningPolicy =
   | Readonly<{ provider: "deepseek"; thinking: DeepSeekThinkingPolicy }>
   | Readonly<{ provider: "openai"; reasoning: OpenAIReasoningPolicy }>;
 
+export type ProviderReasoningStorageProjection = Readonly<{
+  mode: "disabled" | "enabled" | "effort";
+  effort: "none" | "low" | "medium" | "high" | "max";
+  policyVersion: "provider-reasoning-policy-v1";
+  policy: ProviderReasoningPolicy;
+}>;
+
 const LEGACY_UNSAFE_DEEPSEEK_CONTENT_POLICY =
   "document-operation-budget-v2";
 
@@ -126,10 +133,32 @@ export function providerReasoningLabel(
 ): string {
   if (policy.provider === "deepseek") {
     return policy.thinking.mode === "disabled"
-      ? "disabled"
-      : `enabled:${policy.thinking.effort}`;
+      ? "none"
+      : policy.thinking.effort;
   }
   return policy.reasoning.effort;
+}
+
+export function projectProviderReasoningPolicyForStorage(
+  policy: ProviderReasoningPolicy,
+): ProviderReasoningStorageProjection {
+  if (policy.provider === "deepseek") {
+    return {
+      mode: policy.thinking.mode,
+      effort:
+        policy.thinking.mode === "disabled"
+          ? "none"
+          : policy.thinking.effort,
+      policyVersion: "provider-reasoning-policy-v1",
+      policy,
+    };
+  }
+  return {
+    mode: "effort",
+    effort: policy.reasoning.effort,
+    policyVersion: "provider-reasoning-policy-v1",
+    policy,
+  };
 }
 
 export function assertProviderReasoningPolicyMatchesSnapshot(input: {

@@ -43,6 +43,9 @@ export type DiagnosticExecutionRow = {
   resolved_model_id: string;
   requested_reasoning_effort: string | null;
   effective_reasoning_effort: string | null;
+  provider_reasoning_mode: string | null;
+  provider_reasoning_policy: Record<string, unknown> | null;
+  provider_reasoning_policy_version: string | null;
   reasoning_tokens_observed: boolean;
   actual_model_id: string | null;
   provider_request_id: string | null;
@@ -139,6 +142,9 @@ const EXECUTION_FIELDS = [
   "resolved_model_id",
   "requested_reasoning_effort",
   "effective_reasoning_effort",
+  "provider_reasoning_mode",
+  "provider_reasoning_policy",
+  "provider_reasoning_policy_version",
   "reasoning_tokens_observed",
   "actual_model_id",
   "provider_request_id",

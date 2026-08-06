@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const Module = require("node:module");
@@ -177,6 +178,57 @@ assert.equal(
 );
 assert.equal(diagnostic.modelExecutions[0].requestedMaxTokens, 8_000);
 assert.equal(JSON.stringify(diagnostic).includes("auxiliary_content_encrypted"), false);
+
+const persistenceFailureDiagnostic = projectDocumentJobDiagnostics(
+  {
+    job: {
+      id: "e9975840-de48-47cf-b84e-98ef39ce9b00",
+      status: "paused",
+      stage: "understanding",
+      revision: 3,
+      lease_owner: null,
+      lease_expires_at: null,
+      recovery_count: 0,
+      last_heartbeat_at: null,
+      created_at: "2026-08-06T15:45:38.577Z",
+      updated_at: "2026-08-06T15:45:41.104Z",
+    },
+    events: [
+      {
+        sequence: 1,
+        stage: "understanding",
+        status: "paused",
+        created_at: "2026-08-06T15:45:41.104Z",
+        event_payload: {
+          stage: "understanding",
+          status: "paused",
+          operation: "request.understand",
+          createdAt: "2026-08-06T15:45:41.104Z",
+          category: "model_execution_persistence_failed",
+          errorCode:
+            "document_model_model_execution_persistence_failed",
+          technicalMessage:
+            "The durable model execution record could not be created (database code 23514).",
+        },
+      },
+    ],
+    executions: [],
+    outbox: [],
+  },
+  now,
+);
+assert.equal(
+  persistenceFailureDiagnostic.currentBlocker.code,
+  "model_execution_persistence_failed",
+);
+assert.equal(
+  persistenceFailureDiagnostic.currentBlocker.certainty,
+  "deterministic",
+);
+assert.equal(
+  persistenceFailureDiagnostic.currentPosition.operation,
+  "request.understand",
+);
 
 const reasoningFindings = diagnoseBlockers({
   now,

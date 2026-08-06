@@ -51,12 +51,15 @@ export function mapWorkerFailure(error: unknown): DocumentFailure {
     };
   }
   if (error instanceof DocumentModelOperationError) {
+    const persistenceFailure =
+      error.failureCategory === "model_execution_persistence_failed";
     return {
       code: `document_model_${error.failureCategory}`,
-      category: "provider",
+      category: persistenceFailure ? "infrastructure" : "provider",
       diagnosticCategory: error.failureCategory,
       operation: error.operation ?? "model.generate",
       retryability:
+        persistenceFailure ||
         error.failureCategory === "provider_empty_response" ||
         error.failureCategory === "provider_rate_limited" ||
         error.failureCategory === "provider_transient_error"

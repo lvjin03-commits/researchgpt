@@ -110,6 +110,48 @@ function planningFailureFinding(
   };
 }
 
+function modelExecutionPersistenceFinding(
+  event: DiagnosticTimelineEvent | undefined,
+): BlockerDiagnosis | null {
+  if (
+    event?.error?.code !==
+    "document_model_model_execution_persistence_failed"
+  ) {
+    return null;
+  }
+  return {
+    code: "model_execution_persistence_failed",
+    severity: "error",
+    certainty: "deterministic",
+    location: {
+      stage: event.stage ?? null,
+      operation: event.operation ?? null,
+      componentKey: event.componentKey ?? null,
+    },
+    since: event.timestamp,
+    matchedRule: "durable_model_execution_insert_failed",
+    evidence: [
+      {
+        source: "event",
+        field: "failureCode",
+        value: event.error.code,
+      },
+      ...(event.error.fingerprint
+        ? [
+            {
+              source: "event",
+              field: "errorFingerprint",
+              value: event.error.fingerprint,
+            },
+          ]
+        : []),
+    ],
+    missingEvidence: [],
+    recommendedNextInspection:
+      "Inspect the model-execution persistence contract and database error code; the provider request was not started.",
+  };
+}
+
 const DETERMINISTIC_CAPTION_FAILURES = new Set([
   "figure_caption_numbered",
   "table_caption_numbered",
@@ -313,6 +355,10 @@ export function projectDocumentJobDiagnostics(
         resolvedModelId: row.resolved_model_id,
         requestedReasoningEffort: row.requested_reasoning_effort,
         effectiveReasoningEffort: row.effective_reasoning_effort,
+        providerReasoningMode: row.provider_reasoning_mode,
+        providerReasoningPolicy: row.provider_reasoning_policy,
+        providerReasoningPolicyVersion:
+          row.provider_reasoning_policy_version,
         reasoningTokensObserved: row.reasoning_tokens_observed,
         actualModelId: row.actual_model_id,
         providerRequestFingerprint: diagnosticFingerprint(
@@ -478,6 +524,9 @@ export function projectDocumentJobDiagnostics(
         contentLength: execution.contentLength,
         reasoningContentPresent: execution.reasoningContentPresent,
         reasoningContentLength: execution.reasoningContentLength,
+        providerReasoningMode: execution.providerReasoningMode,
+        providerReasoningPolicyVersion:
+          execution.providerReasoningPolicyVersion,
         refusalPresent: execution.refusalPresent,
         toolCallCount: execution.toolCallCount,
         providerResponseSavedAt: execution.providerResponseSavedAt,
@@ -562,6 +611,10 @@ export function projectDocumentJobDiagnostics(
       ? latestTimelineEvent
       : undefined;
   const planningFinding = planningFailureFinding(latestPlanningFailure);
+  const persistenceFinding =
+    ["paused", "failed"].includes(sources.job.status)
+      ? modelExecutionPersistenceFinding(latestTimelineEvent)
+      : null;
   const captionFinding =
     ["paused", "failed"].includes(sources.job.status)
       ? captionFormatFailureFinding(latestTimelineEvent)
@@ -576,6 +629,7 @@ export function projectDocumentJobDiagnostics(
       : null;
   const findings = [
     ...(planningFinding ? [planningFinding] : []),
+    ...(persistenceFinding ? [persistenceFinding] : []),
     ...(captionFinding ? [captionFinding] : []),
     ...(referenceFinding ? [referenceFinding] : []),
     ...(placementFinding ? [placementFinding] : []),
