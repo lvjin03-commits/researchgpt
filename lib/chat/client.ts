@@ -6,6 +6,7 @@ import { uploadChatAttachments } from "@/lib/uploads/storage-client";
 import type { AttachmentStorageMetadata } from "@/lib/uploads/types";
 import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
 import type { WorkspaceContextMode } from "@/lib/chat/workspace";
+import type { DocumentResearchMode } from "@/lib/research-exploration/document-option";
 
 export type ChatProjectContext = {
   id?: string;
@@ -177,6 +178,7 @@ export async function streamChatResponse(
     modelTier: ChatModelTier;
     webSearch: boolean;
     useLibrary: boolean;
+    documentResearchMode: DocumentResearchMode;
     memory: string;
     selectedFolderIds?: string[];
     contextMode?: WorkspaceContextMode;
@@ -226,6 +228,7 @@ export async function streamChatResponse(
       modelTier: options.modelTier,
       webSearch: options.webSearch,
       useLibrary: options.useLibrary,
+      documentResearchMode: options.documentResearchMode,
       memory: options.memory,
       selectedFolderIds: options.selectedFolderIds ?? [],
       contextMode: options.contextMode ?? "auto",

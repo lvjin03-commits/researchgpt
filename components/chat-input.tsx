@@ -58,8 +58,10 @@ type ChatInputProps = {
   onModelTierChange: (tier: ChatModelTier) => void;
   webSearch: boolean;
   useLibrary: boolean;
+  researchEnhanced: boolean;
   onWebSearchChange: (enabled: boolean) => void;
   onUseLibraryChange: (enabled: boolean) => void;
+  onResearchEnhancedChange: (enabled: boolean) => void;
   memory: string;
   onMemoryChange: (memory: string) => void;
   projects?: ResearchProject[];
@@ -81,8 +83,10 @@ export function ChatInput({
   onModelTierChange,
   webSearch,
   useLibrary,
+  researchEnhanced,
   onWebSearchChange,
   onUseLibraryChange,
+  onResearchEnhancedChange,
   memory,
   onMemoryChange,
   projects = [],
@@ -402,6 +406,20 @@ export function ChatInput({
                 }`}
               >
                 文献库
+              </button>
+              <button
+                type="button"
+                aria-pressed={researchEnhanced}
+                onClick={() => onResearchEnhancedChange(!researchEnhanced)}
+                disabled={inputLocked}
+                title="生成 Word 前先运行 STORM 联网研究；耗时更长，失败时会说明原因并继续标准生成"
+                className={`ml-1 h-9 rounded-lg px-2.5 text-xs font-bold ${
+                  researchEnhanced
+                    ? "bg-violet-50 text-violet-700"
+                    : "text-gray-500 hover:bg-gray-100"
+                }`}
+              >
+                研究增强
               </button>
             </div>
 

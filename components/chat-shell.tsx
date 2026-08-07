@@ -379,6 +379,7 @@ export function ChatShell() {
   });
   const [webSearch, setWebSearch] = useState(false);
   const [useLibrary, setUseLibrary] = useState(false);
+  const [researchEnhanced, setResearchEnhanced] = useState(false);
   const [memory, setMemory] = useState("");
   const [modelTier, setModelTier] = useState<ChatModelTier>(
     DEFAULT_CHAT_MODEL_TIER,
@@ -1211,6 +1212,7 @@ export function ChatShell() {
           modelTier,
           webSearch,
           useLibrary: shouldReadLocalProject ? false : useLibrary,
+          documentResearchMode: researchEnhanced ? "enhanced" : "fast",
           memory,
           selectedFolderIds: shouldReadLocalProject ? [] : selectedFolderIds,
           contextMode: contextModeOverride ?? contextMode,
@@ -1358,6 +1360,7 @@ export function ChatShell() {
       memory,
       modelTier,
       persistConversation,
+      researchEnhanced,
       selectedFolderIds,
       selectedLocalFileIds,
       useLibrary,
@@ -2190,8 +2193,10 @@ export function ChatShell() {
             onModelTierChange={handleModelTierChange}
             webSearch={webSearch}
             useLibrary={useLibrary}
+            researchEnhanced={researchEnhanced}
             onWebSearchChange={handleWebSearchChange}
             onUseLibraryChange={handleUseLibraryChange}
+            onResearchEnhancedChange={setResearchEnhanced}
             memory={memory}
             onMemoryChange={handleMemoryChange}
             projects={projects}

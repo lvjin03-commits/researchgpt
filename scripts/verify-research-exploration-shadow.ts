@@ -10,6 +10,12 @@ import { ResearchExplorationShadowCoordinator } from "../lib/research-exploratio
 import { selectResearchExplorationShadow } from "../lib/research-exploration/shadow/policy.ts";
 import { resolveResearchExplorationRuntime } from "../lib/research-exploration/runtime-policy.ts";
 import { RESEARCH_EXPLORATION_SHADOW_LIMITS } from "../lib/research-exploration-production/shadow-profile.ts";
+import { parseDocumentResearchMode } from "../lib/research-exploration/document-option.ts";
+
+assert.equal(parseDocumentResearchMode("enhanced"), "enhanced");
+assert.equal(parseDocumentResearchMode("fast"), "fast");
+assert.equal(parseDocumentResearchMode(undefined), "fast");
+assert.equal(parseDocumentResearchMode("unexpected"), "fast");
 
 assert.deepEqual(RESEARCH_EXPLORATION_SHADOW_LIMITS, {
   maxPerspectives: 1,

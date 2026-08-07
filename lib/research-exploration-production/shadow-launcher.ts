@@ -26,7 +26,11 @@ export type ShadowLaunchObservation =
   | { selected: true; executionId: string; reused: boolean }
   | { selected: true; failureCode: "shadow_start_failed" };
 
-export function buildResearchExplorationShadowInput(input: {
+export type OptInLaunchObservation =
+  | { outcome: "started"; executionId: string; reused: boolean }
+  | { outcome: "degraded"; warningCode: string };
+
+export function buildDocumentResearchExplorationInput(input: {
   jobId: string;
   instruction: string;
   language?: "zh" | "en";
@@ -82,7 +86,7 @@ export async function launchDocumentResearchExplorationShadow(input: {
       }),
       input.ownerId,
     );
-    const exploration = buildResearchExplorationShadowInput({ ...input, config });
+    const exploration = buildDocumentResearchExplorationInput({ ...input, config });
     const activeExecutionCount = await store.countActive();
     const selection = selectResearchExplorationShadow({
       policy: {
@@ -141,5 +145,88 @@ export async function launchDocumentResearchExplorationShadow(input: {
       error: error instanceof Error ? error.message : String(error),
     });
     return { selected: true, failureCode: "shadow_start_failed" };
+  }
+}
+
+/** Starts research only when the user explicitly selected research-enhanced generation. */
+export async function launchDocumentResearchExplorationOptIn(input: {
+  ownerId: string;
+  jobId: string;
+  instruction: string;
+  language?: "zh" | "en";
+  vercelOidcToken?: string;
+  environment?: NodeJS.ProcessEnv;
+}): Promise<OptInLaunchObservation> {
+  const environment = input.environment ?? process.env;
+  const runtime = resolveResearchExplorationRuntimeFromEnvironment({ environment });
+  if (!runtime.enabled) {
+    return { outcome: "degraded", warningCode: "runtime_disabled" };
+  }
+  if (!input.vercelOidcToken?.trim()) {
+    return { outcome: "degraded", warningCode: "storm_oidc_token_missing" };
+  }
+  const supabaseUrl = environment.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const serviceRoleKey = environment.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!supabaseUrl || !serviceRoleKey) {
+    return { outcome: "degraded", warningCode: "storm_storage_config_missing" };
+  }
+  try {
+    const config = requireResearchExplorationProductionConfig(environment);
+    const store = new SupabaseResearchExplorationStore(
+      createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      }),
+      input.ownerId,
+    );
+    if (await store.countActive() >= config.maximumConcurrentExecutions) {
+      return { outcome: "degraded", warningCode: "storm_capacity_unavailable" };
+    }
+    const exploration = buildDocumentResearchExplorationInput({ ...input, config });
+    const inputFingerprint = createResearchExplorationFingerprint({
+      request: exploration,
+      versions: VERSIONS,
+    });
+    const existing = await store.findByFingerprint(inputFingerprint);
+    if (existing) {
+      return {
+        outcome: "started",
+        executionId: existing.executionId,
+        reused: true,
+      };
+    }
+    const queued = createQueuedResearchExplorationExecution({
+      explorationId: exploration.explorationId,
+      explorationRevision: 1,
+      inputFingerprint,
+      requirement: "required",
+      versions: VERSIONS,
+      maximumInspectionCount: exploration.limits.maximumInspectionCount,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+      jobId: input.jobId,
+    });
+    const inserted = await store.insert({ execution: queued, request: exploration });
+    if (inserted.created) {
+      try {
+        await dispatchStormCloudRunJob({
+          config,
+          executionId: inserted.execution.executionId,
+          vercelOidcToken: input.vercelOidcToken,
+        });
+      } catch (error) {
+        await store.markDispatchFailure(inserted.execution.executionId, error);
+        throw error;
+      }
+    }
+    return {
+      outcome: "started",
+      executionId: inserted.execution.executionId,
+      reused: !inserted.created,
+    };
+  } catch (error) {
+    console.error("[research-exploration-opt-in] launch failed", {
+      jobId: input.jobId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { outcome: "degraded", warningCode: "storm_start_failed" };
   }
 }

@@ -53,13 +53,17 @@ for await (const absolute of walk(path.join(root, "lib"))) {
 }
 
 const planningIntegrationOwners = new Set([
+  "lib/document-v2/runtime/contracts.ts",
   "lib/document-v2/planning/planner.ts",
   "lib/document-v2-production/planning.ts",
   "lib/document-v2-production/stages/intake.ts",
   "lib/document-v2-production/failure-mapper.ts",
-  // Creation may launch a non-authoritative Shadow job after the document
-  // task is durable. It cannot consume or publish exploration output.
+  // Creation may launch the isolated exploration runtime. Only the planning
+  // gate below may consume its non-authoritative advisory projection.
   "lib/document-v2-production/command-gateway.ts",
+  // The optional pre-planning gate may only wait, persist advisory hints, or
+  // degrade back to the existing Document V2 planner.
+  "lib/document-v2-production/research-preparation.ts",
 ]);
 for (const authoritativeRoot of [
   path.join(root, "lib", "document-v2"),

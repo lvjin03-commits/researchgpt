@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ResearchExplorationAdvisoryHintsSchema } from "@/lib/research-exploration/advisory/contracts";
 import { DocumentOrchestrationStateSchema } from "../orchestration/contracts";
 import { DocumentRequestSchema, VerifiedReferenceSchema } from "../contracts";
 import { TemplateResolutionSchema } from "../templates/contracts";
@@ -241,11 +242,45 @@ export const DocumentJobCheckpointSchema = z
           })
           .strict(),
         language: z.enum(["zh", "en"]).optional(),
+        researchMode: z.enum(["fast", "enhanced"]).default("fast"),
         targetLength: z.number().int().min(100).max(100_000).optional(),
         verifiedReferences: z.array(VerifiedReferenceSchema).max(500),
         evidence: z.array(DocumentEvidenceItemSchema).max(2_000).default([]),
       })
       .strict()
+      .optional(),
+    researchExploration: z
+      .object({
+        executionId: z.uuid().optional(),
+        status: z.enum(["queued", "available", "degraded"]),
+        hints: ResearchExplorationAdvisoryHintsSchema.optional(),
+        warningCode: IdentifierSchema.optional(),
+        updatedAt: DateTimeSchema,
+      })
+      .strict()
+      .superRefine((value, context) => {
+        if (value.status === "queued" && !value.executionId) {
+          context.addIssue({
+            code: "custom",
+            path: ["executionId"],
+            message: "Queued research exploration requires an execution ID.",
+          });
+        }
+        if (value.status === "available" && !value.hints) {
+          context.addIssue({
+            code: "custom",
+            path: ["hints"],
+            message: "Available research exploration requires planning hints.",
+          });
+        }
+        if (value.status === "degraded" && !value.warningCode) {
+          context.addIssue({
+            code: "custom",
+            path: ["warningCode"],
+            message: "Degraded research exploration requires a warning code.",
+          });
+        }
+      })
       .optional(),
     planning: z
       .object({

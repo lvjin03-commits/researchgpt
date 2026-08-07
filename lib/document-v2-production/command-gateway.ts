@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DocumentTextExecutionProfile } from "@/lib/document-v2/runtime/contracts";
 import { SupabaseDocumentJobRepository } from "@/lib/document-v2/runtime/supabase-repository";
@@ -9,7 +8,8 @@ import {
   logDocumentV2DispatchFailure,
   recordDocumentV2DispatchFailure,
 } from "./dispatch";
-import { launchDocumentResearchExplorationShadow } from "@/lib/research-exploration-production/shadow-launcher";
+import { launchDocumentResearchExplorationOptIn } from "@/lib/research-exploration-production/shadow-launcher";
+import type { DocumentResearchMode } from "@/lib/research-exploration/document-option";
 
 export type CreateDocumentCommand = {
   type: "create_document";
@@ -18,6 +18,7 @@ export type CreateDocumentCommand = {
   previousAssistantContent?: string;
   textExecution: DocumentTextExecutionProfile;
   language?: "zh" | "en";
+  researchMode?: DocumentResearchMode;
   requestUrl: string;
   vercelOidcToken?: string;
 };
@@ -75,6 +76,16 @@ export async function executeDocumentCommand(input: {
     command.ownerId,
   );
   const service = createIntakeOnlyService(repository);
+  const researchMode = command.researchMode ?? "fast";
+  const researchLaunch = researchMode === "enhanced"
+    ? await launchDocumentResearchExplorationOptIn({
+        ownerId: command.ownerId,
+        jobId,
+        instruction,
+        language: command.language,
+        vercelOidcToken: command.vercelOidcToken,
+      })
+    : undefined;
   await service.createIntake({
     ownerId: command.ownerId,
     jobId,
@@ -84,7 +95,54 @@ export async function executeDocumentCommand(input: {
       sourceIds: previousContent ? ["previous-assistant-message"] : [],
     },
     textExecution: command.textExecution,
+    researchMode,
+    researchExploration: researchLaunch
+      ? researchLaunch.outcome === "started"
+        ? {
+            executionId: researchLaunch.executionId,
+            status: "queued",
+            updatedAt: new Date().toISOString(),
+          }
+        : {
+            status: "degraded",
+            warningCode: researchLaunch.warningCode,
+            updatedAt: new Date().toISOString(),
+          }
+      : undefined,
   });
+  if (researchLaunch) {
+    await repository.appendEvent({
+      eventId: randomUUID(),
+      jobId,
+      stage: "evidence_acquisition",
+      status: "progress",
+      message:
+        researchLaunch.outcome === "started"
+          ? "已按用户选择启动 STORM 联网研究，文档将在研究完成后开始规划。"
+          : "已选择研究增强，但 STORM 当前不可用；系统将说明原因并继续标准生成。",
+      category: "lifecycle",
+      operation:
+        researchLaunch.outcome === "started"
+          ? "research.exploration.requested"
+          : "research.exploration.degraded",
+      correlationId:
+        researchLaunch.outcome === "started"
+          ? researchLaunch.executionId
+          : jobId,
+      metadata: {
+        researchMode,
+        executionId:
+          researchLaunch.outcome === "started"
+            ? researchLaunch.executionId
+            : null,
+        warningCode:
+          researchLaunch.outcome === "degraded"
+            ? researchLaunch.warningCode
+            : null,
+      },
+      createdAt: new Date().toISOString(),
+    });
+  }
   try {
     await dispatchDocumentV2Worker({
       cause: "job_created",
@@ -104,14 +162,5 @@ export async function executeDocumentCommand(input: {
       error: dispatchError,
     });
   }
-  after(async () => {
-    await launchDocumentResearchExplorationShadow({
-      ownerId: command.ownerId,
-      jobId,
-      instruction,
-      language: command.language,
-      vercelOidcToken: command.vercelOidcToken,
-    });
-  });
   return { type: "document_job_created", jobId };
 }

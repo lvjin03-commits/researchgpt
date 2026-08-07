@@ -86,6 +86,7 @@ import type { WorkspaceContextMode } from "@/lib/chat/workspace";
 import { createClient } from "@/lib/supabase/server";
 import { CHAT_ATTACHMENTS_BUCKET } from "@/lib/uploads/storage-constants";
 import { executeDocumentCommand } from "@/lib/document-v2-production/command-gateway";
+import { parseDocumentResearchMode } from "@/lib/research-exploration/document-option";
 import {
   inspectDocumentV2Runtime,
   requireDocumentV2PublicRuntime,
@@ -98,6 +99,7 @@ type ChatRequestBody = {
   modelTier?: unknown;
   webSearch?: unknown;
   useLibrary?: unknown;
+  documentResearchMode?: unknown;
   memory?: unknown;
   selectedFolderIds?: unknown;
   contextMode?: unknown;
@@ -1196,6 +1198,9 @@ export async function POST(request: Request) {
     const modelOption = getChatModelOption(modelTier);
     const webSearch = body.webSearch === true;
     const useLibrary = body.useLibrary === true;
+    const documentResearchMode = parseDocumentResearchMode(
+      body.documentResearchMode,
+    );
     const selectedFolderIds = sanitizeFolderIds(body.selectedFolderIds);
     const contextMode = isContextMode(body.contextMode)
       ? body.contextMode
@@ -1995,6 +2000,7 @@ export async function POST(request: Request) {
                 requestUrl: request.url,
                 vercelOidcToken:
                   request.headers.get("x-vercel-oidc-token") ?? undefined,
+                researchMode: documentResearchMode,
                 textExecution: {
                   provider: modelOption.provider,
                   requestedModelId: modelOption.model,

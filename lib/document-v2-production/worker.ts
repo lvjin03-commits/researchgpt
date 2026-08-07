@@ -28,6 +28,7 @@ import {
 import { createDocumentFinalizer } from "./document-finalizer";
 import { createFigureAssetMaterializer } from "./figure-materializer";
 import { prepareIntake } from "./stages/intake";
+import { prepareOptionalDocumentResearch } from "./research-preparation";
 
 function adminClient(): SupabaseClient {
   const config = requireDocumentV2WorkerConfig();
@@ -200,9 +201,25 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
     },
     createdAt: new Date().toISOString(),
   });
-  let preparedJob = job.checkpoint.orchestration
-    ? job
-    : await prepareIntake({ job, repository, textExecutor });
+  const researchPreparation = job.checkpoint.orchestration
+    ? { outcome: "ready" as const, job }
+    : await prepareOptionalDocumentResearch({ job, repository, supabase });
+  if (researchPreparation.outcome === "waiting") {
+    return {
+      state: researchPreparation.job.status,
+      jobId: researchPreparation.job.jobId,
+      stage: researchPreparation.job.stage,
+      progress: researchPreparation.job.progress,
+    };
+  }
+  let preparedJob = researchPreparation.job.checkpoint.orchestration
+    ? researchPreparation.job
+    : await prepareIntake({
+        job: researchPreparation.job,
+        repository,
+        textExecutor,
+        researchExplorationAdvisory: researchPreparation.hints,
+      });
   if (preparedJob.status === "awaiting_user_input") {
     return {
       state: preparedJob.status,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { after } from "next/server";
+import { randomUUID } from "node:crypto";
 import {
   DEFAULT_CHAT_MODEL_TIER,
   getChatModelOption,
@@ -22,7 +22,8 @@ import {
   DocumentV2PublicRuntimeDisabledError,
   requireDocumentV2PublicRuntime,
 } from "@/lib/document-v2-production/runtime-config";
-import { launchDocumentResearchExplorationShadow } from "@/lib/research-exploration-production/shadow-launcher";
+import { launchDocumentResearchExplorationOptIn } from "@/lib/research-exploration-production/shadow-launcher";
+import { DocumentResearchModeSchema } from "@/lib/research-exploration/document-option";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -43,6 +44,7 @@ const CreateJobSchema = z
     verifiedReferences: z.array(VerifiedReferenceSchema).max(500).optional(),
     evidence: z.array(DocumentEvidenceItemSchema).max(2_000).optional(),
     modelTier: z.string().optional(),
+    researchMode: DocumentResearchModeSchema.default("fast"),
   })
   .strict();
 
@@ -123,6 +125,16 @@ export async function POST(request: Request) {
         },
       },
     );
+    const researchLaunch = input.researchMode === "enhanced"
+      ? await launchDocumentResearchExplorationOptIn({
+          ownerId: user.id,
+          jobId: input.idempotencyKey,
+          instruction: input.instruction,
+          language: input.language,
+          vercelOidcToken:
+            request.headers.get("x-vercel-oidc-token") ?? undefined,
+        })
+      : undefined;
     let snapshot;
     try {
       snapshot = await service.createIntake({
@@ -135,6 +147,20 @@ export async function POST(request: Request) {
         verifiedReferences: references,
         evidence: input.evidence,
         textExecution,
+        researchMode: input.researchMode,
+        researchExploration: researchLaunch
+          ? researchLaunch.outcome === "started"
+            ? {
+                executionId: researchLaunch.executionId,
+                status: "queued",
+                updatedAt: new Date().toISOString(),
+              }
+            : {
+                status: "degraded",
+                warningCode: researchLaunch.warningCode,
+                updatedAt: new Date().toISOString(),
+              }
+          : undefined,
       });
     } catch (creationError) {
       if (!(creationError instanceof DocumentJobConflictError)) throw creationError;
@@ -142,6 +168,39 @@ export async function POST(request: Request) {
         repository,
         input.idempotencyKey,
       );
+    }
+    if (researchLaunch) {
+      await repository.appendEvent({
+        eventId: randomUUID(),
+        jobId: snapshot.job.jobId,
+        stage: "evidence_acquisition",
+        status: "progress",
+        message:
+          researchLaunch.outcome === "started"
+            ? "已按用户选择启动 STORM 联网研究，文档将在研究完成后开始规划。"
+            : "已选择研究增强，但 STORM 当前不可用；系统将说明原因并继续标准生成。",
+        category: "lifecycle",
+        operation:
+          researchLaunch.outcome === "started"
+            ? "research.exploration.requested"
+            : "research.exploration.degraded",
+        correlationId:
+          researchLaunch.outcome === "started"
+            ? researchLaunch.executionId
+            : snapshot.job.jobId,
+        metadata: {
+          researchMode: input.researchMode,
+          executionId:
+            researchLaunch.outcome === "started"
+              ? researchLaunch.executionId
+              : null,
+          warningCode:
+            researchLaunch.outcome === "degraded"
+              ? researchLaunch.warningCode
+              : null,
+        },
+        createdAt: new Date().toISOString(),
+      });
     }
     try {
       await dispatchDocumentV2Worker({
@@ -162,15 +221,6 @@ export async function POST(request: Request) {
         error: dispatchError,
       });
     }
-    after(async () => {
-      await launchDocumentResearchExplorationShadow({
-        ownerId: user.id,
-        jobId: snapshot.job.jobId,
-        instruction: input.instruction,
-        language: input.language,
-        vercelOidcToken: request.headers.get("x-vercel-oidc-token") ?? undefined,
-      });
-    });
     return Response.json(snapshot, {
       status: 202,
       headers: {

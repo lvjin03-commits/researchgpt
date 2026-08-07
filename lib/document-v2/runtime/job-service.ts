@@ -99,6 +99,13 @@ export class DocumentV2JobService {
     instruction: string;
     source: DocumentRequest["source"];
     language?: "zh" | "en";
+    researchMode?: "fast" | "enhanced";
+    researchExploration?: {
+      executionId?: string;
+      status: "queued" | "available" | "degraded";
+      warningCode?: string;
+      updatedAt: string;
+    };
     targetLength?: number;
     verifiedReferences?: VerifiedReference[];
     evidence?: Array<{
@@ -132,10 +139,12 @@ export class DocumentV2JobService {
           instruction: input.instruction,
           source: input.source,
           language: input.language,
+          researchMode: input.researchMode ?? "fast",
           targetLength: input.targetLength,
           verifiedReferences: input.verifiedReferences ?? [],
           evidence: input.evidence ?? [],
         },
+        researchExploration: input.researchExploration,
         savedAt: now,
       },
       createdAt: now,
