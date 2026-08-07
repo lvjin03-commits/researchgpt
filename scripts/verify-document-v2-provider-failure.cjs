@@ -241,6 +241,29 @@ async function verifyBoundedMissingJsonRegeneration() {
   }));
   assert.equal(noPolicy.calls.count, 1, "Regeneration requires an operation policy.");
 
+  let observedProviderCalls = 0;
+  const sharedBudget = createSequencedExecutor([noJson, valid]);
+  await assert.rejects(
+    () => sharedBudget.executor.generate({
+      operation: "component.generate",
+      componentKey: "section-01",
+      schemaName: "provider_failure_test",
+      schema: z.object({ value: z.string() }).strict(),
+      systemInstruction: "Return test JSON.",
+      userInstruction: "Test.",
+      recoveryPolicy: { onNoJsonObject: "regenerate_once" },
+      maxProviderCalls: 1,
+      onProviderCall() {
+        observedProviderCalls += 1;
+      },
+    }),
+    (error) =>
+      error instanceof DocumentModelOperationError &&
+      error.failureCategory === "component_attempt_budget_exhausted",
+  );
+  assert.equal(sharedBudget.calls.count, 1);
+  assert.equal(observedProviderCalls, 1);
+
   const schemaInvalid = {
     id: "section-index-schema-invalid",
     model: "deepseek-v4-flash",

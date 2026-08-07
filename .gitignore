@@ -28,6 +28,7 @@
 .DS_Store
 *.pem
 .tmp/
+/.document-v2-attribution-output/
 
 # debug
 npm-debug.log*

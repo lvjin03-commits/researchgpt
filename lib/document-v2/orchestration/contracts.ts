@@ -230,6 +230,7 @@ export const ComponentExecutionStateSchema = z
     status: z.enum(["pending", "running", "approved", "stale", "failed"]),
     generationRevision: z.number().int().positive().default(1),
     attempts: z.number().int().min(0).max(100),
+    providerCalls: z.number().int().min(0).max(100).default(0),
     transientFailures: z.number().int().min(0).max(100).default(0),
     lastError: z
       .object({

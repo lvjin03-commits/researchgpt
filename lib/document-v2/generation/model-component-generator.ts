@@ -15,6 +15,8 @@ export interface StructuredComponentModel {
     componentInstruction: string;
     componentKey?: string;
     budgetKey?: DocumentOperationBudgetKey;
+    maxProviderCalls?: number;
+    onProviderCall?: () => void;
   }): Promise<unknown>;
 }
 
@@ -272,6 +274,8 @@ export class ModelDocumentComponentGenerator
       schema: contract.modelOutputSchema,
       componentKey: context.component.componentKey,
       budgetKey: `component.${context.component.type}`,
+      maxProviderCalls: context.providerCallBudget?.remaining,
+      onProviderCall: context.providerCallBudget?.consume,
       systemInstruction: instructions.systemInstruction,
       componentInstruction,
     });

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const Module = require("node:module");
@@ -58,6 +59,7 @@ const {
   createSectionPlanOperationContract,
   createTemplateMatchOperationContract,
   createThesisOperationContract,
+  createComponentGenerationRecoveryContract,
 } = require("../lib/document-v2-production/structured-operation-contracts.ts");
 const {
   FigureAssetQualityError,
@@ -874,8 +876,10 @@ async function verifyUnsafeSvgIsRejected() {
 }
 
 async function verifyOpenAiComponentSchemaHasObjectRoot() {
+  let executorInput;
   const adapter = new OpenAIStructuredComponentModel({
     async generate(input) {
+      executorInput = input;
       return input.schema.parse({
         payload: {
           title: "Validated object-root schema",
@@ -890,6 +894,10 @@ async function verifyOpenAiComponentSchemaHasObjectRoot() {
     componentInstruction: "test",
   });
   assert.equal(result.title, "Validated object-root schema");
+  assert.deepEqual(
+    executorInput.recoveryPolicy,
+    createComponentGenerationRecoveryContract(),
+  );
 }
 
 async function verifyOutlineSchemaUsesTemplateBounds() {
@@ -1377,6 +1385,10 @@ function verifyPlanningOperationRecoveryRegistry() {
   for (const contract of contracts) {
     assert.deepEqual(contract.recoveryPolicy, expectedRecoveryPolicy);
   }
+  assert.deepEqual(
+    createComponentGenerationRecoveryContract(),
+    expectedRecoveryPolicy,
+  );
 }
 
 async function verifyDeterministicChineseFigureRendering() {

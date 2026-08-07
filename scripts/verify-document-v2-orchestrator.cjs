@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const Module = require("node:module");
@@ -348,6 +349,53 @@ async function verifyRetryLimitStopsJob() {
   assert.equal(failed.finalSpec, undefined);
 }
 
+async function verifyUnifiedProviderCallBudget() {
+  const initial = createDocumentOrchestrationState({
+    jobId: "e241a66b-b0dc-4d56-b036-7ffb42785ea4",
+    request,
+    plan,
+    verifiedReferences,
+  });
+  const failed = await runDocumentOrchestration(initial, {
+    generator: {
+      async generate(context) {
+        if (context.component.componentKey === "abstract") {
+          context.providerCallBudget.consume();
+          if (context.attempt === 1) {
+            context.providerCallBudget.consume();
+          }
+        } else {
+          context.providerCallBudget.consume();
+        }
+        return payloadFor(context.component.componentKey);
+      },
+    },
+    validator: {
+      async validate({ component }) {
+        return component.componentKey === "abstract"
+          ? {
+              accepted: false,
+              code: "abstract_invalid",
+              feedback: "The abstract remains invalid.",
+            }
+          : { accepted: true };
+      },
+    },
+    maxAttemptsPerComponent: 3,
+    maxProviderCallsPerComponent: 3,
+  });
+
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.failure.componentKey, "abstract");
+  assert.equal(failed.components[1].providerCalls, 3);
+  assert.equal(failed.components[1].attempts, 2);
+  assert.equal(
+    failed.failure.code,
+    "component_attempt_budget_exhausted",
+    "The shared provider-call cap must stop both retry layers before a fourth call.",
+  );
+}
+
 async function verifyStructuralFailureIsLocal() {
   const callCounts = {};
   let repairCode;
@@ -456,6 +504,7 @@ async function main() {
   await verifyLocalRetry();
   await verifyPauseAndResume();
   await verifyRetryLimitStopsJob();
+  await verifyUnifiedProviderCallBudget();
   await verifyStructuralFailureIsLocal();
   await verifyTransientFailureDoesNotConsumeContentRepair();
   verifyPlanInvariants();

@@ -21,6 +21,7 @@ import {
 import type { ImageExecutionProfile } from "@/lib/document-v2/assets/contracts";
 import type { DocumentStructuredTextExecutor } from "./text-executor";
 import type { DocumentOperationBudgetKey } from "@/lib/document-v2/runtime/token-budgets";
+import { createComponentGenerationRecoveryContract } from "./structured-operation-contracts";
 
 export class OpenAIStructuredComponentModel implements StructuredComponentModel {
   constructor(
@@ -34,6 +35,8 @@ export class OpenAIStructuredComponentModel implements StructuredComponentModel 
     componentInstruction: string;
     componentKey?: string;
     budgetKey?: DocumentOperationBudgetKey;
+    maxProviderCalls?: number;
+    onProviderCall?: () => void;
   }): Promise<unknown> {
     const envelopeSchema = z.object({ payload: input.schema }).strict();
     const response = await this.executor.generate({
@@ -44,6 +47,9 @@ export class OpenAIStructuredComponentModel implements StructuredComponentModel 
       schema: envelopeSchema,
       systemInstruction: input.systemInstruction,
       userInstruction: input.componentInstruction,
+      recoveryPolicy: createComponentGenerationRecoveryContract(),
+      maxProviderCalls: input.maxProviderCalls,
+      onProviderCall: input.onProviderCall,
     });
     return response.payload;
   }

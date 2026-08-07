@@ -22,6 +22,7 @@
     "check:research-exploration-boundaries": "node scripts/check-research-exploration-boundaries.mjs",
     "check:storm-service-boundaries": "node scripts/check-storm-service-boundaries.mjs",
     "check:document-v2-env": "node scripts/check-document-v2-env.mjs",
+    "analyze:document-v2-failures": "node scripts/analyze-document-v2-failures.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:document-contracts": "node --experimental-strip-types scripts/verify-document-v2-contracts.ts",
@@ -31,6 +32,7 @@
     "test:document-v2-runtime": "node scripts/verify-document-v2-runtime.cjs",
     "test:document-v2-diagnostics": "node scripts/verify-document-v2-diagnostics.cjs",
     "test:document-v2-provider-failure": "node scripts/verify-document-v2-provider-failure.cjs",
+    "test:document-v2-failure-attribution": "node scripts/verify-document-v2-failure-attribution.mjs",
     "test:document-v2-structured-parser": "node scripts/verify-document-v2-structured-parser.cjs",
     "test:document-job-binding": "node scripts/verify-document-job-binding.cjs",
     "test:document-v2-docx": "node scripts/verify-document-v2-docx.cjs",
@@ -44,7 +46,7 @@
     "test:chat-export-format-policy": "node --experimental-strip-types scripts/verify-chat-export-format-policy.ts",
     "test:word-visuals": "node scripts/verify-word-visuals.cjs",
     "smoke:document-v2": "node scripts/smoke-document-v2.mjs",
-    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-job-binding && npm run test:document-v2-runtime && npm run test:document-v2-diagnostics && npm run test:document-v2-provider-failure && npm run test:document-v2-structured-parser && npm run test:document-v2-references && npm run test:research-exploration && npm run test:research-exploration-shadow && npm run test:research-exploration-advisory && npm run test:research-exploration-required && npm run test:storm-runtime-off && npm run check:document-architecture && npm run check:document-diagnostics && npm run check:document-production-boundaries && npm run check:research-exploration-boundaries && npm run check:storm-service-boundaries && npm run build"
+    "qa": "npm run check:encoding && npm run typecheck && npm run test:document-job-binding && npm run test:document-v2-runtime && npm run test:document-v2-diagnostics && npm run test:document-v2-provider-failure && npm run test:document-v2-failure-attribution && npm run test:document-v2-structured-parser && npm run test:document-v2-references && npm run test:research-exploration && npm run test:research-exploration-shadow && npm run test:research-exploration-advisory && npm run test:research-exploration-required && npm run test:storm-runtime-off && npm run check:document-architecture && npm run check:document-diagnostics && npm run check:document-production-boundaries && npm run check:research-exploration-boundaries && npm run check:storm-service-boundaries && npm run build"
   },
   "build": {
     "appId": "com.researchgpt.localconnector",

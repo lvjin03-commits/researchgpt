@@ -99,6 +99,13 @@ export type DocumentStructuredGenerationInput<T> = {
       value: unknown,
     ) => StructuredResponseCandidateNormalization;
     recoveryPolicy?: StructuredOperationRecoveryPolicy;
+    /**
+     * Maximum real provider requests allowed for this invocation. Callers use
+     * this to share one component-level budget across executor recovery and
+     * orchestration repair instead of multiplying the two retry layers.
+     */
+    maxProviderCalls?: number;
+    onProviderCall?: () => void;
 };
 
 export interface DocumentStructuredTextExecutor {
@@ -298,7 +305,15 @@ export class ProviderDocumentTextExecutor
       }>;
     },
   ): Promise<T> {
-    if (attempt.attemptNumber > 3) {
+    const maxProviderCalls = input.maxProviderCalls ?? 3;
+    if (
+      !Number.isInteger(maxProviderCalls) ||
+      maxProviderCalls < 1 ||
+      maxProviderCalls > 3
+    ) {
+      throw new RangeError("maxProviderCalls must be between 1 and 3.");
+    }
+    if (attempt.attemptNumber > maxProviderCalls) {
       throw new DocumentModelOperationError(
         "The component reached its provider request limit.",
         "component_attempt_budget_exhausted",
@@ -659,6 +674,7 @@ export class ProviderDocumentTextExecutor
             input.operation,
           );
         }
+        input.onProviderCall?.();
         const response = await this.client.responses.parse({
           model: this.profile.resolvedModelId,
           instructions: effectiveSystemInstruction,
@@ -716,6 +732,7 @@ export class ProviderDocumentTextExecutor
           ...deepSeekBaseRequest,
           ...deepSeekReasoning,
         };
+        input.onProviderCall?.();
         const response = await this.client.chat.completions.create(
           // The OpenAI SDK type does not include DeepSeek's `thinking` field
           // or its `max` effort value. The provider-specific Zod contract

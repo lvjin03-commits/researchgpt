@@ -308,6 +308,7 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
         openAiApiKey: config.openAiApiKey,
       }),
       maxAttemptsPerComponent: 2,
+      maxProviderCallsPerComponent: 3,
     },
     createDocumentFinalizer({
       supabase,

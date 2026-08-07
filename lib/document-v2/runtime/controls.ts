@@ -199,6 +199,7 @@ export async function resumeDocumentJob(
           failedComponent.generationRevision +
           (isLegacyPlacementFailure ? 0 : 1),
         attempts: 0,
+        providerCalls: 0,
         transientFailures: 0,
         lastError: isLegacyPlacementFailure
           ? undefined

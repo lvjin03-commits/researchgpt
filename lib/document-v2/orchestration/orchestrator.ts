@@ -48,6 +48,10 @@ export interface ComponentGenerationContext {
   figureSlots: ReadonlyArray<DocumentPlan["figureSlots"][number]>;
   generationRevision: number;
   attempt: number;
+  providerCallBudget?: {
+    remaining: number;
+    consume: () => void;
+  };
   repairFeedback?: {
     code: string;
     message: string;
@@ -97,6 +101,7 @@ export interface RunDocumentOrchestrationOptions {
   validator: DocumentComponentValidator;
   figureAssetMaterializer?: FigureAssetMaterializer;
   maxAttemptsPerComponent?: number;
+  maxProviderCallsPerComponent?: number;
   maxTransientFailuresPerComponent?: number;
   maxComponentsPerRun?: number;
   maxFigureAttempts?: number;
@@ -847,6 +852,16 @@ export async function runDocumentOrchestration(
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) {
     throw new RangeError("maxAttemptsPerComponent must be between 1 and 10.");
   }
+  const maxProviderCalls = options.maxProviderCallsPerComponent ?? 3;
+  if (
+    !Number.isInteger(maxProviderCalls) ||
+    maxProviderCalls < 1 ||
+    maxProviderCalls > 3
+  ) {
+    throw new RangeError(
+      "maxProviderCallsPerComponent must be between 1 and 3.",
+    );
+  }
   const maxTransientFailures =
     options.maxTransientFailuresPerComponent ?? 2;
   if (
@@ -916,6 +931,23 @@ export async function runDocumentOrchestration(
     const componentState = state.components[componentIndex];
     const approvedComponents = listApprovedComponents(state);
 
+    if (
+      component.type !== "reference_list" &&
+      componentState.providerCalls >= maxProviderCalls
+    ) {
+      componentState.lastError = {
+        code: "component_attempt_budget_exhausted",
+        message: "The component reached its total provider request limit.",
+      };
+      failJob(
+        state,
+        componentState,
+        componentState.lastError.code,
+        componentState.lastError.message,
+      );
+      return DocumentOrchestrationStateSchema.parse(state);
+    }
+
     componentState.status = "running";
     const contentAttempt = componentState.attempts + 1;
     appendEvent(state, {
@@ -933,6 +965,8 @@ export async function runDocumentOrchestration(
           approvedComponents,
         });
       } else {
+        const remainingProviderCalls =
+          maxProviderCalls - componentState.providerCalls;
         const generated = await options.generator.generate({
                 request: state.request,
                 plan: state.plan,
@@ -944,6 +978,15 @@ export async function runDocumentOrchestration(
                 ),
                 generationRevision: componentState.generationRevision,
                 attempt: contentAttempt,
+                providerCallBudget: {
+                  remaining: remainingProviderCalls,
+                  consume: () => {
+                    if (componentState.providerCalls >= maxProviderCalls) {
+                      throw new Error("component_attempt_budget_exhausted");
+                    }
+                    componentState.providerCalls += 1;
+                  },
+                },
                 repairFeedback:
                   componentState.lastError &&
                   componentState.lastError.code !==
@@ -995,8 +1038,19 @@ export async function runDocumentOrchestration(
         continue;
       }
       componentState.attempts = contentAttempt;
+      const failureCategory =
+        error &&
+        typeof error === "object" &&
+        "failureCategory" in error &&
+        typeof error.failureCategory === "string"
+          ? error.failureCategory
+          : null;
       componentState.lastError = {
-        code: "component_generation_failed",
+        code:
+          failureCategory === "component_attempt_budget_exhausted" ||
+          message === "component_attempt_budget_exhausted"
+            ? "component_attempt_budget_exhausted"
+            : "component_generation_failed",
         message,
       };
       appendEvent(state, {
@@ -1006,7 +1060,11 @@ export async function runDocumentOrchestration(
         code: componentState.lastError.code,
         message,
       });
-      if (componentState.attempts >= maxAttempts) {
+      if (
+        componentState.lastError.code ===
+          "component_attempt_budget_exhausted" ||
+        componentState.attempts >= maxAttempts
+      ) {
         failJob(
           state,
           componentState,

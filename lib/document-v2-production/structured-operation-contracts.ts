@@ -20,6 +20,23 @@ const PLANNING_RECOVERY_POLICY = Object.freeze({
   onInvariantFailure: "pause",
 } satisfies StructuredOperationRecoveryPolicy);
 
+const COMPONENT_RECOVERY_POLICY = Object.freeze({
+  onNoJsonObject: "regenerate_once",
+  onTruncatedJson: "regenerate_once",
+  onJsonSyntaxError: "regenerate_once",
+  onSchemaValidationFailed: "repair_once",
+  onInvariantFailure: "pause",
+} satisfies StructuredOperationRecoveryPolicy);
+
+/**
+ * Component-specific structured-output recovery. This contract repairs only
+ * provider output shape; semantic/business validation remains authoritative in
+ * the orchestrator and shares the same component provider-call budget.
+ */
+export function createComponentGenerationRecoveryContract() {
+  return COMPONENT_RECOVERY_POLICY;
+}
+
 type PlanningContractInput<T> = {
   operation: string;
   budgetKey:
