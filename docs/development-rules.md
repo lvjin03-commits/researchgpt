@@ -101,3 +101,4 @@
 - [QA 检查清单](./qa-checklist.md)
 - [手动回归测试](./regression-tests.md)
 - [产品路线图](./product-roadmap.md)
+- [国自然平台架构基线](./grants/ARCHITECTURE.md)
