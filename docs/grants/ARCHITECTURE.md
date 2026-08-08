@@ -7,8 +7,10 @@ feature implementation begins.
 ## Status
 
 - Governance baseline: active.
-- Product code: not started.
-- Feature exposure: forbidden until an independently verified rollout decision.
+- Product code: PR1 foundation and PR2 editor implemented behind a disabled
+  capability flag; later phases are not started.
+- Feature exposure: disabled pending an independently authorized production
+  rollout; the PR2 PostgreSQL and local editor browser paths are verified.
 - Existing chat and Document V2 behavior: out of scope and must remain unchanged.
 
 ## Product Boundary

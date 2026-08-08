@@ -25,6 +25,12 @@ an evidence exercise, not a production-code milestone.
 Each spike must record fixtures, measurements, failure modes, and the resulting
 contract decision under `docs/grants/DECISIONS/`.
 
+Execution status (2026-08-07): all four isolated spike suites completed. The
+measured results are recorded in `docs/grants/spikes/README.md` and ADR-0004
+through ADR-0007. DOCX structural verification completed, but page-render
+fidelity remains unverified because no usable renderer was available in the
+non-interactive environment; that limitation remains an import/export exit gate.
+
 ## Delivery Sequence
 
 | Phase | Deliverable | Exit condition |
@@ -37,6 +43,24 @@ contract decision under `docs/grants/DECISIONS/`.
 | PR6 | Project resources, Evidence Cards, authorization, deletion | Revocation propagation verified end to end |
 | PR7 | Evidence-backed Patch, citation control, evidence safety | Every use maps to an authorized evidence excerpt |
 | PR8 | Incremental recheck, convergence control, real DOCX render/export | Real file opens, layout is inspected, recheck is stable |
+
+PR1 implementation status (2026-08-07): canonical node contracts, Revision
+Service, immutable template/revision/audit records, owner-scoped Supabase RPC
+adapter, additive migrations, and concurrency contract tests are implemented.
+Migrations 032 through 034 have been applied to production, and the real
+PostgreSQL compare-and-swap path has been verified with concurrent stale-write
+rejection. No user-facing grant route is exposed while the workspace flag is
+disabled.
+
+PR2 implementation status (2026-08-07): the structured editor, serialized
+autosave, immutable revision history and restore-as-new-revision behavior,
+derived length estimate, authenticated API boundary, and editor contract tests
+are implemented behind `GRANT_WORKSPACE_ENABLED`. Migration 035 contains only
+owner-scoped revision read RPCs and was applied to production on 2026-08-07.
+The real PostgreSQL path and the local browser path against the production
+database were verified on 2026-08-07, including autosave, reload recovery,
+restore-as-new-revision, and stale concurrent-write rejection. Production
+feature exposure remains disabled pending an independently authorized rollout.
 
 ## Feature Flags
 
