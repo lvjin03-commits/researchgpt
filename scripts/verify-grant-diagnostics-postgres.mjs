@@ -18,6 +18,26 @@ const rpc = async (name, args) => {
   return data;
 };
 
+const cleanupPreviousVerificationUsers = async () => {
+  let page = 1;
+  while (true) {
+    const { data, error } = await client.auth.admin.listUsers({ page, perPage: 100 });
+    if (error) throw new Error(`Temporary user discovery failed: ${error.message}`);
+    const users = data?.users ?? [];
+    for (const user of users) {
+      if (user.user_metadata?.purpose !== "grant-diagnostics-postgres-verification") continue;
+      const { error: documentError } = await client.from("grant_documents").delete().eq("owner_id", user.id);
+      if (documentError) throw new Error(`Previous temporary document cleanup failed: ${documentError.message}`);
+      const { error: userError } = await client.auth.admin.deleteUser(user.id);
+      if (userError) throw new Error(`Previous temporary user cleanup failed: ${userError.message}`);
+    }
+    if (users.length < 100) return;
+    page += 1;
+  }
+};
+
+await cleanupPreviousVerificationUsers();
+
 const runTag = `${Date.now()}-${randomUUID()}`;
 let ownerId;
 let otherOwnerId;
@@ -102,6 +122,10 @@ try {
 
   console.log(JSON.stringify({ migration: "036_grant_diagnostics", findingPersisted: true, ownerIsolationVerified: true, atomicRollbackVerified: true }, null, 2));
 } finally {
+  if (documentId) {
+    const { error } = await client.from("grant_documents").delete().eq("document_id", documentId);
+    if (error) throw new Error(`Temporary document cleanup failed: ${error.message}`);
+  }
   for (const userId of [ownerId, otherOwnerId].filter(Boolean)) {
     const { error } = await client.auth.admin.deleteUser(userId);
     if (error) throw new Error(`Temporary user cleanup failed: ${error.message}`);
