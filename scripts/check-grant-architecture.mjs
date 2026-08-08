@@ -137,6 +137,21 @@ for (const directory of grantRoots) {
       }
     }
 
+    if (relative.startsWith("lib/grants/diagnostics/")) {
+      for (const imported of imports) {
+        if (
+          imported.startsWith("@/lib/grants/infrastructure") ||
+          imported.startsWith("@/lib/grants/server") ||
+          imported.includes("/infrastructure/") ||
+          imported.includes("/server/") ||
+          imported.startsWith("next/") ||
+          imported.startsWith("@supabase/")
+        ) {
+          violations.push(`${relative}: diagnostics must not persist or depend on runtime infrastructure via ${imported}`);
+        }
+      }
+    }
+
     const uiOrRoute =
       relative.startsWith("app/grants/") ||
       relative.startsWith("app/api/grants/") ||

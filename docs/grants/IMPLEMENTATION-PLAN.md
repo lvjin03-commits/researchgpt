@@ -62,6 +62,14 @@ database were verified on 2026-08-07, including autosave, reload recovery,
 restore-as-new-revision, and stale concurrent-write rejection. Production
 feature exposure remains disabled pending an independently authorized rollout.
 
+PR3 implementation status (2026-08-07): checker/run, Finding, conflict and
+source-anchor contracts; the Diagnostic Assembler; a deterministic structural
+completeness checker; conservative cross-revision relocation; an authenticated
+diagnostic API; isolated repositories; migration 036; and repeatable contract
+tests are implemented. The accepted eight-case anchor-drift decisions pass in
+TypeScript. Migration 036 has not been applied to production, so the real
+PostgreSQL/API user path remains unverified and the phase is not yet exposed.
+
 ## Feature Flags
 
 The product begins disabled. Planned flags are capability gates, not alternative

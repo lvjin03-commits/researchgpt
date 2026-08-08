@@ -141,6 +141,13 @@ export class GrantRevisionService {
     return this.repository.listRevisions(documentId);
   }
 
+  async getRevision(documentId: string, revisionId: string) {
+    await this.getDocument(documentId);
+    const revision = await this.repository.getRevision(documentId, revisionId);
+    if (!revision) throw new GrantDocumentNotFoundError(documentId);
+    return revision;
+  }
+
   async restoreRevision(input: RestoreRevisionInput): Promise<GrantAggregate> {
     const source = await this.repository.getRevision(input.documentId, input.sourceRevisionId);
     if (!source) throw new GrantDocumentNotFoundError(input.documentId);
