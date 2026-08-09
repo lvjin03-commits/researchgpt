@@ -80,6 +80,15 @@ Migration 038 is applied and the production PostgreSQL feedback path is
 verified. PR4.5 adds the missing existing-draft entry as an import adapter; it
 does not introduce a second canonical document path.
 
+PR5 implementation status (2026-08-08): evidence-free single-node AI patch
+contracts, the Grant Model Data Gateway, model adapter, durable proposal
+repository, diff preview, explicit accept/reject actions, stale-revision and
+scope guards, idempotent acceptance recovery, and revision audit linkage are
+implemented behind `GRANT_AI_PATCH_ENABLED`. Contract, architecture, regression,
+type and production-build checks pass. Migration 039 is not yet applied and the
+flag remains disabled, so the real PostgreSQL and browser acceptance path is not
+yet claimed as verified.
+
 ## Feature Flags
 
 The product begins disabled. Planned flags are capability gates, not alternative

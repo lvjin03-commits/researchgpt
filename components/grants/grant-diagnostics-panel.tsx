@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { GrantFindingDisposition, GrantFindingFeedback } from "@/lib/grants/feedback/contracts";
 import { grantFindingTarget, indexGrantFindingFeedback, type GrantDiagnosticItem } from "./grant-diagnostic-view-model";
+import { GrantAiPatchPanel } from "./grant-ai-patch-panel";
 
 const scopeLabels = {
   cross_section: "跨章节",
@@ -22,6 +23,9 @@ const dispositionLabels: Record<GrantFindingDisposition, string> = {
 
 type Props = {
   documentId: string;
+  currentRevisionId: string;
+  aiPatchEnabled: boolean;
+  canGeneratePatch: boolean;
   items: GrantDiagnosticItem[];
   feedback: GrantFindingFeedback[];
   selectedFindingId: string | null;
@@ -31,6 +35,7 @@ type Props = {
   onRun: () => Promise<void>;
   onSelect: (item: GrantDiagnosticItem) => void;
   onFeedbackChange: (item: GrantFindingFeedback) => void;
+  onPatchAccepted: () => Promise<void>;
 };
 
 export function GrantDiagnosticsPanel(props: Props) {
@@ -141,6 +146,15 @@ export function GrantDiagnosticsPanel(props: Props) {
                     >
                       {Object.entries(dispositionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
+                    <GrantAiPatchPanel
+                      documentId={props.documentId}
+                      currentRevisionId={props.currentRevisionId}
+                      findingId={finding.findingId}
+                      targetNodeId={target.nodeId}
+                      enabled={props.aiPatchEnabled}
+                      canGenerate={props.canGeneratePatch}
+                      onAccepted={props.onPatchAccepted}
+                    />
                   </div>
                 )}
               </article>

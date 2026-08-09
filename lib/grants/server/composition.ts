@@ -10,6 +10,10 @@ import { SupabaseGrantFeedbackRepository } from "../infrastructure/supabase/supa
 import { GrantRevisionService } from "../application/revision-service.ts";
 import { SupabaseGrantRevisionRepository } from "../infrastructure/supabase/supabase-grant-revision-repository.ts";
 import { SupabaseGrantImportStorage } from "../infrastructure/supabase/supabase-grant-import-storage.ts";
+import { GrantPatchService } from "../application/patch-service.ts";
+import { GrantModelDataGateway } from "../application/grant-model-data-gateway.ts";
+import { OpenAICompatibleGrantPatchModel } from "../infrastructure/model/openai-compatible-grant-patch-model.ts";
+import { SupabaseGrantPatchRepository } from "../infrastructure/supabase/supabase-grant-patch-repository.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -44,4 +48,27 @@ export function createGrantDiagnosticService(ownerId: string): GrantDiagnosticSe
 
 export function createGrantFeedbackService(ownerId: string): GrantFeedbackService {
   return new GrantFeedbackService(new SupabaseGrantFeedbackRepository(createGrantSupabaseClient(), ownerId));
+}
+
+export function createGrantPatchService(ownerId: string): GrantPatchService {
+  const client = createGrantSupabaseClient();
+  const provider = process.env.GRANT_PATCH_PROVIDER?.trim() === "openai" ? "openai" : "deepseek";
+  const apiKey = provider === "openai"
+    ? process.env.OPENAI_API_KEY?.trim()
+    : process.env.DEEPSEEK_API_KEY?.trim();
+  if (!apiKey) throw new Error(`Grant patch ${provider} API key is not configured.`);
+  const modelId = process.env.GRANT_PATCH_MODEL?.trim()
+    || (provider === "openai" ? "gpt-4o-mini" : "deepseek-v4-flash");
+  const model = new OpenAICompatibleGrantPatchModel(
+    provider,
+    modelId,
+    apiKey,
+    provider === "deepseek" ? process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com" : undefined,
+  );
+  return new GrantPatchService(
+    new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
+    new SupabaseGrantDiagnosticRepository(client, ownerId),
+    new SupabaseGrantPatchRepository(client, ownerId),
+    new GrantModelDataGateway(model),
+  );
 }

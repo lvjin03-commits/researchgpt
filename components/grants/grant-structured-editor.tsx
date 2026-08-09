@@ -48,7 +48,7 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId }: { documentId: string }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled }: { documentId: string; aiPatchEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -382,6 +382,9 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
 
         <GrantDiagnosticsPanel
           documentId={documentId}
+          currentRevisionId={payload.aggregate.currentRevision.revisionId}
+          aiPatchEnabled={aiPatchEnabled}
+          canGeneratePatch={saveStatus === "saved"}
           items={diagnostics.findings}
           feedback={diagnostics.feedback}
           selectedFindingId={selectedFindingId}
@@ -391,6 +394,7 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
           onRun={runDiagnostics}
           onSelect={navigateToFinding}
           onFeedbackChange={updateFeedback}
+          onPatchAccepted={loadLatest}
         />
       </div>
     </main>

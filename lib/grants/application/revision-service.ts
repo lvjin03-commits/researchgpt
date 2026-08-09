@@ -58,6 +58,7 @@ type CommitRevisionInput = {
   actorKind: "user" | "system" | "ai";
   snapshot: CanonicalGrantSnapshot;
   reason: string;
+  auditMetadata?: Record<string, unknown>;
 };
 
 type RestoreRevisionInput = {
@@ -146,6 +147,11 @@ export class GrantRevisionService {
     return this.repository.listRevisions(documentId);
   }
 
+  async listAuditEvents(documentId: string) {
+    await this.getDocument(documentId);
+    return this.repository.listAuditEvents(documentId);
+  }
+
   async getRevision(documentId: string, revisionId: string) {
     await this.getDocument(documentId);
     const revision = await this.repository.getRevision(documentId, revisionId);
@@ -193,7 +199,11 @@ export class GrantRevisionService {
       actorId: input.actorId,
       actorKind: input.actorKind,
       eventType: "revision_committed",
-      metadata: { reason: input.reason, parentRevisionId: current.document.currentRevisionId },
+      metadata: {
+        ...input.auditMetadata,
+        reason: input.reason,
+        parentRevisionId: current.document.currentRevisionId,
+      },
       createdAt: timestamp,
     });
     const result = await this.repository.compareAndSwap({

@@ -5,10 +5,13 @@ import {
 } from "@/lib/grants/application/revision-service";
 import {
   GrantAuthenticationRequiredError,
+  GrantAiPatchDisabledError,
   GrantWorkspaceDisabledError,
 } from "@/lib/grants/server/request-context";
 import { GrantDocxImportError } from "@/lib/grants/imports/docx-importer";
 import { GrantImportStorageError } from "@/lib/grants/ports/grant-import-storage";
+import { GrantPatchNotFoundError, GrantPatchStateError } from "@/lib/grants/application/patch-service";
+import { GrantPatchPolicyError } from "@/lib/grants/patching/patch-policy";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -17,8 +20,20 @@ export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantAuthenticationRequiredError) {
     return Response.json({ error: "请先登录。", code: "authentication_required" }, { status: 401 });
   }
+  if (error instanceof GrantAiPatchDisabledError) {
+    return Response.json({ error: "AI 局部修改功能尚未开放。", code: "grant_ai_patch_disabled" }, { status: 404 });
+  }
   if (error instanceof GrantDocumentNotFoundError) {
     return Response.json({ error: "申请书不存在或无权访问。", code: "grant_document_not_found" }, { status: 404 });
+  }
+  if (error instanceof GrantPatchNotFoundError) {
+    return Response.json({ error: error.message, code: "grant_patch_not_found" }, { status: 404 });
+  }
+  if (error instanceof GrantPatchStateError) {
+    return Response.json({ error: error.message, code: "grant_patch_state_invalid" }, { status: 409 });
+  }
+  if (error instanceof GrantPatchPolicyError) {
+    return Response.json({ error: error.message, code: error.code }, { status: error.code === "grant_patch_stale" ? 409 : 400 });
   }
   if (error instanceof GrantRevisionConflictError) {
     return Response.json({

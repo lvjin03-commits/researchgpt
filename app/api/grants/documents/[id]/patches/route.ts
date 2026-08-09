@@ -1,0 +1,43 @@
+import { z } from "zod";
+import { grantApiError } from "@/app/api/grants/_shared";
+import { requireGrantAiPatchRequestContext } from "@/lib/grants/server/request-context";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type Context = { params: Promise<{ id: string }> };
+
+const ProposalRequestSchema = z.object({
+  baseRevisionId: z.string().uuid(),
+  targetNodeId: z.string().uuid(),
+  findingId: z.string().uuid().optional(),
+  instruction: z.string().trim().min(1).max(2000),
+}).strict();
+
+export async function GET(_request: Request, context: Context) {
+  try {
+    const { id } = await context.params;
+    const { patches } = await requireGrantAiPatchRequestContext();
+    return Response.json(await patches.list(z.string().uuid().parse(id)), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    return grantApiError(error, "list_grant_patch_proposals");
+  }
+}
+
+export async function POST(request: Request, context: Context) {
+  try {
+    const { id } = await context.params;
+    const documentId = z.string().uuid().parse(id);
+    const body = ProposalRequestSchema.parse(await request.json());
+    const { user, patches } = await requireGrantAiPatchRequestContext();
+    return Response.json(await patches.propose({ documentId, ...body, actorId: user.id }), {
+      status: 201,
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    return grantApiError(error, "create_grant_patch_proposal");
+  }
+}
+
