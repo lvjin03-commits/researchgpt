@@ -10,12 +10,22 @@ function throwRpcError(operation: string, error: { message: string } | null): vo
 export class SupabaseGrantPatchRepository implements GrantPatchRepository {
   constructor(private readonly client: GrantSupabaseRpcClient, private readonly ownerId: string) {}
 
-  async create(proposal: Parameters<GrantPatchRepository["create"]>[0]) {
-    const { data, error } = await this.client.rpc("create_grant_patch_proposal", {
+  async create(
+    proposal: Parameters<GrantPatchRepository["create"]>[0],
+    evidenceDependencies: NonNullable<Parameters<GrantPatchRepository["create"]>[1]> = [],
+  ) {
+    const operation = evidenceDependencies.length > 0
+      ? "create_grant_evidence_backed_patch_proposal"
+      : "create_grant_patch_proposal";
+    const { data, error } = await this.client.rpc(operation, evidenceDependencies.length > 0 ? {
+      p_owner_id: this.ownerId,
+      p_proposal: proposal,
+      p_dependencies: evidenceDependencies,
+    } : {
       p_owner_id: this.ownerId,
       p_proposal: proposal,
     });
-    throwRpcError("create_grant_patch_proposal", error);
+    throwRpcError(operation, error);
     return GrantPatchProposalSchema.parse(data);
   }
 
@@ -52,4 +62,3 @@ export class SupabaseGrantPatchRepository implements GrantPatchRepository {
     return GrantPatchProposalSchema.parse(data);
   }
 }
-

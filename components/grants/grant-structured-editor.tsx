@@ -48,7 +48,7 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnabled }: { documentId: string; aiPatchEnabled: boolean; evidenceEnabled: boolean }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnabled, evidencePatchEnabled }: { documentId: string; aiPatchEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -386,6 +386,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           documentId={documentId}
           currentRevisionId={payload.aggregate.currentRevision.revisionId}
           aiPatchEnabled={aiPatchEnabled}
+          evidencePatchEnabled={evidencePatchEnabled && evidenceEnabled}
           canGeneratePatch={saveStatus === "saved"}
           items={diagnostics.findings}
           feedback={diagnostics.feedback}

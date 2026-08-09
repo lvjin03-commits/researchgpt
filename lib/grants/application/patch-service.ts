@@ -47,6 +47,7 @@ export class GrantPatchService {
     findingId?: string;
     instruction: string;
     actorId: string;
+    evidenceSourceIds?: string[];
   }): Promise<GrantPatchProposal> {
     const aggregate = await this.revisionService.getDocument(input.documentId);
     if (aggregate.currentRevision.revisionId !== input.baseRevisionId) {
@@ -66,16 +67,20 @@ export class GrantPatchService {
         throw new GrantPatchStateError("The selected finding does not authorize this target node.");
       }
     }
+    const proposalId = this.createId();
     const oldText = grantEditableNodeText(aggregate.currentRevision.snapshot, input.targetNodeId);
     const generated = await this.gateway.propose({
+      documentId: input.documentId,
       snapshot: aggregate.currentRevision.snapshot,
       targetNodeId: input.targetNodeId,
       finding,
       userInstruction: input.instruction,
+      proposalId,
+      evidenceSourceIds: input.evidenceSourceIds,
     });
     const timestamp = this.now();
     const proposal = GrantPatchProposalSchema.parse({
-      proposalId: this.createId(),
+      proposalId,
       documentId: input.documentId,
       baseRevisionId: input.baseRevisionId,
       findingId: input.findingId,
@@ -93,11 +98,22 @@ export class GrantPatchService {
       modelProvider: generated.provider,
       modelId: generated.modelId,
       rationale: generated.rationale,
+      evidenceBindings: generated.evidenceBindings,
       createdAt: timestamp,
       updatedAt: timestamp,
     });
     applyGrantPatch(aggregate.currentRevision.snapshot, proposal);
-    return this.repository.create(proposal);
+    const evidenceDependencies = [...new Set(proposal.evidenceBindings.map((binding) => binding.sourceId))].map((sourceId) => ({
+      dependencyId: this.createId(),
+      documentId: proposal.documentId,
+      sourceId,
+      dependentKind: "patch_proposal" as const,
+      dependentId: proposal.proposalId,
+      status: "active" as const,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }));
+    return this.repository.create(proposal, evidenceDependencies);
   }
 
   async accept(documentId: string, proposalId: string, actorId: string) {
@@ -107,6 +123,12 @@ export class GrantPatchService {
       return { proposal, aggregate: await this.revisionService.getDocument(documentId) };
     }
     if (proposal.status !== "pending") throw new GrantPatchStateError("This proposal can no longer be accepted.");
+
+    await this.gateway.validateCurrentEvidence({
+      documentId,
+      proposalId,
+      bindings: proposal.evidenceBindings,
+    });
 
     const existingAudit = (await this.revisionService.listAuditEvents(documentId)).find(
       (event) => event.metadata.patchProposalId === proposalId,
@@ -141,14 +163,26 @@ export class GrantPatchService {
       actorKind: "user",
       snapshot: applyGrantPatch(aggregate.currentRevision.snapshot, proposal),
       reason: "accept_ai_patch_proposal",
+      evidencePatchProposalId: proposal.evidenceBindings.length > 0 ? proposal.proposalId : undefined,
       auditMetadata: {
         patchProposalId: proposal.proposalId,
         findingId: proposal.findingId,
         targetNodeIds: proposal.targetNodeIds,
         instructionHash: sha256Canonical(proposal.instruction),
         contentOrigin: "ai_proposal",
+        evidenceSourceIds: [...new Set(proposal.evidenceBindings.map((binding) => binding.sourceId))],
+        evidenceCardIds: proposal.evidenceBindings.map((binding) => binding.cardId),
+        evidenceAuthorizationRevisions: Object.fromEntries(
+          proposal.evidenceBindings.map((binding) => [binding.sourceId, binding.authorizationRevision]),
+        ),
       },
     });
+    if (proposal.evidenceBindings.length > 0) {
+      const transactionallyAccepted = await this.repository.get(documentId, proposalId);
+      if (transactionallyAccepted?.status === "accepted") {
+        return { proposal: transactionallyAccepted, aggregate: next };
+      }
+    }
     const accepted = await this.repository.setStatus({
       documentId,
       proposalId,

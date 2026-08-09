@@ -12,6 +12,17 @@ export const GrantPatchOperationSchema = z.object({
   newText: z.string().trim().min(1),
 }).strict();
 
+export const GrantPatchEvidenceBindingSchema = z.object({
+  sourceId: UuidSchema,
+  cardId: UuidSchema,
+  sourceTitle: z.string().trim().min(1).max(500),
+  provenanceType: z.enum(["published_literature", "own_unpublished_work", "project_material"]),
+  sourceContentHash: Sha256Schema,
+  excerptHash: Sha256Schema,
+  authorizationRevision: z.number().int().positive(),
+  uses: z.array(z.enum(["model", "reasoning"])).length(2),
+}).strict();
+
 export const GrantPatchProposalSchema = z.object({
   proposalId: UuidSchema,
   documentId: UuidSchema,
@@ -25,6 +36,7 @@ export const GrantPatchProposalSchema = z.object({
   modelProvider: z.enum(["deepseek", "openai"]),
   modelId: z.string().trim().min(1),
   rationale: z.string().trim().max(2000).optional(),
+  evidenceBindings: z.array(GrantPatchEvidenceBindingSchema).max(24).default([]),
   acceptedRevisionId: UuidSchema.optional(),
   createdAt: IsoTimestampSchema,
   updatedAt: IsoTimestampSchema,
@@ -40,3 +52,4 @@ export const GrantPatchProposalSchema = z.object({
 
 export type GrantPatchOperation = z.infer<typeof GrantPatchOperationSchema>;
 export type GrantPatchProposal = z.infer<typeof GrantPatchProposalSchema>;
+export type GrantPatchEvidenceBinding = z.infer<typeof GrantPatchEvidenceBindingSchema>;

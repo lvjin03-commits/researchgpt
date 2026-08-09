@@ -25,6 +25,7 @@ type Props = {
   documentId: string;
   currentRevisionId: string;
   aiPatchEnabled: boolean;
+  evidencePatchEnabled: boolean;
   canGeneratePatch: boolean;
   items: GrantDiagnosticItem[];
   feedback: GrantFindingFeedback[];
@@ -152,6 +153,7 @@ export function GrantDiagnosticsPanel(props: Props) {
                       findingId={finding.findingId}
                       targetNodeId={target.nodeId}
                       enabled={props.aiPatchEnabled}
+                      evidencePatchEnabled={props.evidencePatchEnabled}
                       canGenerate={props.canGeneratePatch}
                       onAccepted={props.onPatchAccepted}
                     />

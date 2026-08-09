@@ -15,6 +15,7 @@ import { GrantModelDataGateway } from "../application/grant-model-data-gateway.t
 import { OpenAICompatibleGrantPatchModel } from "../infrastructure/model/openai-compatible-grant-patch-model.ts";
 import { SupabaseGrantPatchRepository } from "../infrastructure/supabase/supabase-grant-patch-repository.ts";
 import { GrantEvidenceService } from "../application/evidence-service.ts";
+import { GrantEvidenceAuthorizationService } from "../application/evidence-authorization-service.ts";
 import { SupabaseGrantEvidenceRepository } from "../infrastructure/supabase/supabase-grant-evidence-repository.ts";
 import { SupabaseGrantEvidenceStorage } from "../infrastructure/supabase/supabase-grant-evidence-storage.ts";
 import { SharedGrantEvidenceParser } from "../infrastructure/documents/shared-grant-evidence-parser.ts";
@@ -69,11 +70,12 @@ export function createGrantPatchService(ownerId: string): GrantPatchService {
     apiKey,
     provider === "deepseek" ? process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com" : undefined,
   );
+  const evidenceRepository = new SupabaseGrantEvidenceRepository(client, ownerId);
   return new GrantPatchService(
     new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
     new SupabaseGrantDiagnosticRepository(client, ownerId),
     new SupabaseGrantPatchRepository(client, ownerId),
-    new GrantModelDataGateway(model),
+    new GrantModelDataGateway(model, new GrantEvidenceAuthorizationService(evidenceRepository)),
   );
 }
 

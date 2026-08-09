@@ -104,7 +104,10 @@ export class SupabaseGrantRevisionRepository implements GrantRevisionRepository 
   }
 
   async compareAndSwap(input: CommitGrantRevisionInput): Promise<CommitGrantRevisionResult> {
-    const { data, error } = await this.client.rpc("commit_grant_document_revision", {
+    const operation = input.evidencePatchProposalId
+      ? "commit_grant_evidence_patch_revision"
+      : "commit_grant_document_revision";
+    const arguments_: Record<string, unknown> = {
       p_owner_id: this.ownerId,
       p_document_id: input.documentId,
       p_expected_revision_id: input.expectedRevisionId,
@@ -115,8 +118,12 @@ export class SupabaseGrantRevisionRepository implements GrantRevisionRepository 
       p_actor_kind: input.auditEvent.actorKind,
       p_audit_event_id: input.auditEvent.auditEventId,
       p_audit_metadata: input.auditEvent.metadata,
-    });
-    throwRpcError("commit_grant_document_revision", error);
+    };
+    if (input.evidencePatchProposalId) {
+      arguments_.p_proposal_id = input.evidencePatchProposalId;
+    }
+    const { data, error } = await this.client.rpc(operation, arguments_);
+    throwRpcError(operation, error);
     const current = await this.get(input.documentId);
     if (!current) throw new Error("Committed grant document could not be reloaded.");
     if (data !== true) {

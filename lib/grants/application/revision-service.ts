@@ -59,6 +59,7 @@ type CommitRevisionInput = {
   snapshot: CanonicalGrantSnapshot;
   reason: string;
   auditMetadata?: Record<string, unknown>;
+  evidencePatchProposalId?: string;
 };
 
 type RestoreRevisionInput = {
@@ -211,6 +212,7 @@ export class GrantRevisionService {
       expectedRevisionId: input.expectedRevisionId,
       revision,
       auditEvent,
+      evidencePatchProposalId: input.evidencePatchProposalId,
     });
     if (result.status === "revision_conflict") {
       throw new GrantRevisionConflictError(result.currentRevisionId);

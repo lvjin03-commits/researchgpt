@@ -43,6 +43,7 @@ const model: GrantPatchModel = {
       rationale: "按用户要求增强表达。",
       provider: "deepseek",
       modelId: "test-model",
+      usedEvidenceCardIds: [],
     };
   },
 };
@@ -64,7 +65,7 @@ const proposal = await service.propose({
 assert.equal(proposal.status, "pending");
 assert.equal((await revisionService.getDocument(aggregate.document.documentId)).document.currentRevisionNumber, 1, "proposal must not write canonical content");
 assert.equal(modelRequests[0].targetText, "原始研究背景。");
-assert.equal("evidence" in modelRequests[0], false, "model port cannot receive evidence in PR5");
+assert.deepEqual(modelRequests[0].evidence, [], "evidence-free PR5 behavior must remain available");
 
 const unauthorized = structuredClone(proposal);
 unauthorized.targetNodeIds = [randomUUID()];

@@ -9,3 +9,7 @@ export function isGrantAiPatchEnabled(): boolean {
 export function isGrantLocalEvidenceEnabled(): boolean {
   return process.env.GRANT_LOCAL_EVIDENCE_ENABLED?.trim().toLowerCase() === "true";
 }
+
+export function isGrantEvidencePatchEnabled(): boolean {
+  return process.env.GRANT_EVIDENCE_PATCH_ENABLED?.trim().toLowerCase() === "true";
+}

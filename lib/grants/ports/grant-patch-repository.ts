@@ -1,7 +1,8 @@
 import type { GrantPatchProposal } from "../patching/contracts.ts";
+import type { GrantEvidenceDependency } from "../evidence/contracts.ts";
 
 export interface GrantPatchRepository {
-  create(proposal: GrantPatchProposal): Promise<GrantPatchProposal>;
+  create(proposal: GrantPatchProposal, evidenceDependencies?: GrantEvidenceDependency[]): Promise<GrantPatchProposal>;
   get(documentId: string, proposalId: string): Promise<GrantPatchProposal | null>;
   list(documentId: string): Promise<GrantPatchProposal[]>;
   setStatus(input: {
@@ -13,4 +14,3 @@ export interface GrantPatchRepository {
     updatedAt: string;
   }): Promise<GrantPatchProposal>;
 }
-

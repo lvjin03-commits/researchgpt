@@ -101,6 +101,20 @@ TXT fixture: upload, deterministic Evidence Card creation, default-deny model
 permissions, authorization update, revocation and recoverable deletion all
 completed successfully; the fixture and its object were deleted afterward.
 
+PR7 implementation status (2026-08-09): the existing Patch path now accepts
+optional authorized evidence sources. The Grant Model Data Gateway rebuilds a
+bounded evidence context from current authorization, rejects highly sensitive
+sources, validates model-returned Evidence Card IDs, records excerpt-free
+provenance, and rechecks authorization before acceptance. Migration 041 keeps
+proposal persistence and revocation dependencies in one transaction, and keeps
+the acceptance evidence guard, Revision CAS, and proposal status transition in
+another single transaction. The
+evidence-free PR5 path remains unchanged. Contract, architecture, encoding,
+type, UI-structure and production-build checks pass locally. Migration 041 is
+applied and the guarded-acceptance RPC resolves remotely. Production deployment
+and a real signed-in evidence-backed model call, revocation behavior and
+acceptance remain to be verified.
+
 ## Feature Flags
 
 The product begins disabled. Planned flags are capability gates, not alternative

@@ -1,3 +1,11 @@
+export type GrantPatchEvidenceExcerpt = {
+  sourceId: string;
+  cardId: string;
+  sourceTitle: string;
+  provenanceType: "published_literature" | "own_unpublished_work" | "project_material";
+  excerpt: string;
+};
+
 export type GrantPatchModelRequest = {
   documentLanguage: "zh" | "en";
   sectionTitle: string;
@@ -5,6 +13,7 @@ export type GrantPatchModelRequest = {
   findingMessage?: string;
   findingRecommendation?: string;
   userInstruction: string;
+  evidence: GrantPatchEvidenceExcerpt[];
 };
 
 export type GrantPatchModelResult = {
@@ -12,9 +21,9 @@ export type GrantPatchModelResult = {
   rationale?: string;
   provider: "deepseek" | "openai";
   modelId: string;
+  usedEvidenceCardIds: string[];
 };
 
 export interface GrantPatchModel {
   generate(request: GrantPatchModelRequest): Promise<GrantPatchModelResult>;
 }
-

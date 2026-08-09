@@ -21,6 +21,7 @@ export type CommitGrantRevisionInput = {
   expectedRevisionId: string;
   revision: GrantRevision;
   auditEvent: GrantAuditEvent;
+  evidencePatchProposalId?: string;
 };
 
 export type CommitGrantRevisionResult =

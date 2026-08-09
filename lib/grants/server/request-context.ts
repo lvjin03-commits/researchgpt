@@ -6,12 +6,13 @@ import { createGrantFeedbackService } from "./composition.ts";
 import { createGrantDocxImportService } from "./composition.ts";
 import { createGrantPatchService } from "./composition.ts";
 import { createGrantEvidenceService } from "./composition.ts";
-import { isGrantAiPatchEnabled, isGrantLocalEvidenceEnabled, isGrantWorkspaceEnabled } from "./config.ts";
+import { isGrantAiPatchEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantWorkspaceEnabled } from "./config.ts";
 
 export class GrantWorkspaceDisabledError extends Error {}
 export class GrantAuthenticationRequiredError extends Error {}
 export class GrantAiPatchDisabledError extends Error {}
 export class GrantLocalEvidenceDisabledError extends Error {}
+export class GrantEvidencePatchDisabledError extends Error {}
 
 export async function requireGrantRequestContext() {
   if (!isGrantWorkspaceEnabled()) throw new GrantWorkspaceDisabledError();
@@ -37,4 +38,8 @@ export async function requireGrantEvidenceRequestContext() {
   if (!isGrantLocalEvidenceEnabled()) throw new GrantLocalEvidenceDisabledError();
   const context = await requireGrantRequestContext();
   return { ...context, evidence: createGrantEvidenceService(context.user.id) };
+}
+
+export function requireGrantEvidencePatchEnabled(): void {
+  if (!isGrantEvidencePatchEnabled() || !isGrantLocalEvidenceEnabled()) throw new GrantEvidencePatchDisabledError();
 }

@@ -6,12 +6,14 @@ import {
 import {
   GrantAuthenticationRequiredError,
   GrantAiPatchDisabledError,
+  GrantEvidencePatchDisabledError,
   GrantLocalEvidenceDisabledError,
   GrantWorkspaceDisabledError,
 } from "@/lib/grants/server/request-context";
 import { GrantDocxImportError } from "@/lib/grants/imports/docx-importer";
 import { GrantImportStorageError } from "@/lib/grants/ports/grant-import-storage";
 import { GrantPatchNotFoundError, GrantPatchStateError } from "@/lib/grants/application/patch-service";
+import { GrantEvidenceProviderPolicyError, GrantPatchEvidenceMismatchError } from "@/lib/grants/application/grant-model-data-gateway";
 import { GrantPatchPolicyError } from "@/lib/grants/patching/patch-policy";
 import {
   GrantEvidenceAuthorizationConflictError,
@@ -34,6 +36,9 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantLocalEvidenceDisabledError) {
     return Response.json({ error: "项目资料功能尚未开放。", code: "grant_local_evidence_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantEvidencePatchDisabledError) {
+    return Response.json({ error: "证据支持的 AI 修改功能尚未开放。", code: "grant_evidence_patch_disabled" }, { status: 404 });
   }
   if (error instanceof GrantEvidenceNotFoundError) {
     return Response.json({ error: error.message, code: "grant_evidence_not_found" }, { status: 404 });
@@ -62,6 +67,12 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantPatchStateError) {
     return Response.json({ error: error.message, code: "grant_patch_state_invalid" }, { status: 409 });
+  }
+  if (error instanceof GrantEvidenceProviderPolicyError) {
+    return Response.json({ error: error.message, code: "grant_evidence_provider_policy_denied" }, { status: 403 });
+  }
+  if (error instanceof GrantPatchEvidenceMismatchError) {
+    return Response.json({ error: error.message, code: "grant_patch_evidence_mismatch" }, { status: 409 });
   }
   if (error instanceof GrantPatchPolicyError) {
     return Response.json({ error: error.message, code: error.code }, { status: error.code === "grant_patch_stale" ? 409 : 400 });

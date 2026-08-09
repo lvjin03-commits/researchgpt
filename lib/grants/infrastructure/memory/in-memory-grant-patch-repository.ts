@@ -1,12 +1,15 @@
 import type { GrantPatchProposal } from "../../patching/contracts.ts";
+import type { GrantEvidenceDependency } from "../../evidence/contracts.ts";
 import type { GrantPatchRepository } from "../../ports/grant-patch-repository.ts";
 
 export class InMemoryGrantPatchRepository implements GrantPatchRepository {
   private readonly proposals = new Map<string, GrantPatchProposal>();
+  readonly evidenceDependencies = new Map<string, GrantEvidenceDependency>();
 
-  async create(proposal: GrantPatchProposal) {
+  async create(proposal: GrantPatchProposal, evidenceDependencies: GrantEvidenceDependency[] = []) {
     if (this.proposals.has(proposal.proposalId)) throw new Error("Grant patch proposal already exists.");
     this.proposals.set(proposal.proposalId, structuredClone(proposal));
+    for (const dependency of evidenceDependencies) this.evidenceDependencies.set(dependency.dependencyId, structuredClone(dependency));
     return structuredClone(proposal);
   }
 

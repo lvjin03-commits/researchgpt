@@ -7,11 +7,12 @@ feature implementation begins.
 ## Status
 
 - Governance baseline: active.
-- Product code: PR1 through PR5 are implemented; PR6 project evidence and
-  authorization are implemented locally behind a disabled capability flag.
-- Feature exposure: workspace and evidence-free AI patch capabilities are
-  enabled in production. PR6 remains disabled until migration 040 and a
-  separate production rollout are authorized and verified.
+- Product code: PR1 through PR6 are implemented and verified in production.
+  PR7 evidence-backed AI Patch is implemented behind its own capability flag;
+  migration 041 is applied and its guarded-acceptance RPC is remotely probed.
+- Feature exposure: workspace, evidence-free AI Patch and local evidence are
+  enabled in production. PR7 production rollout is authorized; signed-in
+  user-path verification remains required after deployment.
 - Existing chat and Document V2 behavior: out of scope and must remain unchanged.
 
 ## Product Boundary

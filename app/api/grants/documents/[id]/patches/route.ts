@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { grantApiError } from "@/app/api/grants/_shared";
-import { requireGrantAiPatchRequestContext } from "@/lib/grants/server/request-context";
+import { requireGrantAiPatchRequestContext, requireGrantEvidencePatchEnabled } from "@/lib/grants/server/request-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ const ProposalRequestSchema = z.object({
   targetNodeId: z.string().uuid(),
   findingId: z.string().uuid().optional(),
   instruction: z.string().trim().min(1).max(2000),
+  evidenceSourceIds: z.array(z.string().uuid()).max(8).default([]),
 }).strict();
 
 export async function GET(_request: Request, context: Context) {
@@ -31,6 +32,7 @@ export async function POST(request: Request, context: Context) {
     const { id } = await context.params;
     const documentId = z.string().uuid().parse(id);
     const body = ProposalRequestSchema.parse(await request.json());
+    if (body.evidenceSourceIds.length > 0) requireGrantEvidencePatchEnabled();
     const { user, patches } = await requireGrantAiPatchRequestContext();
     return Response.json(await patches.propose({ documentId, ...body, actorId: user.id }), {
       status: 201,
@@ -40,4 +42,3 @@ export async function POST(request: Request, context: Context) {
     return grantApiError(error, "create_grant_patch_proposal");
   }
 }
-

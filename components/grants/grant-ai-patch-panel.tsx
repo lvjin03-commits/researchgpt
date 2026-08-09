@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { GrantPatchProposal } from "@/lib/grants/patching/contracts";
+import type { GrantEvidenceResource } from "@/lib/grants/evidence/contracts";
 
 type Props = {
   documentId: string;
@@ -9,6 +10,7 @@ type Props = {
   findingId: string;
   targetNodeId?: string;
   enabled: boolean;
+  evidencePatchEnabled: boolean;
   canGenerate: boolean;
   onAccepted: () => Promise<void>;
 };
@@ -18,9 +20,27 @@ export function GrantAiPatchPanel(props: Props) {
   const [proposal, setProposal] = useState<GrantPatchProposal | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [evidence, setEvidence] = useState<GrantEvidenceResource[]>([]);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!props.enabled || !props.evidencePatchEnabled) return;
+    let active = true;
+    void fetch(`/api/grants/documents/${props.documentId}/evidence`, { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "无法读取已授权资料。");
+        if (active) setEvidence(data as GrantEvidenceResource[]);
+      })
+      .catch((nextError) => active && setError(nextError instanceof Error ? nextError.message : "无法读取已授权资料。"));
+    return () => { active = false; };
+  }, [props.documentId, props.enabled, props.evidencePatchEnabled]);
 
   if (!props.enabled) return null;
   const operation = proposal?.operations[0];
+  const availableEvidence = evidence.filter((resource) => resource.source.status === "active"
+    && resource.authorization.permissions.sendRelevantExcerptToModel
+    && resource.authorization.permissions.useForReasoning);
 
   async function generate() {
     if (!props.targetNodeId || !instruction.trim()) return;
@@ -35,6 +55,7 @@ export function GrantAiPatchPanel(props: Props) {
           targetNodeId: props.targetNodeId,
           findingId: props.findingId,
           instruction,
+          evidenceSourceIds: selectedSourceIds,
         }),
       });
       const data = await response.json();
@@ -61,6 +82,7 @@ export function GrantAiPatchPanel(props: Props) {
       if (action === "accept") await props.onAccepted();
       setProposal(null);
       setInstruction("");
+      setSelectedSourceIds([]);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "无法处理修改提案。");
     } finally {
@@ -80,6 +102,29 @@ export function GrantAiPatchPanel(props: Props) {
         placeholder="例如：强化科学问题与前期结果的逻辑连接，但不要增加新结论。"
         className="research-focus mt-2 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
       />
+      {props.evidencePatchEnabled && (
+        <fieldset className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+          <legend className="px-1 text-[11px] font-semibold text-slate-700">选择资料作为修改依据（可选）</legend>
+          <p className="mb-2 text-[10px] leading-4 text-slate-500">只显示已允许发送摘录并用于推理的资料；不会自动生成正式引用编号。</p>
+          <div className="space-y-1.5">
+            {availableEvidence.map((resource) => (
+              <label key={resource.source.sourceId} className="flex items-start gap-2 text-[11px] text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={selectedSourceIds.includes(resource.source.sourceId)}
+                  disabled={!selectedSourceIds.includes(resource.source.sourceId) && selectedSourceIds.length >= 8}
+                  onChange={(event) => setSelectedSourceIds((current) => event.target.checked
+                    ? [...current, resource.source.sourceId]
+                    : current.filter((sourceId) => sourceId !== resource.source.sourceId))}
+                />
+                <span>{resource.source.title}</span>
+              </label>
+            ))}
+            {availableEvidence.length === 0 && <p className="text-[10px] text-slate-400">暂无可选资料。请先在左侧上传并授权。</p>}
+            {selectedSourceIds.length >= 8 && <p className="text-[10px] text-amber-700">一次修改最多使用 8 项资料。</p>}
+          </div>
+        </fieldset>
+      )}
       <button
         type="button"
         disabled={busy || !props.canGenerate || !props.targetNodeId || !instruction.trim()}
@@ -103,6 +148,15 @@ export function GrantAiPatchPanel(props: Props) {
             <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-700">{operation.newText}</p>
           </div>
           {proposal?.rationale && <p className="text-xs leading-5 text-slate-600">说明：{proposal.rationale}</p>}
+          {proposal && proposal.evidenceBindings.length > 0 && (
+            <div className="rounded-lg border border-blue-100 bg-white p-3">
+              <p className="text-[11px] font-semibold text-[#245d82]">本次修改依据</p>
+              <ul className="mt-1 list-inside list-disc text-[11px] leading-5 text-slate-600">
+                {[...new Map(proposal.evidenceBindings.map((binding) => [binding.sourceId, binding.sourceTitle])).values()]
+                  .map((title) => <li key={title}>{title}</li>)}
+              </ul>
+            </div>
+          )}
           <div className="flex gap-2">
             <button type="button" disabled={busy} onClick={() => void decide("accept")} className="flex-1 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">接受并写入</button>
             <button type="button" disabled={busy} onClick={() => void decide("reject")} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">拒绝</button>
