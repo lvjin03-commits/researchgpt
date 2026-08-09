@@ -87,6 +87,14 @@ semantic diagnosis and AI Patch. GPT failure preserves deterministic results
 but is projected as incomplete rather than a successful full diagnosis. No new
 route, persistence model, worker or canonical write path is introduced.
 
+PR3 semantic reliability update (2026-08-09): semantic diagnostics use a
+versioned strict Structured Output contract and one Grant-owned two-call budget.
+Truncation, filtering, refusal, invalid structure, out-of-scope references and
+provider failures are projected separately. A second call is permitted only
+for an explicitly recoverable category, and token usage is accumulated across
+both attempts. No raw application or model text is copied into diagnostic
+telemetry.
+
 PR4 implementation status (2026-08-08): the three-pane workspace, collapsed
 Finding cards, source navigation, user feedback persistence and production
 navigation entry are implemented and exposed behind `GRANT_WORKSPACE_ENABLED`.

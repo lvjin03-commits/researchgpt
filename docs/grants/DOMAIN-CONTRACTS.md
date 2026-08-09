@@ -181,6 +181,13 @@ configuration and enter through Grant Model Data Gateway. Downstream modules
 may select an operation and its reasoning effort, but may not select a provider
 or silently fall back to another model.
 
+Semantic diagnostic output uses a versioned strict structured-output contract.
+Its single execution policy owns a maximum of two provider attempts and keeps
+truncation, filtering, refusal, schema invalidity, out-of-scope references and
+provider failures as separate outcomes. Only explicitly recoverable outcomes
+may consume the second attempt. Failed-run telemetry is content-free and must
+not copy application text or raw model responses into diagnostic projections.
+
 Lifecycle, user disposition, and recheck outcome are separate:
 
 ```ts

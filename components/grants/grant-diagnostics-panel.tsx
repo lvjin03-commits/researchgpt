@@ -43,6 +43,21 @@ type Props = {
   onPatchAccepted: () => Promise<void>;
 };
 
+function semanticFailureMessage(coverage: GrantDiagnosticCoverage): string {
+  switch (coverage.semanticFailure?.category) {
+    case "output_truncated": return "GPT 输出达到长度上限，语义诊断在完成前被截断。系统已按统一预算受控重试，当前没有把不完整结果写成诊断。";
+    case "content_filtered": return "GPT 的内容过滤器中止了本次语义诊断，程序检查结果仍然保留。";
+    case "provider_refusal": return "GPT 拒绝了本次语义诊断请求，程序检查结果仍然保留。";
+    case "structured_output_invalid": return "GPT 返回的诊断结构不符合当前合同。系统已尝试一次受控修正，但没有把无效结果写入。";
+    case "semantic_reference_invalid": return "GPT 返回了不属于本次申请书输入范围的章节或段落引用，系统已阻止越界结果写入。";
+    case "provider_rate_limited": return "GPT 服务当前限流，本次语义诊断未完成；程序检查结果仍然保留。";
+    case "provider_transient_error": return "GPT 服务发生临时故障，受控重试后仍未完成语义诊断。";
+    case "provider_contract_error": return "GPT 请求参数或服务合同不兼容，本次语义诊断未发送为有效结果。";
+    case "provider_unavailable": return "GPT 服务当前不可用，本次语义诊断未完成。";
+    default: return "程序检查已保留，但 GPT 语义诊断未完成。系统没有把程序检查结果冒充完整 AI 诊断。";
+  }
+}
+
 export function GrantDiagnosticsPanel(props: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [savingFindingId, setSavingFindingId] = useState<string | null>(null);
@@ -88,7 +103,7 @@ export function GrantDiagnosticsPanel(props: Props) {
 
         {props.coverage.semantic === "failed" && (
           <p role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
-            程序检查已保留，但 GPT 语义诊断未完成。请再次点击“AI诊断”；系统不会把程序检查结果冒充完整 AI 诊断。
+            {semanticFailureMessage(props.coverage)}
           </p>
         )}
 

@@ -1,13 +1,14 @@
 import { sha256Canonical } from "../domain/canonical-json.ts";
 import type { GrantChecker, GrantCheckerFindingCandidate, GrantCheckerInput } from "../diagnostics/checker.ts";
+import { GRANT_DIAGNOSTIC_POLICY_VERSION, GRANT_DIAGNOSTIC_SCHEMA_VERSION } from "../ports/grant-diagnostic-model.ts";
 import { GrantModelDataGateway } from "./grant-model-data-gateway.ts";
 
 export const GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID = "grant-semantic-argument-diagnostic";
 
 export class GrantSemanticDiagnosticChecker implements GrantChecker {
   readonly checkerId = GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID;
-  readonly checkerVersion = "1.0.0";
-  readonly contractVersion = "grant-semantic-diagnostic-v1";
+  readonly checkerVersion = "2.0.0";
+  readonly contractVersion = "grant-semantic-diagnostic-v2";
   readonly inputMode = "full_document" as const;
   readonly supportedInputModes = ["full_document", "section_bundle"] as const;
   readonly configurationFingerprint: string;
@@ -15,7 +16,13 @@ export class GrantSemanticDiagnosticChecker implements GrantChecker {
 
   constructor(gateway: GrantModelDataGateway, modelId: string) {
     this.gateway = gateway;
-    this.configurationFingerprint = sha256Canonical({ provider: "openai", modelId, promptVersion: this.contractVersion });
+    this.configurationFingerprint = sha256Canonical({
+      provider: "openai",
+      modelId,
+      promptVersion: this.contractVersion,
+      policyVersion: GRANT_DIAGNOSTIC_POLICY_VERSION,
+      schemaVersion: GRANT_DIAGNOSTIC_SCHEMA_VERSION,
+    });
   }
 
   async check(input: GrantCheckerInput) {
@@ -45,6 +52,7 @@ export class GrantSemanticDiagnosticChecker implements GrantChecker {
         inputTokens: output.usage.inputTokens,
         outputTokens: output.usage.outputTokens,
         reasoningTokens: output.usage.reasoningTokens,
+        execution: output.execution,
         authorizedEvidenceCardCount: output.authorizedEvidenceCardIds.length,
       },
     };

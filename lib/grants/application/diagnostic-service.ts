@@ -8,6 +8,7 @@ import { analyzeGrantDiagnosticImpact } from "../diagnostics/impact-analyzer.ts"
 import type { GrantDiagnosticExecution, GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import { GrantRevisionService } from "./revision-service.ts";
 import { GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID } from "./semantic-diagnostic-checker.ts";
+import { GrantDiagnosticExecutionError, type GrantDiagnosticFailureCategory } from "../ports/grant-diagnostic-model.ts";
 
 type DiagnosticServiceDependencies = {
   revisionService: GrantRevisionService;
@@ -34,6 +35,11 @@ export type GrantDiagnosticCoverage = {
   semantic: "not_run" | "complete" | "failed";
   failedCheckerIds: string[];
   semanticModelId?: string;
+  semanticFailure?: {
+    category: GrantDiagnosticFailureCategory | "checker_failed";
+    finishReason?: string;
+    attemptCount?: number;
+  };
 };
 
 function stableFindingKey(checker: GrantChecker, candidate: GrantCheckerFindingCandidate): string {
@@ -161,6 +167,9 @@ export class GrantDiagnosticService {
           completedAt: this.now(),
         }));
       } catch (error) {
+        const diagnosticFailure = error instanceof GrantDiagnosticExecutionError
+          ? { category: error.category, ...error.metadata }
+          : { category: "checker_failed" as const };
         runs.push(GrantDiagnosticRunSchema.parse({
           runId,
           documentId,
@@ -172,8 +181,8 @@ export class GrantDiagnosticService {
           inputNodeIds,
           inputHash,
           status: "failed",
-          parsedOutput: { inputSectionIds },
-          failureCode: error instanceof Error ? error.name : "checker_failed",
+          parsedOutput: { inputSectionIds, failure: diagnosticFailure },
+          failureCode: error instanceof GrantDiagnosticExecutionError ? error.category : error instanceof Error ? error.name : "checker_failed",
           createdBy: actorId,
           startedAt,
           completedAt: this.now(),
@@ -273,6 +282,7 @@ export class GrantDiagnosticService {
     const deterministicSucceeded = deterministicCheckers.filter((checker) => latest.get(checker.checkerId)?.status === "succeeded").length;
     const failedCheckerIds = [...latest.values()].filter((run) => run.status === "failed").map((run) => run.checkerId);
     const semanticMetadata = semanticRun?.parsedOutput.metadata;
+    const semanticFailure = semanticRun?.parsedOutput.failure;
     return {
       deterministic: deterministicSucceeded === 0
         ? "not_run"
@@ -281,6 +291,13 @@ export class GrantDiagnosticService {
       failedCheckerIds,
       semanticModelId: semanticMetadata && typeof semanticMetadata === "object" && "modelId" in semanticMetadata && typeof semanticMetadata.modelId === "string"
         ? semanticMetadata.modelId
+        : undefined,
+      semanticFailure: semanticFailure && typeof semanticFailure === "object" && "category" in semanticFailure && typeof semanticFailure.category === "string"
+        ? {
+          category: semanticFailure.category as GrantDiagnosticFailureCategory | "checker_failed",
+          finishReason: "finishReason" in semanticFailure && typeof semanticFailure.finishReason === "string" ? semanticFailure.finishReason : undefined,
+          attemptCount: "attemptCount" in semanticFailure && typeof semanticFailure.attemptCount === "number" ? semanticFailure.attemptCount : undefined,
+        }
         : undefined,
     };
   }
