@@ -95,6 +95,14 @@ for an explicitly recoverable category, and token usage is accumulated across
 both attempts. No raw application or model text is copied into diagnostic
 telemetry.
 
+Semantic Diagnostic V3 planning status (2026-08-09): the contract, impact
+analysis and ADR are frozen in Impact Analysis 0015 and ADR-0015. This step
+changes no runtime behavior. Implementation must remain staged: strict schema
+and fixtures; model input/evidence boundary; prompt and unified executor;
+assembler/location/fingerprint; additive persistence and normalized projection;
+then UI, historical activation and real signed-in verification. V3 must use the
+existing `AI诊断` action and semantic checker authority, not a parallel route.
+
 PR4 implementation status (2026-08-08): the three-pane workspace, collapsed
 Finding cards, source navigation, user feedback persistence and production
 navigation entry are implemented and exposed behind `GRANT_WORKSPACE_ENABLED`.

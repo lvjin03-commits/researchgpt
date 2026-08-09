@@ -176,6 +176,98 @@ severity, predict funding outcomes, invent evidence, or return IDs not supplied
 by the program. A model failure is an incomplete diagnostic execution, not an
 empty or successful semantic result.
 
+### Semantic Diagnostic V3 Target Contract
+
+The following contract is accepted for the next semantic-checker version but is
+not the active production schema until its staged rollout is verified:
+
+```ts
+type GrantSemanticFindingContentV3 = {
+  category:
+    | "scientific_question_gap"
+    | "argument_chain_gap"
+    | "innovation_gap"
+    | "feasibility_support_gap"
+    | "objective_content_route_gap"
+    | "research_design_gap"
+    | "evidence_support_gap"
+    | "cross_section_inconsistency";
+  title: string;
+  diagnosticFact: string;
+  reason: string;
+  recommendation: string;
+  possibleConsequence: string | null;
+  assessment: FindingAssessment;
+  primaryLocation: {
+    sectionId: string;
+    nodeId: string;
+  };
+  relatedLocations: Array<{
+    sectionId: string;
+    nodeId: string;
+    role:
+      | "supporting_location"
+      | "conflicting_location"
+      | "upstream_dependency"
+      | "downstream_dependency"
+      | "comparison_location"
+      | "missing_expected_location";
+    quote: string | null;
+  }>;
+  usedEvidenceCardIds: string[];
+};
+```
+
+This is diagnostic content, not a replacement for the durable Finding
+envelope. `findingId`, run/document/revision identity, checker and contract
+versions, fingerprint, lifecycle status and timestamps remain program-owned.
+The model never creates or changes them.
+
+The provider-facing strict schema has no optional properties.
+`possibleConsequence` is required and nullable. `relatedLocations` and
+`usedEvidenceCardIds` are required arrays and use `[]` when empty.
+
+Category ownership is fixed:
+
+- `scientific_question_gap` concerns whether the question itself identifies a
+  bounded object, relationship, hypothesis or testable criterion. A clear
+  question that is not connected to later work belongs elsewhere.
+- `argument_chain_gap` concerns a missing inference between background,
+  knowledge gap, scientific question, hypothesis or expected contribution.
+- `feasibility_support_gap` concerns the applicant's own preparation, people,
+  facilities, methods and schedule.
+- `evidence_support_gap` concerns support for a scientific assertion, mechanism,
+  causal claim or novelty statement.
+- `objective_content_route_gap` covers objective-to-content and
+  content-to-technical-route correspondence.
+
+Positive and negative category examples are required prompt fixtures and
+contract tests before activation. Missing information about the same semantic
+subject in one section is merged into one Finding rather than emitted as a list
+of low-value omissions.
+
+Evidence use is bounded. A `verified` Evidence Card may support only claims
+inside its declared supported scope. A `metadata_only` card establishes only
+that a source record exists and cannot support its methods, results or
+conclusions. Every returned Evidence Card ID must have been supplied and remain
+currently authorized.
+
+Stable V3 identity is derived by Diagnostic Assembler from checker/version,
+category, primary node, normalized related locations and normalized diagnostic
+fact. Recommendation wording and possible consequence are excluded so wording
+variation does not create a new issue.
+
+`actionability` is workflow metadata, not severity or priority. It may be used
+for explicit filtering or grouping. Default UI order remains canonical section
+order, source-node order and occurrence order; it must not sort by
+actionability, confidence or model return order.
+
+V2 findings remain immutable audit data. Deployment does not automatically
+rerun them. After a successful user-requested V3 run covers a scope, V3 becomes
+the active projection for that scope and corresponding V2 findings are marked
+superseded. Repository/projection code exposes one normalized view; UI code
+must not become a second V2/V3 interpretation authority.
+
 All Grant semantic diagnosis and AI Patch calls use the same server-owned GPT
 configuration and enter through Grant Model Data Gateway. Downstream modules
 may select an operation and its reasoning effort, but may not select a provider

@@ -96,6 +96,7 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Patch semantic scope | Patch Policy | AI declarations are not trusted |
 | Patch deterministic validity | Patch Commit Service | Recomputes affected nodes and hashes |
 | Finding conclusion | Owning Checker | Assembler may normalize, not reinterpret |
+| Semantic Finding content | Versioned Semantic Checker Contract | Model returns semantic content only; supplied IDs and evidence references are validated |
 | Finding identity and conflicts | Diagnostic Assembler | Conflicts are retained explicitly |
 | User disposition | Feedback Service | Does not rewrite system conclusions |
 | Evidence read/use/citation permission | Evidence Authorization Service | Current authorization is authoritative |
@@ -103,6 +104,7 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Citation mapping | Citation Assembler | Model cannot create internal IDs or numbering |
 | Template and length rules | Grant Template Profile | One frozen version per revision/export |
 | Recheck scope | Impact Analyzer | Derived from actual committed operations |
+| Diagnostic default ordering | Canonical Grant Document order | UI may filter/group, but must not infer severity or priority from actionability |
 | DOCX typography and pagination | Export Renderer | Formats approved content only |
 
 When Patch Commit Service and Revision Service disagree, Revision Service owns

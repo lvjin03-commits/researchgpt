@@ -43,6 +43,18 @@ Copy the relevant sections into every grant-platform PR.
 - [ ] User disposition is separate from lifecycle and recheck status.
 - [ ] Checker conflicts are retained.
 - [ ] Checker upgrades declare historical-Finding compatibility.
+- [ ] Provider-facing strict schemas use required nullable fields and required
+      arrays rather than optional properties.
+- [ ] Semantic categories have boundary fixtures, including positive and
+      negative examples for overlapping categories.
+- [ ] Every returned section, node and Evidence Card ID was supplied and is
+      currently authorized for its claimed scope.
+- [ ] Finding fingerprints exclude recommendation phrasing and other unstable
+      presentation text.
+- [ ] Default issue order follows canonical source order and does not treat
+      actionability or confidence as severity or priority.
+- [ ] V2/V3 compatibility is normalized below the UI, and historical records
+      remain auditable without becoming duplicate active Findings.
 
 ## Verification
 
