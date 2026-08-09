@@ -89,6 +89,8 @@ assert.equal(finding.lifecycleStatus, "open", "User feedback must not rewrite th
 const panelSource = await readFile(new URL("../components/grants/grant-diagnostics-panel.tsx", import.meta.url), "utf8");
 const editorSource = await readFile(new URL("../components/grants/grant-structured-editor.tsx", import.meta.url), "utf8");
 const outlineSource = await readFile(new URL("../components/grants/grant-document-outline.tsx", import.meta.url), "utf8");
+const canvasSource = await readFile(new URL("../components/grants/grant-document-canvas.tsx", import.meta.url), "utf8");
+const wordToolbarSource = await readFile(new URL("../components/grants/grant-word-toolbar.tsx", import.meta.url), "utf8");
 const evidenceSource = await readFile(new URL("../components/grants/grant-evidence-panel.tsx", import.meta.url), "utf8");
 const aiPatchSource = await readFile(new URL("../components/grants/grant-ai-patch-panel.tsx", import.meta.url), "utf8");
 assert.match(panelSource, /建议默认收起/);
@@ -100,6 +102,11 @@ assert.match(panelSource, /whitespace-nowrap rounded-lg bg-\[#155eef\].*text-sm/
 assert.match(outlineSource, /cursor-pointer text-sm font-semibold text-slate-700/);
 assert.doesNotMatch(evidenceSource, /text-\[(10|11)px\]/);
 assert.doesNotMatch(aiPatchSource, /text-\[(10|11)px\]/);
+assert.match(canvasSource, /min-h-\[1123px\]/);
+assert.match(canvasSource, /连续编辑视图/);
+assert.match(canvasSource, /projectGrantSectionSubtree/);
+assert.match(wordToolbarSource, /格式由导出模板控制/);
+assert.match(wordToolbarSource, /aria-label=\{label\}/);
 
 const migration = await readFile(new URL("../supabase/migrations/038_grant_finding_feedback.sql", import.meta.url), "utf8");
 assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.grant_finding_feedback/);
