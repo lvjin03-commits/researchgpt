@@ -111,6 +111,46 @@ represent absence with null/empty arrays, and reject unsupported JSON Schema
 keywords. Production remains on V2 until the later gateway and executor stages
 are complete and effect-first verification authorizes activation.
 
+Semantic Diagnostic V3 input-boundary status (2026-08-09): a pure model-input
+builder now freezes canonical section/node order, funding category, compact
+prior-Finding identity and evidence provenance before a provider call. Evidence
+Cards carry authorization revision and content hashes; verified cards are
+bounded to the exact supplied excerpt, while metadata-only cards expose no
+excerpt and can establish record existence only. The builder rejects unknown,
+mismatched or duplicate document/evidence IDs. It is contract-tested but is not
+yet invoked by the production semantic checker; V2 runtime behavior is unchanged.
+
+Semantic Diagnostic V3 prompt/executor status (2026-08-09): the accepted review
+policy is encoded as one versioned system prompt with category boundaries,
+untrusted-input rules, evidence-scope limits and no severity or funding-outcome
+prediction. The existing OpenAI Grant adapter owns a V3 strict-output method
+with the same two-attempt failure taxonomy, accumulated usage and bounded
+schema/capacity recovery. It is contract-tested with GPT-5.5 request semantics
+but is not selected by production composition; V2 remains active until the
+assembler, persistence projection and rollout gates are complete.
+
+Semantic Diagnostic V3 assembler status (2026-08-09): a pure Grant-owned
+assembler now validates supplied references, assigns Finding identity and
+lifecycle fields, normalizes related locations, orders Findings by canonical
+document position and derives a stable fingerprint from checker contract,
+category, diagnostic fact and source locations. Recommendation wording,
+possible consequence, confidence, actionability and provider return order do
+not affect identity. The assembler is intentionally in-memory only; it does not
+write V3 data or change the active V2 diagnostic path before the additive
+persistence and normalized-projection migration is complete.
+
+Semantic Diagnostic V3 persistence/projection status (2026-08-09): migration
+045 defines additive V3 content and related-location tables attached to the
+existing `grant_findings` envelope. The Grant Diagnostic Repository owns one
+transactional V3 save operation that first writes the compatibility envelope
+through the existing persistence function, then writes V3 detail in the same
+database transaction. A single normalized V2/V3 read projection is available
+below the UI boundary. Existing V2 readers and production composition remain
+unchanged. Migration 045 was applied to production on 2026-08-09; V3 writes
+remain inactive. Local repository and rollback contracts pass, while the real
+PostgreSQL write/rollback drill still requires separately authorized temporary
+production fixtures.
+
 PR4 implementation status (2026-08-08): the three-pane workspace, collapsed
 Finding cards, source navigation, user feedback persistence and production
 navigation entry are implemented and exposed behind `GRANT_WORKSPACE_ENABLED`.

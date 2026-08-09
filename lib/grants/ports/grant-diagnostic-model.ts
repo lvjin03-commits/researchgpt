@@ -61,6 +61,9 @@ export type GrantDiagnosticModelResult = {
 export const GRANT_DIAGNOSTIC_POLICY_VERSION = "grant-ai-policy-v2";
 export const GRANT_DIAGNOSTIC_SCHEMA_VERSION = "grant-semantic-diagnostic-v2";
 export const GRANT_DIAGNOSTIC_PROMPT_VERSION = "grant-semantic-prompt-v2";
+export const GRANT_DIAGNOSTIC_V3_POLICY_VERSION = "grant-ai-policy-v3";
+export const GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION = "grant-semantic-diagnostic-v3";
+export const GRANT_DIAGNOSTIC_V3_PROMPT_VERSION = "grant-semantic-review-v3";
 
 export type GrantDiagnosticFailureCategory =
   | "output_truncated"
@@ -76,9 +79,9 @@ export type GrantDiagnosticFailureCategory =
 
 export type GrantDiagnosticExecutionMetadata = {
   operation: "diagnostic.semantic";
-  policyVersion: typeof GRANT_DIAGNOSTIC_POLICY_VERSION;
-  schemaVersion: typeof GRANT_DIAGNOSTIC_SCHEMA_VERSION;
-  promptVersion: typeof GRANT_DIAGNOSTIC_PROMPT_VERSION;
+  policyVersion: typeof GRANT_DIAGNOSTIC_POLICY_VERSION | typeof GRANT_DIAGNOSTIC_V3_POLICY_VERSION;
+  schemaVersion: typeof GRANT_DIAGNOSTIC_SCHEMA_VERSION | typeof GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION;
+  promptVersion: typeof GRANT_DIAGNOSTIC_PROMPT_VERSION | typeof GRANT_DIAGNOSTIC_V3_PROMPT_VERSION;
   provider: "openai";
   modelId: string;
   providerRequestId?: string;

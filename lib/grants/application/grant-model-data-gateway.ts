@@ -7,6 +7,11 @@ import type { GrantPatchEvidenceBinding } from "../patching/contracts.ts";
 import { GrantEvidenceAuthorizationService } from "./evidence-authorization-service.ts";
 import { selectGrantEvidenceCards } from "./grant-evidence-selector.ts";
 import { grantNodeText } from "../diagnostics/node-text.ts";
+import {
+  buildGrantSemanticDiagnosticV3Input,
+  type GrantSemanticDiagnosticV3PreparedInput,
+  type GrantSemanticDiagnosticV3PriorFinding,
+} from "../diagnostics/semantic-v3-input.ts";
 
 export class GrantEvidenceProviderPolicyError extends Error {}
 export class GrantPatchEvidenceMismatchError extends Error {}
@@ -22,6 +27,56 @@ export class GrantModelDataGateway {
   constructor(model: GrantPatchModel & Partial<GrantDiagnosticModel>, evidenceAuthorization?: GrantEvidenceAuthorizationService) {
     this.model = model;
     this.evidenceAuthorization = evidenceAuthorization;
+  }
+
+  async prepareDiagnosticV3Input(input: {
+    documentId: string;
+    taskId: string;
+    snapshot: CanonicalGrantSnapshot;
+    inputMode: "full_document" | "section_bundle" | "focused_excerpt";
+    inputSectionIds: string[];
+    inputNodeIds: string[];
+    fundingCategory: string;
+    priorFindings: GrantSemanticDiagnosticV3PriorFinding[];
+  }): Promise<GrantSemanticDiagnosticV3PreparedInput> {
+    const sectionIds = new Set(input.inputSectionIds);
+    const nodeIds = new Set(input.inputNodeIds);
+    const queryText = [
+      input.snapshot.title,
+      ...input.snapshot.sections
+        .filter((section) => sectionIds.has(section.sectionId))
+        .flatMap((section) => [
+          section.title,
+          ...input.snapshot.nodes
+            .filter((node) => node.sectionId === section.sectionId && nodeIds.has(node.nodeId))
+            .map(grantNodeText),
+        ]),
+    ].join("\n");
+    const resources = this.evidenceAuthorization
+      ? await this.evidenceAuthorization.listCurrentForModelReasoning({ documentId: input.documentId, taskId: input.taskId })
+      : [];
+    const selected = selectGrantEvidenceCards(resources, queryText);
+
+    return buildGrantSemanticDiagnosticV3Input({
+      snapshot: input.snapshot,
+      inputMode: input.inputMode,
+      inputSectionIds: input.inputSectionIds,
+      inputNodeIds: input.inputNodeIds,
+      fundingCategory: input.fundingCategory,
+      evidenceCards: selected.map(({ resource, card }) => ({
+        sourceId: resource.source.sourceId,
+        cardId: card.cardId,
+        sourceTitle: resource.source.title,
+        provenanceType: resource.source.provenanceType,
+        verificationStatus: "verified" as const,
+        supportedScope: "Only the exact supplied excerpt is verified against the authorized uploaded source; claims outside it are not verified.",
+        excerpt: card.excerpt,
+        authorizationRevision: resource.authorization.revision,
+        sourceContentHash: resource.source.contentHash,
+        excerptHash: card.excerptHash,
+      })),
+      priorFindings: input.priorFindings,
+    });
   }
 
   async diagnose(input: {

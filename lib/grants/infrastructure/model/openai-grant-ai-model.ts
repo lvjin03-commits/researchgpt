@@ -6,6 +6,9 @@ import {
   GRANT_DIAGNOSTIC_POLICY_VERSION,
   GRANT_DIAGNOSTIC_PROMPT_VERSION,
   GRANT_DIAGNOSTIC_SCHEMA_VERSION,
+  GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+  GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
+  GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
   GrantDiagnosticExecutionError,
   type GrantDiagnosticExecutionMetadata,
   type GrantDiagnosticFailureCategory,
@@ -13,6 +16,14 @@ import {
   type GrantDiagnosticModelRequest,
 } from "../../ports/grant-diagnostic-model.ts";
 import type { GrantPatchModel, GrantPatchModelRequest } from "../../ports/grant-patch-model.ts";
+import {
+  GrantSemanticDiagnosticProviderResultV3Schema,
+  GrantSemanticDiagnosticResultV3Schema,
+  assertGrantSemanticDiagnosticV3References,
+  type GrantSemanticDiagnosticResultV3,
+} from "../../diagnostics/semantic-v3-contracts.ts";
+import type { GrantSemanticDiagnosticV3PreparedInput } from "../../diagnostics/semantic-v3-input.ts";
+import { buildGrantSemanticDiagnosticV3Messages } from "../../diagnostics/semantic-v3-prompt.ts";
 
 const PatchResultSchema = z.object({
   replacementText: z.string().trim().min(1),
@@ -45,6 +56,17 @@ export const GrantDiagnosticStructuredResultSchema = z.object({
 export function grantDiagnosticResponseFormat() {
   return zodResponseFormat(GrantDiagnosticStructuredResultSchema, "grant_semantic_diagnostic");
 }
+
+export function grantDiagnosticV3ResponseFormat() {
+  return zodResponseFormat(GrantSemanticDiagnosticProviderResultV3Schema, "grant_semantic_diagnostic_v3");
+}
+
+export type GrantSemanticDiagnosticV3ModelResult = GrantSemanticDiagnosticResultV3 & {
+  provider: "openai";
+  modelId: string;
+  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  execution: GrantDiagnosticExecutionMetadata;
+};
 
 type DiagnosticAttemptPurpose = GrantDiagnosticExecutionMetadata["attemptPurpose"];
 
@@ -141,6 +163,133 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
     const content = response.choices[0]?.message?.content;
     if (!content) throw new Error("Grant patch model returned no content.");
     return { ...PatchResultSchema.parse(JSON.parse(content)), provider: "openai" as const, modelId: this.modelId };
+  }
+
+  async diagnoseV3(prepared: GrantSemanticDiagnosticV3PreparedInput): Promise<GrantSemanticDiagnosticV3ModelResult> {
+    let purpose: DiagnosticAttemptPurpose = "initial";
+    let repairInstruction = "";
+    let recoveredFrom: GrantDiagnosticFailureCategory | undefined;
+    let lastFailure: GrantDiagnosticExecutionError | undefined;
+    const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      let response: OpenAI.Chat.Completions.ChatCompletion | undefined;
+      try {
+        response = await this.client.chat.completions.create({
+          model: this.modelId,
+          response_format: grantDiagnosticV3ResponseFormat(),
+          reasoning_effort: "medium",
+          max_completion_tokens: purpose === "capacity_retry" ? 14000 : 9000,
+          messages: buildGrantSemanticDiagnosticV3Messages(prepared.request, repairInstruction || undefined),
+        });
+        const choice = response.choices[0];
+        const usage = {
+          inputTokens: response.usage?.prompt_tokens ?? 0,
+          outputTokens: response.usage?.completion_tokens ?? 0,
+          reasoningTokens: response.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+        };
+        totalUsage.inputTokens += usage.inputTokens;
+        totalUsage.outputTokens += usage.outputTokens;
+        totalUsage.reasoningTokens += usage.reasoningTokens;
+        const metadata: GrantDiagnosticExecutionMetadata = {
+          operation: "diagnostic.semantic",
+          policyVersion: GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+          schemaVersion: GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
+          promptVersion: GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
+          provider: "openai",
+          modelId: this.modelId,
+          providerRequestId: response.id,
+          finishReason: choice?.finish_reason,
+          refusal: choice?.message.refusal ?? undefined,
+          attemptCount: attempt,
+          attemptPurpose: purpose,
+          recoveredFrom,
+          responseHash: responseHash(choice?.message.content),
+          ...totalUsage,
+        };
+        if (choice?.finish_reason === "length") {
+          throw new GrantDiagnosticExecutionError("output_truncated", "GPT V3 diagnostic output reached its token limit.", metadata);
+        }
+        if (choice?.finish_reason === "content_filter") {
+          throw new GrantDiagnosticExecutionError("content_filtered", "GPT V3 diagnostic output was stopped by the content filter.", metadata);
+        }
+        if (choice?.message.refusal) {
+          throw new GrantDiagnosticExecutionError("provider_refusal", "GPT declined the V3 diagnostic request.", metadata);
+        }
+        const content = choice?.message.content;
+        if (!content) {
+          throw new GrantDiagnosticExecutionError("structured_output_invalid", "GPT V3 diagnostic returned no structured content.", metadata);
+        }
+
+        let parsed: GrantSemanticDiagnosticResultV3;
+        try {
+          const providerParsed = GrantSemanticDiagnosticProviderResultV3Schema.parse(JSON.parse(content));
+          parsed = GrantSemanticDiagnosticResultV3Schema.parse(providerParsed);
+        } catch (error) {
+          const paths = error instanceof z.ZodError ? issuePaths(error) : ["$"];
+          throw new GrantDiagnosticExecutionError(
+            "structured_output_invalid",
+            "GPT V3 diagnostic output did not satisfy the diagnostic schema.",
+            { ...metadata, zodIssuePaths: paths },
+          );
+        }
+        try {
+          assertGrantSemanticDiagnosticV3References(parsed, prepared);
+        } catch (error) {
+          const invalidPaths = error && typeof error === "object" && "invalidPaths" in error
+            ? (error as { invalidPaths: string[] }).invalidPaths
+            : ["$"];
+          throw new GrantDiagnosticExecutionError(
+            "semantic_reference_invalid",
+            "GPT V3 diagnostic referenced content outside the authorized input.",
+            { ...metadata, zodIssuePaths: invalidPaths },
+          );
+        }
+        return { ...parsed, provider: "openai", modelId: this.modelId, usage: totalUsage, execution: metadata };
+      } catch (error) {
+        const executionError = error instanceof GrantDiagnosticExecutionError
+          ? error
+          : new GrantDiagnosticExecutionError(apiFailureCategory(error), error instanceof Error ? error.message : "GPT V3 diagnostic request failed.", {
+            operation: "diagnostic.semantic",
+            policyVersion: GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+            schemaVersion: GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
+            promptVersion: GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
+            provider: "openai",
+            modelId: this.modelId,
+            providerRequestId: response?.id,
+            finishReason: response?.choices[0]?.finish_reason,
+            attemptCount: attempt,
+            attemptPurpose: purpose,
+            inputTokens: response?.usage?.prompt_tokens ?? 0,
+            outputTokens: response?.usage?.completion_tokens ?? 0,
+            reasoningTokens: response?.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+          });
+        lastFailure = executionError;
+        if (attempt >= 2 || !isRetryable(executionError.category)) throw executionError;
+        recoveredFrom = executionError.category;
+        if (executionError.category === "output_truncated") {
+          purpose = "capacity_retry";
+        } else if (executionError.category === "structured_output_invalid" || executionError.category === "semantic_reference_invalid") {
+          purpose = "schema_repair";
+          repairInstruction = `Correct only the prior contract failure. Return a complete schema-valid result using only supplied IDs. Invalid paths: ${(executionError.metadata.zodIssuePaths ?? ["unknown"]).join(", ")}.`;
+        } else {
+          purpose = "transient_retry";
+        }
+      }
+    }
+    throw lastFailure ?? new GrantDiagnosticExecutionError("unknown_provider_failure", "GPT V3 diagnostic failed.", {
+      operation: "diagnostic.semantic",
+      policyVersion: GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+      schemaVersion: GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
+      promptVersion: GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
+      provider: "openai",
+      modelId: this.modelId,
+      attemptCount: 2,
+      attemptPurpose: purpose,
+      inputTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+    });
   }
 
   async diagnose(request: GrantDiagnosticModelRequest) {
