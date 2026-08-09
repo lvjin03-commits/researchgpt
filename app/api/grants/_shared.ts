@@ -6,12 +6,21 @@ import {
 import {
   GrantAuthenticationRequiredError,
   GrantAiPatchDisabledError,
+  GrantLocalEvidenceDisabledError,
   GrantWorkspaceDisabledError,
 } from "@/lib/grants/server/request-context";
 import { GrantDocxImportError } from "@/lib/grants/imports/docx-importer";
 import { GrantImportStorageError } from "@/lib/grants/ports/grant-import-storage";
 import { GrantPatchNotFoundError, GrantPatchStateError } from "@/lib/grants/application/patch-service";
 import { GrantPatchPolicyError } from "@/lib/grants/patching/patch-policy";
+import {
+  GrantEvidenceAuthorizationConflictError,
+  GrantEvidenceNotFoundError,
+  GrantEvidenceUseDeniedError,
+} from "@/lib/grants/application/evidence-authorization-service";
+import { GrantEvidenceStorageError } from "@/lib/grants/ports/grant-evidence-storage";
+import { GrantEvidenceUploadError } from "@/lib/grants/server/read-evidence-upload";
+import { UploadError } from "@/lib/uploads/errors";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -22,6 +31,28 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantAiPatchDisabledError) {
     return Response.json({ error: "AI 局部修改功能尚未开放。", code: "grant_ai_patch_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantLocalEvidenceDisabledError) {
+    return Response.json({ error: "项目资料功能尚未开放。", code: "grant_local_evidence_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantEvidenceNotFoundError) {
+    return Response.json({ error: error.message, code: "grant_evidence_not_found" }, { status: 404 });
+  }
+  if (error instanceof GrantEvidenceAuthorizationConflictError) {
+    return Response.json({ error: error.message, code: "grant_evidence_authorization_conflict" }, { status: 409 });
+  }
+  if (error instanceof GrantEvidenceUseDeniedError) {
+    return Response.json({ error: error.message, code: "grant_evidence_use_denied", sourceId: error.sourceId }, { status: 403 });
+  }
+  if (error instanceof GrantEvidenceUploadError) {
+    return Response.json({ error: error.message, code: error.code }, { status: error.status });
+  }
+  if (error instanceof UploadError) {
+    return Response.json({ error: error.message, code: "grant_evidence_parse_failed" }, { status: error.statusCode ?? 422 });
+  }
+  if (error instanceof GrantEvidenceStorageError) {
+    console.error("[grant-api] Evidence storage failed", { operation, code: error.code });
+    return Response.json({ error: error.message, code: error.code }, { status: 503 });
   }
   if (error instanceof GrantDocumentNotFoundError) {
     return Response.json({ error: "申请书不存在或无权访问。", code: "grant_document_not_found" }, { status: 404 });

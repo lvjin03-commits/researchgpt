@@ -48,7 +48,7 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId, aiPatchEnabled }: { documentId: string; aiPatchEnabled: boolean }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnabled }: { documentId: string; aiPatchEnabled: boolean; evidenceEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -352,6 +352,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled }: { document
 
       <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[250px_minmax(560px,1fr)_340px]">
         <GrantDocumentOutline
+          documentId={documentId}
+          evidenceEnabled={evidenceEnabled}
           snapshot={snapshot}
           estimate={estimate}
           selectedSectionId={selectedSectionId}

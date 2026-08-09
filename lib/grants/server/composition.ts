@@ -14,6 +14,10 @@ import { GrantPatchService } from "../application/patch-service.ts";
 import { GrantModelDataGateway } from "../application/grant-model-data-gateway.ts";
 import { OpenAICompatibleGrantPatchModel } from "../infrastructure/model/openai-compatible-grant-patch-model.ts";
 import { SupabaseGrantPatchRepository } from "../infrastructure/supabase/supabase-grant-patch-repository.ts";
+import { GrantEvidenceService } from "../application/evidence-service.ts";
+import { SupabaseGrantEvidenceRepository } from "../infrastructure/supabase/supabase-grant-evidence-repository.ts";
+import { SupabaseGrantEvidenceStorage } from "../infrastructure/supabase/supabase-grant-evidence-storage.ts";
+import { SharedGrantEvidenceParser } from "../infrastructure/documents/shared-grant-evidence-parser.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -70,5 +74,15 @@ export function createGrantPatchService(ownerId: string): GrantPatchService {
     new SupabaseGrantDiagnosticRepository(client, ownerId),
     new SupabaseGrantPatchRepository(client, ownerId),
     new GrantModelDataGateway(model),
+  );
+}
+
+export function createGrantEvidenceService(ownerId: string): GrantEvidenceService {
+  const client = createGrantSupabaseClient();
+  return new GrantEvidenceService(
+    new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
+    new SupabaseGrantEvidenceRepository(client, ownerId),
+    new SupabaseGrantEvidenceStorage(client),
+    new SharedGrantEvidenceParser(),
   );
 }

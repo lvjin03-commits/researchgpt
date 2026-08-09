@@ -7,11 +7,11 @@ feature implementation begins.
 ## Status
 
 - Governance baseline: active.
-- Product code: PR1 foundation, PR2 editor and PR3 diagnostic contracts/runtime
-  are implemented behind a disabled capability flag; PR4 is in progress and
-  later phases are not started. PR3 production persistence is verified.
-- Feature exposure: disabled pending an independently authorized production
-  rollout; the PR2 PostgreSQL and local editor browser paths are verified.
+- Product code: PR1 through PR5 are implemented; PR6 project evidence and
+  authorization are implemented locally behind a disabled capability flag.
+- Feature exposure: workspace and evidence-free AI patch capabilities are
+  enabled in production. PR6 remains disabled until migration 040 and a
+  separate production rollout are authorized and verified.
 - Existing chat and Document V2 behavior: out of scope and must remain unchanged.
 
 ## Product Boundary

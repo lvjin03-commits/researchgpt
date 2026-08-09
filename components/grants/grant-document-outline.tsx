@@ -1,6 +1,7 @@
 "use client";
 
 import type { CanonicalGrantSnapshot, GrantLengthEstimate, GrantRevisionSummary } from "@/lib/grants/domain/contracts";
+import { GrantEvidencePanel } from "./grant-evidence-panel";
 
 type Props = {
   snapshot: CanonicalGrantSnapshot;
@@ -11,6 +12,8 @@ type Props = {
   currentRevisionId: string;
   onSelectSection: (sectionId: string) => void;
   onRestore: (revisionId: string) => Promise<void>;
+  documentId: string;
+  evidenceEnabled: boolean;
 };
 
 export function GrantDocumentOutline(props: Props) {
@@ -55,6 +58,7 @@ export function GrantDocumentOutline(props: Props) {
             ))}
           </div>
         </details>
+        <GrantEvidencePanel documentId={props.documentId} enabled={props.evidenceEnabled} />
       </div>
     </aside>
   );

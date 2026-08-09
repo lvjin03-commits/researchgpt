@@ -20,7 +20,7 @@ export const GrantPatchProposalSchema = z.object({
   targetNodeIds: z.array(UuidSchema).length(1),
   instruction: z.string().trim().min(1).max(2000),
   operations: z.array(GrantPatchOperationSchema).length(1),
-  status: z.enum(["pending", "accepted", "rejected", "invalidated"]),
+  status: z.enum(["pending", "accepted", "rejected", "invalidated", "evidence_revoked"]),
   createdBy: UuidSchema,
   modelProvider: z.enum(["deepseek", "openai"]),
   modelId: z.string().trim().min(1),
@@ -40,4 +40,3 @@ export const GrantPatchProposalSchema = z.object({
 
 export type GrantPatchOperation = z.infer<typeof GrantPatchOperationSchema>;
 export type GrantPatchProposal = z.infer<typeof GrantPatchProposalSchema>;
-

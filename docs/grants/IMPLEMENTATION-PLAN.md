@@ -85,9 +85,19 @@ contracts, the Grant Model Data Gateway, model adapter, durable proposal
 repository, diff preview, explicit accept/reject actions, stale-revision and
 scope guards, idempotent acceptance recovery, and revision audit linkage are
 implemented behind `GRANT_AI_PATCH_ENABLED`. Contract, architecture, regression,
-type and production-build checks pass. Migration 039 is not yet applied and the
-flag remains disabled, so the real PostgreSQL and browser acceptance path is not
-yet claimed as verified.
+type and production-build checks pass. Migration 039 is applied, the production
+flag is enabled, and the real browser proposal/diff/reject path is verified. The
+production accept action was intentionally not exercised against user content;
+its compare-and-swap and idempotent recovery remain contract-tested.
+
+PR6 implementation status (2026-08-08): project evidence contracts,
+deterministic Evidence Cards, independent permissions, current-authorization
+CAS, transactional revocation propagation, recoverable deletion, owner-scoped
+routes and the project-resource UI are implemented behind
+`GRANT_LOCAL_EVIDENCE_ENABLED`. Contract, architecture and existing Grant
+regression suites pass locally. Migration 040 is applied and the production
+flag is enabled. Production object-storage and browser upload paths remain
+pending until the deployment and effect-first smoke test complete.
 
 ## Feature Flags
 
