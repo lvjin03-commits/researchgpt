@@ -121,6 +121,9 @@ summary, a dedicated Grant DOCX export port/adapter, guarded API route and UI
 entry are implemented behind `GRANT_RECHECK_ENABLED` and
 `GRANT_DOCX_EXPORT_ENABLED`. Migration 042 is additive and was applied to
 production on 2026-08-09; both capability flags are enabled for production.
+Effect-first verification found that the initial run-history RPC represented an
+absent optional failure code as JSON null. Migration 043 corrects the projection
+contract without rewriting historical runs.
 Contract, architecture, encoding, type and existing diagnostic/UI regression
 checks pass locally. A real DOCX was generated and its OOXML structure was
 inspected; page-image visual QA remains incomplete because LibreOffice is not

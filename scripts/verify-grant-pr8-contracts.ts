@@ -125,4 +125,8 @@ const migration = await readFile(new URL("../supabase/migrations/042_grant_incre
 assert.match(migration, /list_grant_diagnostic_runs/);
 assert.doesNotMatch(migration, /GRANT EXECUTE .* authenticated/);
 
+const compatibilityMigration = await readFile(new URL("../supabase/migrations/043_grant_diagnostic_run_optional_fields.sql", import.meta.url), "utf8");
+assert.match(compatibilityMigration, /jsonb_strip_nulls/);
+assert.doesNotMatch(compatibilityMigration, /GRANT EXECUTE .* authenticated/);
+
 console.log("Grant PR8 incremental recheck and DOCX export contracts passed.");
