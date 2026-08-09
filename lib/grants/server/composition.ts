@@ -4,7 +4,7 @@ import { GrantEditorService } from "../application/editor-service.ts";
 import { GrantDocxImportService } from "../application/docx-import-service.ts";
 import { GrantDiagnosticService } from "../application/diagnostic-service.ts";
 import { GrantFeedbackService } from "../application/feedback-service.ts";
-import { GrantStructuralCompletenessChecker } from "../diagnostics/structural-completeness-checker.ts";
+import { createDefaultGrantCheckers } from "../diagnostics/default-checkers.ts";
 import { SupabaseGrantDiagnosticRepository } from "../infrastructure/supabase/supabase-grant-diagnostic-repository.ts";
 import { SupabaseGrantFeedbackRepository } from "../infrastructure/supabase/supabase-grant-feedback-repository.ts";
 import { GrantRevisionService } from "../application/revision-service.ts";
@@ -50,7 +50,7 @@ export function createGrantDiagnosticService(ownerId: string): GrantDiagnosticSe
   return new GrantDiagnosticService({
     revisionService: new GrantRevisionService({ repository: revisionRepository }),
     repository: new SupabaseGrantDiagnosticRepository(client, ownerId),
-    checkers: [new GrantStructuralCompletenessChecker()],
+    checkers: createDefaultGrantCheckers(),
     incrementalEnabled: isGrantRecheckEnabled(),
   });
 }

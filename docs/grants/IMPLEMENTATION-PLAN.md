@@ -73,6 +73,13 @@ persistence, owner isolation, atomic rollback and cleanup were verified against
 the real PostgreSQL database. The phase remains unexposed while the workspace
 flag is disabled.
 
+PR3 diagnostic expansion status (2026-08-09): the existing production
+composition now uses one deterministic checker registry covering structural
+substance, citation visibility, repeated content and explicit terminology-
+definition consistency. It reuses the existing checker, Finding, persistence
+and incremental-recheck contracts, assigns no severity, and introduces no
+parallel diagnostic workflow or model call.
+
 PR4 implementation status (2026-08-08): the three-pane workspace, collapsed
 Finding cards, source navigation, user feedback persistence and production
 navigation entry are implemented and exposed behind `GRANT_WORKSPACE_ENABLED`.

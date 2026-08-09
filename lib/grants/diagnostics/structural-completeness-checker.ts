@@ -8,7 +8,7 @@ const PLACEHOLDER_PATTERNS = [
 
 export class GrantStructuralCompletenessChecker implements GrantChecker {
   readonly checkerId = "grant.structural_completeness";
-  readonly checkerVersion = "1.0.0";
+  readonly checkerVersion = "1.1.0";
   readonly contractVersion = "grant-checker-v1";
   readonly inputMode = "full_document" as const;
   readonly supportedInputModes = ["full_document", "section_bundle"] as const;
@@ -29,6 +29,30 @@ export class GrantStructuralCompletenessChecker implements GrantChecker {
           subjectKey: `section:${section.sectionId}:content_presence`,
           conclusion: "missing",
           sectionId: section.sectionId,
+        });
+        continue;
+      }
+      const substantiveText = input.snapshot.nodes
+        .filter((node) => nodeIds.includes(node.nodeId) && node.nodeType !== "heading" && node.nodeType !== "citation")
+        .map(grantNodeText)
+        .filter((text) => !PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(text)))
+        .join("")
+        .replace(/[^\p{Letter}\p{Number}]/gu, "");
+      if (substantiveText.length > 0 && substantiveText.length < 30 && section.semanticRole !== "references") {
+        const firstContentNode = input.snapshot.nodes.find((node) => {
+          if (!nodeIds.includes(node.nodeId) || node.nodeType === "heading" || node.nodeType === "citation") return false;
+          const text = grantNodeText(node);
+          return !PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(text));
+        });
+        findings.push({
+          code: "insufficient_section_content",
+          message: `章节“${section.title}”当前只有 ${substantiveText.length} 个有效文字字符，内容尚不足以形成完整论证。`,
+          recommendation: "围绕本章节职责补充明确的问题、依据、方法或预期判断；如果该章节不需要独立论证，可考虑合并到相邻章节。",
+          assessment: { scope: "section", confidence: 1, actionability: "directly_actionable" },
+          subjectKey: `section:${section.sectionId}:content_substance`,
+          conclusion: "insufficient",
+          sectionId: section.sectionId,
+          nodeId: firstContentNode?.nodeId,
         });
       }
     }

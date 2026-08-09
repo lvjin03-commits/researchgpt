@@ -156,6 +156,18 @@ type FindingAssessment = {
 };
 ```
 
+The default deterministic checker pack owns only reproducible observations:
+
+- missing, placeholder, or objectively thin section content;
+- literature-attribution sentences without a visible citation marker;
+- highly repeated paragraph or list content;
+- one acronym explicitly defined as different terms.
+
+These checks do not decide scientific importance, novelty, feasibility, or
+review severity. Every Finding must identify its source location where
+possible, state the observable problem, and provide a concrete next action.
+Semantic or disciplinary judgments remain user or expert decisions.
+
 Lifecycle, user disposition, and recheck outcome are separate:
 
 ```ts
