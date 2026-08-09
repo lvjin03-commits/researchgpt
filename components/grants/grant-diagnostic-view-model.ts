@@ -1,5 +1,6 @@
 import type { GrantAnchorResolution, GrantDiagnosticConflict, GrantFinding } from "@/lib/grants/diagnostics/contracts";
 import type { GrantFindingFeedback } from "@/lib/grants/feedback/contracts";
+import type { GrantRecheckSummary } from "@/lib/grants/application/diagnostic-service";
 
 export type GrantDiagnosticItem = {
   finding: GrantFinding;
@@ -10,6 +11,7 @@ export type GrantDiagnosticsPayload = {
   findings: GrantDiagnosticItem[];
   conflicts: GrantDiagnosticConflict[];
   feedback: GrantFindingFeedback[];
+  recheck: GrantRecheckSummary;
 };
 
 export type GrantFindingTarget = {

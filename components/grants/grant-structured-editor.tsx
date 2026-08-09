@@ -24,7 +24,12 @@ type EditorPayload = {
 
 type SaveStatus = "loading" | "saved" | "dirty" | "saving" | "offline" | "conflict";
 
-const emptyDiagnostics: GrantDiagnosticsPayload = { findings: [], conflicts: [], feedback: [] };
+const emptyDiagnostics: GrantDiagnosticsPayload = {
+  findings: [],
+  conflicts: [],
+  feedback: [],
+  recheck: { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: 0, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
+};
 
 async function fetchEditorPayload(documentId: string): Promise<EditorPayload> {
   const response = await fetch(`/api/grants/documents/${documentId}`, { cache: "no-store" });
@@ -48,7 +53,7 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnabled, evidencePatchEnabled }: { documentId: string; aiPatchEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -272,7 +277,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
     setDiagnosticsRunning(true);
     setDiagnosticsError("");
     try {
-      const response = await fetch(`/api/grants/documents/${documentId}/diagnostics`, { method: "POST" });
+      const mode = recheckEnabled ? "?mode=recheck" : "";
+      const response = await fetch(`/api/grants/documents/${documentId}/diagnostics${mode}`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "申请书检查失败。");
       await refreshDiagnostics();
@@ -340,6 +346,15 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
         <div className="flex items-center gap-3 text-xs">
           <span className={saveStatus === "saved" ? "text-emerald-700" : saveStatus === "conflict" || saveStatus === "offline" ? "text-red-700" : "text-amber-700"}>{statusLabel}</span>
           <span className="rounded-full bg-slate-100 px-3 py-1.5">版本 {payload.aggregate.document.currentRevisionNumber}</span>
+          {docxExportEnabled && (
+            <a
+              href={`/api/grants/documents/${documentId}/export`}
+              className={`rounded-lg border px-3 py-2 font-semibold ${saveStatus === "saved" ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50" : "pointer-events-none border-slate-200 text-slate-300"}`}
+              aria-disabled={saveStatus !== "saved"}
+            >
+              导出 Word
+            </a>
+          )}
         </div>
       </header>
 
@@ -394,6 +409,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           loading={diagnosticsLoading}
           running={diagnosticsRunning}
           error={diagnosticsError}
+          recheckEnabled={recheckEnabled}
+          recheck={diagnostics.recheck}
           onRun={runDiagnostics}
           onSelect={navigateToFinding}
           onFeedbackChange={updateFeedback}

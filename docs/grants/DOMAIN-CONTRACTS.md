@@ -158,6 +158,23 @@ type RecheckStatus =
   | "human_review_required";
 ```
 
+The user-facing convergence projection is derived separately from immutable
+checker outcomes:
+
+```ts
+type RecheckConvergence =
+  | "not_run"
+  | "resolved"
+  | "stable"
+  | "improving"
+  | "regressed"
+  | "changed";
+```
+
+`stable`, `improving` and `regressed` compare stable checker subject keys across
+durable executions. They are workflow guidance, not severity or expert review
+judgments.
+
 A user report does not convert a Finding into a confirmed false positive.
 Checker disagreements are separate `DiagnosticConflict` records and are never
 silently resolved by selecting the higher-confidence output.

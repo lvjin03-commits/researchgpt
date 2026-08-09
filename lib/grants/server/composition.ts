@@ -19,6 +19,9 @@ import { GrantEvidenceAuthorizationService } from "../application/evidence-autho
 import { SupabaseGrantEvidenceRepository } from "../infrastructure/supabase/supabase-grant-evidence-repository.ts";
 import { SupabaseGrantEvidenceStorage } from "../infrastructure/supabase/supabase-grant-evidence-storage.ts";
 import { SharedGrantEvidenceParser } from "../infrastructure/documents/shared-grant-evidence-parser.ts";
+import { GrantExportService } from "../application/export-service.ts";
+import { DeterministicGrantDocxRenderer } from "../infrastructure/documents/deterministic-grant-docx-renderer.ts";
+import { isGrantRecheckEnabled } from "./config.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -48,6 +51,7 @@ export function createGrantDiagnosticService(ownerId: string): GrantDiagnosticSe
     revisionService: new GrantRevisionService({ repository: revisionRepository }),
     repository: new SupabaseGrantDiagnosticRepository(client, ownerId),
     checkers: [new GrantStructuralCompletenessChecker()],
+    incrementalEnabled: isGrantRecheckEnabled(),
   });
 }
 
@@ -86,5 +90,13 @@ export function createGrantEvidenceService(ownerId: string): GrantEvidenceServic
     new SupabaseGrantEvidenceRepository(client, ownerId),
     new SupabaseGrantEvidenceStorage(client),
     new SharedGrantEvidenceParser(),
+  );
+}
+
+export function createGrantExportService(ownerId: string): GrantExportService {
+  const client = createGrantSupabaseClient();
+  return new GrantExportService(
+    new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
+    new DeterministicGrantDocxRenderer(),
   );
 }

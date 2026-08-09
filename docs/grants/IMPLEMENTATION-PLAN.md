@@ -115,6 +115,17 @@ applied and the guarded-acceptance RPC resolves remotely. Production deployment
 and a real signed-in evidence-backed model call, revocation behavior and
 acceptance remain to be verified.
 
+PR8 implementation status (2026-08-09): bounded section-level recheck,
+identical-input reuse, current-Finding projection, deterministic convergence
+summary, a dedicated Grant DOCX export port/adapter, guarded API route and UI
+entry are implemented behind `GRANT_RECHECK_ENABLED` and
+`GRANT_DOCX_EXPORT_ENABLED`. Migration 042 is additive and was applied to
+production on 2026-08-09; both capability flags are enabled for production.
+Contract, architecture, encoding, type and existing diagnostic/UI regression
+checks pass locally. A real DOCX was generated and its OOXML structure was
+inspected; page-image visual QA remains incomplete because LibreOffice is not
+installed in the verification runtime.
+
 ## Feature Flags
 
 The product begins disabled. Planned flags are capability gates, not alternative

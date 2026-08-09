@@ -13,3 +13,11 @@ export function isGrantLocalEvidenceEnabled(): boolean {
 export function isGrantEvidencePatchEnabled(): boolean {
   return process.env.GRANT_EVIDENCE_PATCH_ENABLED?.trim().toLowerCase() === "true";
 }
+
+export function isGrantRecheckEnabled(): boolean {
+  return process.env.GRANT_RECHECK_ENABLED?.trim().toLowerCase() === "true";
+}
+
+export function isGrantDocxExportEnabled(): boolean {
+  return process.env.GRANT_DOCX_EXPORT_ENABLED?.trim().toLowerCase() === "true";
+}

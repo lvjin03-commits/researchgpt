@@ -11,11 +11,14 @@ export class GrantStructuralCompletenessChecker implements GrantChecker {
   readonly checkerVersion = "1.0.0";
   readonly contractVersion = "grant-checker-v1";
   readonly inputMode = "full_document" as const;
+  readonly supportedInputModes = ["full_document", "section_bundle"] as const;
 
   async check(input: GrantCheckerInput) {
     const findings: GrantCheckerFindingCandidate[] = [];
     const allowedNodeIds = new Set(input.inputNodeIds);
+    const allowedSectionIds = new Set(input.inputSectionIds);
     for (const section of input.snapshot.sections) {
+      if (!allowedSectionIds.has(section.sectionId)) continue;
       const nodeIds = section.nodeIds.filter((nodeId) => allowedNodeIds.has(nodeId));
       if (nodeIds.length === 0) {
         findings.push({

@@ -10,4 +10,5 @@ export interface GrantDiagnosticRepository {
   saveExecution(input: GrantDiagnosticExecution): Promise<GrantDiagnosticExecution>;
   listFindings(documentId: string): Promise<GrantFinding[]>;
   listConflicts(documentId: string): Promise<GrantDiagnosticConflict[]>;
+  listRuns?(documentId: string): Promise<GrantDiagnosticRun[]>;
 }

@@ -49,4 +49,10 @@ export class SupabaseGrantDiagnosticRepository implements GrantDiagnosticReposit
     throwRpcError("list_grant_diagnostic_conflicts", error);
     return z.array(GrantDiagnosticConflictSchema).parse(data ?? []);
   }
+
+  async listRuns(documentId: string) {
+    const { data, error } = await this.client.rpc("list_grant_diagnostic_runs", { p_owner_id: this.ownerId, p_document_id: documentId });
+    throwRpcError("list_grant_diagnostic_runs", error);
+    return z.array(GrantDiagnosticRunSchema).parse(data ?? []);
+  }
 }

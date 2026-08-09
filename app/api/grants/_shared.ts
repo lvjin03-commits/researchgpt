@@ -9,6 +9,8 @@ import {
   GrantEvidencePatchDisabledError,
   GrantLocalEvidenceDisabledError,
   GrantWorkspaceDisabledError,
+  GrantRecheckDisabledError,
+  GrantDocxExportDisabledError,
 } from "@/lib/grants/server/request-context";
 import { GrantDocxImportError } from "@/lib/grants/imports/docx-importer";
 import { GrantImportStorageError } from "@/lib/grants/ports/grant-import-storage";
@@ -39,6 +41,12 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantEvidencePatchDisabledError) {
     return Response.json({ error: "证据支持的 AI 修改功能尚未开放。", code: "grant_evidence_patch_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantRecheckDisabledError) {
+    return Response.json({ error: "增量复检功能尚未开放。", code: "grant_recheck_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantDocxExportDisabledError) {
+    return Response.json({ error: "Word 导出功能尚未开放。", code: "grant_docx_export_disabled" }, { status: 404 });
   }
   if (error instanceof GrantEvidenceNotFoundError) {
     return Response.json({ error: error.message, code: "grant_evidence_not_found" }, { status: 404 });

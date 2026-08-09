@@ -7,6 +7,7 @@ export type GrantCheckerInput = {
   snapshot: CanonicalGrantSnapshot;
   inputMode: GrantDiagnosticInputMode;
   inputNodeIds: string[];
+  inputSectionIds: string[];
 };
 
 export type GrantCheckerFindingCandidate = {
@@ -32,5 +33,6 @@ export interface GrantChecker {
   readonly checkerVersion: string;
   readonly contractVersion: string;
   readonly inputMode: GrantDiagnosticInputMode;
+  readonly supportedInputModes?: readonly GrantDiagnosticInputMode[];
   check(input: GrantCheckerInput): Promise<GrantCheckerOutput>;
 }

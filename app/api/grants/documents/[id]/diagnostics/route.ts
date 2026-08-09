@@ -1,5 +1,5 @@
 import { grantApiError } from "@/app/api/grants/_shared";
-import { requireGrantRequestContext } from "@/lib/grants/server/request-context";
+import { requireGrantRecheckRequestContext, requireGrantRequestContext } from "@/lib/grants/server/request-context";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -23,11 +23,14 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-export async function POST(_request: Request, context: Context) {
+export async function POST(request: Request, context: Context) {
   try {
     const { id } = await context.params;
-    const { user, diagnostics } = await requireGrantRequestContext();
-    return Response.json(await diagnostics.run(z.string().uuid().parse(id), user.id), { status: 201, headers: { "Cache-Control": "no-store" } });
+    const incremental = new URL(request.url).searchParams.get("mode") === "recheck";
+    const { user, diagnostics } = incremental
+      ? await requireGrantRecheckRequestContext()
+      : await requireGrantRequestContext();
+    return Response.json(await diagnostics.run(z.string().uuid().parse(id), user.id, { incremental }), { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return grantApiError(error, "run_grant_diagnostics");
   }

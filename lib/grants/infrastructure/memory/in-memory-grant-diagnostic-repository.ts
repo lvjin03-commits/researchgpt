@@ -17,4 +17,8 @@ export class InMemoryGrantDiagnosticRepository implements GrantDiagnosticReposit
   async listConflicts(documentId: string) {
     return clone(this.executions.flatMap((execution) => execution.conflicts).filter((conflict) => conflict.documentId === documentId));
   }
+
+  async listRuns(documentId: string) {
+    return clone(this.executions.flatMap((execution) => execution.runs).filter((run) => run.documentId === documentId).reverse());
+  }
 }

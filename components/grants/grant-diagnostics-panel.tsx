@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { GrantFindingDisposition, GrantFindingFeedback } from "@/lib/grants/feedback/contracts";
 import { grantFindingTarget, indexGrantFindingFeedback, type GrantDiagnosticItem } from "./grant-diagnostic-view-model";
 import { GrantAiPatchPanel } from "./grant-ai-patch-panel";
+import type { GrantRecheckSummary } from "@/lib/grants/application/diagnostic-service";
 
 const scopeLabels = {
   cross_section: "跨章节",
@@ -33,6 +34,8 @@ type Props = {
   loading: boolean;
   running: boolean;
   error: string;
+  recheckEnabled: boolean;
+  recheck: GrantRecheckSummary;
   onRun: () => Promise<void>;
   onSelect: (item: GrantDiagnosticItem) => void;
   onFeedbackChange: (item: GrantFindingFeedback) => void;
@@ -78,9 +81,22 @@ export function GrantDiagnosticsPanel(props: Props) {
             disabled={props.running}
             className="rounded-lg bg-[#155eef] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
           >
-            {props.running ? "检查中…" : "检查申请书"}
+            {props.running ? "检查中…" : props.recheckEnabled && props.recheck.state !== "not_run" ? "复检受影响内容" : "检查申请书"}
           </button>
         </div>
+
+        {props.recheckEnabled && props.recheck.state !== "not_run" && (
+          <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+            {props.recheck.inputMode === "section_bundle"
+              ? `已增量检查 ${props.recheck.checkedSectionCount} 个受影响章节。`
+              : "已执行全文检查。"}
+            {props.recheck.state === "resolved" && " 当前检查未发现遗留问题。"}
+            {props.recheck.state === "stable" && " 问题集合与上次相同，建议调整修改方案后再复检。"}
+            {props.recheck.state === "improving" && ` 已解决 ${props.recheck.resolvedCount} 项。`}
+            {props.recheck.state === "regressed" && ` 新出现 ${props.recheck.introducedCount} 项，请先检查本轮修改。`}
+            {props.recheck.reusedExecution && " 当前版本未变化，已复用已有结果。"}
+          </p>
+        )}
 
         {props.error && <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{props.error}</p>}
         {feedbackError && <p role="alert" className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{feedbackError}</p>}

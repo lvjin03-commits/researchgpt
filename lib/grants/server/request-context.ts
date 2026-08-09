@@ -6,13 +6,16 @@ import { createGrantFeedbackService } from "./composition.ts";
 import { createGrantDocxImportService } from "./composition.ts";
 import { createGrantPatchService } from "./composition.ts";
 import { createGrantEvidenceService } from "./composition.ts";
-import { isGrantAiPatchEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantWorkspaceEnabled } from "./config.ts";
+import { createGrantExportService } from "./composition.ts";
+import { isGrantAiPatchEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "./config.ts";
 
 export class GrantWorkspaceDisabledError extends Error {}
 export class GrantAuthenticationRequiredError extends Error {}
 export class GrantAiPatchDisabledError extends Error {}
 export class GrantLocalEvidenceDisabledError extends Error {}
 export class GrantEvidencePatchDisabledError extends Error {}
+export class GrantRecheckDisabledError extends Error {}
+export class GrantDocxExportDisabledError extends Error {}
 
 export async function requireGrantRequestContext() {
   if (!isGrantWorkspaceEnabled()) throw new GrantWorkspaceDisabledError();
@@ -42,4 +45,15 @@ export async function requireGrantEvidenceRequestContext() {
 
 export function requireGrantEvidencePatchEnabled(): void {
   if (!isGrantEvidencePatchEnabled() || !isGrantLocalEvidenceEnabled()) throw new GrantEvidencePatchDisabledError();
+}
+
+export async function requireGrantRecheckRequestContext() {
+  if (!isGrantRecheckEnabled()) throw new GrantRecheckDisabledError();
+  return requireGrantRequestContext();
+}
+
+export async function requireGrantDocxExportRequestContext() {
+  if (!isGrantDocxExportEnabled()) throw new GrantDocxExportDisabledError();
+  const context = await requireGrantRequestContext();
+  return { ...context, exports: createGrantExportService(context.user.id) };
 }
