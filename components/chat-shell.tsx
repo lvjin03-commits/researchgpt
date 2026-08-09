@@ -355,7 +355,11 @@ function shouldAnalyzeAllProjectFiles(message: string): boolean {
   );
 }
 
-export function ChatShell() {
+export function ChatShell({
+  grantWorkspaceEnabled = false,
+}: {
+  grantWorkspaceEnabled?: boolean;
+}) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
@@ -1748,6 +1752,7 @@ export function ChatShell() {
       >
         <Sidebar
         isOpen={sidebarOpen}
+        grantWorkspaceEnabled={grantWorkspaceEnabled}
         conversations={conversations}
         activeConversationId={activeConversationId}
         folders={folders}

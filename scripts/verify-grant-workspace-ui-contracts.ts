@@ -96,4 +96,13 @@ assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.grant_finding_feedba
 assert.match(migration, /JOIN public\.grant_documents/);
 assert.doesNotMatch(migration, /GRANT EXECUTE .* authenticated/);
 
+const chatPageSource = await readFile(new URL("../app/chat/page.tsx", import.meta.url), "utf8");
+const chatShellSource = await readFile(new URL("../components/chat-shell.tsx", import.meta.url), "utf8");
+const sidebarSource = await readFile(new URL("../components/sidebar.tsx", import.meta.url), "utf8");
+assert.match(chatPageSource, /isGrantWorkspaceEnabled\(\)/);
+assert.match(chatShellSource, /grantWorkspaceEnabled=\{grantWorkspaceEnabled\}/);
+assert.match(sidebarSource, /grantWorkspaceEnabled\s*&&/);
+assert.match(sidebarSource, /href="\/grants"/);
+assert.match(sidebarSource, /国自然申请书/);
+
 console.log("Grant three-pane workspace contracts passed.");

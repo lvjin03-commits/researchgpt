@@ -12,6 +12,7 @@ import {
   LogOut,
   MessageSquare,
   Microscope,
+  NotebookPen,
   Pencil,
   Plus,
   Search,
@@ -35,6 +36,7 @@ import type { LiteratureFolder } from "@/lib/literature/types";
 
 type SidebarProps = {
   isOpen: boolean;
+  grantWorkspaceEnabled?: boolean;
   conversations: ChatConversation[];
   activeConversationId: string | null;
   folders: LiteratureFolder[];
@@ -70,6 +72,7 @@ function SectionTitle({ children }: { children: ReactNode }) {
 
 export function Sidebar({
   isOpen,
+  grantWorkspaceEnabled = false,
   conversations,
   activeConversationId,
   folders,
@@ -338,6 +341,15 @@ export function Sidebar({
           <a href="/translate" className="flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold text-[#52636b] hover:bg-white hover:text-[#174866]">
             <Languages className="h-3.5 w-3.5" /> 学术翻译
           </a>
+          {grantWorkspaceEnabled && (
+            <a
+              href="/grants"
+              className="col-span-2 flex items-center gap-2 rounded-md border border-[#c9dce4] bg-white/70 px-2.5 py-2 text-xs font-bold text-[#174866] hover:bg-white"
+            >
+              <NotebookPen className="h-3.5 w-3.5" />
+              国自然申请书
+            </a>
+          )}
         </nav>
 
         <div className="flex-1 overflow-y-auto px-2 pb-4">
