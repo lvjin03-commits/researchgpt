@@ -20,8 +20,8 @@ type Props = {
 export function GrantDocumentOutline(props: Props) {
   const sectionTree = projectGrantSectionTree(props.snapshot);
   return (
-    <aside aria-label="文档结构" className="border-r border-slate-200 bg-white p-4">
-      <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+    <aside aria-label="文档结构" className="border-r border-slate-200 bg-white p-4 xl:h-full xl:min-h-0 xl:overflow-hidden">
+      <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto xl:static xl:h-full xl:max-h-none">
         <div className="flex items-center justify-between">
           <p className="research-eyebrow">文档结构</p>
           <span className="text-sm text-slate-400">约 {props.estimate?.estimatedPages ?? 0} 页</span>

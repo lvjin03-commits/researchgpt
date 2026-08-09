@@ -343,8 +343,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   }[saveStatus];
 
   return (
-    <main className="research-canvas min-h-screen">
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-5 backdrop-blur">
+    <main className="research-canvas min-h-screen xl:flex xl:h-dvh xl:flex-col xl:overflow-hidden">
+      <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white/95 px-5 backdrop-blur">
         <div className="flex min-w-0 items-center gap-4">
           <Link
             href="/grants"

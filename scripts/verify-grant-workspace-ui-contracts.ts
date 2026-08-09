@@ -104,6 +104,12 @@ assert.match(resizableWorkspaceSource, /aria-valuenow=\{Math\.round\(value\)\}/)
 assert.match(resizableWorkspaceSource, /setPointerCapture/);
 assert.match(resizableWorkspaceSource, /ArrowRight/);
 assert.match(resizableWorkspaceSource, /--grant-panel-font-scale/);
+assert.match(resizableWorkspaceSource, /xl:flex-1 xl:overflow-hidden/);
+assert.match(resizableWorkspaceSource, /xl:overflow-y-auto/);
+assert.match(outlineSource, /xl:h-full xl:min-h-0 xl:overflow-hidden/);
+assert.match(panelSource, /xl:h-full xl:min-h-0 xl:overflow-hidden/);
+assert.match(wordToolbarSource, /xl:top-0/);
+assert.match(editorSource, /xl:flex xl:h-dvh xl:flex-col xl:overflow-hidden/);
 assert.match(globalStylesSource, /grid-template-columns:[\s\S]*--grant-left-panel-width[\s\S]*--grant-right-panel-width/);
 assert.match(globalStylesSource, /\.grant-resizable-panel \.text-sm/);
 assert.match(editorSource, />\s*\{saveStatus === "saving" \? "保存中…" : saveStatus === "offline" \? "重新保存" : "保存"\}\s*</);

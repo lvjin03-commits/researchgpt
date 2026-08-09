@@ -27,7 +27,7 @@ function ToolbarButton({ label, children }: { label: string; children: ReactNode
 
 export function GrantWordToolbar() {
   return (
-    <div className="sticky top-16 z-20 border-b border-slate-200 bg-white shadow-sm">
+    <div className="sticky top-16 z-20 border-b border-slate-200 bg-white shadow-sm xl:top-0">
       <div className="flex min-h-12 items-center gap-1 overflow-x-auto px-4 py-2">
         <ToolbarButton label="撤销"><Undo2 size={17} /></ToolbarButton>
         <ToolbarButton label="重做"><Redo2 size={17} /></ToolbarButton>
