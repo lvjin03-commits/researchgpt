@@ -64,11 +64,9 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   const [diagnosticsError, setDiagnosticsError] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("loading");
   const [message, setMessage] = useState("");
-  const [saveKick, setSaveKick] = useState(0);
   const snapshotRef = useRef<CanonicalGrantSnapshot | null>(null);
   const revisionIdRef = useRef("");
   const savedSerializedRef = useRef("");
-  const savingRef = useRef(false);
 
   const refreshDiagnostics = useCallback(async (revisionId = revisionIdRef.current) => {
     if (!revisionId) return;
@@ -139,50 +137,51 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   useEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
 
   useEffect(() => {
-    if (!snapshot || !payload || saveStatus === "conflict" || saveStatus === "loading") return;
-    const serialized = JSON.stringify(snapshot);
-    if (serialized === savedSerializedRef.current) {
-      if (!savingRef.current) setSaveStatus("saved");
+    const hasUnsavedChanges = saveStatus === "dirty" || saveStatus === "offline" || saveStatus === "conflict" || saveStatus === "saving";
+    if (!hasUnsavedChanges) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [saveStatus]);
+
+  async function saveDocument() {
+    const sentSnapshot = snapshotRef.current;
+    if (!sentSnapshot || saveStatus === "loading" || saveStatus === "saving" || saveStatus === "conflict") return;
+    const sentSerialized = JSON.stringify(sentSnapshot);
+    if (sentSerialized === savedSerializedRef.current) {
+      setSaveStatus("saved");
       return;
     }
-    setSaveStatus("dirty");
-    const timer = window.setTimeout(async () => {
-      if (savingRef.current) return;
-      savingRef.current = true;
-      setSaveStatus("saving");
-      const sentSnapshot = snapshotRef.current;
-      if (!sentSnapshot) return;
-      const sentSerialized = JSON.stringify(sentSnapshot);
-      try {
-        const response = await fetch(`/api/grants/documents/${documentId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ expectedRevisionId: revisionIdRef.current, snapshot: sentSnapshot }),
-        });
-        const data = await response.json();
-        if (response.status === 409) {
-          setSaveStatus("conflict");
-          setMessage("检测到其他位置已保存新版本。当前内容没有覆盖服务器版本，请加载最新版本后继续。");
-          return;
-        }
-        if (!response.ok) throw new Error(data.error ?? "自动保存失败。");
-        const next = data as EditorPayload;
-        revisionIdRef.current = next.aggregate.currentRevision.revisionId;
-        savedSerializedRef.current = sentSerialized;
-        setPayload(next);
-        setMessage("");
-        if (JSON.stringify(snapshotRef.current) === sentSerialized) setSaveStatus("saved");
-        void refreshDiagnostics(next.aggregate.currentRevision.revisionId);
-      } catch (error) {
-        setSaveStatus("offline");
-        setMessage(error instanceof Error ? error.message : "自动保存失败，内容仍保留在当前页面。");
-      } finally {
-        savingRef.current = false;
-        if (JSON.stringify(snapshotRef.current) !== savedSerializedRef.current) setSaveKick((value) => value + 1);
+
+    setSaveStatus("saving");
+    setMessage("");
+    try {
+      const response = await fetch(`/api/grants/documents/${documentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevisionId: revisionIdRef.current, snapshot: sentSnapshot }),
+      });
+      const data = await response.json();
+      if (response.status === 409) {
+        setSaveStatus("conflict");
+        setMessage("检测到其他位置已保存新版本。当前未保存内容没有覆盖服务器版本，请加载最新版本后继续。");
+        return;
       }
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [documentId, payload, refreshDiagnostics, saveKick, saveStatus, snapshot]);
+      if (!response.ok) throw new Error(data.error ?? "保存失败。");
+      const next = data as EditorPayload;
+      revisionIdRef.current = next.aggregate.currentRevision.revisionId;
+      savedSerializedRef.current = sentSerialized;
+      setPayload(next);
+      setSaveStatus(JSON.stringify(snapshotRef.current) === sentSerialized ? "saved" : "dirty");
+      void refreshDiagnostics(next.aggregate.currentRevision.revisionId);
+    } catch (error) {
+      setSaveStatus("offline");
+      setMessage(error instanceof Error ? error.message : "保存失败，修改仍保留在当前页面。");
+    }
+  }
 
   const estimate = useMemo(() => snapshot && payload
     ? estimateGrantLength(snapshot, payload.aggregate.templateSnapshot.rules)
@@ -203,7 +202,15 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   }, [diagnostics.findings, snapshot]);
 
   function mutate(mutator: (current: CanonicalGrantSnapshot) => CanonicalGrantSnapshot) {
-    setSnapshot((current) => current ? mutator(current) : current);
+    setSnapshot((current) => {
+      if (!current) return current;
+      const next = mutator(current);
+      snapshotRef.current = next;
+      setSaveStatus((status) => status === "conflict"
+        ? status
+        : JSON.stringify(next) === savedSerializedRef.current ? "saved" : "dirty");
+      return next;
+    });
   }
 
   function addParagraph() {
@@ -250,7 +257,10 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   }
 
   async function restore(sourceRevisionId: string) {
-    if (!payload || !window.confirm("恢复后会创建一个新版本，当前历史不会被删除。是否继续？")) return;
+    const prompt = saveStatus === "saved"
+      ? "恢复后会创建一个新版本，当前历史不会被删除。是否继续？"
+      : "当前有未保存修改，恢复版本会丢弃这些页面草稿，并创建一个新版本。是否继续？";
+    if (!payload || !window.confirm(prompt)) return;
     setSaveStatus("saving");
     const response = await fetch(`/api/grants/documents/${documentId}/restore`, {
       method: "POST",
@@ -271,7 +281,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
 
   async function runDiagnostics() {
     if (saveStatus !== "saved") {
-      setDiagnosticsError("请等待当前修改保存完成后再运行检查。");
+      setDiagnosticsError("请先点击保存，再运行申请书检查。");
       return;
     }
     setDiagnosticsRunning(true);
@@ -324,7 +334,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   const statusLabel = {
     loading: "读取中",
     saved: "已保存",
-    dirty: "等待保存",
+    dirty: "未保存",
     saving: "保存中…",
     offline: "保存失败",
     conflict: "版本冲突",
@@ -334,7 +344,13 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
     <main className="research-canvas min-h-screen">
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-5 backdrop-blur">
         <div className="flex min-w-0 items-center gap-4">
-          <Link href="/grants" className="shrink-0 text-sm font-semibold text-[#245d82]">ResearchGPT</Link>
+          <Link
+            href="/grants"
+            className="shrink-0 text-sm font-semibold text-[#245d82]"
+            onClick={(event) => {
+              if (saveStatus !== "saved" && !window.confirm("当前修改尚未保存，确定离开编辑页面吗？")) event.preventDefault();
+            }}
+          >ResearchGPT</Link>
           <span className="text-slate-300">/</span>
           <input
             aria-label="申请书标题"
@@ -345,6 +361,14 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
         </div>
         <div className="flex items-center gap-3 text-xs">
           <span className={saveStatus === "saved" ? "text-emerald-700" : saveStatus === "conflict" || saveStatus === "offline" ? "text-red-700" : "text-amber-700"}>{statusLabel}</span>
+          <button
+            type="button"
+            onClick={() => void saveDocument()}
+            disabled={saveStatus === "saved" || saveStatus === "loading" || saveStatus === "saving" || saveStatus === "conflict"}
+            className="rounded-lg bg-[#155eef] px-4 py-2 font-semibold text-white hover:bg-[#0f4dcc] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+          >
+            {saveStatus === "saving" ? "保存中…" : saveStatus === "offline" ? "重新保存" : "保存"}
+          </button>
           <span className="rounded-full bg-slate-100 px-3 py-1.5">版本 {payload.aggregate.document.currentRevisionNumber}</span>
           {docxExportEnabled && (
             <a

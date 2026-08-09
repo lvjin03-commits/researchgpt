@@ -77,18 +77,18 @@ await assert.rejects(() => archivedService.commitRevision({
   actorId: ownerId,
   actorKind: "user",
   snapshot: archived.currentRevision.snapshot,
-  reason: "stale_editor_autosave",
+  reason: "stale_editor_user_save",
 }), /was not found/);
 
 const editedSnapshot = structuredClone(created.currentRevision.snapshot);
-editedSnapshot.nodes[0]!.content = { text: "这是一次经过自动保存的结构化正文内容" };
+editedSnapshot.nodes[0]!.content = { text: "这是一次经过用户确认保存的结构化正文内容" };
 const edited = await service.commitRevision({
   documentId: created.document.documentId,
   expectedRevisionId: created.currentRevision.revisionId,
   actorId: ownerId,
   actorKind: "user",
   snapshot: editedSnapshot,
-  reason: "editor_autosave",
+  reason: "editor_user_save",
 });
 assert.equal(edited.document.currentRevisionNumber, 2);
 
@@ -120,5 +120,9 @@ assert.match(archiveMigration, /current_document\.current_revision_id IS DISTINC
 assert.match(archiveMigration, /document\.deleted_at IS NULL/);
 assert.match(archiveMigration, /CREATE TRIGGER grant_document_revisions_reject_archived/);
 assert.doesNotMatch(archiveMigration, /GRANT EXECUTE .* authenticated/);
+
+const editorServiceSource = await readFile(new URL("../lib/grants/application/editor-service.ts", import.meta.url), "utf8");
+assert.match(editorServiceSource, /reason: "editor_user_save"/);
+assert.doesNotMatch(editorServiceSource, /editor_autosave/);
 
 console.log("Grant editor contracts passed.");

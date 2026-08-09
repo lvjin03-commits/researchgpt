@@ -118,7 +118,7 @@ export function GrantDocumentList() {
         <header>
           <p className="research-eyebrow">ResearchGPT · Grant Workspace</p>
           <h1 className="mt-2 text-3xl font-semibold text-slate-900">国自然申请书协作工作台</h1>
-          <p className="mt-2 text-sm text-slate-600">结构化编辑、自动保存与可恢复版本。AI诊断和修改建议将在后续阶段接入。</p>
+          <p className="mt-2 text-sm text-slate-600">结构化编辑、用户确认保存与可恢复版本。AI诊断和修改建议将在后续阶段接入。</p>
         </header>
 
         <div className="grid gap-5 lg:grid-cols-2">

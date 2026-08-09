@@ -36,7 +36,7 @@ non-interactive environment; that limitation remains an import/export exit gate.
 | Phase | Deliverable | Exit condition |
 |---|---|---|
 | PR1 | Canonical node model, revision service, template snapshot, base audit | Atomic compare-and-swap and recovery tests pass |
-| PR2 | Structured editor, autosave, revision recovery, length estimate | Reload and concurrent-edit scenarios preserve content |
+| PR2 | Structured editor, explicit user save, revision recovery, length estimate | Reload and concurrent-edit scenarios preserve committed content |
 | PR3 | Checker execution, Finding/conflict contracts, cross-version anchors | Every Finding is traceable or explicitly unlocated |
 | PR4 | Three-pane UI, collapsed issue cards, bidirectional navigation, feedback | Real source-to-Finding navigation verified |
 | PR4.5 | Existing DOCX preview and confirmed initial-revision import | A real DOCX is parsed, warnings are shown, and only confirmation creates canonical content |
@@ -53,13 +53,13 @@ PostgreSQL compare-and-swap path has been verified with concurrent stale-write
 rejection. No user-facing grant route is exposed while the workspace flag is
 disabled.
 
-PR2 implementation status (2026-08-07): the structured editor, serialized
-autosave, immutable revision history and restore-as-new-revision behavior,
+PR2 implementation status (updated 2026-08-09): the structured editor, explicit
+user-confirmed save, immutable revision history and restore-as-new-revision behavior,
 derived length estimate, authenticated API boundary, and editor contract tests
 are implemented behind `GRANT_WORKSPACE_ENABLED`. Migration 035 contains only
 owner-scoped revision read RPCs and was applied to production on 2026-08-07.
 The real PostgreSQL path and the local browser path against the production
-database were verified on 2026-08-07, including autosave, reload recovery,
+database were verified on 2026-08-07, including revision commit, reload recovery,
 restore-as-new-revision, and stale concurrent-write rejection. Production
 feature exposure remains disabled pending an independently authorized rollout.
 

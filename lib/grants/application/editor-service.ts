@@ -62,7 +62,7 @@ export class GrantEditorService {
     const aggregate = await this.revisions.commitRevision({
       ...input,
       actorKind: "user",
-      reason: "editor_autosave",
+      reason: "editor_user_save",
     });
     return {
       aggregate,

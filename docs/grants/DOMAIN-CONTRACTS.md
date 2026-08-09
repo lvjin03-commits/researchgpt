@@ -69,6 +69,13 @@ Patch Commit Service validates content. Revision Service atomically decides
 whether the validated patch can become current. No API, UI component, checker,
 or model adapter may bypass Revision Service.
 
+Ordinary editor changes remain page-local drafts until the user explicitly
+selects Save. Only that explicit action may submit the current snapshot through
+Revision Service and create a new immutable revision. Diagnostics, AI Patch and
+DOCX export operate on the latest committed revision, never on an unsaved page
+draft. Leaving with unsaved changes must be disclosed to the user; the editor
+must not silently persist them as canonical content.
+
 Document deletion is a recoverable lifecycle transition owned by Revision
 Service. It requires the caller's expected current revision and owner identity.
 The canonical revisions and audit history are retained, while archived
