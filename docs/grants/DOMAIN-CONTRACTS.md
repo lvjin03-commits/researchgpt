@@ -5,6 +5,10 @@ diagnostics, AI patching, evidence, revision, recheck, and export systems.
 
 ## Canonical Document
 
+Imported document structure is classified once at the DOCX import boundary.
+After canonicalization, `parentSectionId` and sibling `order` are authoritative;
+navigation and editor surfaces must not re-infer hierarchy from visible titles.
+
 The platform structured document is the canonical working representation. All
 components use the same document, section, and node identities. DOCX import and
 export are adapters, not competing sources of truth.

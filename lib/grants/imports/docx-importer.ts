@@ -83,6 +83,42 @@ function parseMammothHtml(html: string): ImportedBlock[] {
   return blocks;
 }
 
+const GRANT_BODY_MARKER = /^报告正文/;
+const GRANT_BODY_END_MARKER = /^附件信息$/;
+const TOP_LEVEL_HEADING = /^[（(][一二三四五六七八九十]+[）)]\s*\S+/;
+const THIRD_LEVEL_HEADING = /^\d+\.\d+\.\d+(?:\.\d+)*\s+\S+/;
+const SECOND_LEVEL_HEADING = /^\d+\.\d+\s+\S+/;
+const REFERENCES_HEADING = /^参考文献(?:\s|$)/;
+
+function normalizedBlockText(block: ImportedBlock): string {
+  if (block.kind === "heading" || block.kind === "paragraph") return block.text.replace(/\s+/g, " ").trim();
+  return "";
+}
+
+/**
+ * NSFC templates frequently encode visible headings as ordinary Word paragraphs.
+ * The importer is the sole authority that classifies those paragraphs. UI layers
+ * consume the resulting hierarchy and never repeat these textual heuristics.
+ */
+function classifyGrantBodyStructure(blocks: ImportedBlock[]): ImportedBlock[] {
+  const markerIndex = blocks.findIndex((block) => GRANT_BODY_MARKER.test(normalizedBlockText(block)));
+  const bodyStart = markerIndex >= 0 ? markerIndex + 1 : 0;
+  const endOffset = blocks.slice(bodyStart).findIndex((block) => GRANT_BODY_END_MARKER.test(normalizedBlockText(block)));
+  const bodyEnd = endOffset >= 0 ? bodyStart + endOffset : blocks.length;
+
+  const classified: ImportedBlock[] = blocks.slice(bodyStart, bodyEnd).map((block): ImportedBlock => {
+    if (block.kind !== "paragraph") return block;
+    const text = normalizedBlockText(block);
+    if (TOP_LEVEL_HEADING.test(text)) return { kind: "heading", level: 1, text };
+    if (THIRD_LEVEL_HEADING.test(text)) return { kind: "heading", level: 3, text };
+    if (SECOND_LEVEL_HEADING.test(text) || REFERENCES_HEADING.test(text)) return { kind: "heading", level: 2, text };
+    return block;
+  });
+  if (markerIndex < 0) return classified;
+  const firstBodyHeading = classified.findIndex((block) => block.kind === "heading" && block.level === 1);
+  return firstBodyHeading >= 0 ? classified.slice(firstBodyHeading) : classified;
+}
+
 function inferSemanticRole(title: string): string {
   const rules: Array<[RegExp, string]> = [
     [/摘要|概述/, "abstract"],
@@ -195,7 +231,8 @@ export async function importGrantDocx(input: { fileName: string; buffer: Buffer 
     { buffer: input.buffer },
     { convertImage: mammoth.images.imgElement(() => Promise.resolve({ src: "" })) },
   );
-  const blocks = parseMammothHtml(result.value);
+  const parsedBlocks = parseMammothHtml(result.value);
+  const blocks = classifyGrantBodyStructure(parsedBlocks);
   if (blocks.length === 0) throw new GrantDocxImportError("未从 DOCX 中读取到可编辑正文。", "empty_document", 422);
   const title = input.fileName.replace(/\.docx$/i, "").trim() || "导入的国家自然科学基金申请书";
   const draft = blocksToDraft(blocks, title);

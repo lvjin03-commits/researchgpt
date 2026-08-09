@@ -384,11 +384,10 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           selectedSectionId={selectedSectionId}
           selectedFindingId={selectedFindingId}
           findingsByNode={findingsByNode}
-          onSectionTitleChange={(title) => {
-            if (!selectedSection) return;
+          onSectionTitleChange={(sectionId, title) => {
             mutate((current) => ({
               ...current,
-              sections: current.sections.map((section) => section.sectionId === selectedSection.sectionId ? { ...section, title } : section),
+              sections: current.sections.map((section) => section.sectionId === sectionId ? { ...section, title } : section),
             }));
           }}
           onNodeContentChange={changeNodeContent}

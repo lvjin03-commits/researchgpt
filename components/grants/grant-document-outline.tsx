@@ -1,6 +1,7 @@
 "use client";
 
 import type { CanonicalGrantSnapshot, GrantLengthEstimate, GrantRevisionSummary } from "@/lib/grants/domain/contracts";
+import { projectGrantSectionTree } from "@/lib/grants/presentation/document-tree";
 import { GrantEvidencePanel } from "./grant-evidence-panel";
 
 type Props = {
@@ -17,6 +18,7 @@ type Props = {
 };
 
 export function GrantDocumentOutline(props: Props) {
+  const sectionTree = projectGrantSectionTree(props.snapshot);
   return (
     <aside aria-label="文档结构" className="border-r border-slate-200 bg-white p-4">
       <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
@@ -25,16 +27,17 @@ export function GrantDocumentOutline(props: Props) {
           <span className="text-sm text-slate-400">约 {props.estimate?.estimatedPages ?? 0} 页</span>
         </div>
         <nav className="mt-3 space-y-1">
-          {[...props.snapshot.sections].sort((a, b) => a.order - b.order).map((section, index) => {
+          {sectionTree.map(({ section, depth }) => {
             const count = props.findingsBySection.get(section.sectionId) ?? 0;
             return (
               <button
                 key={section.sectionId}
                 type="button"
                 onClick={() => props.onSelectSection(section.sectionId)}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${props.selectedSectionId === section.sectionId ? "bg-blue-50 font-semibold text-[#174866]" : "text-slate-700 hover:bg-slate-50"}`}
+                className={`flex w-full items-center gap-2 rounded-xl py-2.5 pr-3 text-left text-sm ${props.selectedSectionId === section.sectionId ? "bg-blue-50 font-semibold text-[#174866]" : "text-slate-700 hover:bg-slate-50"}`}
+                style={{ paddingLeft: `${12 + depth * 18}px` }}
               >
-                <span className="w-6 text-sm text-slate-400">{index + 1}</span>
+                <span aria-hidden className="w-4 shrink-0 text-slate-400">{depth === 0 ? "▾" : "└"}</span>
                 <span className="min-w-0 flex-1 truncate">{section.title}</span>
                 {count > 0 && <span aria-label={`${count} 个问题`} className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">{count}</span>}
               </button>
