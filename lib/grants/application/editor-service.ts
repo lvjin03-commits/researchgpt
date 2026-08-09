@@ -1,4 +1,4 @@
-import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
+import type { CanonicalGrantSnapshot, GrantDocumentDraft } from "../domain/contracts.ts";
 import { estimateGrantLength } from "./length-estimator.ts";
 import { GrantRevisionService } from "./revision-service.ts";
 import { createNsfcDraft, NSFC_DEFAULT_TEMPLATE } from "../templates/nsfc-default.ts";
@@ -16,6 +16,27 @@ export class GrantEditorService {
       actorId: input.ownerId,
       draft: createNsfcDraft(input.title),
       template: NSFC_DEFAULT_TEMPLATE,
+    });
+  }
+
+  async importDocument(input: {
+    ownerId: string;
+    draft: GrantDocumentDraft;
+    source: { fileName: string; checksum: string; storageBucket: string; storagePath: string; warningCodes: string[] };
+  }) {
+    return this.revisions.createDocument({
+      ownerId: input.ownerId,
+      actorId: input.ownerId,
+      draft: input.draft,
+      template: NSFC_DEFAULT_TEMPLATE,
+      auditMetadata: {
+        creationMode: "docx_import",
+        sourceFileName: input.source.fileName,
+        sourceChecksum: input.source.checksum,
+        sourceStorageBucket: input.source.storageBucket,
+        sourceStoragePath: input.source.storagePath,
+        importWarningCodes: input.source.warningCodes,
+      },
     });
   }
 

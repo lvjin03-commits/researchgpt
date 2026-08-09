@@ -48,6 +48,7 @@ type CreateDocumentInput = {
     templateVersion: string;
     rules: Record<string, unknown>;
   };
+  auditMetadata?: Record<string, unknown>;
 };
 
 type CommitRevisionInput = {
@@ -120,7 +121,11 @@ export class GrantRevisionService {
       actorId: input.actorId,
       actorKind: "user",
       eventType: "document_created",
-      metadata: { templateKey: input.template.templateKey, templateVersion: input.template.templateVersion },
+      metadata: {
+        ...input.auditMetadata,
+        templateKey: input.template.templateKey,
+        templateVersion: input.template.templateVersion,
+      },
       createdAt: timestamp,
     });
     return this.repository.create({ document, currentRevision: revision, templateSnapshot, auditEvent });

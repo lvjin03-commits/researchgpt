@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createGrantEditorService } from "./composition.ts";
 import { createGrantDiagnosticService } from "./composition.ts";
 import { createGrantFeedbackService } from "./composition.ts";
+import { createGrantDocxImportService } from "./composition.ts";
 import { isGrantWorkspaceEnabled } from "./config.ts";
 
 export class GrantWorkspaceDisabledError extends Error {}
@@ -18,5 +19,6 @@ export async function requireGrantRequestContext() {
     editor: createGrantEditorService(user.id),
     diagnostics: createGrantDiagnosticService(user.id),
     feedback: createGrantFeedbackService(user.id),
+    docxImporter: createGrantDocxImportService(user.id),
   };
 }

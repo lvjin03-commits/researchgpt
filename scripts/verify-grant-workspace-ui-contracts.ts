@@ -105,4 +105,14 @@ assert.match(sidebarSource, /grantWorkspaceEnabled\s*&&/);
 assert.match(sidebarSource, /href="\/grants"/);
 assert.match(sidebarSource, /国自然申请书/);
 
+const documentListSource = await readFile(new URL("../components/grants/grant-document-list.tsx", import.meta.url), "utf8");
+const previewRouteSource = await readFile(new URL("../app/api/grants/imports/preview/route.ts", import.meta.url), "utf8");
+const confirmRouteSource = await readFile(new URL("../app/api/grants/imports/confirm/route.ts", import.meta.url), "utf8");
+assert.match(documentListSource, /上传 Word 初稿/);
+assert.match(documentListSource, /先解析并核对章节和表格，确认后才创建正式申请书/);
+assert.match(documentListSource, /确认导入并开始编辑/);
+assert.match(previewRouteSource, /docxImporter\.preview/);
+assert.doesNotMatch(previewRouteSource, /createDocument|importDocument/);
+assert.match(confirmRouteSource, /docxImporter\.confirm/);
+
 console.log("Grant three-pane workspace contracts passed.");

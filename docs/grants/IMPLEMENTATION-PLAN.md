@@ -39,6 +39,7 @@ non-interactive environment; that limitation remains an import/export exit gate.
 | PR2 | Structured editor, autosave, revision recovery, length estimate | Reload and concurrent-edit scenarios preserve content |
 | PR3 | Checker execution, Finding/conflict contracts, cross-version anchors | Every Finding is traceable or explicitly unlocated |
 | PR4 | Three-pane UI, collapsed issue cards, bidirectional navigation, feedback | Real source-to-Finding navigation verified |
+| PR4.5 | Existing DOCX preview and confirmed initial-revision import | A real DOCX is parsed, warnings are shown, and only confirmation creates canonical content |
 | PR5 | Evidence-free AI Patch, diff, acceptance, audit | Patch cannot exceed target or overwrite stale revision |
 | PR6 | Project resources, Evidence Cards, authorization, deletion | Revocation propagation verified end to end |
 | PR7 | Evidence-backed Patch, citation control, evidence safety | Every use maps to an authorized evidence excerpt |
@@ -71,6 +72,13 @@ TypeScript. Migrations 036 and 037 are applied to production; Finding
 persistence, owner isolation, atomic rollback and cleanup were verified against
 the real PostgreSQL database. The phase remains unexposed while the workspace
 flag is disabled.
+
+PR4 implementation status (2026-08-08): the three-pane workspace, collapsed
+Finding cards, source navigation, user feedback persistence and production
+navigation entry are implemented and exposed behind `GRANT_WORKSPACE_ENABLED`.
+Migration 038 is applied and the production PostgreSQL feedback path is
+verified. PR4.5 adds the missing existing-draft entry as an import adapter; it
+does not introduce a second canonical document path.
 
 ## Feature Flags
 

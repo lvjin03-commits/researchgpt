@@ -7,6 +7,7 @@ import {
   GrantAuthenticationRequiredError,
   GrantWorkspaceDisabledError,
 } from "@/lib/grants/server/request-context";
+import { GrantDocxImportError } from "@/lib/grants/imports/docx-importer";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -24,6 +25,9 @@ export function grantApiError(error: unknown, operation: string): Response {
       code: "grant_revision_conflict",
       currentRevisionId: error.currentRevisionId,
     }, { status: 409 });
+  }
+  if (error instanceof GrantDocxImportError) {
+    return Response.json({ error: error.message, code: error.code }, { status: error.status });
   }
   if (error instanceof ZodError) {
     return Response.json({ error: "请求中的文档结构不合法。", code: "invalid_grant_request", issues: error.issues }, { status: 400 });
