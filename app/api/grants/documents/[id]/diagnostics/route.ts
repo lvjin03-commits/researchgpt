@@ -11,8 +11,13 @@ export async function GET(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const targetRevisionId = new URL(request.url).searchParams.get("targetRevisionId") ?? undefined;
-    const { diagnostics } = await requireGrantRequestContext();
-    return Response.json(await diagnostics.list(z.string().uuid().parse(id), targetRevisionId ? z.string().uuid().parse(targetRevisionId) : undefined), { headers: { "Cache-Control": "no-store" } });
+    const { diagnostics, feedback } = await requireGrantRequestContext();
+    const documentId = z.string().uuid().parse(id);
+    const [diagnosticResult, dispositions] = await Promise.all([
+      diagnostics.list(documentId, targetRevisionId ? z.string().uuid().parse(targetRevisionId) : undefined),
+      feedback.list(documentId),
+    ]);
+    return Response.json({ ...diagnosticResult, feedback: dispositions }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return grantApiError(error, "list_grant_diagnostics");
   }

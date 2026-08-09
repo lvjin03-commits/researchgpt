@@ -1,14 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { estimateGrantLength } from "@/lib/grants/application/length-estimator";
-import type {
-  CanonicalGrantSnapshot,
-  GrantLengthEstimate,
-  GrantRevisionSummary,
-} from "@/lib/grants/domain/contracts";
+import type { CanonicalGrantSnapshot, GrantLengthEstimate, GrantRevisionSummary } from "@/lib/grants/domain/contracts";
+import type { GrantFindingFeedback } from "@/lib/grants/feedback/contracts";
 import type { GrantAggregate } from "@/lib/grants/ports/grant-revision-repository";
+import { GrantDiagnosticsPanel } from "./grant-diagnostics-panel";
+import { GrantDocumentCanvas } from "./grant-document-canvas";
+import { GrantDocumentOutline } from "./grant-document-outline";
+import {
+  grantFindingTarget,
+  indexGrantFindingsByNode,
+  type GrantDiagnosticItem,
+  type GrantDiagnosticsPayload,
+} from "./grant-diagnostic-view-model";
 
 type EditorPayload = {
   aggregate: GrantAggregate;
@@ -18,6 +24,8 @@ type EditorPayload = {
 
 type SaveStatus = "loading" | "saved" | "dirty" | "saving" | "offline" | "conflict";
 
+const emptyDiagnostics: GrantDiagnosticsPayload = { findings: [], conflicts: [], feedback: [] };
+
 async function fetchEditorPayload(documentId: string): Promise<EditorPayload> {
   const response = await fetch(`/api/grants/documents/${documentId}`, { cache: "no-store" });
   const data = await response.json();
@@ -25,7 +33,18 @@ async function fetchEditorPayload(documentId: string): Promise<EditorPayload> {
   return data as EditorPayload;
 }
 
-function updateNode(snapshot: CanonicalGrantSnapshot, nodeId: string, updater: (node: CanonicalGrantSnapshot["nodes"][number]) => CanonicalGrantSnapshot["nodes"][number]) {
+async function fetchDiagnostics(documentId: string, revisionId: string): Promise<GrantDiagnosticsPayload> {
+  const response = await fetch(`/api/grants/documents/${documentId}/diagnostics?targetRevisionId=${encodeURIComponent(revisionId)}`, { cache: "no-store" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error ?? "无法读取问题记录。");
+  return data as GrantDiagnosticsPayload;
+}
+
+function updateNode(
+  snapshot: CanonicalGrantSnapshot,
+  nodeId: string,
+  updater: (node: CanonicalGrantSnapshot["nodes"][number]) => CanonicalGrantSnapshot["nodes"][number],
+) {
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
@@ -33,6 +52,11 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<GrantDiagnosticsPayload>(emptyDiagnostics);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(true);
+  const [diagnosticsRunning, setDiagnosticsRunning] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("loading");
   const [message, setMessage] = useState("");
   const [saveKick, setSaveKick] = useState(0);
@@ -41,15 +65,18 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
   const savedSerializedRef = useRef("");
   const savingRef = useRef(false);
 
-  async function loadLatest() {
-    setSaveStatus("loading");
+  const refreshDiagnostics = useCallback(async (revisionId = revisionIdRef.current) => {
+    if (!revisionId) return;
+    setDiagnosticsLoading(true);
     try {
-      applyLoadedPayload(await fetchEditorPayload(documentId));
+      setDiagnostics(await fetchDiagnostics(documentId, revisionId));
+      setDiagnosticsError("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "无法读取申请书。");
-      setSaveStatus("offline");
+      setDiagnosticsError(error instanceof Error ? error.message : "无法读取问题记录。");
+    } finally {
+      setDiagnosticsLoading(false);
     }
-  }
+  }, [documentId]);
 
   function applyLoadedPayload(next: EditorPayload) {
     const nextSnapshot = next.aggregate.currentRevision.snapshot;
@@ -58,22 +85,52 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
     snapshotRef.current = nextSnapshot;
     revisionIdRef.current = next.aggregate.currentRevision.revisionId;
     savedSerializedRef.current = JSON.stringify(nextSnapshot);
-    setSelectedSectionId((current) => current && nextSnapshot.sections.some((section) => section.sectionId === current) ? current : nextSnapshot.sections[0]?.sectionId ?? null);
+    setSelectedSectionId((current) => current && nextSnapshot.sections.some((section) => section.sectionId === current)
+      ? current
+      : nextSnapshot.sections[0]?.sectionId ?? null);
     setMessage("");
     setSaveStatus("saved");
   }
 
-  useEffect(() => {
-    let active = true;
-    void fetchEditorPayload(documentId).then((next) => {
-      if (active) applyLoadedPayload(next);
-    }).catch((error: unknown) => {
-      if (!active) return;
+  async function loadLatest() {
+    setSaveStatus("loading");
+    try {
+      const next = await fetchEditorPayload(documentId);
+      applyLoadedPayload(next);
+      await refreshDiagnostics(next.aggregate.currentRevision.revisionId);
+    } catch (error) {
       setMessage(error instanceof Error ? error.message : "无法读取申请书。");
       setSaveStatus("offline");
-    });
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      let next: EditorPayload;
+      try {
+        next = await fetchEditorPayload(documentId);
+        if (!active) return;
+        applyLoadedPayload(next);
+      } catch (error) {
+        if (!active) return;
+        setMessage(error instanceof Error ? error.message : "无法读取申请书。");
+        setSaveStatus("offline");
+        setDiagnosticsLoading(false);
+        return;
+      }
+      try {
+        const nextDiagnostics = await fetchDiagnostics(documentId, next.aggregate.currentRevision.revisionId);
+        if (active) setDiagnostics(nextDiagnostics);
+      } catch (error) {
+        if (active) setDiagnosticsError(error instanceof Error ? error.message : "无法读取问题记录。");
+      } finally {
+        if (active) setDiagnosticsLoading(false);
+      }
+    })();
     return () => { active = false; };
   }, [documentId]);
+
   useEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
 
   useEffect(() => {
@@ -110,26 +167,35 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
         setPayload(next);
         setMessage("");
         if (JSON.stringify(snapshotRef.current) === sentSerialized) setSaveStatus("saved");
+        void refreshDiagnostics(next.aggregate.currentRevision.revisionId);
       } catch (error) {
         setSaveStatus("offline");
-        setMessage(error instanceof Error ? error.message : "自动保存失败，内容仍保留在当前页面。" );
+        setMessage(error instanceof Error ? error.message : "自动保存失败，内容仍保留在当前页面。");
       } finally {
         savingRef.current = false;
-        if (JSON.stringify(snapshotRef.current) !== savedSerializedRef.current) {
-          setSaveKick((value) => value + 1);
-        }
+        if (JSON.stringify(snapshotRef.current) !== savedSerializedRef.current) setSaveKick((value) => value + 1);
       }
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [documentId, payload, saveKick, saveStatus, snapshot]);
+  }, [documentId, payload, refreshDiagnostics, saveKick, saveStatus, snapshot]);
 
   const estimate = useMemo(() => snapshot && payload
     ? estimateGrantLength(snapshot, payload.aggregate.templateSnapshot.rules)
     : null, [payload, snapshot]);
   const selectedSection = snapshot?.sections.find((section) => section.sectionId === selectedSectionId);
-  const selectedNodes = selectedSection && snapshot
-    ? selectedSection.nodeIds.map((nodeId) => snapshot.nodes.find((node) => node.nodeId === nodeId)).filter(Boolean) as CanonicalGrantSnapshot["nodes"]
-    : [];
+  const findingsByNode = useMemo(() => indexGrantFindingsByNode(diagnostics.findings), [diagnostics.findings]);
+  const findingsBySection = useMemo(() => {
+    const index = new Map<string, number>();
+    if (!snapshot) return index;
+    for (const item of diagnostics.findings) {
+      const target = grantFindingTarget(item);
+      const sectionId = target.nodeId
+        ? snapshot.nodes.find((node) => node.nodeId === target.nodeId)?.sectionId
+        : item.finding.sourceAnchor.sectionId;
+      if (sectionId) index.set(sectionId, (index.get(sectionId) ?? 0) + 1);
+    }
+    return index;
+  }, [diagnostics.findings, snapshot]);
 
   function mutate(mutator: (current: CanonicalGrantSnapshot) => CanonicalGrantSnapshot) {
     setSnapshot((current) => current ? mutator(current) : current);
@@ -167,6 +233,17 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
     });
   }
 
+  function changeNodeContent(nodeId: string, value: string) {
+    mutate((current) => updateNode(current, nodeId, (node) => {
+      if (node.nodeType === "paragraph") return { ...node, content: { text: value } };
+      if (node.nodeType === "heading") return { ...node, content: { ...node.content, text: value } };
+      if (node.nodeType === "list") return { ...node, content: { ...node.content, items: value.split("\n").filter(Boolean) } };
+      if (node.nodeType === "table") return { ...node, content: { rows: value.split("\n").filter(Boolean).map((row) => row.split("\t")) } };
+      if (node.nodeType === "formula") return { ...node, content: { latex: value } };
+      return node;
+    }));
+  }
+
   async function restore(sourceRevisionId: string) {
     if (!payload || !window.confirm("恢复后会创建一个新版本，当前历史不会被删除。是否继续？")) return;
     setSaveStatus("saving");
@@ -177,18 +254,61 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
     });
     const data = await response.json();
     if (!response.ok) {
-      if (response.status === 409) setSaveStatus("conflict"); else setSaveStatus("offline");
+      setSaveStatus(response.status === 409 ? "conflict" : "offline");
       setMessage(data.error ?? "恢复版本失败。");
       return;
     }
     const next = data as EditorPayload;
-    setPayload(next);
-    setSnapshot(next.aggregate.currentRevision.snapshot);
-    snapshotRef.current = next.aggregate.currentRevision.snapshot;
-    revisionIdRef.current = next.aggregate.currentRevision.revisionId;
-    savedSerializedRef.current = JSON.stringify(next.aggregate.currentRevision.snapshot);
-    setSaveStatus("saved");
+    applyLoadedPayload(next);
     setMessage("已将所选历史版本恢复为新的当前版本。");
+    await refreshDiagnostics(next.aggregate.currentRevision.revisionId);
+  }
+
+  async function runDiagnostics() {
+    if (saveStatus !== "saved") {
+      setDiagnosticsError("请等待当前修改保存完成后再运行检查。");
+      return;
+    }
+    setDiagnosticsRunning(true);
+    setDiagnosticsError("");
+    try {
+      const response = await fetch(`/api/grants/documents/${documentId}/diagnostics`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "申请书检查失败。");
+      await refreshDiagnostics();
+    } catch (error) {
+      setDiagnosticsError(error instanceof Error ? error.message : "申请书检查失败。");
+    } finally {
+      setDiagnosticsRunning(false);
+    }
+  }
+
+  function navigateToFinding(item: GrantDiagnosticItem) {
+    setSelectedFindingId(item.finding.findingId);
+    const target = grantFindingTarget(item);
+    if (!target.nodeId || !snapshot) return;
+    const targetNode = snapshot.nodes.find((node) => node.nodeId === target.nodeId);
+    if (!targetNode) return;
+    setSelectedSectionId(targetNode.sectionId);
+    window.setTimeout(() => {
+      const element = document.getElementById(`grant-node-${target.nodeId}`);
+      element?.scrollIntoView({ behavior: "smooth", block: "center" });
+      element?.querySelector<HTMLElement>("textarea, input, button")?.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  function navigateFromNode(nodeId: string) {
+    const findingId = findingsByNode.get(nodeId)?.[0];
+    if (!findingId) return;
+    setSelectedFindingId(findingId);
+    document.getElementById(`grant-finding-${findingId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function updateFeedback(next: GrantFindingFeedback) {
+    setDiagnostics((current) => ({
+      ...current,
+      feedback: [...current.feedback.filter((item) => item.findingId !== next.findingId), next],
+    }));
   }
 
   if (!payload || !snapshot) {
@@ -206,75 +326,72 @@ export function GrantStructuredEditor({ documentId }: { documentId: string }) {
 
   return (
     <main className="research-canvas min-h-screen">
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-5 backdrop-blur">
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-5 backdrop-blur">
         <div className="flex min-w-0 items-center gap-4">
-          <Link href="/grants" className="text-sm font-semibold text-[#245d82]">ResearchGPT</Link>
+          <Link href="/grants" className="shrink-0 text-sm font-semibold text-[#245d82]">ResearchGPT</Link>
           <span className="text-slate-300">/</span>
-          <input aria-label="申请书标题" className="research-focus min-w-0 max-w-xl flex-1 rounded-lg border border-transparent px-2 py-1 font-medium text-slate-900 hover:border-slate-200" value={snapshot.title} onChange={(event) => mutate((current) => ({ ...current, title: event.target.value }))} />
+          <input
+            aria-label="申请书标题"
+            className="research-focus min-w-0 max-w-xl flex-1 rounded-lg border border-transparent px-2 py-1 font-medium text-slate-900 hover:border-slate-200"
+            value={snapshot.title}
+            onChange={(event) => mutate((current) => ({ ...current, title: event.target.value }))}
+          />
         </div>
-        <div className="flex items-center gap-4 text-xs">
+        <div className="flex items-center gap-3 text-xs">
           <span className={saveStatus === "saved" ? "text-emerald-700" : saveStatus === "conflict" || saveStatus === "offline" ? "text-red-700" : "text-amber-700"}>{statusLabel}</span>
           <span className="rounded-full bg-slate-100 px-3 py-1.5">版本 {payload.aggregate.document.currentRevisionNumber}</span>
         </div>
       </header>
 
-      {message && <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-900">{message} {saveStatus === "conflict" && <button className="ml-3 font-semibold underline" onClick={loadLatest}>加载最新版本</button>}</div>}
+      {message && (
+        <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-900">
+          {message}
+          {saveStatus === "conflict" && <button type="button" className="ml-3 font-semibold underline" onClick={() => void loadLatest()}>加载最新版本</button>}
+        </div>
+      )}
 
-      <div className="grid min-h-[calc(100vh-4rem)] grid-cols-[260px_minmax(0,1fr)_280px]">
-        <aside className="border-r border-slate-200 bg-white p-4">
-          <p className="research-eyebrow mb-3">文档结构</p>
-          <nav className="space-y-1">
-            {[...snapshot.sections].sort((a, b) => a.order - b.order).map((section, index) => (
-              <button key={section.sectionId} onClick={() => setSelectedSectionId(section.sectionId)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${selectedSectionId === section.sectionId ? "bg-blue-50 font-semibold text-[#174866]" : "text-slate-700 hover:bg-slate-50"}`}>
-                <span className="w-5 text-xs text-slate-400">{index + 1}</span><span className="truncate">{section.title}</span>
-              </button>
-            ))}
-          </nav>
-        </aside>
+      <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[250px_minmax(560px,1fr)_340px]">
+        <GrantDocumentOutline
+          snapshot={snapshot}
+          estimate={estimate}
+          selectedSectionId={selectedSectionId}
+          findingsBySection={findingsBySection}
+          revisionHistory={payload.revisionHistory}
+          currentRevisionId={payload.aggregate.currentRevision.revisionId}
+          onSelectSection={setSelectedSectionId}
+          onRestore={restore}
+        />
 
-        <section className="p-8">
-          <div className="mx-auto min-h-[900px] max-w-3xl rounded-sm border border-slate-200 bg-white px-14 py-16 shadow-sm">
-            {selectedSection && <>
-              <input aria-label="章节标题" className="research-focus mb-8 w-full rounded-lg border border-transparent px-2 py-2 text-2xl font-semibold text-slate-900 hover:border-slate-200" value={selectedSection.title} onChange={(event) => mutate((current) => ({ ...current, sections: current.sections.map((section) => section.sectionId === selectedSection.sectionId ? { ...section, title: event.target.value } : section) }))} />
-              <div className="space-y-5">
-                {selectedNodes.map((node) => (
-                  <div key={node.nodeId} className="group relative rounded-xl border border-transparent p-2 hover:border-slate-200">
-                    {node.nodeType === "paragraph" && <textarea aria-label="正文段落" className="research-focus min-h-28 w-full resize-y rounded-lg border border-slate-200 px-4 py-3 leading-7" value={node.content.text} onChange={(event) => mutate((current) => updateNode(current, node.nodeId, (candidate) => candidate.nodeType === "paragraph" ? { ...candidate, content: { text: event.target.value } } : candidate))} />}
-                    {node.nodeType === "heading" && <input aria-label="正文标题" className="research-focus w-full rounded-lg border border-slate-200 px-4 py-3 font-semibold" value={node.content.text} onChange={(event) => mutate((current) => updateNode(current, node.nodeId, (candidate) => candidate.nodeType === "heading" ? { ...candidate, content: { ...candidate.content, text: event.target.value } } : candidate))} />}
-                    {node.nodeType === "list" && <textarea aria-label="列表内容" className="research-focus min-h-28 w-full rounded-lg border border-slate-200 px-4 py-3" value={node.content.items.join("\n")} onChange={(event) => mutate((current) => updateNode(current, node.nodeId, (candidate) => candidate.nodeType === "list" ? { ...candidate, content: { ...candidate.content, items: event.target.value.split("\n").filter(Boolean) } } : candidate))} />}
-                    {node.nodeType === "table" && <textarea aria-label="表格内容" className="research-focus min-h-32 w-full font-mono text-sm rounded-lg border border-slate-200 px-4 py-3" value={node.content.rows.map((row) => row.join("\t")).join("\n")} onChange={(event) => mutate((current) => updateNode(current, node.nodeId, (candidate) => candidate.nodeType === "table" ? { ...candidate, content: { rows: event.target.value.split("\n").filter(Boolean).map((row) => row.split("\t")) } } : candidate))} />}
-                    {node.nodeType === "formula" && <input aria-label="公式" className="research-focus w-full rounded-lg border border-slate-200 px-4 py-3 font-mono" value={node.content.latex} onChange={(event) => mutate((current) => updateNode(current, node.nodeId, (candidate) => candidate.nodeType === "formula" ? { ...candidate, content: { latex: event.target.value } } : candidate))} />}
-                    {node.nodeType === "figure" && <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">图片资产：{node.content.altText}</div>}
-                    {node.nodeType === "citation" && <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">引用：{node.content.referenceId}</div>}
-                    <button className="absolute -right-2 -top-2 hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-red-700 shadow-sm group-hover:block" onClick={() => removeNode(node.nodeId)}>删除</button>
-                  </div>
-                ))}
-                <button className="w-full rounded-xl border border-dashed border-slate-300 py-3 text-sm font-medium text-slate-600 hover:border-[#245d82] hover:text-[#245d82]" onClick={addParagraph}>＋ 添加正文段落</button>
-              </div>
-            </>}
-          </div>
-        </section>
+        <GrantDocumentCanvas
+          snapshot={snapshot}
+          selectedSectionId={selectedSectionId}
+          selectedFindingId={selectedFindingId}
+          findingsByNode={findingsByNode}
+          onSectionTitleChange={(title) => {
+            if (!selectedSection) return;
+            mutate((current) => ({
+              ...current,
+              sections: current.sections.map((section) => section.sectionId === selectedSection.sectionId ? { ...section, title } : section),
+            }));
+          }}
+          onNodeContentChange={changeNodeContent}
+          onNodeFindingSelect={navigateFromNode}
+          onAddParagraph={addParagraph}
+          onRemoveNode={removeNode}
+        />
 
-        <aside className="border-l border-slate-200 bg-white p-4">
-          <div className="rounded-2xl bg-slate-50 p-4">
-            <p className="research-eyebrow">篇幅预估</p>
-            <p className="mt-3 text-2xl font-semibold text-slate-900">约 {estimate?.estimatedPages ?? 0} 页</p>
-            <p className="mt-1 text-xs text-slate-500">{estimate?.visibleCharacters ?? 0} 字符 · 中文 {estimate?.hanCharacters ?? 0} 字 · 英文 {estimate?.latinWords ?? 0} 词</p>
-            {estimate?.maximumEstimatedPages && <p className={`mt-2 text-xs ${estimate.exceedsEstimatedLimit ? "text-red-700" : "text-slate-500"}`}>模板预估上限 {estimate.maximumEstimatedPages} 页</p>}
-          </div>
-
-          <div className="mt-6">
-            <div className="flex items-center justify-between"><p className="research-eyebrow">版本记录</p><button className="text-xs text-[#245d82]" onClick={loadLatest}>刷新</button></div>
-            <div className="mt-3 space-y-2">
-              {payload.revisionHistory.map((revision) => (
-                <div key={revision.revisionId} className="rounded-xl border border-slate-200 p-3 text-xs">
-                  <div className="flex items-center justify-between"><strong>版本 {revision.revisionNumber}</strong><span className="text-slate-400">{new Date(revision.createdAt).toLocaleString("zh-CN")}</span></div>
-                  {revision.revisionId !== payload.aggregate.currentRevision.revisionId && <button className="mt-2 font-medium text-[#245d82]" onClick={() => restore(revision.revisionId)}>恢复为新版本</button>}
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
+        <GrantDiagnosticsPanel
+          documentId={documentId}
+          items={diagnostics.findings}
+          feedback={diagnostics.feedback}
+          selectedFindingId={selectedFindingId}
+          loading={diagnosticsLoading}
+          running={diagnosticsRunning}
+          error={diagnosticsError}
+          onRun={runDiagnostics}
+          onSelect={navigateToFinding}
+          onFeedbackChange={updateFeedback}
+        />
       </div>
     </main>
   );

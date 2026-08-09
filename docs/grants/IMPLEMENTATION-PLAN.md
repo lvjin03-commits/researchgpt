@@ -67,8 +67,10 @@ source-anchor contracts; the Diagnostic Assembler; a deterministic structural
 completeness checker; conservative cross-revision relocation; an authenticated
 diagnostic API; isolated repositories; migration 036; and repeatable contract
 tests are implemented. The accepted eight-case anchor-drift decisions pass in
-TypeScript. Migration 036 has not been applied to production, so the real
-PostgreSQL/API user path remains unverified and the phase is not yet exposed.
+TypeScript. Migrations 036 and 037 are applied to production; Finding
+persistence, owner isolation, atomic rollback and cleanup were verified against
+the real PostgreSQL database. The phase remains unexposed while the workspace
+flag is disabled.
 
 ## Feature Flags
 
