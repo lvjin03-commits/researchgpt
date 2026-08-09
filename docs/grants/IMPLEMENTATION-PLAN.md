@@ -96,8 +96,10 @@ CAS, transactional revocation propagation, recoverable deletion, owner-scoped
 routes and the project-resource UI are implemented behind
 `GRANT_LOCAL_EVIDENCE_ENABLED`. Contract, architecture and existing Grant
 regression suites pass locally. Migration 040 is applied and the production
-flag is enabled. Production object-storage and browser upload paths remain
-pending until the deployment and effect-first smoke test complete.
+flag is enabled. The production browser path is verified with a non-sensitive
+TXT fixture: upload, deterministic Evidence Card creation, default-deny model
+permissions, authorization update, revocation and recoverable deletion all
+completed successfully; the fixture and its object were deleted afterward.
 
 ## Feature Flags
 
