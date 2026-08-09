@@ -28,6 +28,17 @@ export type CommitGrantRevisionResult =
   | { status: "committed"; aggregate: GrantAggregate }
   | { status: "revision_conflict"; currentRevisionId: string };
 
+export type ArchiveGrantDocumentInput = {
+  documentId: string;
+  expectedRevisionId: string;
+  auditEvent: GrantAuditEvent;
+};
+
+export type ArchiveGrantDocumentResult =
+  | { status: "archived" }
+  | { status: "revision_conflict"; currentRevisionId: string }
+  | { status: "not_found" };
+
 export interface GrantRevisionRepository {
   create(input: CreateGrantAggregateInput): Promise<GrantAggregate>;
   listDocuments(): Promise<GrantDocument[]>;
@@ -35,5 +46,6 @@ export interface GrantRevisionRepository {
   getRevision(documentId: string, revisionId: string): Promise<GrantRevision | null>;
   listRevisions(documentId: string): Promise<GrantRevisionSummary[]>;
   compareAndSwap(input: CommitGrantRevisionInput): Promise<CommitGrantRevisionResult>;
+  archive(input: ArchiveGrantDocumentInput): Promise<ArchiveGrantDocumentResult>;
   listAuditEvents(documentId: string): Promise<GrantAuditEvent[]>;
 }

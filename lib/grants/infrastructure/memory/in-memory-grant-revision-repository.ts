@@ -4,6 +4,8 @@ import type {
   GrantRevisionRepository,
   CommitGrantRevisionInput,
   CommitGrantRevisionResult,
+  ArchiveGrantDocumentInput,
+  ArchiveGrantDocumentResult,
 } from "../../ports/grant-revision-repository.ts";
 import type { GrantAuditEvent, GrantRevision } from "../../domain/contracts.ts";
 
@@ -15,6 +17,7 @@ export class InMemoryGrantRevisionRepository implements GrantRevisionRepository 
   private readonly aggregates = new Map<string, GrantAggregate>();
   private readonly audits = new Map<string, GrantAuditEvent[]>();
   private readonly revisions = new Map<string, GrantRevision[]>();
+  private readonly archivedDocumentIds = new Set<string>();
   private commitQueue: Promise<void> = Promise.resolve();
 
   async create(input: CreateGrantAggregateInput): Promise<GrantAggregate> {
@@ -33,7 +36,9 @@ export class InMemoryGrantRevisionRepository implements GrantRevisionRepository 
   }
 
   async listDocuments() {
-    return clone([...this.aggregates.values()].map((aggregate) => aggregate.document));
+    return clone([...this.aggregates.values()]
+      .filter((aggregate) => !this.archivedDocumentIds.has(aggregate.document.documentId))
+      .map((aggregate) => aggregate.document));
   }
 
   async getRevision(documentId: string, revisionId: string) {
@@ -57,8 +62,20 @@ export class InMemoryGrantRevisionRepository implements GrantRevisionRepository 
   }
 
   async get(documentId: string): Promise<GrantAggregate | null> {
+    if (this.archivedDocumentIds.has(documentId)) return null;
     const aggregate = this.aggregates.get(documentId);
     return aggregate ? clone(aggregate) : null;
+  }
+
+  async archive(input: ArchiveGrantDocumentInput): Promise<ArchiveGrantDocumentResult> {
+    const current = this.aggregates.get(input.documentId);
+    if (!current || this.archivedDocumentIds.has(input.documentId)) return { status: "not_found" };
+    if (current.document.currentRevisionId !== input.expectedRevisionId) {
+      return { status: "revision_conflict", currentRevisionId: current.document.currentRevisionId };
+    }
+    this.audits.set(input.documentId, [...(this.audits.get(input.documentId) ?? []), clone(input.auditEvent)]);
+    this.archivedDocumentIds.add(input.documentId);
+    return { status: "archived" };
   }
 
   async compareAndSwap(input: CommitGrantRevisionInput): Promise<CommitGrantRevisionResult> {
@@ -68,7 +85,7 @@ export class InMemoryGrantRevisionRepository implements GrantRevisionRepository 
     await previousCommit;
     try {
       const current = this.aggregates.get(input.documentId);
-      if (!current) throw new Error("Grant document does not exist.");
+      if (!current || this.archivedDocumentIds.has(input.documentId)) throw new Error("Grant document does not exist.");
       if (current.document.currentRevisionId !== input.expectedRevisionId) {
         return { status: "revision_conflict", currentRevisionId: current.document.currentRevisionId };
       }

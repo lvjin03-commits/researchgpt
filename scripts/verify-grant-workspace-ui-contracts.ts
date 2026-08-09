@@ -128,6 +128,9 @@ const confirmRouteSource = await readFile(new URL("../app/api/grants/imports/con
 assert.match(documentListSource, /上传 Word 初稿/);
 assert.match(documentListSource, /先解析并核对章节和表格，确认后才创建正式申请书/);
 assert.match(documentListSource, /确认导入并开始编辑/);
+assert.match(documentListSource, /确定删除申请书/);
+assert.match(documentListSource, /expectedRevisionId: document\.currentRevisionId/);
+assert.match(documentListSource, /aria-label=\{`删除申请书/);
 assert.match(previewRouteSource, /docxImporter\.preview/);
 assert.doesNotMatch(previewRouteSource, /createDocument|importDocument/);
 assert.match(confirmRouteSource, /docxImporter\.confirm/);

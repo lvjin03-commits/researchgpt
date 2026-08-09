@@ -245,7 +245,7 @@ export const GrantAuditEventSchema = z.object({
   revisionId: UuidSchema,
   actorId: UuidSchema,
   actorKind: z.enum(["user", "system", "ai"]),
-  eventType: z.enum(["document_created", "revision_committed"]),
+  eventType: z.enum(["document_created", "revision_committed", "document_archived"]),
   metadata: z.record(z.string(), z.unknown()),
   createdAt: IsoTimestampSchema,
 }).strict();

@@ -42,6 +42,44 @@ const created = await service.createDocument({
 assert.equal((await service.listDocuments()).length, 1);
 assert.equal((await service.getDocument(created.document.documentId)).currentRevision.revisionId, created.currentRevision.revisionId);
 
+const archivedRepository = new InMemoryGrantRevisionRepository();
+const archivedService = new GrantRevisionService({ repository: archivedRepository, createId: sequentialIds(), now: () => "2026-08-07T12:00:00.000Z" });
+const archived = await archivedService.createDocument({
+  ownerId,
+  actorId: ownerId,
+  draft: {
+    title: "Archive verification",
+    sections: [{
+      localKey: "basis",
+      semanticRole: "project_basis",
+      title: "立项依据",
+      order: 0,
+      nodes: [{ localKey: "body", nodeType: "paragraph", content: { text: "待归档内容" } }],
+    }],
+  },
+  template: { templateKey: "nsfc", templateVersion: "1", rules: {} },
+});
+await assert.rejects(() => archivedService.archiveDocument({
+  documentId: archived.document.documentId,
+  expectedRevisionId: "30000000-0000-4000-8000-000000000099",
+  actorId: ownerId,
+}), /changed after this operation began/);
+await archivedService.archiveDocument({
+  documentId: archived.document.documentId,
+  expectedRevisionId: archived.currentRevision.revisionId,
+  actorId: ownerId,
+});
+assert.equal((await archivedService.listDocuments()).length, 0);
+await assert.rejects(() => archivedService.getDocument(archived.document.documentId), /was not found/);
+await assert.rejects(() => archivedService.commitRevision({
+  documentId: archived.document.documentId,
+  expectedRevisionId: archived.currentRevision.revisionId,
+  actorId: ownerId,
+  actorKind: "user",
+  snapshot: archived.currentRevision.snapshot,
+  reason: "stale_editor_autosave",
+}), /was not found/);
+
 const editedSnapshot = structuredClone(created.currentRevision.snapshot);
 editedSnapshot.nodes[0]!.content = { text: "这是一次经过自动保存的结构化正文内容" };
 const edited = await service.commitRevision({
@@ -75,5 +113,12 @@ assert.match(migration, /CREATE OR REPLACE FUNCTION public\.list_grant_documents
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.get_grant_document_revision/);
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.list_grant_document_revisions/);
 assert.doesNotMatch(migration, /GRANT EXECUTE .* authenticated/);
+
+const archiveMigration = await readFile(new URL("../supabase/migrations/044_grant_document_archival.sql", import.meta.url), "utf8");
+assert.match(archiveMigration, /CREATE OR REPLACE FUNCTION public\.archive_grant_document/);
+assert.match(archiveMigration, /current_document\.current_revision_id IS DISTINCT FROM p_expected_revision_id/);
+assert.match(archiveMigration, /document\.deleted_at IS NULL/);
+assert.match(archiveMigration, /CREATE TRIGGER grant_document_revisions_reject_archived/);
+assert.doesNotMatch(archiveMigration, /GRANT EXECUTE .* authenticated/);
 
 console.log("Grant editor contracts passed.");

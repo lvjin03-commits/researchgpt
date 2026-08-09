@@ -12,6 +12,7 @@ import {
 } from "../domain/contracts.ts";
 import { sha256Canonical } from "../domain/canonical-json.ts";
 import type {
+  ArchiveGrantDocumentResult,
   GrantAggregate,
   GrantRevisionRepository,
 } from "../ports/grant-revision-repository.ts";
@@ -135,6 +136,29 @@ export class GrantRevisionService {
 
   async listDocuments() {
     return this.repository.listDocuments();
+  }
+
+  async archiveDocument(input: {
+    documentId: string;
+    expectedRevisionId: string;
+    actorId: string;
+  }): Promise<void> {
+    const result: ArchiveGrantDocumentResult = await this.repository.archive({
+      documentId: input.documentId,
+      expectedRevisionId: input.expectedRevisionId,
+      auditEvent: GrantAuditEventSchema.parse({
+        auditEventId: this.createId(),
+        documentId: input.documentId,
+        revisionId: input.expectedRevisionId,
+        actorId: input.actorId,
+        actorKind: "user",
+        eventType: "document_archived",
+        metadata: { reason: "user_requested_deletion" },
+        createdAt: this.now(),
+      }),
+    });
+    if (result.status === "not_found") throw new GrantDocumentNotFoundError(input.documentId);
+    if (result.status === "revision_conflict") throw new GrantRevisionConflictError(result.currentRevisionId);
   }
 
   async getDocument(documentId: string): Promise<GrantAggregate> {

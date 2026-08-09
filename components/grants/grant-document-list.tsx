@@ -17,6 +17,8 @@ export function GrantDocumentList() {
   const [title, setTitle] = useState("2027 国家自然科学基金申请书");
   const [status, setStatus] = useState<"loading" | "ready" | "creating" | "error">("loading");
   const [message, setMessage] = useState("");
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
+  const [deleteMessage, setDeleteMessage] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<GrantDocxImportPreview | null>(null);
   const [importStatus, setImportStatus] = useState<"idle" | "previewing" | "ready" | "confirming" | "error">("idle");
@@ -51,6 +53,29 @@ export function GrantDocumentList() {
       return;
     }
     window.location.assign(`/grants/${data.aggregate.document.documentId}`);
+  }
+
+  async function deleteDocument(document: GrantDocument) {
+    const confirmed = window.confirm(`确定删除申请书“${document.title}”吗？\n\n删除后将从列表中移除，历史数据会暂时保留以防误删。`);
+    if (!confirmed) return;
+    setDeletingDocumentId(document.documentId);
+    setDeleteMessage("");
+    try {
+      const response = await fetch(`/api/grants/documents/${document.documentId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevisionId: document.currentRevisionId }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error ?? "删除申请书失败。");
+      }
+      setDocuments((current) => current.filter((item) => item.documentId !== document.documentId));
+    } catch (error) {
+      setDeleteMessage(error instanceof Error ? error.message : "删除申请书失败。");
+    } finally {
+      setDeletingDocumentId(null);
+    }
   }
 
   async function previewImport() {
@@ -177,16 +202,30 @@ export function GrantDocumentList() {
 
         <section className="space-y-3">
           <h2 className="text-lg font-semibold text-slate-900">我的申请书</h2>
+          {deleteMessage && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{deleteMessage}</p>}
           {status === "loading" && <p className="text-sm text-slate-500">正在读取…</p>}
           {status === "ready" && documents.length === 0 && <div className="research-surface rounded-2xl p-8 text-center text-sm text-slate-500">还没有申请书，请先创建一个项目。</div>}
           {documents.map((document) => (
-            <Link key={document.documentId} href={`/grants/${document.documentId}`} className="research-surface flex items-center justify-between rounded-2xl p-5 transition hover:border-[#245d82]">
-              <div>
-                <h3 className="font-semibold text-slate-900">{document.title}</h3>
+            <article key={document.documentId} className="research-surface flex items-center justify-between gap-4 rounded-2xl p-5 transition hover:border-[#245d82]">
+              <div className="min-w-0">
+                <h3 className="break-words font-semibold text-slate-900">{document.title}</h3>
                 <p className="mt-1 text-xs text-slate-500">版本 {document.currentRevisionNumber} · 更新于 {new Date(document.updatedAt).toLocaleString("zh-CN")}</p>
               </div>
-              <span className="text-sm font-medium text-[#245d82]">继续编辑 →</span>
-            </Link>
+              <div className="flex shrink-0 items-center gap-3">
+                <button
+                  type="button"
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={deletingDocumentId === document.documentId}
+                  aria-label={`删除申请书“${document.title}”`}
+                  onClick={() => void deleteDocument(document)}
+                >
+                  {deletingDocumentId === document.documentId ? "删除中…" : "删除"}
+                </button>
+                <Link href={`/grants/${document.documentId}`} className="rounded-lg px-3 py-2 text-sm font-medium text-[#245d82] hover:bg-sky-50">
+                  继续编辑 →
+                </Link>
+              </div>
+            </article>
           ))}
         </section>
       </div>

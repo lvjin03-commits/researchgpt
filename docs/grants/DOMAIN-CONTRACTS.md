@@ -69,6 +69,13 @@ Patch Commit Service validates content. Revision Service atomically decides
 whether the validated patch can become current. No API, UI component, checker,
 or model adapter may bypass Revision Service.
 
+Document deletion is a recoverable lifecycle transition owned by Revision
+Service. It requires the caller's expected current revision and owner identity.
+The canonical revisions and audit history are retained, while archived
+documents are excluded from normal list and read projections. Hard purge of
+content, evidence, objects and backups is a separate retention operation and
+must not be inferred from the user-facing delete action.
+
 ## Patch Contract
 
 Allowed operations are deterministic and hash-guarded:

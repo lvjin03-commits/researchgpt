@@ -19,6 +19,10 @@ export class GrantEditorService {
     });
   }
 
+  async deleteDocument(input: { documentId: string; expectedRevisionId: string; actorId: string }) {
+    await this.revisions.archiveDocument(input);
+  }
+
   async importDocument(input: {
     ownerId: string;
     draft: GrantDocumentDraft;

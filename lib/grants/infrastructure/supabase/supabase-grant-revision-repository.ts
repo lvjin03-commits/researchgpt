@@ -7,6 +7,8 @@ import {
   TemplateSnapshotSchema,
 } from "../../domain/contracts.ts";
 import type {
+  ArchiveGrantDocumentInput,
+  ArchiveGrantDocumentResult,
   CommitGrantRevisionInput,
   CommitGrantRevisionResult,
   CreateGrantAggregateInput,
@@ -130,6 +132,23 @@ export class SupabaseGrantRevisionRepository implements GrantRevisionRepository 
       return { status: "revision_conflict", currentRevisionId: current.document.currentRevisionId };
     }
     return { status: "committed", aggregate: current };
+  }
+
+  async archive(input: ArchiveGrantDocumentInput): Promise<ArchiveGrantDocumentResult> {
+    const { data, error } = await this.client.rpc("archive_grant_document", {
+      p_owner_id: this.ownerId,
+      p_document_id: input.documentId,
+      p_expected_revision_id: input.expectedRevisionId,
+      p_actor_id: input.auditEvent.actorId,
+      p_audit_event_id: input.auditEvent.auditEventId,
+      p_audit_metadata: input.auditEvent.metadata,
+    });
+    throwRpcError("archive_grant_document", error);
+    return z.discriminatedUnion("status", [
+      z.object({ status: z.literal("archived") }).strict(),
+      z.object({ status: z.literal("not_found") }).strict(),
+      z.object({ status: z.literal("revision_conflict"), currentRevisionId: z.string().uuid() }).strict(),
+    ]).parse(data);
   }
 
   async listAuditEvents(documentId: string) {
