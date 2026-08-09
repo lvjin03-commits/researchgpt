@@ -47,7 +47,7 @@
     "test:grant-foundation:postgres": "node scripts/verify-grant-foundation-postgres.mjs",
     "test:grant-editor": "node --experimental-strip-types scripts/verify-grant-editor-contracts.ts",
     "test:grant-editor:postgres": "node scripts/verify-grant-editor-postgres.mjs",
-    "test:grant-diagnostics": "node --experimental-strip-types scripts/verify-grant-diagnostics-contracts.ts && node --experimental-strip-types scripts/verify-grant-real-diagnostic-checkers.ts && node --experimental-strip-types scripts/verify-grant-semantic-diagnostics.ts",
+    "test:grant-diagnostics": "node --experimental-strip-types scripts/verify-grant-diagnostics-contracts.ts && node --experimental-strip-types scripts/verify-grant-real-diagnostic-checkers.ts && node --experimental-strip-types scripts/verify-grant-semantic-diagnostics.ts && node --experimental-strip-types scripts/verify-grant-semantic-v3-contracts.ts",
     "test:grant-diagnostics:postgres": "node scripts/verify-grant-diagnostics-postgres.mjs",
     "test:grant-workspace-ui": "node --experimental-strip-types scripts/verify-grant-workspace-ui-contracts.ts",
     "test:grant-docx-import": "node --experimental-strip-types scripts/verify-grant-docx-import.ts",

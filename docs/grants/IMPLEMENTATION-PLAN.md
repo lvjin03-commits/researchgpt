@@ -103,6 +103,14 @@ assembler/location/fingerprint; additive persistence and normalized projection;
 then UI, historical activation and real signed-in verification. V3 must use the
 existing `AI诊断` action and semantic checker authority, not a parallel route.
 
+Semantic Diagnostic V3 contract implementation status (2026-08-09): the V3
+provider schema, stricter program-validation schema, supplied-reference guard
+and category-boundary fixtures are implemented but are not connected to the
+production prompt or adapter. Provider compatibility tests require every field,
+represent absence with null/empty arrays, and reject unsupported JSON Schema
+keywords. Production remains on V2 until the later gateway and executor stages
+are complete and effect-first verification authorizes activation.
+
 PR4 implementation status (2026-08-08): the three-pane workspace, collapsed
 Finding cards, source navigation, user feedback persistence and production
 navigation entry are implemented and exposed behind `GRANT_WORKSPACE_ENABLED`.
