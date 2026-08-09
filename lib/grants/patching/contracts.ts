@@ -33,6 +33,8 @@ export const GrantPatchProposalSchema = z.object({
   operations: z.array(GrantPatchOperationSchema).length(1),
   status: z.enum(["pending", "accepted", "rejected", "invalidated", "evidence_revoked"]),
   createdBy: UuidSchema,
+  // Historical proposals remain readable. New production proposals are
+  // constrained to OpenAI by the GrantPatchModel port and composition root.
   modelProvider: z.enum(["deepseek", "openai"]),
   modelId: z.string().trim().min(1),
   rationale: z.string().trim().max(2000).optional(),

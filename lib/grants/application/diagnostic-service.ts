@@ -7,6 +7,7 @@ import { resolveGrantSourceAnchor } from "../diagnostics/anchors.ts";
 import { analyzeGrantDiagnosticImpact } from "../diagnostics/impact-analyzer.ts";
 import type { GrantDiagnosticExecution, GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import { GrantRevisionService } from "./revision-service.ts";
+import { GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID } from "./semantic-diagnostic-checker.ts";
 
 type DiagnosticServiceDependencies = {
   revisionService: GrantRevisionService;
@@ -26,6 +27,13 @@ export type GrantRecheckSummary = {
   resolvedCount: number;
   introducedCount: number;
   reusedExecution: boolean;
+};
+
+export type GrantDiagnosticCoverage = {
+  deterministic: "not_run" | "complete" | "partial";
+  semantic: "not_run" | "complete" | "failed";
+  failedCheckerIds: string[];
+  semanticModelId?: string;
 };
 
 function stableFindingKey(checker: GrantChecker, candidate: GrantCheckerFindingCandidate): string {
@@ -104,6 +112,7 @@ export class GrantDiagnosticService {
         checkerId: checker.checkerId,
         checkerVersion: checker.checkerVersion,
         contractVersion: checker.contractVersion,
+        configurationFingerprint: checker.configurationFingerprint ?? "deterministic",
         inputMode,
         inputSectionIds,
         inputNodeIds,
@@ -120,6 +129,7 @@ export class GrantDiagnosticService {
       const startedAt = this.now();
       try {
         const output = await checker.check({
+          executionId: runId,
           documentId,
           revisionId: sourceRevision.revisionId,
           snapshot: sourceRevision.snapshot,
@@ -197,6 +207,7 @@ export class GrantDiagnosticService {
     findings: Array<{ finding: Awaited<ReturnType<GrantDiagnosticRepository["listFindings"]>>[number]; resolution: GrantAnchorResolution }>;
     conflicts: Awaited<ReturnType<GrantDiagnosticRepository["listConflicts"]>>;
     recheck: GrantRecheckSummary;
+    coverage: GrantDiagnosticCoverage;
   }> {
     const aggregate = await this.revisionService.getDocument(documentId);
     const targetRevision = targetRevisionId
@@ -205,13 +216,15 @@ export class GrantDiagnosticService {
     const [allFindings, allConflicts, allRuns] = await Promise.all([
       this.repository.listFindings(documentId),
       this.repository.listConflicts(documentId),
-      this.incrementalEnabled && this.repository.listRuns ? this.repository.listRuns(documentId) : Promise.resolve([]),
+      this.repository.listRuns ? this.repository.listRuns(documentId) : Promise.resolve([]),
     ]);
+    const coverage = this.coverage(allRuns, targetRevision.revisionId);
     if (!this.incrementalEnabled || allRuns.length === 0) {
       return {
         findings: allFindings.map((finding) => ({ finding, resolution: resolveGrantSourceAnchor(finding.sourceAnchor, targetRevision.revisionId, targetRevision.snapshot) })),
         conflicts: allConflicts,
         recheck: { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: allFindings.length, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
+        coverage,
       };
     }
     const runsForTarget = allRuns.filter((run) => run.status === "succeeded" && run.sourceRevisionId === targetRevision.revisionId);
@@ -248,6 +261,27 @@ export class GrantDiagnosticService {
       })),
       conflicts,
       recheck: this.summarize(currentRuns, previousRuns, sectionIds.size, new Set(currentRuns.flatMap((run) => run.inputNodeIds)).size, false),
+      coverage,
+    };
+  }
+
+  private coverage(runs: GrantDiagnosticRun[], revisionId: string): GrantDiagnosticCoverage {
+    const latest = latestByChecker(runs.filter((run) => run.sourceRevisionId === revisionId));
+    const semanticCheckerId = GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID;
+    const semanticRun = latest.get(semanticCheckerId);
+    const deterministicCheckers = this.checkers.filter((checker) => checker.checkerId !== semanticCheckerId);
+    const deterministicSucceeded = deterministicCheckers.filter((checker) => latest.get(checker.checkerId)?.status === "succeeded").length;
+    const failedCheckerIds = [...latest.values()].filter((run) => run.status === "failed").map((run) => run.checkerId);
+    const semanticMetadata = semanticRun?.parsedOutput.metadata;
+    return {
+      deterministic: deterministicSucceeded === 0
+        ? "not_run"
+        : deterministicSucceeded === deterministicCheckers.length ? "complete" : "partial",
+      semantic: !semanticRun ? "not_run" : semanticRun.status === "succeeded" ? "complete" : "failed",
+      failedCheckerIds,
+      semanticModelId: semanticMetadata && typeof semanticMetadata === "object" && "modelId" in semanticMetadata && typeof semanticMetadata.modelId === "string"
+        ? semanticMetadata.modelId
+        : undefined,
     };
   }
 

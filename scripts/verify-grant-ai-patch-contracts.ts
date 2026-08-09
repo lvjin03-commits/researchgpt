@@ -41,7 +41,7 @@ const model: GrantPatchModel = {
     return {
       replacementText: request.targetText === "原始研究背景。" ? "修改后的研究背景。" : "精简后的研究背景。",
       rationale: "按用户要求增强表达。",
-      provider: "deepseek",
+      provider: "openai",
       modelId: "test-model",
       usedEvidenceCardIds: [],
     };

@@ -37,6 +37,7 @@ assert.deepEqual(checkers.map((checker) => checker.checkerId), [
   "grant.terminology_consistency",
 ]);
 const findings = (await Promise.all(checkers.map((checker) => checker.check({
+  executionId: "83000000-0000-4000-8000-000000000003",
   documentId: "83000000-0000-4000-8000-000000000001",
   revisionId: "83000000-0000-4000-8000-000000000002",
   snapshot,
@@ -55,6 +56,7 @@ assert.equal(findings.every((finding) => finding.recommendation.trim().length > 
 assert.equal(findings.every((finding) => finding.nodeId || finding.sectionId), true);
 
 const incremental = await Promise.all(checkers.map((checker) => checker.check({
+  executionId: "83000000-0000-4000-8000-000000000004",
   documentId: "83000000-0000-4000-8000-000000000001",
   revisionId: "83000000-0000-4000-8000-000000000002",
   snapshot,

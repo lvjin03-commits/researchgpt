@@ -168,6 +168,19 @@ review severity. Every Finding must identify its source location where
 possible, state the observable problem, and provide a concrete next action.
 Semantic or disciplinary judgments remain user or expert decisions.
 
+The user-facing `AI诊断` action may combine deterministic checkers with one
+bounded semantic checker. The semantic checker may identify gaps in scientific
+question clarity, argument chains, innovation articulation, objective-method
+alignment, evidence support and cross-section consistency. It must not assign
+severity, predict funding outcomes, invent evidence, or return IDs not supplied
+by the program. A model failure is an incomplete diagnostic execution, not an
+empty or successful semantic result.
+
+All Grant semantic diagnosis and AI Patch calls use the same server-owned GPT
+configuration and enter through Grant Model Data Gateway. Downstream modules
+may select an operation and its reasoning effort, but may not select a provider
+or silently fall back to another model.
+
 Lifecycle, user disposition, and recheck outcome are separate:
 
 ```ts

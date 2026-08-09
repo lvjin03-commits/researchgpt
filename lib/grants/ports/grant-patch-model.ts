@@ -19,7 +19,7 @@ export type GrantPatchModelRequest = {
 export type GrantPatchModelResult = {
   replacementText: string;
   rationale?: string;
-  provider: "deepseek" | "openai";
+  provider: "openai";
   modelId: string;
   usedEvidenceCardIds: string[];
 };

@@ -30,6 +30,7 @@ const emptyDiagnostics: GrantDiagnosticsPayload = {
   conflicts: [],
   feedback: [],
   recheck: { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: 0, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
+  coverage: { deterministic: "not_run", semantic: "not_run", failedCheckerIds: [] },
 };
 
 async function fetchEditorPayload(documentId: string): Promise<EditorPayload> {
@@ -433,6 +434,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           error={diagnosticsError}
           recheckEnabled={recheckEnabled}
           recheck={diagnostics.recheck}
+          coverage={diagnostics.coverage}
           onRun={runDiagnostics}
           onSelect={navigateToFinding}
           onFeedbackChange={updateFeedback}

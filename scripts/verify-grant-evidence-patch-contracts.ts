@@ -73,7 +73,7 @@ const model: GrantPatchModel = {
     return {
       replacementText: "前期实验提示该信号轴可能促进细胞迁移，但仍需进一步验证其因果机制。",
       rationale: "依据已授权的前期实验资料补充证据边界。",
-      provider: "deepseek",
+      provider: "openai",
       modelId: "test-model",
       usedEvidenceCardIds: [request.evidence[0]!.cardId],
     };
@@ -134,7 +134,7 @@ const maliciousModel: GrantPatchModel = {
   async generate(request) {
     return {
       replacementText: "越权修改",
-      provider: "deepseek",
+      provider: "openai",
       modelId: "test-model",
       usedEvidenceCardIds: [randomUUID(), request.evidence[0]!.cardId],
     };

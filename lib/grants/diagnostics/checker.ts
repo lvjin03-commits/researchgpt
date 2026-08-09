@@ -2,6 +2,7 @@ import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantDiagnosticInputMode, GrantFindingAssessment } from "./contracts.ts";
 
 export type GrantCheckerInput = {
+  executionId: string;
   documentId: string;
   revisionId: string;
   snapshot: CanonicalGrantSnapshot;
@@ -34,5 +35,6 @@ export interface GrantChecker {
   readonly contractVersion: string;
   readonly inputMode: GrantDiagnosticInputMode;
   readonly supportedInputModes?: readonly GrantDiagnosticInputMode[];
+  readonly configurationFingerprint?: string;
   check(input: GrantCheckerInput): Promise<GrantCheckerOutput>;
 }

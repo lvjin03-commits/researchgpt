@@ -1,10 +1,12 @@
 import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantFinding } from "../diagnostics/contracts.ts";
 import type { GrantPatchModel, GrantPatchModelResult } from "../ports/grant-patch-model.ts";
+import type { GrantDiagnosticModel, GrantDiagnosticModelResult } from "../ports/grant-diagnostic-model.ts";
 import { grantEditableNodeText } from "../patching/patch-policy.ts";
 import type { GrantPatchEvidenceBinding } from "../patching/contracts.ts";
 import { GrantEvidenceAuthorizationService } from "./evidence-authorization-service.ts";
 import { selectGrantEvidenceCards } from "./grant-evidence-selector.ts";
+import { grantNodeText } from "../diagnostics/node-text.ts";
 
 export class GrantEvidenceProviderPolicyError extends Error {}
 export class GrantPatchEvidenceMismatchError extends Error {}
@@ -14,12 +16,72 @@ export type GrantModelPatchResult = GrantPatchModelResult & {
 };
 
 export class GrantModelDataGateway {
-  private readonly model: GrantPatchModel;
+  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel>;
   private readonly evidenceAuthorization?: GrantEvidenceAuthorizationService;
 
-  constructor(model: GrantPatchModel, evidenceAuthorization?: GrantEvidenceAuthorizationService) {
+  constructor(model: GrantPatchModel & Partial<GrantDiagnosticModel>, evidenceAuthorization?: GrantEvidenceAuthorizationService) {
     this.model = model;
     this.evidenceAuthorization = evidenceAuthorization;
+  }
+
+  async diagnose(input: {
+    documentId: string;
+    taskId: string;
+    snapshot: CanonicalGrantSnapshot;
+    inputMode: "full_document" | "section_bundle" | "focused_excerpt";
+    inputSectionIds: string[];
+    inputNodeIds: string[];
+  }): Promise<GrantDiagnosticModelResult & { authorizedEvidenceCardIds: string[] }> {
+    const sectionIds = new Set(input.inputSectionIds);
+    const nodeIds = new Set(input.inputNodeIds);
+    const sections = input.snapshot.sections
+      .filter((section) => sectionIds.has(section.sectionId))
+      .map((section) => ({
+        sectionId: section.sectionId,
+        semanticRole: section.semanticRole,
+        title: section.title,
+        parentSectionId: section.parentSectionId,
+        nodes: input.snapshot.nodes
+          .filter((node) => node.sectionId === section.sectionId && nodeIds.has(node.nodeId))
+          .sort((left, right) => left.order - right.order)
+          .map((node) => ({
+            nodeId: node.nodeId,
+            sectionId: node.sectionId,
+            nodeType: node.nodeType,
+            text: grantNodeText(node),
+          })),
+      }));
+    const queryText = [input.snapshot.title, ...sections.flatMap((section) => [section.title, ...section.nodes.map((node) => node.text)])].join("\n");
+    const resources = this.evidenceAuthorization
+      ? await this.evidenceAuthorization.listCurrentForModelReasoning({ documentId: input.documentId, taskId: input.taskId })
+      : [];
+    const selected = selectGrantEvidenceCards(resources, queryText);
+    if (!this.model.diagnose) throw new GrantEvidenceProviderPolicyError("Grant semantic diagnostics are not configured.");
+    const generated = await this.model.diagnose({
+      documentLanguage: /[\u3400-\u9fff]/u.test(queryText) ? "zh" : "en",
+      documentTitle: input.snapshot.title,
+      inputMode: input.inputMode,
+      sections,
+      evidence: selected.map(({ resource, card }) => ({
+        sourceId: resource.source.sourceId,
+        cardId: card.cardId,
+        sourceTitle: resource.source.title,
+        provenanceType: resource.source.provenanceType,
+        excerpt: card.excerpt,
+      })),
+    });
+    const allowedSectionIds = new Set(sections.map((section) => section.sectionId));
+    const allowedNodeIds = new Set(sections.flatMap((section) => section.nodes.map((node) => node.nodeId)));
+    for (const finding of generated.findings) {
+      if (!allowedSectionIds.has(finding.sectionId) || !allowedNodeIds.has(finding.nodeId)) {
+        throw new GrantPatchEvidenceMismatchError("模型诊断引用了未授权或不存在的申请书节点。");
+      }
+      const node = input.snapshot.nodes.find((candidate) => candidate.nodeId === finding.nodeId);
+      if (node?.sectionId !== finding.sectionId) {
+        throw new GrantPatchEvidenceMismatchError("模型诊断返回的章节与节点关系不一致。");
+      }
+    }
+    return { ...generated, authorizedEvidenceCardIds: selected.map((item) => item.card.cardId) };
   }
 
   async validateCurrentEvidence(input: {

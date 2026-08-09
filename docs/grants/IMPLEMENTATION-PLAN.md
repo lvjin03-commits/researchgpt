@@ -80,6 +80,13 @@ definition consistency. It reuses the existing checker, Finding, persistence
 and incremental-recheck contracts, assigns no severity, and introduces no
 parallel diagnostic workflow or model call.
 
+PR3 semantic diagnostic extension status (2026-08-09): the existing diagnostic
+execution now composes the deterministic registry with one GPT semantic
+checker. The same Grant AI configuration and Model Data Gateway are used by
+semantic diagnosis and AI Patch. GPT failure preserves deterministic results
+but is projected as incomplete rather than a successful full diagnosis. No new
+route, persistence model, worker or canonical write path is introduced.
+
 PR4 implementation status (2026-08-08): the three-pane workspace, collapsed
 Finding cards, source navigation, user feedback persistence and production
 navigation entry are implemented and exposed behind `GRANT_WORKSPACE_ENABLED`.

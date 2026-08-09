@@ -104,4 +104,28 @@ export class GrantEvidenceAuthorizationService {
     }
     return resources;
   }
+
+  async listCurrentForModelReasoning(input: {
+    documentId: string;
+    taskId?: string;
+  }): Promise<GrantEvidenceResource[]> {
+    const resources = await this.repository.listResources(input.documentId);
+    const now = Date.parse(this.now());
+    const sourceIds = resources
+      .filter((resource) =>
+        resource.source.status === "active"
+        && resource.source.sensitivity !== "highly_sensitive"
+        && resource.authorization.permissions.sendRelevantExcerptToModel
+        && resource.authorization.permissions.useForReasoning
+        && !resource.authorization.revokedAt
+        && (!resource.authorization.expiresAt || Date.parse(resource.authorization.expiresAt) > now)
+        && (!resource.authorization.allowedTaskIds
+          || (!!input.taskId && resource.authorization.allowedTaskIds.includes(input.taskId)))
+      )
+      .map((resource) => resource.source.sourceId);
+    if (sourceIds.length === 0) return [];
+    const sendable = await this.materializeCurrent({ ...input, sourceIds, use: "model" });
+    await this.materializeCurrent({ ...input, sourceIds, use: "reasoning" });
+    return sendable;
+  }
 }

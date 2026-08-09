@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { GrantFindingDisposition, GrantFindingFeedback } from "@/lib/grants/feedback/contracts";
 import { grantFindingTarget, indexGrantFindingFeedback, type GrantDiagnosticItem } from "./grant-diagnostic-view-model";
 import { GrantAiPatchPanel } from "./grant-ai-patch-panel";
-import type { GrantRecheckSummary } from "@/lib/grants/application/diagnostic-service";
+import type { GrantDiagnosticCoverage, GrantRecheckSummary } from "@/lib/grants/application/diagnostic-service";
 
 const scopeLabels = {
   cross_section: "跨章节",
@@ -36,6 +36,7 @@ type Props = {
   error: string;
   recheckEnabled: boolean;
   recheck: GrantRecheckSummary;
+  coverage: GrantDiagnosticCoverage;
   onRun: () => Promise<void>;
   onSelect: (item: GrantDiagnosticItem) => void;
   onFeedbackChange: (item: GrantFindingFeedback) => void;
@@ -81,9 +82,21 @@ export function GrantDiagnosticsPanel(props: Props) {
             disabled={props.running}
             className="whitespace-nowrap rounded-lg bg-[#155eef] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {props.running ? "检查中…" : props.recheckEnabled && props.recheck.state !== "not_run" ? "复检受影响内容" : "检查申请书"}
+            {props.running ? "AI诊断中…" : props.recheckEnabled && props.recheck.state !== "not_run" ? "AI复检" : "AI诊断"}
           </button>
         </div>
+
+        {props.coverage.semantic === "failed" && (
+          <p role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
+            程序检查已保留，但 GPT 语义诊断未完成。请再次点击“AI诊断”；系统不会把程序检查结果冒充完整 AI 诊断。
+          </p>
+        )}
+
+        {props.coverage.semantic === "complete" && (
+          <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-sm leading-6 text-blue-800">
+            已完成程序规则检查和 GPT 语义诊断{props.coverage.semanticModelId ? `（${props.coverage.semanticModelId}）` : ""}。
+          </p>
+        )}
 
         {props.recheckEnabled && props.recheck.state !== "not_run" && (
           <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-600">
@@ -103,7 +116,7 @@ export function GrantDiagnosticsPanel(props: Props) {
         {props.loading && <p className="mt-6 text-sm text-slate-500">正在读取问题…</p>}
         {!props.loading && props.items.length === 0 && (
           <div className="mt-6 rounded-2xl border border-dashed border-slate-300 p-5 text-center text-sm text-slate-500">
-            当前没有问题记录。点击“检查申请书”运行检查。
+            当前没有问题记录。点击“AI诊断”运行程序检查和 GPT 语义诊断。
           </div>
         )}
 
