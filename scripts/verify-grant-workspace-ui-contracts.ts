@@ -87,9 +87,19 @@ assert.equal((await feedbackService.list(documentId))[0]?.findingId, findingId);
 assert.equal(finding.lifecycleStatus, "open", "User feedback must not rewrite the Finding conclusion or lifecycle.");
 
 const panelSource = await readFile(new URL("../components/grants/grant-diagnostics-panel.tsx", import.meta.url), "utf8");
+const editorSource = await readFile(new URL("../components/grants/grant-structured-editor.tsx", import.meta.url), "utf8");
+const outlineSource = await readFile(new URL("../components/grants/grant-document-outline.tsx", import.meta.url), "utf8");
+const evidenceSource = await readFile(new URL("../components/grants/grant-evidence-panel.tsx", import.meta.url), "utf8");
+const aiPatchSource = await readFile(new URL("../components/grants/grant-ai-patch-panel.tsx", import.meta.url), "utf8");
 assert.match(panelSource, /建议默认收起/);
 assert.match(panelSource, /isExpanded\s*&&/);
 assert.doesNotMatch(panelSource, /严重性|高风险|中风险|低风险/);
+assert.match(editorSource, /xl:grid-cols-\[300px_minmax\(560px,1fr\)_400px\]/);
+assert.match(editorSource, /2xl:grid-cols-\[320px_minmax\(640px,1fr\)_440px\]/);
+assert.match(panelSource, /whitespace-nowrap rounded-lg bg-\[#155eef\].*text-sm/);
+assert.match(outlineSource, /cursor-pointer text-sm font-semibold text-slate-700/);
+assert.doesNotMatch(evidenceSource, /text-\[(10|11)px\]/);
+assert.doesNotMatch(aiPatchSource, /text-\[(10|11)px\]/);
 
 const migration = await readFile(new URL("../supabase/migrations/038_grant_finding_feedback.sql", import.meta.url), "utf8");
 assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.grant_finding_feedback/);

@@ -365,7 +365,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
         </div>
       )}
 
-      <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[250px_minmax(560px,1fr)_340px]">
+      <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[300px_minmax(560px,1fr)_400px] 2xl:grid-cols-[320px_minmax(640px,1fr)_440px]">
         <GrantDocumentOutline
           documentId={documentId}
           evidenceEnabled={evidenceEnabled}
