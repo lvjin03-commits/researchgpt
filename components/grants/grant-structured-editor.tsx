@@ -9,6 +9,7 @@ import type { GrantAggregate } from "@/lib/grants/ports/grant-revision-repositor
 import { GrantDiagnosticsPanel } from "./grant-diagnostics-panel";
 import { GrantDocumentCanvas } from "./grant-document-canvas";
 import { GrantDocumentOutline } from "./grant-document-outline";
+import { GrantResizableWorkspace } from "./grant-resizable-workspace";
 import {
   grantFindingTarget,
   indexGrantFindingsByNode,
@@ -389,8 +390,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
         </div>
       )}
 
-      <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[300px_minmax(560px,1fr)_400px] 2xl:grid-cols-[320px_minmax(640px,1fr)_440px]">
-        <GrantDocumentOutline
+      <GrantResizableWorkspace
+        left={<GrantDocumentOutline
           documentId={documentId}
           evidenceEnabled={evidenceEnabled}
           snapshot={snapshot}
@@ -401,9 +402,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           currentRevisionId={payload.aggregate.currentRevision.revisionId}
           onSelectSection={setSelectedSectionId}
           onRestore={restore}
-        />
-
-        <GrantDocumentCanvas
+        />}
+        center={<GrantDocumentCanvas
           snapshot={snapshot}
           selectedSectionId={selectedSectionId}
           selectedFindingId={selectedFindingId}
@@ -418,9 +418,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           onNodeFindingSelect={navigateFromNode}
           onAddParagraph={addParagraph}
           onRemoveNode={removeNode}
-        />
-
-        <GrantDiagnosticsPanel
+        />}
+        right={<GrantDiagnosticsPanel
           documentId={documentId}
           currentRevisionId={payload.aggregate.currentRevision.revisionId}
           aiPatchEnabled={aiPatchEnabled}
@@ -438,8 +437,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           onSelect={navigateToFinding}
           onFeedbackChange={updateFeedback}
           onPatchAccepted={loadLatest}
-        />
-      </div>
+        />}
+      />
     </main>
   );
 }
