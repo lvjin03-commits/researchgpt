@@ -15,6 +15,52 @@ import {
   TextRun,
 } from "docx";
 import { importGrantDocx, GrantDocxImportError } from "../lib/grants/imports/docx-importer.ts";
+import { createGrantOriginalObjectPath } from "../lib/grants/infrastructure/supabase/grant-import-object-path.ts";
+import { SupabaseGrantImportStorage } from "../lib/grants/infrastructure/supabase/supabase-grant-import-storage.ts";
+import { GrantImportStorageError } from "../lib/grants/ports/grant-import-storage.ts";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+const ownerId = "6433882a-ac04-4710-9839-45cd529291d8";
+const importId = "e0a4935c-c803-475d-9def-45a9ebb95bdc";
+const objectPath = createGrantOriginalObjectPath(ownerId, importId);
+assert.equal(objectPath, `${ownerId}/grant-imports/${importId}/original.docx`);
+assert.match(objectPath, /^[A-Za-z0-9/_\-.]+$/);
+assert.ok(!objectPath.includes("季铵盐"));
+assert.throws(
+  () => createGrantOriginalObjectPath("用户", importId),
+  (error: unknown) => error instanceof GrantImportStorageError
+    && error.code === "grant_storage_key_contract_invalid",
+);
+
+let uploadedPath = "";
+let uploadedMetadata: Record<string, unknown> | undefined;
+const storageClient = {
+  storage: {
+    from(bucket: string) {
+      assert.equal(bucket, "chat-attachments");
+      return {
+        async upload(path: string, _buffer: Buffer, options: { metadata?: Record<string, unknown> }) {
+          uploadedPath = path;
+          uploadedMetadata = options.metadata;
+          return { error: null };
+        },
+      };
+    },
+  },
+} as unknown as SupabaseClient;
+const storage = new SupabaseGrantImportStorage(storageClient);
+const stored = await storage.storeOriginal({
+  ownerId,
+  buffer: Buffer.from("docx-fixture"),
+  checksum: "a".repeat(64),
+});
+assert.equal(stored.path, uploadedPath);
+assert.match(uploadedPath, new RegExp(`^${ownerId}/grant-imports/[a-f0-9-]+/original\\.docx$`));
+assert.ok(!uploadedPath.includes("季铵盐"));
+assert.deepEqual(uploadedMetadata, {
+  checksum: "a".repeat(64),
+  source: "grant-docx-import",
+});
 
 const directory = await mkdtemp(join(tmpdir(), "researchgpt-grant-import-"));
 try {

@@ -1,25 +1,37 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { GrantImportStorage, StoredGrantImport } from "../../ports/grant-import-storage.ts";
+import {
+  GrantImportStorageError,
+  type GrantImportStorage,
+  type StoredGrantImport,
+} from "../../ports/grant-import-storage.ts";
+import { createGrantOriginalObjectPath } from "./grant-import-object-path.ts";
 
 const PRIVATE_UPLOAD_BUCKET = "chat-attachments";
 
-function safeFileName(fileName: string): string {
-  const normalized = fileName.normalize("NFKC").replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "");
-  return (normalized || "original.docx").slice(-120);
-}
-
 export class SupabaseGrantImportStorage implements GrantImportStorage {
-  constructor(private readonly client: SupabaseClient) {}
+  private readonly client: SupabaseClient;
 
-  async storeOriginal(input: { ownerId: string; fileName: string; buffer: Buffer; checksum: string }): Promise<StoredGrantImport> {
-    const path = `${input.ownerId}/grant-imports/${randomUUID()}/${safeFileName(input.fileName)}`;
+  constructor(client: SupabaseClient) {
+    this.client = client;
+  }
+
+  async storeOriginal(input: { ownerId: string; buffer: Buffer; checksum: string }): Promise<StoredGrantImport> {
+    // The user-visible filename belongs to import audit metadata. Storage identity
+    // is program-owned and deliberately independent of untrusted filename text.
+    const path = createGrantOriginalObjectPath(input.ownerId, randomUUID());
     const { error } = await this.client.storage.from(PRIVATE_UPLOAD_BUCKET).upload(path, input.buffer, {
       contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       upsert: false,
       metadata: { checksum: input.checksum, source: "grant-docx-import" },
     });
-    if (error) throw new Error(`Grant original upload failed: ${error.message}`);
+    if (error) {
+      throw new GrantImportStorageError(
+        "grant_original_storage_failed",
+        "Grant original upload failed.",
+        { cause: error },
+      );
+    }
     return { bucket: PRIVATE_UPLOAD_BUCKET, path };
   }
 

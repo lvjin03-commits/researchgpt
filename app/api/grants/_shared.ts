@@ -8,6 +8,7 @@ import {
   GrantWorkspaceDisabledError,
 } from "@/lib/grants/server/request-context";
 import { GrantDocxImportError } from "@/lib/grants/imports/docx-importer";
+import { GrantImportStorageError } from "@/lib/grants/ports/grant-import-storage";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -28,6 +29,17 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantDocxImportError) {
     return Response.json({ error: error.message, code: error.code }, { status: error.status });
+  }
+  if (error instanceof GrantImportStorageError) {
+    console.error("[grant-api] Grant import storage failed", {
+      operation,
+      code: error.code,
+      providerErrorType: error.cause instanceof Error ? error.cause.name : typeof error.cause,
+    });
+    return Response.json({
+      error: "原始申请书保存失败，尚未创建项目，请重试。",
+      code: error.code,
+    }, { status: error.code === "grant_original_storage_failed" ? 503 : 500 });
   }
   if (error instanceof ZodError) {
     return Response.json({ error: "请求中的文档结构不合法。", code: "invalid_grant_request", issues: error.issues }, { status: 400 });

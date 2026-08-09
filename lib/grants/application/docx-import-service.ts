@@ -17,7 +17,6 @@ export class GrantDocxImportService {
     const preview = await importGrantDocx(input);
     const stored = await this.storage.storeOriginal({
       ownerId: input.ownerId,
-      fileName: input.fileName,
       buffer: input.buffer,
       checksum: preview.checksum,
     });
