@@ -1,6 +1,6 @@
 # ADR-0018: Imported figure assets and model authorization
 
-- Status: accepted for contract-only implementation
+- Status: accepted; extraction and persistence implemented, UI/model use deferred
 - Date: 2026-08-10
 - Owners: Grant DOCX Import Adapter, Grant Figure Asset Repository, Grant Figure Model Authorization Service, Grant Model Data Gateway
 - Supersedes: none
@@ -31,8 +31,10 @@ second image/document model would duplicate authority.
 - Models receive only authorized image payloads and execution-local atomic
   location references. Models never own asset IDs, object paths or canonical
   locations.
-- This step adds target contracts and governance only. It does not change import,
-  storage, UI, provider or diagnostic composition.
+- Step 2 extends the existing import authority to extract supported embedded
+  image parts, hash and store them at immutable paths, and bind them to canonical
+  `figure` nodes in source order. UI rendering, provider admission and diagnostic
+  composition remain deferred.
 
 ## Alternatives Considered
 
@@ -47,15 +49,18 @@ second image/document model would duplicate authority.
 
 ## Impact Analysis
 
-- User-visible behavior: none in this step.
-- Affected modules and consumers: target grant domain contracts and governance;
-  future import/storage/workspace/gateway/diagnostic adapters.
-- Data/schema impact: none; persistence requires a later additive migration.
+- User-visible behavior: import summaries can report extracted figure counts,
+  while unsupported/floating fidelity limits remain explicit warnings.
+- Affected modules and consumers: grant DOCX import, private object storage,
+  initial revision transaction and canonical figure nodes.
+- Data/schema impact: additive immutable figure-asset table and an extension of
+  the existing atomic foundation RPC; migration 048 must precede deployment.
 - Security/privacy impact: establishes default-deny, per-revision image consent.
 - Compatibility and deletion condition: existing snapshots and warnings remain
   unchanged until later capabilities replace `image_not_imported` for supported
   assets.
-- Rollback: remove unused contracts and governance additions.
+- Rollback: keep text import active, revert the runtime changes and migration
+  before any later authorization/UI capability depends on persisted assets.
 
 ## Verification
 
@@ -63,7 +68,9 @@ second image/document model would duplicate authority.
   inconsistent caption metadata, duplicate asset scopes and semantic-use
   permission without transmission consent.
 - Grant architecture, encoding and TypeScript checks pass.
-- Real user-path verification is intentionally deferred because this step has no
-  runtime effect.
+- A generated DOCX fixture verifies byte extraction, dimensions, caption/source
+  anchors, storage hash/path, canonical node order and atomic repository input.
+- Real PostgreSQL verification is deferred until migration 048 is explicitly
+  authorized and applied.
 - Later rollout must measure image extraction success, unsupported media,
   authorization denials and multimodal diagnostic coverage.

@@ -21,7 +21,7 @@
 - The semantic checker may interpret an authorized figure, but cannot create or
   repair program identifiers, captions, ordering or storage data.
 
-## Scope of This Change
+## Step 1 Scope
 
 - Add strict Zod contracts for imported assets, anchors/captions and model use.
 - Add default-deny permissions.
@@ -31,11 +31,27 @@
 No importer, repository, migration, UI, model payload, diagnostic prompt,
 feature flag or production composition changes in this step.
 
+## Step 2 Scope
+
+- Parse supported OOXML image relationships from the existing DOCX import path.
+- Verify content hashes and upload each asset to an immutable, ASCII-only object
+  path owned by the import storage adapter.
+- Materialize canonical `figure` nodes in original reading order and record
+  source/caption anchors without interpreting scientific meaning.
+- Extend the single initial-document transaction to persist the immutable asset
+  provenance with the initial Revision.
+- Keep unsupported media and floating-layout loss visible as fidelity warnings.
+
+Out of scope: workspace image rendering, image consent UI, model payloads,
+multimodal diagnosis and any parallel import or document model.
+
 ## Compatibility and Risks
 
 - Existing canonical snapshots remain valid because `FigureContentSchema` is
   not changed.
-- Existing image warnings and text-only diagnostics remain unchanged.
+- Existing text-only diagnostics remain unchanged and images remain denied to
+  models. Supported images replace the broad `image_not_imported` warning;
+  unsupported or unbound assets retain precise warnings.
 - The new authorization is intentionally separate from Evidence authorization;
   both are enforced through the same Model Data Gateway rather than parallel
   provider paths.
@@ -53,3 +69,7 @@ or user-visible rollback.
 - `npm run check:grant-architecture`
 - `npm run typecheck`
 - `npm run check:encoding`
+- `npm run test:grant-docx-import`
+
+Migration 048 and a real PostgreSQL atomic-commit test remain pending explicit
+authorization; no production-readiness claim is made before that effect test.

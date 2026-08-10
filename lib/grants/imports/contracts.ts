@@ -7,7 +7,11 @@ export const GrantImportWarningSchema = z.object({
     "footer_not_editable",
     "section_layout_simplified",
     "floating_object_not_imported",
+    "floating_image_layout_simplified",
     "image_not_imported",
+    "image_media_unsupported",
+    "image_relationship_invalid",
+    "image_part_missing",
     "field_not_imported",
     "comment_not_imported",
     "tracked_change_flattened",
@@ -26,8 +30,9 @@ export const GrantDocxImportPreviewSchema = z.object({
   summary: z.object({
     sectionCount: z.number().int().positive(),
     paragraphCount: z.number().int().nonnegative(),
-    listCount: z.number().int().nonnegative(),
-    tableCount: z.number().int().nonnegative(),
+      listCount: z.number().int().nonnegative(),
+      tableCount: z.number().int().nonnegative(),
+      figureCount: z.number().int().nonnegative(),
   }).strict(),
   warnings: z.array(GrantImportWarningSchema),
 }).strict();

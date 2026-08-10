@@ -43,6 +43,7 @@ export const GrantFigureImportAnchorSchema = z.object({
 export const GrantImportedFigureAssetSchema = z.object({
   assetId: UuidSchema,
   documentId: UuidSchema,
+  sourceRevisionId: UuidSchema,
   sourceDocumentChecksum: Sha256Schema,
   contentHash: Sha256Schema,
   mediaType: GrantFigureMediaTypeSchema,
@@ -56,6 +57,12 @@ export const GrantImportedFigureAssetSchema = z.object({
   anchor: GrantFigureImportAnchorSchema,
   createdAt: IsoTimestampSchema,
 }).strict().readonly();
+
+export const GrantImportedFigureAssetDraftSchema = GrantImportedFigureAssetSchema.unwrap().omit({
+  documentId: true,
+  sourceRevisionId: true,
+  createdAt: true,
+}).readonly();
 
 export const GrantFigureModelPermissionsSchema = z.object({
   sendImageToModel: z.boolean(),
@@ -95,6 +102,7 @@ export type GrantFigureMediaType = z.infer<typeof GrantFigureMediaTypeSchema>;
 export type GrantFigureCaption = z.infer<typeof GrantFigureCaptionSchema>;
 export type GrantFigureImportAnchor = z.infer<typeof GrantFigureImportAnchorSchema>;
 export type GrantImportedFigureAsset = z.infer<typeof GrantImportedFigureAssetSchema>;
+export type GrantImportedFigureAssetDraft = z.infer<typeof GrantImportedFigureAssetDraftSchema>;
 export type GrantFigureModelPermissions = z.infer<typeof GrantFigureModelPermissionsSchema>;
 export type GrantFigureModelAuthorization = z.infer<typeof GrantFigureModelAuthorizationSchema>;
 

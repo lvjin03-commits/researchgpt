@@ -13,6 +13,7 @@ const actorId = "10000000-0000-4000-8000-000000000004";
 const asset = GrantImportedFigureAssetSchema.parse({
   assetId,
   documentId,
+  sourceRevisionId: revisionId,
   sourceDocumentChecksum: "a".repeat(64),
   contentHash: "b".repeat(64),
   mediaType: "image/png",

@@ -1,4 +1,5 @@
 import type { CanonicalGrantSnapshot, GrantDocumentDraft } from "../domain/contracts.ts";
+import type { GrantImportedFigureAssetDraft } from "../domain/figure-assets.ts";
 import { estimateGrantLength } from "./length-estimator.ts";
 import { GrantRevisionService } from "./revision-service.ts";
 import { createNsfcDraft, NSFC_DEFAULT_TEMPLATE } from "../templates/nsfc-default.ts";
@@ -26,12 +27,14 @@ export class GrantEditorService {
   async importDocument(input: {
     ownerId: string;
     draft: GrantDocumentDraft;
+    figureAssets?: GrantImportedFigureAssetDraft[];
     source: { fileName: string; checksum: string; storageBucket: string; storagePath: string; warningCodes: string[] };
   }) {
     return this.revisions.createDocument({
       ownerId: input.ownerId,
       actorId: input.ownerId,
       draft: input.draft,
+      importedFigureAssets: input.figureAssets,
       template: NSFC_DEFAULT_TEMPLATE,
       auditMetadata: {
         creationMode: "docx_import",

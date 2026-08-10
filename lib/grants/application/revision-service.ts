@@ -11,6 +11,11 @@ import {
   type GrantRevisionSummary,
 } from "../domain/contracts.ts";
 import { sha256Canonical } from "../domain/canonical-json.ts";
+import {
+  GrantImportedFigureAssetDraftSchema,
+  GrantImportedFigureAssetSchema,
+  type GrantImportedFigureAssetDraft,
+} from "../domain/figure-assets.ts";
 import type {
   ArchiveGrantDocumentResult,
   GrantAggregate,
@@ -50,6 +55,7 @@ type CreateDocumentInput = {
     rules: Record<string, unknown>;
   };
   auditMetadata?: Record<string, unknown>;
+  importedFigureAssets?: GrantImportedFigureAssetDraft[];
 };
 
 type CommitRevisionInput = {
@@ -88,6 +94,23 @@ export class GrantRevisionService {
     const templateSnapshotId = this.createId();
     const revisionId = this.createId();
     const snapshot = this.materializeDraft(draft);
+    const importedFigureAssets = (input.importedFigureAssets ?? []).map((asset) =>
+      GrantImportedFigureAssetDraftSchema.parse(asset));
+    const referencedAssetIds = snapshot.nodes.flatMap((node) =>
+      node.nodeType === "figure" ? [node.content.assetId] : []);
+    const suppliedAssetIds = importedFigureAssets.map((asset) => asset.assetId);
+    if (new Set(referencedAssetIds).size !== referencedAssetIds.length
+      || new Set(suppliedAssetIds).size !== suppliedAssetIds.length
+      || referencedAssetIds.length !== suppliedAssetIds.length
+      || referencedAssetIds.some((assetId) => !suppliedAssetIds.includes(assetId))) {
+      throw new Error("Grant imported figure assets do not exactly match canonical figure nodes.");
+    }
+    const figureAssets = importedFigureAssets.map((asset) => GrantImportedFigureAssetSchema.parse({
+      ...asset,
+      documentId,
+      sourceRevisionId: revisionId,
+      createdAt: timestamp,
+    }));
     const templateSnapshot = TemplateSnapshotSchema.parse({
       templateSnapshotId,
       ownerId: input.ownerId,
@@ -131,7 +154,7 @@ export class GrantRevisionService {
       },
       createdAt: timestamp,
     });
-    return this.repository.create({ document, currentRevision: revision, templateSnapshot, auditEvent });
+    return this.repository.create({ document, currentRevision: revision, templateSnapshot, auditEvent, figureAssets });
   }
 
   async listDocuments() {

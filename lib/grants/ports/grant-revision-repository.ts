@@ -5,6 +5,7 @@ import type {
   GrantRevisionSummary,
   TemplateSnapshot,
 } from "../domain/contracts.ts";
+import type { GrantImportedFigureAsset } from "../domain/figure-assets.ts";
 
 export type GrantAggregate = {
   document: GrantDocument;
@@ -14,6 +15,7 @@ export type GrantAggregate = {
 
 export type CreateGrantAggregateInput = GrantAggregate & {
   auditEvent: GrantAuditEvent;
+  figureAssets: GrantImportedFigureAsset[];
 };
 
 export type CommitGrantRevisionInput = {

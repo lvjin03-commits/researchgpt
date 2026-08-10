@@ -1,11 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   GrantImportStorageError,
   type GrantImportStorage,
   type StoredGrantImport,
+  type StoredGrantFigure,
 } from "../../ports/grant-import-storage.ts";
-import { createGrantOriginalObjectPath } from "./grant-import-object-path.ts";
+import { createGrantFigureObjectPath, createGrantOriginalObjectPath } from "./grant-import-object-path.ts";
 
 const PRIVATE_UPLOAD_BUCKET = "chat-attachments";
 
@@ -33,6 +34,51 @@ export class SupabaseGrantImportStorage implements GrantImportStorage {
       );
     }
     return { bucket: PRIVATE_UPLOAD_BUCKET, path };
+  }
+
+  async storeFigures(input: {
+    ownerId: string;
+    figures: Array<{ assetId: string; contentHash: string; mediaType: string; buffer: Buffer }>;
+  }): Promise<StoredGrantFigure[]> {
+    const stored: StoredGrantFigure[] = [];
+    try {
+      for (const figure of input.figures) {
+        const actualHash = createHash("sha256").update(figure.buffer).digest("hex");
+        if (actualHash !== figure.contentHash) {
+          throw new GrantImportStorageError(
+            "grant_figure_hash_mismatch",
+            "Grant figure bytes do not match the prepared content hash.",
+          );
+        }
+        const path = createGrantFigureObjectPath({ ownerId: input.ownerId, ...figure });
+        const { error } = await this.client.storage.from(PRIVATE_UPLOAD_BUCKET).upload(path, figure.buffer, {
+          contentType: figure.mediaType,
+          upsert: false,
+          metadata: {
+            assetId: figure.assetId,
+            contentHash: figure.contentHash,
+            source: "grant-docx-figure-import",
+          },
+        });
+        if (error) {
+          throw new GrantImportStorageError(
+            "grant_figure_storage_failed",
+            "Grant figure upload failed.",
+            { cause: error },
+          );
+        }
+        stored.push({
+          assetId: figure.assetId,
+          contentHash: figure.contentHash,
+          bucket: PRIVATE_UPLOAD_BUCKET,
+          path,
+        });
+      }
+      return stored;
+    } catch (error) {
+      await Promise.allSettled(stored.map((item) => this.remove(item)));
+      throw error;
+    }
   }
 
   async remove(input: StoredGrantImport): Promise<void> {

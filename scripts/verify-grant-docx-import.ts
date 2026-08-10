@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import {
   Footer,
   Header,
   HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   Table,
@@ -14,13 +16,17 @@ import {
   TableRow,
   TextRun,
 } from "docx";
-import { importGrantDocx, GrantDocxImportError } from "../lib/grants/imports/docx-importer.ts";
+import { importGrantDocx, prepareGrantDocxImport, GrantDocxImportError } from "../lib/grants/imports/docx-importer.ts";
 import { CanonicalGrantSnapshotSchema } from "../lib/grants/domain/contracts.ts";
 import { projectGrantSectionSubtree, projectGrantSectionTree } from "../lib/grants/presentation/document-tree.ts";
-import { createGrantOriginalObjectPath } from "../lib/grants/infrastructure/supabase/grant-import-object-path.ts";
+import { createGrantFigureObjectPath, createGrantOriginalObjectPath } from "../lib/grants/infrastructure/supabase/grant-import-object-path.ts";
 import { SupabaseGrantImportStorage } from "../lib/grants/infrastructure/supabase/supabase-grant-import-storage.ts";
 import { GrantImportStorageError } from "../lib/grants/ports/grant-import-storage.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import sharp from "sharp";
+import { GrantRevisionService } from "../lib/grants/application/revision-service.ts";
+import { InMemoryGrantRevisionRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-revision-repository.ts";
+import { NSFC_DEFAULT_TEMPLATE } from "../lib/grants/templates/nsfc-default.ts";
 
 const ownerId = "6433882a-ac04-4710-9839-45cd529291d8";
 const importId = "e0a4935c-c803-475d-9def-45a9ebb95bdc";
@@ -28,6 +34,13 @@ const objectPath = createGrantOriginalObjectPath(ownerId, importId);
 assert.equal(objectPath, `${ownerId}/grant-imports/${importId}/original.docx`);
 assert.match(objectPath, /^[A-Za-z0-9/_\-.]+$/);
 assert.ok(!objectPath.includes("季铵盐"));
+const figurePath = createGrantFigureObjectPath({
+  ownerId,
+  assetId: importId,
+  contentHash: "b".repeat(64),
+  mediaType: "image/png",
+});
+assert.equal(figurePath, `${ownerId}/grant-figure-assets/${importId}/${"b".repeat(64)}.png`);
 assert.throws(
   () => createGrantOriginalObjectPath("用户", importId),
   (error: unknown) => error instanceof GrantImportStorageError
@@ -36,6 +49,7 @@ assert.throws(
 
 let uploadedPath = "";
 let uploadedMetadata: Record<string, unknown> | undefined;
+const uploadedPaths: string[] = [];
 const storageClient = {
   storage: {
     from(bucket: string) {
@@ -43,9 +57,11 @@ const storageClient = {
       return {
         async upload(path: string, _buffer: Buffer, options: { metadata?: Record<string, unknown> }) {
           uploadedPath = path;
+          uploadedPaths.push(path);
           uploadedMetadata = options.metadata;
           return { error: null };
         },
+        async remove() { return { error: null }; },
       };
     },
   },
@@ -63,6 +79,18 @@ assert.deepEqual(uploadedMetadata, {
   checksum: "a".repeat(64),
   source: "grant-docx-import",
 });
+const figureFixtureHash = createHash("sha256").update(Buffer.from("figure-fixture")).digest("hex");
+const storedFigures = await storage.storeFigures({
+  ownerId,
+  figures: [{
+    assetId: importId,
+    buffer: Buffer.from("figure-fixture"),
+    contentHash: figureFixtureHash,
+    mediaType: "image/png",
+  }],
+});
+assert.equal(storedFigures[0]?.path, `${ownerId}/grant-figure-assets/${importId}/${figureFixtureHash}.png`);
+assert.ok(uploadedPaths.includes(storedFigures[0]!.path));
 
 const directory = await mkdtemp(join(tmpdir(), "researchgpt-grant-import-"));
 try {
@@ -92,6 +120,7 @@ try {
   assert.ok(preview.summary.paragraphCount >= 2);
   assert.equal(preview.summary.listCount, 1);
   assert.equal(preview.summary.tableCount, 1);
+  assert.equal(preview.summary.figureCount, 0);
   assert.ok(preview.warnings.some((warning) => warning.code === "header_not_editable"));
   assert.ok(preview.warnings.some((warning) => warning.code === "footer_not_editable"));
   assert.equal(preview.draft.sections[1]?.parentLocalKey, preview.draft.sections[0]?.localKey);
@@ -134,6 +163,65 @@ try {
   assert.equal(realisticPreview.draft.sections[6]?.parentLocalKey, realisticPreview.draft.sections[5]?.localKey);
   assert.ok(!realisticPreview.draft.sections.some((section) => section.title.includes("诚信承诺")));
   assert.equal(realisticPreview.draft.sections[0]?.nodes[0]?.nodeType, "paragraph");
+
+  const png = await sharp({
+    create: { width: 12, height: 8, channels: 4, background: { r: 30, g: 120, b: 220, alpha: 1 } },
+  }).png().toBuffer();
+  const imageDoc = new Document({
+    sections: [{
+      children: [
+        new Paragraph({ text: "（一）立项依据", heading: HeadingLevel.HEADING_1 }),
+        new Paragraph("图前正文。"),
+        new Paragraph({ children: [new ImageRun({ data: png, type: "png", transformation: { width: 120, height: 80 } })] }),
+        new Paragraph("图1 研究机制示意图"),
+        new Paragraph("图后正文。"),
+      ],
+    }],
+  });
+  const preparedImageImport = await prepareGrantDocxImport({
+    fileName: "含图申请书.docx",
+    buffer: Buffer.from(await Packer.toBuffer(imageDoc)),
+  });
+  assert.equal(preparedImageImport.preview.summary.figureCount, 1);
+  assert.equal(preparedImageImport.figures.length, 1);
+  assert.deepEqual(
+    preparedImageImport.preview.draft.sections[0]?.nodes.map((node) => node.nodeType),
+    ["paragraph", "figure", "paragraph"],
+  );
+  assert.equal(preparedImageImport.figures[0]?.widthPx, 12);
+  assert.equal(preparedImageImport.figures[0]?.heightPx, 8);
+  assert.equal(preparedImageImport.figures[0]?.anchor.caption.text, "图1 研究机制示意图");
+  assert.equal(
+    preparedImageImport.figures[0]?.anchor.precedingBlockLocalKey,
+    preparedImageImport.preview.draft.sections[0]?.nodes[0]?.localKey,
+  );
+  assert.equal(
+    preparedImageImport.figures[0]?.anchor.followingBlockLocalKey,
+    preparedImageImport.preview.draft.sections[0]?.nodes[2]?.localKey,
+  );
+  assert.ok(!preparedImageImport.preview.warnings.some((warning) => warning.code === "image_not_imported"));
+  const figureRepository = new InMemoryGrantRevisionRepository();
+  const figureRevisionService = new GrantRevisionService({ repository: figureRepository });
+  const figureAggregate = await figureRevisionService.createDocument({
+    ownerId,
+    actorId: ownerId,
+    draft: preparedImageImport.preview.draft,
+    template: NSFC_DEFAULT_TEMPLATE,
+    importedFigureAssets: preparedImageImport.figures.map((figure) => ({
+      assetId: figure.assetId,
+      sourceDocumentChecksum: figure.sourceDocumentChecksum,
+      contentHash: figure.contentHash,
+      mediaType: figure.mediaType,
+      byteSize: figure.byteSize,
+      widthPx: figure.widthPx,
+      heightPx: figure.heightPx,
+      anchor: figure.anchor,
+      storage: { bucket: "chat-attachments", path: `fixture/${figure.assetId}/${figure.contentHash}.png` },
+    })),
+  });
+  const canonicalFigure = figureAggregate.currentRevision.snapshot.nodes.find((node) => node.nodeType === "figure");
+  assert.equal(canonicalFigure?.nodeType, "figure");
+  assert.equal((await figureRepository.listFigureAssets(figureAggregate.document.documentId))[0]?.assetId, canonicalFigure?.content.assetId);
 
   const rootId = "00000000-0000-4000-8000-000000000001";
   const childOneId = "00000000-0000-4000-8000-000000000002";

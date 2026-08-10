@@ -7,6 +7,12 @@ import {
   type GrantDocxImportPreview,
   type GrantImportWarning,
 } from "./contracts.ts";
+import {
+  extractGrantDocxFigures,
+  type ExtractedGrantDocxFigure,
+  type GrantDocxFigureExtractionIssue,
+} from "./docx-figure-extractor.ts";
+import type { GrantFigureImportAnchor, GrantImportedFigureAssetDraft } from "../domain/figure-assets.ts";
 
 export const MAX_GRANT_DOCX_BYTES = 20 * 1024 * 1024;
 const MAX_UNCOMPRESSED_BYTES = 120 * 1024 * 1024;
@@ -32,7 +38,18 @@ type ImportedBlock =
   | { kind: "heading"; level: number; text: string }
   | { kind: "paragraph"; text: string }
   | { kind: "list"; ordered: boolean; items: string[] }
-  | { kind: "table"; rows: string[][] };
+  | { kind: "table"; rows: string[][] }
+  | { kind: "figure"; assetId: string };
+
+export type PreparedGrantDocxFigure = Omit<GrantImportedFigureAssetDraft, "storage"> & {
+  buffer: Buffer;
+  altText: string;
+};
+
+export type PreparedGrantDocxImport = {
+  preview: GrantDocxImportPreview;
+  figures: PreparedGrantDocxFigure[];
+};
 
 function decodeHtml(value: string): string {
   const named: Record<string, string> = {
@@ -50,6 +67,21 @@ function decodeHtml(value: string): string {
     .trim();
 }
 
+function parseParagraphBody(body: string): ImportedBlock[] {
+  const blocks: ImportedBlock[] = [];
+  const pattern = /<img\b[^>]*\bsrc="grant-figure:([a-f0-9-]+)"[^>]*>/gi;
+  let offset = 0;
+  for (const match of body.matchAll(pattern)) {
+    const text = decodeHtml(body.slice(offset, match.index));
+    if (text) blocks.push({ kind: "paragraph", text });
+    blocks.push({ kind: "figure", assetId: match[1] });
+    offset = (match.index ?? 0) + match[0].length;
+  }
+  const text = decodeHtml(body.slice(offset));
+  if (text) blocks.push({ kind: "paragraph", text });
+  return blocks;
+}
+
 function parseMammothHtml(html: string): ImportedBlock[] {
   const blocks: ImportedBlock[] = [];
   const pattern = /<(h[1-6]|p|ul|ol|table)\b[^>]*>([\s\S]*?)<\/\1>/gi;
@@ -62,8 +94,7 @@ function parseMammothHtml(html: string): ImportedBlock[] {
       continue;
     }
     if (tag === "p") {
-      const text = decodeHtml(body);
-      if (text) blocks.push({ kind: "paragraph", text });
+      blocks.push(...parseParagraphBody(body));
       continue;
     }
     if (tag === "ul" || tag === "ol") {
@@ -93,6 +124,10 @@ const REFERENCES_HEADING = /^参考文献(?:\s|$)/;
 function normalizedBlockText(block: ImportedBlock): string {
   if (block.kind === "heading" || block.kind === "paragraph") return block.text.replace(/\s+/g, " ").trim();
   return "";
+}
+
+function isFigureCaption(text: string): boolean {
+  return /^(?:图|Figure)\s*[A-Za-z0-9一二三四五六七八九十.\-：:]/i.test(text.trim());
 }
 
 /**
@@ -134,13 +169,21 @@ function inferSemanticRole(title: string): string {
   return rules.find(([pattern]) => pattern.test(title))?.[1] ?? "custom_section";
 }
 
-function blocksToDraft(blocks: ImportedBlock[], title: string): GrantDocumentDraft {
+function blocksToDraft(
+  blocks: ImportedBlock[],
+  title: string,
+  figuresById: Map<string, ExtractedGrantDocxFigure>,
+): { draft: GrantDocumentDraft; anchors: Map<string, GrantFigureImportAnchor>; altTextByAssetId: Map<string, string> } {
   type DraftSection = GrantDocumentDraft["sections"][number];
   const sections: DraftSection[] = [];
   const lastSectionAtLevel = new Map<number, string>();
   const siblingOrders = new Map<string, number>();
   let current: DraftSection | undefined;
   let sequence = 0;
+  const anchors = new Map<string, GrantFigureImportAnchor>();
+  const altTextByAssetId = new Map<string, string>();
+  const lastNodeKeyBySection = new Map<string, string>();
+  const pendingFigureBySection = new Map<string, string>();
 
   const createSection = (sectionTitle: string, level: number): DraftSection => {
     const localKey = `section-${++sequence}`;
@@ -169,28 +212,70 @@ function blocksToDraft(blocks: ImportedBlock[], title: string): GrantDocumentDra
   };
 
   const ensureSection = () => current ?? (current = createSection("申请书正文", 1));
-  for (const block of blocks) {
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index]!;
     if (block.kind === "heading" && block.level <= 3) {
       current = createSection(block.text, block.level);
       continue;
     }
     const section = ensureSection();
     const localKey = `node-${++sequence}`;
+    const previousKey = lastNodeKeyBySection.get(section.localKey) ?? null;
+    const pendingAssetId = pendingFigureBySection.get(section.localKey);
+    if (pendingAssetId && block.kind !== "figure") {
+      const pending = anchors.get(pendingAssetId);
+      if (pending) anchors.set(pendingAssetId, { ...pending, followingBlockLocalKey: localKey });
+      pendingFigureBySection.delete(section.localKey);
+    }
     if (block.kind === "heading") {
       section.nodes.push({ localKey, nodeType: "heading", content: { text: block.text, level: block.level } });
     } else if (block.kind === "paragraph") {
       section.nodes.push({ localKey, nodeType: "paragraph", content: { text: block.text } });
     } else if (block.kind === "list") {
       section.nodes.push({ localKey, nodeType: "list", content: { ordered: block.ordered, items: block.items } });
-    } else {
+    } else if (block.kind === "table") {
       section.nodes.push({ localKey, nodeType: "table", content: { rows: block.rows } });
+    } else {
+      const source = figuresById.get(block.assetId);
+      if (!source) continue;
+      const next = blocks[index + 1];
+      const captionText = next?.kind === "paragraph" && isFigureCaption(next.text) ? next.text : null;
+      if (captionText) index += 1;
+      const altText = source.altText ?? captionText ?? `Imported figure ${source.sourceOrdinal + 1}`;
+      section.nodes.push({
+        localKey,
+        nodeType: "figure",
+        content: { assetId: source.assetId, altText, ...(captionText ? { caption: captionText } : {}) },
+      });
+      anchors.set(source.assetId, {
+        sourceOrdinal: source.sourceOrdinal,
+        relationshipId: source.relationshipId,
+        partName: source.partName,
+        anchorKind: source.anchorKind,
+        sectionLocalKey: section.localKey,
+        precedingBlockLocalKey: previousKey,
+        followingBlockLocalKey: null,
+        caption: captionText
+          ? { text: captionText, source: "adjacent_paragraph" }
+          : { text: null, source: "none" },
+      });
+      altTextByAssetId.set(source.assetId, altText);
+      pendingFigureBySection.set(section.localKey, source.assetId);
     }
+    lastNodeKeyBySection.set(section.localKey, localKey);
   }
-  return GrantDocumentDraftSchema.parse({ title, sections });
+  return { draft: GrantDocumentDraftSchema.parse({ title, sections }), anchors, altTextByAssetId };
 }
 
-function inspectPackage(zip: AdmZip): GrantImportWarning[] {
+function inspectPackage(input: {
+  zip: AdmZip;
+  extractionIssues: GrantDocxFigureExtractionIssue[];
+  extractedFigureCount: number;
+  placedFigureCount: number;
+  hasFloatingFigure: boolean;
+}): GrantImportWarning[] {
   const warnings: GrantImportWarning[] = [];
+  const { zip } = input;
   const names = new Set(zip.getEntries().map((entry) => entry.entryName));
   const documentXml = zip.getEntry("word/document.xml")?.getData().toString("utf8") ?? "";
   const add = (condition: boolean, code: GrantImportWarning["code"], message: string) => {
@@ -199,8 +284,17 @@ function inspectPackage(zip: AdmZip): GrantImportWarning[] {
   add([...names].some((name) => /^word\/header\d*\.xml$/i.test(name)), "header_not_editable", "页眉已保留在原文件中，但不会作为可编辑正文导入。");
   add([...names].some((name) => /^word\/footer\d*\.xml$/i.test(name)), "footer_not_editable", "页脚已保留在原文件中，但不会作为可编辑正文导入。");
   add(/<w:sectPr\b/.test(documentXml), "section_layout_simplified", "分节、页边距和页面方向不会进入正文模型，导出时由模板重新排版。");
-  add(/<w:(?:drawing|pict|object)\b/.test(documentXml), "floating_object_not_imported", "浮动图形或嵌入对象不会作为可编辑正文导入。");
-  add(/<w:drawing\b/.test(documentXml), "image_not_imported", "原稿中的图片暂不导入编辑器；原文件仍会完整保存。");
+  add(/<w:object\b/.test(documentXml), "floating_object_not_imported", "非图片嵌入对象不会作为可编辑正文导入。");
+  add(input.hasFloatingFigure, "floating_image_layout_simplified", "浮动图片已按原始阅读顺序导入，绝对坐标和环绕方式不会进入正文模型。");
+  add(input.extractedFigureCount > input.placedFigureCount, "image_not_imported", "部分已提取图片未能绑定正文位置；原文件仍会完整保存。");
+  for (const issue of input.extractionIssues) {
+    const message = issue.code === "image_media_unsupported"
+      ? "原稿含暂不支持的图片格式；该图片保留在原文件中，但不会进入可编辑正文。"
+      : issue.code === "image_part_missing"
+        ? "原稿中的图片部件缺失，无法安全导入；请核对原 Word 文件。"
+        : "原稿中的图片关系无效或指向外部资源，无法安全导入。";
+    add(true, issue.code, message);
+  }
   add(/<w:(?:fldSimple|instrText)\b/.test(documentXml), "field_not_imported", "目录、交叉引用或其他 Word 域不会作为可编辑正文导入。");
   add(/<w:commentReference\b/.test(documentXml), "comment_not_imported", "Word 批注不会作为正文导入。");
   add(/<w:(?:ins|del|moveFrom|moveTo)\b/.test(documentXml), "tracked_change_flattened", "修订痕迹将按 Word 当前可见文本展开，不保留审阅历史。");
@@ -210,7 +304,7 @@ function inspectPackage(zip: AdmZip): GrantImportWarning[] {
   return warnings;
 }
 
-export async function importGrantDocx(input: { fileName: string; buffer: Buffer }): Promise<GrantDocxImportPreview> {
+export async function prepareGrantDocxImport(input: { fileName: string; buffer: Buffer }): Promise<PreparedGrantDocxImport> {
   const extension = input.fileName.toLowerCase().split(".").pop();
   if (extension !== "docx") {
     throw new GrantDocxImportError("仅支持不含宏的 .docx 初稿。", extension === "docm" ? "unsupported_file" : "invalid_file", 415);
@@ -227,30 +321,74 @@ export async function importGrantDocx(input: { fileName: string; buffer: Buffer 
   }
   if (!zip.getEntry("word/document.xml")) throw new GrantDocxImportError("DOCX 缺少正文内容。", "invalid_file", 400);
 
+  const checksum = createHash("sha256").update(input.buffer).digest("hex");
+  const extraction = await extractGrantDocxFigures(zip);
+  const figuresByHash = new Map<string, ExtractedGrantDocxFigure[]>();
+  for (const figure of extraction.figures) {
+    figuresByHash.set(figure.contentHash, [...(figuresByHash.get(figure.contentHash) ?? []), figure]);
+  }
   const result = await mammoth.convertToHtml(
     { buffer: input.buffer },
-    { convertImage: mammoth.images.imgElement(() => Promise.resolve({ src: "" })) },
+    {
+      convertImage: mammoth.images.imgElement(async (image) => {
+        const imageBuffer = await image.readAsBuffer();
+        const hash = createHash("sha256").update(imageBuffer).digest("hex");
+        const figure = figuresByHash.get(hash)?.shift();
+        return { src: figure ? `grant-figure:${figure.assetId}` : "" };
+      }),
+    },
   );
   const parsedBlocks = parseMammothHtml(result.value);
   const blocks = classifyGrantBodyStructure(parsedBlocks);
   if (blocks.length === 0) throw new GrantDocxImportError("未从 DOCX 中读取到可编辑正文。", "empty_document", 422);
   const title = input.fileName.replace(/\.docx$/i, "").trim() || "导入的国家自然科学基金申请书";
-  const draft = blocksToDraft(blocks, title);
-  const warnings = inspectPackage(zip);
+  const figuresById = new Map(extraction.figures.map((figure) => [figure.assetId, figure]));
+  const materialized = blocksToDraft(blocks, title, figuresById);
+  const placedFigureIds = new Set(materialized.anchors.keys());
+  const warnings = inspectPackage({
+    zip,
+    extractionIssues: extraction.issues,
+    extractedFigureCount: extraction.figures.length,
+    placedFigureCount: placedFigureIds.size,
+    hasFloatingFigure: extraction.figures.some((figure) => figure.anchorKind === "floating"),
+  });
   for (const message of result.messages) {
     const text = String(message.message ?? "").trim();
     if (text) warnings.push({ code: "parser_warning", message: text });
   }
-  return GrantDocxImportPreviewSchema.parse({
+  const preview = GrantDocxImportPreviewSchema.parse({
     fileName: input.fileName,
-    checksum: createHash("sha256").update(input.buffer).digest("hex"),
-    draft,
+    checksum,
+    draft: materialized.draft,
     summary: {
-      sectionCount: draft.sections.length,
+      sectionCount: materialized.draft.sections.length,
       paragraphCount: blocks.filter((block) => block.kind === "paragraph").length,
       listCount: blocks.filter((block) => block.kind === "list").length,
       tableCount: blocks.filter((block) => block.kind === "table").length,
+      figureCount: placedFigureIds.size,
     },
     warnings,
   });
+  const figures: PreparedGrantDocxFigure[] = extraction.figures.flatMap((figure) => {
+    const anchor = materialized.anchors.get(figure.assetId);
+    const altText = materialized.altTextByAssetId.get(figure.assetId);
+    if (!anchor || !altText) return [];
+    return [{
+      assetId: figure.assetId,
+      buffer: figure.buffer,
+      sourceDocumentChecksum: checksum,
+      contentHash: figure.contentHash,
+      mediaType: figure.mediaType,
+      byteSize: figure.buffer.byteLength,
+      widthPx: figure.widthPx,
+      heightPx: figure.heightPx,
+      anchor,
+      altText,
+    }];
+  });
+  return { preview, figures };
+}
+
+export async function importGrantDocx(input: { fileName: string; buffer: Buffer }): Promise<GrantDocxImportPreview> {
+  return (await prepareGrantDocxImport(input)).preview;
 }

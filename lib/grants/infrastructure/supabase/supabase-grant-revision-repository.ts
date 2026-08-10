@@ -61,6 +61,7 @@ export class SupabaseGrantRevisionRepository implements GrantRevisionRepository 
       p_actor_id: input.auditEvent.actorId,
       p_audit_event_id: input.auditEvent.auditEventId,
       p_audit_metadata: input.auditEvent.metadata,
+      p_figure_assets: input.figureAssets,
     });
     throwRpcError("create_grant_document_foundation", error);
     return structuredClone({

@@ -8,6 +8,7 @@ import type {
   ArchiveGrantDocumentResult,
 } from "../../ports/grant-revision-repository.ts";
 import type { GrantAuditEvent, GrantRevision } from "../../domain/contracts.ts";
+import type { GrantImportedFigureAsset } from "../../domain/figure-assets.ts";
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -18,6 +19,7 @@ export class InMemoryGrantRevisionRepository implements GrantRevisionRepository 
   private readonly audits = new Map<string, GrantAuditEvent[]>();
   private readonly revisions = new Map<string, GrantRevision[]>();
   private readonly archivedDocumentIds = new Set<string>();
+  private readonly figureAssets = new Map<string, GrantImportedFigureAsset[]>();
   private commitQueue: Promise<void> = Promise.resolve();
 
   async create(input: CreateGrantAggregateInput): Promise<GrantAggregate> {
@@ -32,7 +34,12 @@ export class InMemoryGrantRevisionRepository implements GrantRevisionRepository 
     this.aggregates.set(input.document.documentId, aggregate);
     this.audits.set(input.document.documentId, [clone(input.auditEvent)]);
     this.revisions.set(input.document.documentId, [clone(input.currentRevision)]);
+    this.figureAssets.set(input.document.documentId, clone(input.figureAssets));
     return clone(aggregate);
+  }
+
+  async listFigureAssets(documentId: string): Promise<GrantImportedFigureAsset[]> {
+    return clone(this.figureAssets.get(documentId) ?? []);
   }
 
   async listDocuments() {
