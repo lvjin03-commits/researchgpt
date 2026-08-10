@@ -160,6 +160,7 @@ export class GrantDiagnosticService {
     const fundingCategory = fundingCategoryFromTemplate(aggregate.templateSnapshot.rules, aggregate.templateSnapshot.templateKey);
     const candidates: Array<{ runId: string; checker: GrantChecker; candidate: GrantCheckerFindingCandidate }> = [];
     const runs: GrantDiagnosticRun[] = [];
+    const runsToPersist: GrantDiagnosticRun[] = [];
     const semanticV3Executions: GrantSemanticDiagnosticV3Execution[] = [];
     let reusedExecution = true;
 
@@ -240,12 +241,13 @@ export class GrantDiagnosticService {
           completedAt: this.now(),
         });
         runs.push(run);
+        runsToPersist.push(run);
         if (output.semanticV3) semanticV3Executions.push({ run, findings: semanticV3Findings });
       } catch (error) {
         const diagnosticFailure = error instanceof GrantDiagnosticExecutionError
           ? { category: error.category, ...error.metadata }
           : { category: "checker_failed" as const };
-        runs.push(GrantDiagnosticRunSchema.parse({
+        const run = GrantDiagnosticRunSchema.parse({
           runId,
           documentId,
           sourceRevisionId: sourceRevision.revisionId,
@@ -261,7 +263,9 @@ export class GrantDiagnosticService {
           createdBy: actorId,
           startedAt,
           completedAt: this.now(),
-        }));
+        });
+        runs.push(run);
+        runsToPersist.push(run);
       }
     }
 
@@ -284,7 +288,7 @@ export class GrantDiagnosticService {
       now: this.now,
     });
     const semanticV3RunIds = new Set(semanticV3Executions.map((execution) => execution.run.runId));
-    const genericRuns = runs.filter((run) => !semanticV3RunIds.has(run.runId));
+    const genericRuns = runsToPersist.filter((run) => !semanticV3RunIds.has(run.runId));
     const genericExecution = genericRuns.length > 0 || assembled.findings.length > 0 || assembled.conflicts.length > 0
       ? await this.repository.saveExecution({ runs: genericRuns, ...assembled })
       : { runs: [], findings: [], conflicts: [] };

@@ -134,6 +134,23 @@ const model: GrantPatchModel & GrantDiagnosticModel = {
 };
 
 const repository = new InMemoryGrantDiagnosticRepository();
+const persistedRunIds = new Set<string>();
+const saveExecution = repository.saveExecution.bind(repository);
+repository.saveExecution = async (input) => {
+  for (const run of input.runs) {
+    assert.equal(persistedRunIds.has(run.runId), false, `A reused diagnostic run must not be inserted again: ${run.runId}`);
+  }
+  const saved = await saveExecution(input);
+  input.runs.forEach((run) => persistedRunIds.add(run.runId));
+  return saved;
+};
+const saveSemanticV3Execution = repository.saveSemanticV3Execution.bind(repository);
+repository.saveSemanticV3Execution = async (input) => {
+  assert.equal(persistedRunIds.has(input.run.runId), false, `A reused semantic run must not be inserted again: ${input.run.runId}`);
+  const saved = await saveSemanticV3Execution(input);
+  persistedRunIds.add(input.run.runId);
+  return saved;
+};
 const v2Service = new GrantDiagnosticService({
   revisionService: revisions,
   repository,
