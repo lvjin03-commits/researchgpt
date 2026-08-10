@@ -8,18 +8,16 @@ const UuidSchema = z.string().uuid();
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const BoundedTextSchema = z.string().trim().min(1).max(2400);
 
-/**
- * Contract-only target versions. They do not select or change the production
- * semantic diagnostic path until the later staged rollout is authorized.
- */
+/** Version authority for the hierarchical semantic diagnostic path. Runtime
+ * cohort selection remains owned by server configuration, not this contract. */
 export const GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS = {
   argumentMapSchemaVersion: "grant-argument-map-v1",
   providerContractVersion: "grant-semantic-diagnostic-v5",
   providerSchemaVersion: "grant-semantic-diagnostic-v5",
-  promptVersion: "grant-semantic-review-v5",
+  promptVersion: "grant-semantic-review-v5.1",
   durableFindingSchemaVersion: "grant-semantic-finding-v4",
   policyVersion: "grant-ai-policy-v4",
-  checkerVersion: "5.0.0",
+  checkerVersion: "5.1.0",
 } as const;
 
 export const GrantArgumentRoleSchema = z.enum([

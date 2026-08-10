@@ -70,6 +70,24 @@ function semanticFailureMessage(coverage: GrantDiagnosticCoverage): string {
   }
 }
 
+function imageCoverageMessage(coverage: GrantDiagnosticCoverage): string | null {
+  const images = coverage.images;
+  if (!images || images.candidateCount === 0) return null;
+  if (images.mode === "multimodal") {
+    return `本次 AI 已读取 ${images.suppliedCount}/${images.candidateCount} 张授权图片${images.omittedCount > 0 ? "；其余图片因格式、大小或数量限制未送入模型" : ""}。`;
+  }
+  const reason = images.reasons.includes("not_authorized")
+    ? "尚未授权图片用于 AI 诊断"
+    : images.reasons.includes("authorization_changed")
+      ? "诊断期间图片授权或正文版本发生变化"
+      : images.reasons.includes("unsupported_media_type")
+        ? "图片格式不受当前模型输入支持"
+        : images.reasons.includes("image_too_large") || images.reasons.includes("image_capacity_limit")
+          ? "图片超过当前诊断容量限制"
+          : "图片资产暂时无法读取";
+  return `本次仅完成文本诊断，AI 未读取图片：${reason}。图片相关判断可能不完整。`;
+}
+
 export function GrantDiagnosticsPanel(props: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [savingFindingId, setSavingFindingId] = useState<string | null>(null);
@@ -127,6 +145,12 @@ export function GrantDiagnosticsPanel(props: Props) {
         {props.coverage.semantic === "complete" && (
           <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-sm leading-6 text-blue-800">
             已完成程序规则检查和 GPT 语义诊断{props.coverage.semanticModelId ? `（${props.coverage.semanticModelId}）` : ""}。
+          </p>
+        )}
+
+        {imageCoverageMessage(props.coverage) && (
+          <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
+            {imageCoverageMessage(props.coverage)}
           </p>
         )}
 

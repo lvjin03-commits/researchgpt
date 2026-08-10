@@ -21,6 +21,13 @@ import {
   safeGrantDiagnosticValidationIssues,
   type GrantDiagnosticValidationIssue,
 } from "../../diagnostics/validation-telemetry.ts";
+import {
+  textOnlyGrantDiagnosticImageAdmission,
+  type GrantDiagnosticImageAdmission,
+  type GrantDiagnosticImageAdmissionProvider,
+  type GrantDiagnosticImageCoverage,
+} from "../../diagnostics/multimodal-diagnostic-input.ts";
+import { attachGrantDiagnosticImages } from "./openai-grant-diagnostic-images.ts";
 
 export type GrantRootDiagnosticExecutionFailureCode =
   | "root_diagnosis_output_truncated"
@@ -53,6 +60,7 @@ export type GrantRootDiagnosticExecutionMetadataV1 = {
   normalizationActions?: GrantRootDiagnosticNormalizationActionV1[];
   providerStatus?: number;
   retryableProviderFailure?: boolean;
+  imageCoverage: GrantDiagnosticImageCoverage;
 };
 
 export type GrantRootDiagnosticExecutionResultV1 = {
@@ -93,10 +101,15 @@ export async function executeGrantRootDiagnosticV1(input: {
     repairInstruction?: string;
     maxCompletionTokens?: number;
   };
+  imageAdmission?: GrantDiagnosticImageAdmissionProvider;
 }): Promise<GrantRootDiagnosticExecutionResultV1> {
   const attempt = input.attempt ?? { number: 1, purpose: "initial" as const };
   const request = buildGrantRootDiagnosticModelInputV1({ prepared: input.prepared, argumentMap: input.argumentMap });
   let response: OpenAI.Chat.Completions.ChatCompletion | undefined;
+  let admittedImages: GrantDiagnosticImageAdmission = textOnlyGrantDiagnosticImageAdmission({
+    candidateCount: input.prepared.figureLocationRefByAssetId.size,
+    reasons: input.prepared.figureLocationRefByAssetId.size === 0 ? ["no_figures_in_scope"] : ["not_authorized"],
+  });
   const metadata = (): GrantRootDiagnosticExecutionMetadataV1 => ({
     operation: "diagnostic.root_diagnosis",
     policyVersion: GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.policyVersion,
@@ -115,15 +128,20 @@ export async function executeGrantRootDiagnosticV1(input: {
     inputTokens: response?.usage?.prompt_tokens ?? 0,
     outputTokens: response?.usage?.completion_tokens ?? 0,
     reasoningTokens: response?.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+    imageCoverage: admittedImages.coverage,
   });
 
   try {
+    admittedImages = input.imageAdmission ? await input.imageAdmission() : admittedImages;
     response = await input.client.chat.completions.create({
       model: input.modelId,
       response_format: grantRootDiagnosticResponseFormatV1(),
       reasoning_effort: "medium",
       max_completion_tokens: attempt.maxCompletionTokens ?? 9000,
-      messages: buildGrantRootDiagnosticMessagesV1(request, attempt.repairInstruction),
+      messages: attachGrantDiagnosticImages(
+        buildGrantRootDiagnosticMessagesV1(request, attempt.repairInstruction),
+        admittedImages,
+      ),
     });
     const choice = response.choices[0];
     const currentMetadata = metadata();

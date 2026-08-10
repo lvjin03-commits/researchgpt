@@ -20,4 +20,12 @@ export class SupabaseGrantFigureAssetReader implements GrantFigureAssetReader {
     }
     return data.signedUrl;
   }
+
+  async readBytes(asset: GrantImportedFigureAsset): Promise<Uint8Array> {
+    const { data, error } = await this.client.storage
+      .from(asset.storage.bucket)
+      .download(asset.storage.path);
+    if (error || !data) throw new Error("Grant figure bytes could not be read.");
+    return new Uint8Array(await data.arrayBuffer());
+  }
 }

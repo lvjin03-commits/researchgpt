@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantFinding } from "../diagnostics/contracts.ts";
 import type { GrantPatchModel, GrantPatchModelResult } from "../ports/grant-patch-model.ts";
@@ -14,6 +15,15 @@ import {
 } from "../diagnostics/semantic-v3-input.ts";
 import { buildGrantHierarchicalDiagnosticPreparedInputV1 } from "../diagnostics/hierarchical-semantic-input.ts";
 import type { GrantArgumentMapV1 } from "../diagnostics/hierarchical-semantic-contracts.ts";
+import { GrantFigureAuthorizationDeniedError, GrantFigureModelAuthorizationService } from "./figure-model-authorization-service.ts";
+import type { GrantFigureAssetReader } from "../ports/grant-figure-asset-reader.ts";
+import {
+  GRANT_DIAGNOSTIC_IMAGE_MEDIA_TYPES,
+  grantDiagnosticImageScopeFingerprint,
+  textOnlyGrantDiagnosticImageAdmission,
+  type GrantDiagnosticImageAdmission,
+  type GrantDiagnosticImageMediaType,
+} from "../diagnostics/multimodal-diagnostic-input.ts";
 
 export class GrantEvidenceProviderPolicyError extends Error {}
 export class GrantPatchEvidenceMismatchError extends Error {}
@@ -25,10 +35,19 @@ export type GrantModelPatchResult = GrantPatchModelResult & {
 export class GrantModelDataGateway {
   private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel>;
   private readonly evidenceAuthorization?: GrantEvidenceAuthorizationService;
+  private readonly figureAuthorization?: GrantFigureModelAuthorizationService;
+  private readonly figureAssetReader?: GrantFigureAssetReader;
 
-  constructor(model: GrantPatchModel & Partial<GrantDiagnosticModel>, evidenceAuthorization?: GrantEvidenceAuthorizationService) {
+  constructor(
+    model: GrantPatchModel & Partial<GrantDiagnosticModel>,
+    evidenceAuthorization?: GrantEvidenceAuthorizationService,
+    figureAuthorization?: GrantFigureModelAuthorizationService,
+    figureAssetReader?: GrantFigureAssetReader,
+  ) {
     this.model = model;
     this.evidenceAuthorization = evidenceAuthorization;
+    this.figureAuthorization = figureAuthorization;
+    this.figureAssetReader = figureAssetReader;
   }
 
   async prepareDiagnosticV3Input(input: {
@@ -118,7 +137,11 @@ export class GrantModelDataGateway {
       throw new GrantEvidenceProviderPolicyError("Grant hierarchical semantic diagnosis is not configured.");
     }
     const prepared = await this.prepareDiagnosticHierarchicalInput(input);
-    const generated = await this.model.diagnoseHierarchical(prepared, input.argumentMapCheckpoint);
+    const generated = await this.model.diagnoseHierarchical(
+      prepared,
+      input.argumentMapCheckpoint,
+      this.createDiagnosticImageAdmission(input.documentId, prepared),
+    );
     return { generated, prepared };
   }
 
@@ -141,13 +164,157 @@ export class GrantModelDataGateway {
   }
 
   async executeDiagnosticHierarchicalInput(
+    documentId: string,
     prepared: ReturnType<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]> extends Promise<infer T> ? T : never,
     argumentMapCheckpoint?: GrantArgumentMapV1,
   ) {
     if (!this.model.diagnoseHierarchical) {
       throw new GrantEvidenceProviderPolicyError("Grant hierarchical semantic diagnosis is not configured.");
     }
-    return this.model.diagnoseHierarchical(prepared, argumentMapCheckpoint);
+    return this.model.diagnoseHierarchical(
+      prepared,
+      argumentMapCheckpoint,
+      this.createDiagnosticImageAdmission(documentId, prepared),
+    );
+  }
+
+  private createDiagnosticImageAdmission(
+    documentId: string,
+    prepared: Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]>>,
+  ) {
+    return () => this.materializeDiagnosticImages(documentId, prepared);
+  }
+
+  private async materializeDiagnosticImages(
+    documentId: string,
+    prepared: Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]>>,
+  ): Promise<GrantDiagnosticImageAdmission> {
+    const candidateCount = prepared.figureLocationRefByAssetId.size;
+    if (candidateCount === 0) {
+      return textOnlyGrantDiagnosticImageAdmission({ candidateCount, reasons: ["no_figures_in_scope"] });
+    }
+    if (!this.figureAuthorization || !this.figureAssetReader) {
+      return textOnlyGrantDiagnosticImageAdmission({ candidateCount, reasons: ["asset_unavailable"] });
+    }
+
+    let materialized: Awaited<ReturnType<GrantFigureModelAuthorizationService["materializeCurrentForSemanticDiagnosis"]>>;
+    try {
+      materialized = await this.figureAuthorization.materializeCurrentForSemanticDiagnosis(documentId);
+    } catch (error) {
+      if (error instanceof GrantFigureAuthorizationDeniedError) {
+        return textOnlyGrantDiagnosticImageAdmission({ candidateCount, reasons: ["not_authorized"] });
+      }
+      return textOnlyGrantDiagnosticImageAdmission({ candidateCount, reasons: ["asset_unavailable"] });
+    }
+
+    const supportedMediaTypes = new Set<string>(GRANT_DIAGNOSTIC_IMAGE_MEDIA_TYPES);
+    const scopedAssets = materialized.assets
+      .filter((asset) => prepared.figureLocationRefByAssetId.has(asset.assetId))
+      .sort((left, right) => {
+        const leftRef = prepared.figureLocationRefByAssetId.get(left.assetId)!;
+        const rightRef = prepared.figureLocationRefByAssetId.get(right.assetId)!;
+        return Number(leftRef.slice(1)) - Number(rightRef.slice(1));
+      });
+    const authorizedCount = scopedAssets.length;
+    const reasons = new Set<GrantDiagnosticImageAdmission["coverage"]["reasons"][number]>();
+    if (authorizedCount < candidateCount) reasons.add("not_authorized");
+    const accepted: Array<{
+      locationRef: string;
+      caption: string | null;
+      mediaType: GrantDiagnosticImageMediaType;
+      contentHash: string;
+      bytes: Uint8Array;
+    }> = [];
+    const maxImageBytes = 8 * 1024 * 1024;
+    const maxTotalBytes = 20 * 1024 * 1024;
+    const maxImages = 8;
+    let totalBytes = 0;
+
+    for (const asset of scopedAssets) {
+      if (!supportedMediaTypes.has(asset.mediaType)) {
+        reasons.add("unsupported_media_type");
+        continue;
+      }
+      if (asset.byteSize > maxImageBytes) {
+        reasons.add("image_too_large");
+        continue;
+      }
+      if (accepted.length >= maxImages || totalBytes + asset.byteSize > maxTotalBytes) {
+        reasons.add("image_capacity_limit");
+        continue;
+      }
+      try {
+        const bytes = await this.figureAssetReader.readBytes(asset);
+        const contentHash = createHash("sha256").update(bytes).digest("hex");
+        if (bytes.byteLength !== asset.byteSize || contentHash !== asset.contentHash) {
+          reasons.add("asset_unavailable");
+          continue;
+        }
+        accepted.push({
+          locationRef: prepared.figureLocationRefByAssetId.get(asset.assetId)!,
+          caption: asset.anchor.caption.text,
+          mediaType: asset.mediaType as GrantDiagnosticImageMediaType,
+          contentHash,
+          bytes,
+        });
+        totalBytes += bytes.byteLength;
+      } catch {
+        reasons.add("asset_unavailable");
+      }
+    }
+
+    try {
+      const current = await this.figureAuthorization.materializeCurrentForSemanticDiagnosis(documentId);
+      if (
+        current.authorization.authorizationId !== materialized.authorization.authorizationId
+        || current.authorization.authorizationRevision !== materialized.authorization.authorizationRevision
+        || current.authorization.sourceRevisionId !== prepared.sourceRevisionId
+      ) {
+        return textOnlyGrantDiagnosticImageAdmission({
+          candidateCount,
+          authorizedCount,
+          reasons: ["authorization_changed"],
+        });
+      }
+    } catch {
+      return textOnlyGrantDiagnosticImageAdmission({
+        candidateCount,
+        authorizedCount,
+        reasons: ["authorization_changed"],
+      });
+    }
+
+    const images = accepted.map((image, index) => ({
+      imageRef: `I${index + 1}`,
+      locationRef: image.locationRef,
+      caption: image.caption,
+      mediaType: image.mediaType,
+      dataUrl: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString("base64")}`,
+    }));
+    if (images.length === 0) {
+      return textOnlyGrantDiagnosticImageAdmission({
+        candidateCount,
+        authorizedCount,
+        reasons: reasons.size > 0 ? [...reasons] : ["not_authorized"],
+      });
+    }
+    const imageScopeFingerprint = grantDiagnosticImageScopeFingerprint(accepted.map((image, index) => ({
+      imageRef: `I${index + 1}`,
+      locationRef: image.locationRef,
+      contentHash: image.contentHash,
+    })));
+    return {
+      images,
+      coverage: {
+        mode: "multimodal",
+        candidateCount,
+        authorizedCount,
+        suppliedCount: images.length,
+        omittedCount: candidateCount - images.length,
+        reasons: [...reasons],
+        imageScopeFingerprint,
+      },
+    };
   }
 
   async diagnose(input: {

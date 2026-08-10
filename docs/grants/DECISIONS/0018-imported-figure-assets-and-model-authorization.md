@@ -1,6 +1,6 @@
 # ADR-0018: Imported figure assets and model authorization
 
-- Status: accepted; extraction, persistence, owner-scoped display and explicit model authorization implemented; provider image admission deferred
+- Status: accepted; extraction, persistence, owner-scoped display, explicit authorization and provider image admission implemented; real-document rollout verification pending
 - Date: 2026-08-10
 - Owners: Grant DOCX Import Adapter, Grant Figure Asset Repository, Grant Figure Model Authorization Service, Grant Model Data Gateway
 - Supersedes: none
@@ -47,6 +47,14 @@ second image/document model would duplicate authority.
   current canonical Revision; any Revision change makes prior consent
   ineffective until the user confirms it again. This step does not yet transmit
   image bytes to a provider.
+- Step 5 extends the existing hierarchical checker rather than adding a second
+  diagnostic route. ArgumentMap remains text-only; root diagnosis receives only
+  supported, authorized, integrity-verified images through transient data URLs.
+  Every paid root attempt re-reads current authorization. The model receives
+  execution-local `I*` references bound to frozen `N*` locations and never sees
+  asset IDs, object paths or durable URLs. Missing consent or unusable assets
+  produce an explicit text-only coverage projection instead of a false claim
+  that figures were inspected.
 
 ## Alternatives Considered
 
@@ -87,3 +95,6 @@ second image/document model would duplicate authority.
 - Authorization tests verify default deny, asset scope, Revision invalidation,
   renewal, revocation and current-state materialization. Later rollout must
   additionally measure multimodal diagnostic coverage.
+- Multimodal contract tests verify that ArgumentMap contains no image payload,
+  root diagnosis receives authorized image parts, and every root retry rechecks
+  admission through the same Model Data Gateway authority.

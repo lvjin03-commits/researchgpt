@@ -42,9 +42,20 @@ function createGrantModelDataGateway(client: ReturnType<typeof createGrantSupaba
     ? new OpenAIGrantAiModel(config.modelId, config.apiKey)
     : new UnavailableGrantAiModel();
   const evidenceRepository = new SupabaseGrantEvidenceRepository(client, ownerId);
+  const revisionService = new GrantRevisionService({
+    repository: new SupabaseGrantRevisionRepository(client, ownerId),
+  });
   return {
     config,
-    gateway: new GrantModelDataGateway(model, new GrantEvidenceAuthorizationService(evidenceRepository)),
+    gateway: new GrantModelDataGateway(
+      model,
+      new GrantEvidenceAuthorizationService(evidenceRepository),
+      new GrantFigureModelAuthorizationService(
+        revisionService,
+        new SupabaseGrantFigureAuthorizationRepository(client, ownerId),
+      ),
+      new SupabaseGrantFigureAssetReader(client),
+    ),
   };
 }
 

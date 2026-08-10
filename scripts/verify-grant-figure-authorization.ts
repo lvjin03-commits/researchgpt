@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   GrantFigureAuthorizationDeniedError,
   GrantFigureModelAuthorizationService,
@@ -6,6 +7,7 @@ import {
 import type { GrantRevisionService } from "../lib/grants/application/revision-service.ts";
 import type { GrantFigureModelAuthorization, GrantImportedFigureAsset } from "../lib/grants/domain/figure-assets.ts";
 import type { GrantFigureAuthorizationRepository } from "../lib/grants/ports/grant-figure-authorization-repository.ts";
+import { GrantModelDataGateway } from "../lib/grants/application/grant-model-data-gateway.ts";
 
 const documentId = "13000000-0000-4000-8000-000000000001";
 const revision1 = "13000000-0000-4000-8000-000000000002";
@@ -15,6 +17,7 @@ const nodeId = "13000000-0000-4000-8000-000000000005";
 const assetId = "13000000-0000-4000-8000-000000000006";
 const actorId = "13000000-0000-4000-8000-000000000007";
 const authorizationId = "13000000-0000-4000-8000-000000000008";
+const assetBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
 const snapshot = {
   schemaVersion: "grant-canonical-v1" as const,
@@ -27,9 +30,9 @@ const asset: GrantImportedFigureAsset = {
   documentId,
   sourceRevisionId: revision1,
   sourceDocumentChecksum: "a".repeat(64),
-  contentHash: "b".repeat(64),
+  contentHash: createHash("sha256").update(assetBytes).digest("hex"),
   mediaType: "image/png",
-  byteSize: 100,
+  byteSize: assetBytes.byteLength,
   widthPx: 100,
   heightPx: 50,
   storage: { bucket: "private", path: "owner/image.png" },
@@ -80,6 +83,34 @@ const authorized = await service.authorize({
 assert.equal(authorized.authorization?.authorizationRevision, 1);
 assert.equal(authorized.effectivePermissions.useForSemanticDiagnosis, true);
 assert.deepEqual((await service.materializeCurrentForSemanticDiagnosis(documentId)).assets.map((item) => item.assetId), [assetId]);
+
+let admitted: Awaited<ReturnType<NonNullable<Parameters<NonNullable<ConstructorParameters<typeof GrantModelDataGateway>[0]["diagnoseHierarchical"]>>[2]>>> | undefined;
+const gateway = new GrantModelDataGateway({
+  generate: async () => { throw new Error("not used"); },
+  diagnoseHierarchical: async (_prepared, _checkpoint, imageAdmission) => {
+    admitted = await imageAdmission!();
+    return {} as never;
+  },
+}, undefined, service, {
+  createTemporaryReadUrl: async () => "https://example.test/not-used",
+  readBytes: async () => assetBytes,
+});
+const prepared = await gateway.prepareDiagnosticHierarchicalInput({
+  documentId,
+  taskId: "diagnostic-test",
+  snapshot,
+  inputMode: "full_document",
+  inputSectionIds: [sectionId],
+  inputNodeIds: [nodeId],
+  fundingCategory: "青年科学基金项目",
+  priorFindings: [],
+  sourceRevisionId: revision1,
+});
+await gateway.executeDiagnosticHierarchicalInput(documentId, prepared);
+assert.equal(admitted?.coverage.mode, "multimodal");
+assert.equal(admitted?.coverage.suppliedCount, 1);
+assert.equal(admitted?.images[0]?.locationRef, "N1");
+assert.match(admitted?.images[0]?.dataUrl ?? "", /^data:image\/png;base64,/);
 
 await assert.rejects(() => service.authorize({
   documentId,

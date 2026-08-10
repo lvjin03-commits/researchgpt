@@ -62,6 +62,7 @@ const service = new GrantFigureDisplayService(revisions, {
     assert.equal(asset.storage.path, baseAsset.storage.path);
     return `https://example.test/private/${asset.assetId}?token=temporary`;
   },
+  readBytes: async () => new Uint8Array(),
 });
 
 const ready = await service.listForSnapshot(documentId, snapshot);

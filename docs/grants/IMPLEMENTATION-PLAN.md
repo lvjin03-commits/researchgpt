@@ -309,9 +309,13 @@ document and semantic diagnostic stages. It is not a new top-level pipeline.
    by a canonical Revision change. The current authorization can be
    materialized for the Model Data Gateway, but this step does not yet transmit
    image bytes to a provider.
-5. **Multimodal diagnosis:** extend the existing semantic checker internally;
-   text-only diagnostics remain available when images are not authorized, while
-   image-dependent coverage is reported honestly as unavailable.
+5. **Multimodal diagnosis (implemented 2026-08-10):** the existing hierarchical
+   semantic checker keeps ArgumentMap text-only and sends current, authorized
+   raster bytes only to each paid root-diagnosis attempt. Admission re-reads
+   revision-bound consent, verifies asset size/hash and uses execution-local
+   image/location references. Unauthorized or unusable figures degrade to
+   text-only diagnosis with explicit image coverage; figure-bearing documents
+   never reuse an older successful semantic run without rechecking consent.
 6. **Effect-first verification and rollout:** use a real image-bearing NSFC DOCX,
    verify extraction order, captions, workspace display, provider input,
    diagnosis location and revocation. Rollout is separately authorized.

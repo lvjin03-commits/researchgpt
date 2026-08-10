@@ -18,11 +18,16 @@ import {
 const sourceRevisionId = randomUUID();
 const sectionId = randomUUID();
 const nodeId = randomUUID();
+const figureNodeId = randomUUID();
+const figureAssetId = randomUUID();
 const snapshot: CanonicalGrantSnapshot = {
   schemaVersion: "grant-canonical-v1",
   title: "国家自然科学基金申请书",
-  sections: [{ sectionId, semanticRole: "rationale", title: "立项依据", order: 0, nodeIds: [nodeId] }],
-  nodes: [{ nodeId, sectionId, order: 0, nodeType: "paragraph", content: { text: "申请书提出一个可检验的界面机制问题。" } }],
+  sections: [{ sectionId, semanticRole: "rationale", title: "立项依据", order: 0, nodeIds: [nodeId, figureNodeId] }],
+  nodes: [
+    { nodeId, sectionId, order: 0, nodeType: "paragraph", content: { text: "申请书提出一个可检验的界面机制问题。" } },
+    { nodeId: figureNodeId, sectionId, order: 1, nodeType: "figure", content: { assetId: figureAssetId, altText: "技术路线图", caption: "图1 技术路线" } },
+  ],
 };
 const prepared = buildGrantHierarchicalDiagnosticPreparedInputV1({
   sourceRevisionId,
@@ -30,7 +35,7 @@ const prepared = buildGrantHierarchicalDiagnosticPreparedInputV1({
     snapshot,
     inputMode: "full_document",
     inputSectionIds: [sectionId],
-    inputNodeIds: [nodeId],
+    inputNodeIds: [nodeId, figureNodeId],
     fundingCategory: "青年科学基金项目",
     evidenceCards: [],
     priorFindings: [],
@@ -114,13 +119,75 @@ assert.equal(success.providerCallCount, 2);
 assert.deepEqual(success.usage, { inputTokens: 20, outputTokens: 40, reasoningTokens: 2 });
 assert.deepEqual(success.stages.map((item) => item.status), ["succeeded", "succeeded", "not_started"]);
 
+let imageAdmissionCalls = 0;
+const multimodalClient = queuedClient([
+  { content: JSON.stringify(mapPayload) },
+  { content: JSON.stringify(rootPayload) },
+]);
+const multimodal = await executeGrantHierarchicalDiagnosticV1({
+  client: multimodalClient.client,
+  modelId: "gpt-5.5",
+  prepared,
+  imageAdmission: async () => {
+    imageAdmissionCalls += 1;
+    return {
+      images: [{
+        imageRef: "I1",
+        locationRef: "N2",
+        caption: "图1 技术路线",
+        mediaType: "image/png" as const,
+        dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+      }],
+      coverage: {
+        mode: "multimodal" as const,
+        candidateCount: 1,
+        authorizedCount: 1,
+        suppliedCount: 1,
+        omittedCount: 0,
+        reasons: [],
+        imageScopeFingerprint: "scope-1",
+      },
+    };
+  },
+});
+assert.equal(imageAdmissionCalls, 1, "authorization and bytes must be materialized immediately before the paid root call");
+assert.equal(multimodal.imageCoverage.mode, "multimodal");
+const argumentMessages = multimodalClient.calls[0]!.messages as Array<{ content: unknown }>;
+assert.ok(argumentMessages.every((message) => typeof message.content === "string"), "ArgumentMap must remain text-only");
+const rootMessages = multimodalClient.calls[1]!.messages as Array<{ role: string; content: unknown }>;
+const rootUserContent = rootMessages.findLast((message) => message.role === "user")!.content as Array<{ type: string; image_url?: { url: string }; text?: string }>;
+assert.equal(rootUserContent.filter((part) => part.type === "image_url").length, 1);
+assert.match(rootUserContent.find((part) => part.type === "image_url")!.image_url!.url, /^data:image\/png;base64,/);
+assert.match(rootUserContent.filter((part) => part.type === "text").map((part) => part.text).join("\n"), /"imageRef":"I1".*"locationRef":"N2"/);
+
 const repairClient = queuedClient([
   { content: JSON.stringify(mapPayload) },
   { content: JSON.stringify({ rootFindings: [{ category: "scientific_question_gap" }] }) },
   { content: JSON.stringify(rootPayload) },
 ]);
-const repaired = await executeGrantHierarchicalDiagnosticV1({ client: repairClient.client, modelId: "gpt-5.5", prepared });
+let repairAdmissionCalls = 0;
+const repaired = await executeGrantHierarchicalDiagnosticV1({
+  client: repairClient.client,
+  modelId: "gpt-5.5",
+  prepared,
+  imageAdmission: async () => {
+    repairAdmissionCalls += 1;
+    return {
+      images: [],
+      coverage: {
+        mode: "text_only" as const,
+        candidateCount: 1,
+        authorizedCount: 0,
+        suppliedCount: 0,
+        omittedCount: 1,
+        reasons: ["not_authorized" as const],
+        imageScopeFingerprint: "empty",
+      },
+    };
+  },
+});
 assert.equal(repaired.providerCallCount, 3);
+assert.equal(repairAdmissionCalls, 2, "each paid root attempt must re-read current image authorization");
 const repairedMessages = repairClient.calls[2]!.messages as Array<{ role: string; content: string }>;
 assert.match(repairedMessages.at(-1)!.content, /Correct only the prior structured-output contract failure/);
 

@@ -64,6 +64,7 @@ export type GrantHierarchicalDiagnosticPreparedInputV1 = {
   locationRefByNodeId: GrantSemanticDiagnosticV3PreparedInput["locationRefByNodeId"];
   sectionIdByNodeId: GrantSemanticDiagnosticV3PreparedInput["sectionIdByNodeId"];
   allowedEvidenceCardIds: GrantSemanticDiagnosticV3PreparedInput["allowedEvidenceCardIds"];
+  figureLocationRefByAssetId: GrantSemanticDiagnosticV3PreparedInput["figureLocationRefByAssetId"];
 };
 
 function locationScopeFingerprint(input: {
@@ -122,6 +123,7 @@ export function buildGrantHierarchicalDiagnosticPreparedInputV1(input: {
     locationRefByNodeId: input.prepared.locationRefByNodeId,
     sectionIdByNodeId: input.prepared.sectionIdByNodeId,
     allowedEvidenceCardIds: input.prepared.allowedEvidenceCardIds,
+    figureLocationRefByAssetId: input.prepared.figureLocationRefByAssetId,
   };
 }
 

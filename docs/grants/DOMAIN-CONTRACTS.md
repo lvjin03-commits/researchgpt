@@ -527,11 +527,12 @@ between revisions, the existing source-anchor relocation policy resolves the
 canonical occurrence before continuity is evaluated.
 
 The accepted target versions are `grant-argument-map-v1`, provider/run contract
-`grant-semantic-diagnostic-v5`, prompt `grant-semantic-review-v5`, durable root
+`grant-semantic-diagnostic-v5`, prompt `grant-semantic-review-v5.1`, durable root
 Finding content `grant-semantic-finding-v4`, policy `grant-ai-policy-v4` and
-checker `5.0.0`. These are target contracts only. Active V4 production
-selection is unchanged until later stages update runtime owners and database
-acceptance together.
+checker `5.1.0`. The provider schema remains stable; the prompt/checker advance
+records authorized-image interpretation and its coverage behavior. Active V4 production
+selection remains available outside the existing hierarchical rollout cohort;
+the same runtime owner and database contract are reused in both cases.
 
 Stage states for argument mapping, root diagnosis and assembly explain progress,
 failure, skip and stale-revision outcomes. They do not replace the existing

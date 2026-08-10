@@ -59,6 +59,27 @@ multimodal diagnosis and any parallel import or document model.
 Out of scope: image consent, provider payloads, multimodal diagnosis, caption
 editing, image replacement and export rendering.
 
+## Step 5 Scope
+
+- Reuse the current hierarchical semantic checker and its unified call budget;
+  no new route, button, worker, Finding store or diagnostic model is introduced.
+- Keep ArgumentMap descriptive and text-only. Materialize current image consent
+  immediately before each paid root-diagnosis call, including its one allowed
+  recovery attempt.
+- Admit at most eight supported raster images, eight MiB each and twenty MiB in
+  total. Verify stored byte count and SHA-256 before constructing request-local
+  data URLs.
+- Bind each admitted image to one existing atomic `N*` location via an
+  execution-local `I*` reference. Do not persist image bytes, data URLs, bucket
+  paths or model-facing image references.
+- Persist only coverage counts, omission reasons and a content-scope hash. When
+  consent is absent, changes during execution or an asset cannot be admitted,
+  continue with text and state that image-dependent coverage is incomplete.
+- Bypass successful semantic-run reuse for figure-bearing revisions so a later
+  authorization or revocation cannot silently reuse a result created under a
+  different image scope. Text-only ArgumentMap checkpoints remain reusable
+  because they never contain image data.
+
 ## Compatibility and Risks
 
 - Existing canonical snapshots remain valid because `FigureContentSchema` is

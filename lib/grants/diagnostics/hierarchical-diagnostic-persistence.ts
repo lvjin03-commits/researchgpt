@@ -13,6 +13,7 @@ import { assembleGrantHierarchicalFindingsV1, createGrantOccurrenceFingerprintV1
 import type { GrantHierarchicalDiagnosticExecutionV1 } from "../ports/grant-diagnostic-repository.ts";
 import type { GrantNormalizedFinding } from "./normalized-finding.ts";
 import { resolveGrantSourceAnchor } from "./anchors.ts";
+import type { GrantDiagnosticImageCoverage } from "./multimodal-diagnostic-input.ts";
 
 type HierarchicalExecutionResult = {
   argumentMap: GrantArgumentMapCheckpointV1["argumentMap"];
@@ -20,6 +21,7 @@ type HierarchicalExecutionResult = {
   providerCallCount: number;
   usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
   resumedFromArgumentMap: boolean;
+  imageCoverage: GrantDiagnosticImageCoverage;
 };
 
 export function grantHierarchicalDiagnosticInputFingerprintV1(
@@ -30,6 +32,8 @@ export function grantHierarchicalDiagnosticInputFingerprintV1(
     locationScopeFingerprint: prepared.locationScopeFingerprint,
     argumentMapRequest: prepared.argumentMapRequest,
     rootDiagnosisBaseRequest: prepared.rootDiagnosisBaseRequest,
+    figureScope: [...prepared.figureLocationRefByAssetId.entries()]
+      .sort(([left], [right]) => left.localeCompare(right)),
   });
 }
 
@@ -174,6 +178,7 @@ export function assembleGrantHierarchicalExecutionForPersistenceV1(input: {
         providerCallCount: input.execution.providerCallCount,
         usage: input.execution.usage,
         resumedFromArgumentMap: input.execution.resumedFromArgumentMap,
+        imageCoverage: input.execution.imageCoverage,
         argumentMapCheckpointId: checkpoint.checkpointId,
       },
     },

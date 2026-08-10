@@ -102,7 +102,11 @@ export class GrantSemanticDiagnosticChecker implements GrantChecker {
         })
         : undefined;
       try {
-        const generated = await this.gateway.executeDiagnosticHierarchicalInput(prepared, checkpoint?.argumentMap);
+        const generated = await this.gateway.executeDiagnosticHierarchicalInput(
+          input.documentId,
+          prepared,
+          checkpoint?.argumentMap,
+        );
         return {
           findings: [],
           metadata: {
@@ -113,6 +117,7 @@ export class GrantSemanticDiagnosticChecker implements GrantChecker {
             reasoningTokens: generated.usage.reasoningTokens,
             providerCallCount: generated.providerCallCount,
             resumedFromArgumentMap: generated.resumedFromArgumentMap,
+            imageCoverage: generated.imageCoverage,
           },
           semanticHierarchical: {
             prepared,

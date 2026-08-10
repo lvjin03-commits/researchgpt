@@ -102,6 +102,7 @@ export type GrantSemanticDiagnosticV3PreparedInput = {
   locationRefByNodeId: ReadonlyMap<string, string>;
   sectionIdByNodeId: ReadonlyMap<string, string>;
   allowedEvidenceCardIds: ReadonlySet<string>;
+  figureLocationRefByAssetId: ReadonlyMap<string, string>;
 };
 
 export class GrantSemanticDiagnosticV3InputScopeError extends Error {
@@ -221,5 +222,10 @@ export function buildGrantSemanticDiagnosticV3Input(input: {
     locationRefByNodeId,
     sectionIdByNodeId,
     allowedEvidenceCardIds: new Set(evidenceIds),
+    figureLocationRefByAssetId: new Map(input.snapshot.nodes.flatMap((node) => {
+      if (node.nodeType !== "figure") return [];
+      const locationRef = locationRefByNodeId.get(node.nodeId);
+      return locationRef ? [[node.content.assetId, locationRef] as const] : [];
+    })),
   };
 }

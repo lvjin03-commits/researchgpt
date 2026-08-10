@@ -110,6 +110,7 @@ const execution = assembleGrantHierarchicalExecutionForPersistenceV1({
   execution: {
     argumentMap, rootDiagnosis, providerCallCount: 2,
     usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 10 }, resumedFromArgumentMap: false,
+    imageCoverage: { mode: "text_only", candidateCount: 0, authorizedCount: 0, suppliedCount: 0, omittedCount: 0, reasons: ["no_figures_in_scope"], imageScopeFingerprint: "empty" },
   },
   runId, checkpointId, startedAt: "2026-08-10T12:00:00.000Z", completedAt: "2026-08-10T12:02:00.000Z",
   createId: () => findingId,
@@ -126,6 +127,7 @@ const repeatedExecution = assembleGrantHierarchicalExecutionForPersistenceV1({
   execution: {
     argumentMap, rootDiagnosis, providerCallCount: 1,
     usage: { inputTokens: 50, outputTokens: 30, reasoningTokens: 5 }, resumedFromArgumentMap: true,
+    imageCoverage: { mode: "text_only", candidateCount: 0, authorizedCount: 0, suppliedCount: 0, omittedCount: 0, reasons: ["no_figures_in_scope"], imageScopeFingerprint: "empty" },
   },
   runId: randomUUID(), checkpointId: randomUUID(),
   startedAt: "2026-08-10T12:03:00.000Z", completedAt: "2026-08-10T12:04:00.000Z",

@@ -19,6 +19,7 @@ import type { GrantHierarchicalDiagnosticExecutionV1, GrantSemanticDiagnosticV3E
 import type { GrantSemanticDiagnosticV3PriorFinding } from "../diagnostics/semantic-v3-input.ts";
 import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import { assembleGrantHierarchicalExecutionForPersistenceV1 } from "../diagnostics/hierarchical-diagnostic-persistence.ts";
+import type { GrantDiagnosticImageCoverage } from "../diagnostics/multimodal-diagnostic-input.ts";
 
 type DiagnosticServiceDependencies = {
   revisionService: GrantRevisionService;
@@ -45,6 +46,7 @@ export type GrantDiagnosticCoverage = {
   semantic: "not_run" | "complete" | "failed";
   failedCheckerIds: string[];
   semanticModelId?: string;
+  images?: GrantDiagnosticImageCoverage;
   semanticFailure?: {
     category: GrantDiagnosticFailureCategory | "checker_failed";
     finishReason?: string;
@@ -193,7 +195,11 @@ export class GrantDiagnosticService {
         sourceRevisionId: sourceRevision.revisionId,
         contentHash: sourceRevision.contentHash,
       });
-      const reusable = existingRuns.find((run) => run.checkerId === checker.checkerId && run.inputHash === inputHash && run.status === "succeeded");
+      const semanticHasFigures = checker.checkerId === GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID
+        && sourceRevision.snapshot.nodes.some((node) => node.nodeType === "figure");
+      const reusable = semanticHasFigures
+        ? undefined
+        : existingRuns.find((run) => run.checkerId === checker.checkerId && run.inputHash === inputHash && run.status === "succeeded");
       if (reusable) {
         runs.push(reusable);
         continue;
@@ -291,6 +297,7 @@ export class GrantDiagnosticService {
             usage: error.modelError.usage,
             stages: error.modelError.stages,
             argumentMapCheckpointSaved: Boolean(error.checkpoint),
+            imageCoverage: error.modelError.imageCoverage,
           }
           : error instanceof GrantDiagnosticExecutionError
           ? { category: error.category, ...error.metadata }
@@ -459,6 +466,7 @@ export class GrantDiagnosticService {
       semanticModelId: semanticMetadata && typeof semanticMetadata === "object" && "modelId" in semanticMetadata && typeof semanticMetadata.modelId === "string"
         ? semanticMetadata.modelId
         : undefined,
+      images: this.imageCoverageFromRun(semanticRun),
       semanticFailure: semanticFailure && typeof semanticFailure === "object" && "category" in semanticFailure && typeof semanticFailure.category === "string"
         ? {
           category: semanticFailure.category as GrantDiagnosticFailureCategory | "checker_failed",
@@ -475,6 +483,30 @@ export class GrantDiagnosticService {
         }
         : undefined,
     };
+  }
+
+  private imageCoverageFromRun(run?: GrantDiagnosticRun): GrantDiagnosticImageCoverage | undefined {
+    const container = run?.status === "succeeded" ? run.parsedOutput.metadata : run?.parsedOutput.failure;
+    if (!container || typeof container !== "object" || !("imageCoverage" in container)) return undefined;
+    const value = container.imageCoverage;
+    if (!value || typeof value !== "object") return undefined;
+    const mode = "mode" in value ? value.mode : undefined;
+    const candidateCount = "candidateCount" in value ? value.candidateCount : undefined;
+    const authorizedCount = "authorizedCount" in value ? value.authorizedCount : undefined;
+    const suppliedCount = "suppliedCount" in value ? value.suppliedCount : undefined;
+    const omittedCount = "omittedCount" in value ? value.omittedCount : undefined;
+    const reasons = "reasons" in value ? value.reasons : undefined;
+    const imageScopeFingerprint = "imageScopeFingerprint" in value ? value.imageScopeFingerprint : undefined;
+    if (
+      (mode !== "multimodal" && mode !== "text_only")
+      || typeof candidateCount !== "number"
+      || typeof authorizedCount !== "number"
+      || typeof suppliedCount !== "number"
+      || typeof omittedCount !== "number"
+      || !Array.isArray(reasons)
+      || typeof imageScopeFingerprint !== "string"
+    ) return undefined;
+    return value as GrantDiagnosticImageCoverage;
   }
 
   private summarize(currentRuns: GrantDiagnosticRun[], previousRuns: GrantDiagnosticRun[], checkedSectionCount: number, checkedNodeCount: number, reusedExecution: boolean): GrantRecheckSummary {

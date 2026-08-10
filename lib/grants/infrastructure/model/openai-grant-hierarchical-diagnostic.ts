@@ -19,6 +19,11 @@ import {
   executeGrantRootDiagnosticV1,
   type GrantRootDiagnosticExecutionFailureCode,
 } from "./openai-grant-root-diagnostic.ts";
+import {
+  textOnlyGrantDiagnosticImageAdmission,
+  type GrantDiagnosticImageAdmissionProvider,
+  type GrantDiagnosticImageCoverage,
+} from "../../diagnostics/multimodal-diagnostic-input.ts";
 
 export const GRANT_HIERARCHICAL_DIAGNOSTIC_CALL_BUDGET_V1 = {
   argumentMapMaxCalls: 1,
@@ -35,6 +40,7 @@ export type GrantHierarchicalDiagnosticExecutionResultV1 = {
   providerCallCount: number;
   usage: Usage;
   resumedFromArgumentMap: boolean;
+  imageCoverage: GrantDiagnosticImageCoverage;
 };
 
 export class GrantHierarchicalDiagnosticExecutionError extends Error {
@@ -43,6 +49,7 @@ export class GrantHierarchicalDiagnosticExecutionError extends Error {
   readonly providerCallCount: number;
   readonly usage: Usage;
   readonly argumentMapCheckpoint?: GrantArgumentMapV1;
+  readonly imageCoverage: GrantDiagnosticImageCoverage;
 
   constructor(input: {
     failureCode: string;
@@ -51,6 +58,7 @@ export class GrantHierarchicalDiagnosticExecutionError extends Error {
     providerCallCount: number;
     usage: Usage;
     argumentMapCheckpoint?: GrantArgumentMapV1;
+    imageCoverage: GrantDiagnosticImageCoverage;
   }) {
     super(input.message);
     this.name = "GrantHierarchicalDiagnosticExecutionError";
@@ -59,6 +67,7 @@ export class GrantHierarchicalDiagnosticExecutionError extends Error {
     this.providerCallCount = input.providerCallCount;
     this.usage = input.usage;
     this.argumentMapCheckpoint = input.argumentMapCheckpoint;
+    this.imageCoverage = input.imageCoverage;
   }
 }
 
@@ -103,10 +112,15 @@ export async function executeGrantHierarchicalDiagnosticV1(input: {
   modelId: string;
   prepared: GrantHierarchicalDiagnosticPreparedInputV1;
   argumentMapCheckpoint?: GrantArgumentMapV1;
+  imageAdmission?: GrantDiagnosticImageAdmissionProvider;
 }): Promise<GrantHierarchicalDiagnosticExecutionResultV1> {
   const usage: Usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
   let providerCallCount = 0;
   let argumentMap: GrantArgumentMapV1;
+  let imageCoverage = textOnlyGrantDiagnosticImageAdmission({
+    candidateCount: input.prepared.figureLocationRefByAssetId.size,
+    reasons: input.prepared.figureLocationRefByAssetId.size === 0 ? ["no_figures_in_scope"] : ["not_authorized"],
+  }).coverage;
   const resumedFromArgumentMap = input.argumentMapCheckpoint !== undefined;
 
   if (input.argumentMapCheckpoint) {
@@ -133,6 +147,7 @@ export async function executeGrantHierarchicalDiagnosticV1(input: {
           stage({ stage: "root_diagnosis", status: "skipped", sourceRevisionId: input.prepared.sourceRevisionId, failureCode: null }),
           stage({ stage: "assembly", status: "not_started", sourceRevisionId: input.prepared.sourceRevisionId, failureCode: null }),
         ],
+        imageCoverage,
       });
     }
   }
@@ -150,6 +165,7 @@ export async function executeGrantHierarchicalDiagnosticV1(input: {
         stage({ stage: "root_diagnosis", status: "failed", sourceRevisionId: input.prepared.sourceRevisionId, failureCode: "root_diagnosis_reference_invalid" }),
         stage({ stage: "assembly", status: "not_started", sourceRevisionId: input.prepared.sourceRevisionId, failureCode: null }),
       ],
+      imageCoverage,
     });
   }
 
@@ -172,14 +188,17 @@ export async function executeGrantHierarchicalDiagnosticV1(input: {
           repairInstruction: retry?.repairInstruction,
           maxCompletionTokens: retry?.maxCompletionTokens,
         },
+        imageAdmission: input.imageAdmission,
       });
       addUsage(usage, diagnosed.usage);
+      imageCoverage = diagnosed.execution.imageCoverage;
       return {
         argumentMap,
         rootDiagnosis: diagnosed.result,
         providerCallCount,
         usage,
         resumedFromArgumentMap,
+        imageCoverage,
         stages: [
           stage({ stage: "argument_mapping", status: "succeeded", sourceRevisionId: input.prepared.sourceRevisionId, failureCode: null }),
           stage({ stage: "root_diagnosis", status: "succeeded", sourceRevisionId: input.prepared.sourceRevisionId, failureCode: null }),
@@ -189,6 +208,7 @@ export async function executeGrantHierarchicalDiagnosticV1(input: {
     } catch (error) {
       if (!(error instanceof GrantRootDiagnosticExecutionError)) throw error;
       addUsage(usage, error.metadata);
+      imageCoverage = error.metadata.imageCoverage;
       lastRootError = error;
       if (!rootRetry(error)) break;
     }
@@ -201,6 +221,7 @@ export async function executeGrantHierarchicalDiagnosticV1(input: {
     providerCallCount,
     usage,
     argumentMapCheckpoint: argumentMap,
+    imageCoverage,
     stages: [
       stage({ stage: "argument_mapping", status: "succeeded", sourceRevisionId: input.prepared.sourceRevisionId, failureCode: null }),
       stage({ stage: "root_diagnosis", status: "failed", sourceRevisionId: input.prepared.sourceRevisionId, failureCode }),

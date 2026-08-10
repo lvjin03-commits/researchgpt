@@ -37,6 +37,7 @@ import {
   executeGrantHierarchicalDiagnosticV1,
   GrantHierarchicalDiagnosticExecutionError,
 } from "./openai-grant-hierarchical-diagnostic.ts";
+import type { GrantDiagnosticImageAdmissionProvider } from "../../diagnostics/multimodal-diagnostic-input.ts";
 
 const PatchResultSchema = z.object({
   replacementText: z.string().trim().min(1),
@@ -137,6 +138,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
   async diagnoseHierarchical(
     prepared: GrantHierarchicalDiagnosticPreparedInputV1,
     argumentMapCheckpoint?: GrantArgumentMapV1,
+    imageAdmission?: GrantDiagnosticImageAdmissionProvider,
   ) {
     try {
       const result = await executeGrantHierarchicalDiagnosticV1({
@@ -144,6 +146,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         modelId: this.modelId,
         prepared,
         argumentMapCheckpoint,
+        imageAdmission,
       });
       return { ...result, provider: "openai" as const, modelId: this.modelId };
     } catch (error) {
@@ -155,6 +158,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         providerCallCount: error.providerCallCount,
         usage: error.usage,
         argumentMapCheckpoint: error.argumentMapCheckpoint,
+        imageCoverage: error.imageCoverage,
       });
     }
   }

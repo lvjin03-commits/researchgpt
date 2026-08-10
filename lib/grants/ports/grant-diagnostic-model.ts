@@ -9,6 +9,10 @@ import type {
   GrantRootDiagnosticResultV1,
 } from "../diagnostics/hierarchical-semantic-contracts.ts";
 import type { GrantHierarchicalDiagnosticPreparedInputV1 } from "../diagnostics/hierarchical-semantic-input.ts";
+import type {
+  GrantDiagnosticImageAdmissionProvider,
+  GrantDiagnosticImageCoverage,
+} from "../diagnostics/multimodal-diagnostic-input.ts";
 
 export type GrantDiagnosticModelNode = {
   nodeId: string;
@@ -88,6 +92,7 @@ export type GrantHierarchicalDiagnosticModelResult = {
   resumedFromArgumentMap: boolean;
   provider: "openai";
   modelId: string;
+  imageCoverage: GrantDiagnosticImageCoverage;
 };
 
 export class GrantHierarchicalDiagnosticModelError extends Error {
@@ -96,6 +101,7 @@ export class GrantHierarchicalDiagnosticModelError extends Error {
   readonly providerCallCount: number;
   readonly usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
   readonly argumentMapCheckpoint?: GrantArgumentMapV1;
+  readonly imageCoverage: GrantDiagnosticImageCoverage;
 
   constructor(input: {
     failureCode: string;
@@ -104,6 +110,7 @@ export class GrantHierarchicalDiagnosticModelError extends Error {
     providerCallCount: number;
     usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
     argumentMapCheckpoint?: GrantArgumentMapV1;
+    imageCoverage: GrantDiagnosticImageCoverage;
   }) {
     super(input.message);
     this.name = "GrantHierarchicalDiagnosticModelError";
@@ -112,6 +119,7 @@ export class GrantHierarchicalDiagnosticModelError extends Error {
     this.providerCallCount = input.providerCallCount;
     this.usage = input.usage;
     this.argumentMapCheckpoint = input.argumentMapCheckpoint;
+    this.imageCoverage = input.imageCoverage;
   }
 }
 
@@ -181,5 +189,6 @@ export interface GrantDiagnosticModel {
   diagnoseHierarchical?(
     prepared: GrantHierarchicalDiagnosticPreparedInputV1,
     argumentMapCheckpoint?: GrantArgumentMapV1,
+    imageAdmission?: GrantDiagnosticImageAdmissionProvider,
   ): Promise<GrantHierarchicalDiagnosticModelResult>;
 }
