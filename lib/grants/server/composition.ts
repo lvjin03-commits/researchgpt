@@ -26,6 +26,8 @@ import { isGrantHierarchicalDiagnosticSelected, isGrantRecheckEnabled, isGrantSe
 import { resolveGrantAiConfig } from "./grant-ai-config.ts";
 import { GrantFigureDisplayService } from "../application/figure-display-service.ts";
 import { SupabaseGrantFigureAssetReader } from "../infrastructure/supabase/supabase-grant-figure-asset-reader.ts";
+import { GrantFigureModelAuthorizationService } from "../application/figure-model-authorization-service.ts";
+import { SupabaseGrantFigureAuthorizationRepository } from "../infrastructure/supabase/supabase-grant-figure-authorization-repository.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -53,6 +55,14 @@ export function createGrantEditorService(ownerId: string): GrantEditorService {
   return new GrantEditorService(
     revisions,
     new GrantFigureDisplayService(revisions, new SupabaseGrantFigureAssetReader(client)),
+  );
+}
+
+export function createGrantFigureModelAuthorizationService(ownerId: string): GrantFigureModelAuthorizationService {
+  const client = createGrantSupabaseClient();
+  return new GrantFigureModelAuthorizationService(
+    new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
+    new SupabaseGrantFigureAuthorizationRepository(client, ownerId),
   );
 }
 

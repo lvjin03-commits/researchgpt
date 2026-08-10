@@ -5,6 +5,7 @@ import type { GrantFindingDisposition, GrantFindingFeedback } from "@/lib/grants
 import { grantFindingTarget, indexGrantFindingFeedback, type GrantDiagnosticItem } from "./grant-diagnostic-view-model";
 import { GrantAiPatchPanel } from "./grant-ai-patch-panel";
 import type { GrantDiagnosticCoverage, GrantRecheckSummary } from "@/lib/grants/application/diagnostic-service";
+import { GrantFigureAuthorizationControl } from "./grant-figure-authorization-control";
 
 const scopeLabels = {
   cross_section: "跨章节",
@@ -111,6 +112,11 @@ export function GrantDiagnosticsPanel(props: Props) {
             {props.running ? "AI诊断中…" : props.recheckEnabled && props.recheck.state !== "not_run" ? "AI复检" : "AI诊断"}
           </button>
         </div>
+
+        <GrantFigureAuthorizationControl
+          documentId={props.documentId}
+          currentRevisionId={props.currentRevisionId}
+        />
 
         {props.coverage.semantic === "failed" && (
           <p role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">

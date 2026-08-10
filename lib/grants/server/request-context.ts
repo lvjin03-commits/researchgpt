@@ -7,6 +7,7 @@ import { createGrantDocxImportService } from "./composition.ts";
 import { createGrantPatchService } from "./composition.ts";
 import { createGrantEvidenceService } from "./composition.ts";
 import { createGrantExportService } from "./composition.ts";
+import { createGrantFigureModelAuthorizationService } from "./composition.ts";
 import { isGrantAiPatchEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "./config.ts";
 
 export class GrantWorkspaceDisabledError extends Error {}
@@ -28,6 +29,7 @@ export async function requireGrantRequestContext() {
     diagnostics: createGrantDiagnosticService(user.id),
     feedback: createGrantFeedbackService(user.id),
     docxImporter: createGrantDocxImportService(user.id),
+    figureAuthorization: createGrantFigureModelAuthorizationService(user.id),
   };
 }
 

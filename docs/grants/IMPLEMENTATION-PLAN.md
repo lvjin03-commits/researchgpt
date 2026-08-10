@@ -303,8 +303,12 @@ document and semantic diagnostic stages. It is not a new top-level pipeline.
    through a private read adapter and render them at their canonical position
    without changing editor revision ownership. Migration 049 and a production
    signed-byte/user-path probe remain the effect-first gates.
-4. **Model-data admission:** add an explicit user consent surface and make Grant
-   Model Data Gateway materialize current, revision-bound image authorization.
+4. **Model-data admission (implemented 2026-08-10):** add an explicit user
+   consent surface and a single Figure Model Authorization Service. Consent is
+   denied by default, asset-scoped, compare-and-swap protected and invalidated
+   by a canonical Revision change. The current authorization can be
+   materialized for the Model Data Gateway, but this step does not yet transmit
+   image bytes to a provider.
 5. **Multimodal diagnosis:** extend the existing semantic checker internally;
    text-only diagnostics remain available when images are not authorized, while
    image-dependent coverage is reported honestly as unavailable.

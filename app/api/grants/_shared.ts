@@ -25,6 +25,10 @@ import {
 import { GrantEvidenceStorageError } from "@/lib/grants/ports/grant-evidence-storage";
 import { GrantEvidenceUploadError } from "@/lib/grants/server/read-evidence-upload";
 import { UploadError } from "@/lib/uploads/errors";
+import {
+  GrantFigureAuthorizationConflictError,
+  GrantFigureAuthorizationDeniedError,
+} from "@/lib/grants/application/figure-model-authorization-service";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -53,6 +57,12 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantEvidenceAuthorizationConflictError) {
     return Response.json({ error: error.message, code: "grant_evidence_authorization_conflict" }, { status: 409 });
+  }
+  if (error instanceof GrantFigureAuthorizationConflictError) {
+    return Response.json({ error: error.message, code: "grant_figure_authorization_conflict" }, { status: 409 });
+  }
+  if (error instanceof GrantFigureAuthorizationDeniedError) {
+    return Response.json({ error: error.message, code: "grant_figure_authorization_denied" }, { status: 403 });
   }
   if (error instanceof GrantEvidenceUseDeniedError) {
     return Response.json({ error: error.message, code: "grant_evidence_use_denied", sourceId: error.sourceId }, { status: 403 });

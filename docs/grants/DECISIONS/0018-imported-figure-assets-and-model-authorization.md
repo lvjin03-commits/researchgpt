@@ -1,6 +1,6 @@
 # ADR-0018: Imported figure assets and model authorization
 
-- Status: accepted; extraction, persistence and owner-scoped workspace display implemented; model use deferred
+- Status: accepted; extraction, persistence, owner-scoped display and explicit model authorization implemented; provider image admission deferred
 - Date: 2026-08-10
 - Owners: Grant DOCX Import Adapter, Grant Figure Asset Repository, Grant Figure Model Authorization Service, Grant Model Data Gateway
 - Supersedes: none
@@ -42,6 +42,11 @@ second image/document model would duplicate authority.
 - Browser-safe raster images render inline. Unsupported or unavailable assets
   remain visible as an in-place fidelity fallback. Workspace display is not
   consent to send an image to a model.
+- Step 4 adds one current authorization record per document with optimistic
+  authorization revision control. Consent is asset-scoped and bound to the
+  current canonical Revision; any Revision change makes prior consent
+  ineffective until the user confirms it again. This step does not yet transmit
+  image bytes to a provider.
 
 ## Alternatives Considered
 
@@ -79,5 +84,6 @@ second image/document model would duplicate authority.
   anchors, storage hash/path, canonical node order and atomic repository input.
 - Migration 048 atomic persistence is verified. Migration 049 additionally
   verifies owner isolation and exact signed-byte integrity for workspace reads.
-- Later rollout must measure image extraction success, unsupported media,
-  authorization denials and multimodal diagnostic coverage.
+- Authorization tests verify default deny, asset scope, Revision invalidation,
+  renewal, revocation and current-state materialization. Later rollout must
+  additionally measure multimodal diagnostic coverage.
