@@ -102,6 +102,9 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Finding occurrence/root continuity | Diagnostic Assembler | Uses canonical nodes and anchors; never ArgumentMap numbering or model prose |
 | User disposition | Feedback Service | Does not rewrite system conclusions |
 | Evidence read/use/citation permission | Evidence Authorization Service | Current authorization is authoritative |
+| Imported figure extraction and source anchoring | Grant DOCX Import Adapter | Extracts once from OOXML; downstream code cannot infer image order or captions |
+| Imported figure asset identity and storage metadata | Grant Figure Asset Repository | IDs, hashes, object paths and source anchors are program-owned |
+| Model use of imported figures | Grant Figure Model Authorization Service | Default deny; current revision-bound authorization is authoritative |
 | Model access to sensitive data | Grant Model Data Gateway | Must enforce provider policy per call |
 | Citation mapping | Citation Assembler | Model cannot create internal IDs or numbering |
 | Template and length rules | Grant Template Profile | One frozen version per revision/export |

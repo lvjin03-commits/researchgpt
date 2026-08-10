@@ -288,6 +288,33 @@ GRANT_DOCX_EXPORT_ENABLED
 Turning off an enhancement must not make canonical content unreadable or delete
 user data.
 
+## Imported Figure Diagnosis Sequence
+
+Imported-image support is added inside the existing grant import, canonical
+document and semantic diagnostic stages. It is not a new top-level pipeline.
+
+1. **Contracts (completed 2026-08-10):** define one program-owned imported
+   figure asset, deterministic OOXML anchor/caption metadata and revision-bound
+   model authorization. Runtime behavior remains unchanged.
+2. **Extraction and storage:** extract embedded DOCX image parts, verify hashes,
+   use immutable object paths and create canonical `figure` nodes in source
+   order. Preserve unsupported formats with explicit fidelity warnings.
+3. **Workspace rendering:** resolve authorized assets through a read adapter and
+   render them at their canonical position without changing editor revision
+   ownership.
+4. **Model-data admission:** add an explicit user consent surface and make Grant
+   Model Data Gateway materialize current, revision-bound image authorization.
+5. **Multimodal diagnosis:** extend the existing semantic checker internally;
+   text-only diagnostics remain available when images are not authorized, while
+   image-dependent coverage is reported honestly as unavailable.
+6. **Effect-first verification and rollout:** use a real image-bearing NSFC DOCX,
+   verify extraction order, captions, workspace display, provider input,
+   diagnosis location and revocation. Rollout is separately authorized.
+
+Each step replaces a missing capability within an existing owner. No parallel
+import route, canonical model, model gateway, diagnostic button or Finding
+repository is authorized.
+
 ## Migration and Rollback
 
 Database changes are forward-compatible: add, backfill, switch readers/writers,

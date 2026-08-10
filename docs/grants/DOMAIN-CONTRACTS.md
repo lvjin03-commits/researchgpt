@@ -51,6 +51,83 @@ type GrantNode = {
 Programs own IDs, revisions, ordering, authorization, numbering, storage, and
 rendering rules. AI may propose semantic text only within an authorized scope.
 
+## Imported Figure Assets
+
+An image embedded in an imported DOCX is not free text and is not an Evidence
+Card. The DOCX Import Adapter extracts it once, preserves its source order and
+OOXML relationship, and creates a program-owned asset record. The canonical
+`figure` node continues to refer to the asset by `assetId`; no second document
+or figure model is introduced.
+
+The target contracts are implemented in
+`lib/grants/domain/figure-assets.ts`:
+
+```ts
+type GrantImportedFigureAsset = {
+  assetId: string;
+  documentId: string;
+  sourceDocumentChecksum: string;
+  contentHash: string;
+  mediaType: string;
+  byteSize: number;
+  widthPx: number | null;
+  heightPx: number | null;
+  storage: { bucket: string; path: string };
+  anchor: {
+    sourceOrdinal: number;
+    relationshipId: string;
+    partName: string;
+    anchorKind: "inline" | "floating";
+    sectionLocalKey: string | null;
+    precedingBlockLocalKey: string | null;
+    followingBlockLocalKey: string | null;
+    caption: {
+      text: string | null;
+      source: "word_caption" | "adjacent_paragraph" | "none";
+    };
+  };
+  createdAt: string;
+};
+```
+
+Figure identity, checksum, source ordinal, relationship, caption source and
+storage key are program data. The model may not create or overwrite them.
+Caption detection is deterministic import metadata; later user edits to a
+canonical caption still require the normal revision compare-and-swap path.
+
+Image transmission to a model is independently authorized and denied by
+default:
+
+```ts
+type GrantFigureModelAuthorization = {
+  authorizationId: string;
+  documentId: string;
+  sourceRevisionId: string;
+  authorizationRevision: number;
+  allowedAssetIds: string[];
+  permissions: {
+    sendImageToModel: boolean;
+    useForSemanticDiagnosis: boolean;
+  };
+  expiresAt: string | null;
+  revokedAt: string | null;
+  updatedBy: string;
+  updatedAt: string;
+};
+```
+
+`useForSemanticDiagnosis` requires `sendImageToModel`. Before every call, Grant
+Model Data Gateway must query the current authorization, confirm the requested
+asset belongs to the frozen source revision, and apply provider/data policy.
+Queued work and cached multimodal context cannot outlive revocation, expiry or
+a revision change. Providers receive an execution-local atomic location
+reference and the authorized image payload; durable storage paths and canonical
+UUID pairs are never provider-generated location data.
+
+This contract-only step does not extract images, store assets, show images in
+the editor, send images to a provider, alter diagnostics or add a feature flag.
+Those effects require later, separately verified implementation steps.
+
 ## Revision and Concurrency
 
 All formal writes use optimistic concurrency:

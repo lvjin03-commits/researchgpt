@@ -35,6 +35,14 @@ Copy the relevant sections into every grant-platform PR.
 - [ ] Provider admission matches data sensitivity.
 - [ ] Revocation invalidates queued work, cached context, and dependent drafts.
 - [ ] Untrusted document instructions cannot change system or patch authority.
+- [ ] Imported figure IDs, hashes, source anchors, captions and storage keys are
+      program-owned and never inferred by a model or renderer.
+- [ ] Image use has current, revision-bound, asset-scoped authorization and is
+      denied by default; text/evidence authorization does not imply image use.
+- [ ] Model payloads do not expose durable object paths or ask the provider to
+      compose canonical section/node/asset IDs.
+- [ ] Revocation, expiry or source-revision change invalidates queued and cached
+      multimodal context before dispatch.
 
 ## Diagnostics
 

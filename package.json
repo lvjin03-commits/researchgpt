@@ -52,6 +52,7 @@
     "test:grant-semantic-v3:postgres": "node --experimental-strip-types scripts/verify-grant-semantic-v3-postgres.mjs",
     "test:grant-workspace-ui": "node --experimental-strip-types scripts/verify-grant-workspace-ui-contracts.ts",
     "test:grant-docx-import": "node --experimental-strip-types scripts/verify-grant-docx-import.ts",
+    "test:grant-figure-assets": "node --experimental-strip-types scripts/verify-grant-figure-asset-contracts.ts",
     "test:grant-workspace-ui:postgres": "node scripts/verify-grant-feedback-postgres.mjs",
     "test:grant-ai-patches": "node --experimental-strip-types scripts/verify-grant-ai-patch-contracts.ts",
     "test:grant-evidence": "node --experimental-strip-types scripts/verify-grant-evidence-contracts.ts",
