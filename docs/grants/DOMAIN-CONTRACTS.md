@@ -178,6 +178,25 @@ empty or successful semantic result.
 
 ### Semantic Diagnostic V3 Target Contract
 
+V3 version ownership is explicit and must not be inferred from similar-looking
+strings:
+
+- `contractVersion = grant-semantic-diagnostic-v3` is the durable Diagnostic
+  Run contract accepted by PostgreSQL.
+- `schemaVersion = grant-semantic-diagnostic-v3` is the provider-output schema.
+  In V3 these two versions intentionally advance together and share one
+  authoritative constant.
+- `promptVersion = grant-semantic-review-v3` versions model instructions only;
+  it must never be persisted as the run contract.
+- durable Finding content uses the separate
+  `schemaVersion = grant-semantic-finding-v3`.
+- `policyVersion = grant-ai-policy-v3` versions execution and retry policy.
+
+Production code and PostgreSQL integration fixtures must obtain these values
+from the same production constants/checker instance. Tests may assert literal
+database expectations, but must not inject handwritten "correct" values in
+place of the production object under test.
+
 The following contract is accepted for the next semantic-checker version but is
 not the active production schema until its staged rollout is verified:
 

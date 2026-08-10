@@ -9,7 +9,10 @@ import type { GrantDiagnosticExecution, GrantDiagnosticRepository } from "../por
 import { GrantRevisionService } from "./revision-service.ts";
 import { GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID } from "./semantic-diagnostic-checker.ts";
 import { GrantDiagnosticExecutionError, type GrantDiagnosticFailureCategory } from "../ports/grant-diagnostic-model.ts";
-import { assembleGrantSemanticDiagnosticsV3 } from "../diagnostics/semantic-v3-assembler.ts";
+import {
+  GRANT_SEMANTIC_FINDING_V3_SCHEMA_VERSION,
+  assembleGrantSemanticDiagnosticsV3,
+} from "../diagnostics/semantic-v3-assembler.ts";
 import { normalizeGrantFindingV2, toGrantFindingCompatibility, type GrantNormalizedFinding } from "../diagnostics/normalized-finding.ts";
 import type { GrantSemanticDiagnosticV3Execution } from "../ports/grant-diagnostic-repository.ts";
 import type { GrantSemanticDiagnosticV3PriorFinding } from "../diagnostics/semantic-v3-input.ts";
@@ -202,7 +205,7 @@ export class GrantDiagnosticService {
               checkerId: checker.checkerId,
               checkerVersion: checker.checkerVersion,
               contractVersion: checker.contractVersion,
-              schemaVersion: "grant-semantic-finding-v3",
+              schemaVersion: GRANT_SEMANTIC_FINDING_V3_SCHEMA_VERSION,
               policyVersion: output.semanticV3.execution.policyVersion,
             },
             snapshot: sourceRevision.snapshot,

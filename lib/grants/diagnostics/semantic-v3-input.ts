@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GRANT_DIAGNOSTIC_V3_PROMPT_VERSION } from "../ports/grant-diagnostic-model.ts";
 import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import { grantNodeText } from "./node-text.ts";
 
@@ -67,7 +68,7 @@ const DiagnosticSectionSchema = z.object({
 }).strict();
 
 export const GrantSemanticDiagnosticV3ModelInputSchema = z.object({
-  contractVersion: z.literal("grant-semantic-review-v3"),
+  contractVersion: z.literal(GRANT_DIAGNOSTIC_V3_PROMPT_VERSION),
   documentLanguage: z.enum(["zh", "en"]),
   documentTitle: z.string().trim().min(1),
   fundingCategory: z.string().trim().min(1).max(200),
@@ -150,7 +151,7 @@ export function buildGrantSemanticDiagnosticV3Input(input: {
 
   const queryText = [input.snapshot.title, ...sections.flatMap((section) => [section.title, ...section.nodes.map((node) => node.text)])].join("\n");
   const request = GrantSemanticDiagnosticV3ModelInputSchema.parse({
-    contractVersion: "grant-semantic-review-v3",
+    contractVersion: GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
     documentLanguage: /[\u3400-\u9fff]/u.test(queryText) ? "zh" : "en",
     documentTitle: input.snapshot.title,
     fundingCategory: input.fundingCategory,

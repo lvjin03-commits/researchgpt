@@ -58,6 +58,9 @@ Copy the relevant sections into every grant-platform PR.
 
 ## Verification
 
+- [ ] End-to-end and PostgreSQL tests obtain checker, contract, schema, prompt,
+      and policy versions from production authorities; fixtures do not inject
+      handwritten "correct" versions that bypass the production path.
 - [ ] `npm run check:grant-architecture` passes.
 - [ ] Typecheck/build and relevant automated tests pass.
 - [ ] Existing chat, Document V2, upload, literature, and auth behavior was

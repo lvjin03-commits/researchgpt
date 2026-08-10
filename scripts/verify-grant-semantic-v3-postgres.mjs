@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { createClient } from "@supabase/supabase-js";
+import { GrantSemanticDiagnosticChecker } from "../lib/grants/application/semantic-diagnostic-checker.ts";
+import { GRANT_SEMANTIC_FINDING_V3_SCHEMA_VERSION } from "../lib/grants/diagnostics/semantic-v3-assembler.ts";
+import {
+  GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+} from "../lib/grants/ports/grant-diagnostic-model.ts";
 
 const require = createRequire(import.meta.url);
 const { loadEnvConfig } = require("@next/env");
@@ -10,6 +15,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) throw new Error("Supabase server configuration is required.");
 const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+const productionChecker = new GrantSemanticDiagnosticChecker({}, "gpt-5.5", "v3");
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const rpc = async (name, args) => {
@@ -59,8 +65,8 @@ try {
   const findingId = randomUUID();
   const run = {
     runId, documentId, sourceRevisionId: revisionId,
-    checkerId: "grant-semantic-review", checkerVersion: "3.0.0",
-    contractVersion: "grant-semantic-diagnostic-v3", inputMode: "full_document",
+    checkerId: productionChecker.checkerId, checkerVersion: productionChecker.checkerVersion,
+    contractVersion: productionChecker.contractVersion, inputMode: "full_document",
     inputNodeIds: [nodeId], inputHash: digest({ revisionId, nodeId }), status: "succeeded",
     parsedOutput: { findingCount: 1 }, createdBy: ownerId, startedAt: timestamp, completedAt: timestamp,
   };
@@ -73,8 +79,8 @@ try {
   const finding = {
     findingId, runId, documentId, sourceRevisionId: revisionId,
     checkerId: run.checkerId, checkerVersion: run.checkerVersion,
-    contractVersion: run.contractVersion, schemaVersion: "grant-semantic-finding-v3",
-    policyVersion: "grant-semantic-review-v3", fingerprint: digest({ nodeId, fact: "argument gap" }),
+    contractVersion: run.contractVersion, schemaVersion: GRANT_SEMANTIC_FINDING_V3_SCHEMA_VERSION,
+    policyVersion: GRANT_DIAGNOSTIC_V3_POLICY_VERSION, fingerprint: digest({ nodeId, fact: "argument gap" }),
     displayOrder: 0, category: "argument_chain_gap", title: "Missing inference",
     diagnosticFact: "The background moves directly from a limitation to the proposed method.",
     reason: "The connecting inference is not stated.", recommendation: "State the connecting inference.",
@@ -90,7 +96,7 @@ try {
   const legacy = await rpc("list_grant_findings", { p_owner_id: ownerId, p_document_id: documentId });
   assert(legacy.length === 1 && legacy[0].findingId === findingId, "Compatibility Finding is unreadable.");
   const normalized = await rpc("list_grant_normalized_findings", { p_owner_id: ownerId, p_document_id: documentId });
-  assert(normalized.length === 1 && normalized[0].schemaVersion === "grant-semantic-finding-v3", "Normalized V3 projection is unreadable.");
+  assert(normalized.length === 1 && normalized[0].schemaVersion === GRANT_SEMANTIC_FINDING_V3_SCHEMA_VERSION, "Normalized V3 projection is unreadable.");
   assert(normalized[0].reason === finding.reason, "Normalized V3 content was lost.");
   const unauthorized = await rpc("list_grant_normalized_findings", { p_owner_id: otherOwnerId, p_document_id: documentId });
   assert(Array.isArray(unauthorized) && unauthorized.length === 0, "Another owner could read V3 findings.");

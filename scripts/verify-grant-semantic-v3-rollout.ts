@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { GrantDiagnosticService } from "../lib/grants/application/diagnostic-service.ts";
 import { GrantModelDataGateway } from "../lib/grants/application/grant-model-data-gateway.ts";
 import { GrantRevisionService } from "../lib/grants/application/revision-service.ts";
@@ -12,6 +13,7 @@ import {
   GRANT_DIAGNOSTIC_POLICY_VERSION,
   GRANT_DIAGNOSTIC_PROMPT_VERSION,
   GRANT_DIAGNOSTIC_SCHEMA_VERSION,
+  GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION,
   GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
   GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
   GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
@@ -147,6 +149,23 @@ const v3Service = new GrantDiagnosticService({
   checkers: [new GrantStructuralCompletenessChecker(), new GrantSemanticDiagnosticChecker(new GrantModelDataGateway(model), "gpt-5.5", "v3")],
   incrementalEnabled: true,
 });
+const v3Checker = new GrantSemanticDiagnosticChecker(new GrantModelDataGateway(model), "gpt-5.5", "v3");
+assert.equal(v3Checker.contractVersion, GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION);
+const appliedPersistenceMigration = readFileSync(
+  new URL("../supabase/migrations/045_grant_semantic_diagnostic_v3_projection.sql", import.meta.url),
+  "utf8",
+);
+const persistedRunContract = appliedPersistenceMigration.match(
+  /p_run->>'contractVersion' IS DISTINCT FROM '([^']+)'/u,
+)?.[1];
+assert.equal(
+  v3Checker.contractVersion,
+  persistedRunContract,
+  "The production Checker contract must match the applied PostgreSQL persistence contract.",
+);
+assert.equal(v3Checker.configurationFingerprint, new GrantSemanticDiagnosticChecker(
+  new GrantModelDataGateway(model), "gpt-5.5", "v3",
+).configurationFingerprint, "V3 version metadata must produce a stable configuration fingerprint.");
 const execution = await v3Service.run(documentId, ownerId);
 assert.equal(v2Calls, 1, "V3 rollout must not call the V2 semantic operation.");
 assert.equal(v3Calls, 1);

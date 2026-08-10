@@ -2,8 +2,11 @@ import { sha256Canonical } from "../domain/canonical-json.ts";
 import type { GrantChecker, GrantCheckerFindingCandidate, GrantCheckerInput } from "../diagnostics/checker.ts";
 import {
   GRANT_DIAGNOSTIC_POLICY_VERSION,
+  GRANT_DIAGNOSTIC_PROMPT_VERSION,
   GRANT_DIAGNOSTIC_SCHEMA_VERSION,
+  GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION,
   GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+  GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
   GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
 } from "../ports/grant-diagnostic-model.ts";
 import { GrantModelDataGateway } from "./grant-model-data-gateway.ts";
@@ -25,11 +28,11 @@ export class GrantSemanticDiagnosticChecker implements GrantChecker {
     this.gateway = gateway;
     this.version = version;
     this.checkerVersion = version === "v3" ? "3.0.0" : "2.0.0";
-    this.contractVersion = version === "v3" ? "grant-semantic-review-v3" : "grant-semantic-diagnostic-v2";
+    this.contractVersion = version === "v3" ? GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION;
     this.configurationFingerprint = sha256Canonical({
       provider: "openai",
       modelId,
-      promptVersion: this.contractVersion,
+      promptVersion: version === "v3" ? GRANT_DIAGNOSTIC_V3_PROMPT_VERSION : GRANT_DIAGNOSTIC_PROMPT_VERSION,
       policyVersion: version === "v3" ? GRANT_DIAGNOSTIC_V3_POLICY_VERSION : GRANT_DIAGNOSTIC_POLICY_VERSION,
       schemaVersion: version === "v3" ? GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION,
     });

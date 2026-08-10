@@ -16,6 +16,8 @@ const UuidSchema = z.string().uuid();
 const TextSchema = z.string().trim().min(1);
 const AssembledLocationSchema = z.object({ sectionId: UuidSchema, nodeId: UuidSchema }).strict();
 
+export const GRANT_SEMANTIC_FINDING_V3_SCHEMA_VERSION = "grant-semantic-finding-v3";
+
 /** In-memory only; persistence remains a later, additive migration. */
 export const AssembledGrantSemanticFindingV3Schema = GrantSemanticFindingContentV3Schema.safeExtend({
   findingId: UuidSchema,
