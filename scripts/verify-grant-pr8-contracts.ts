@@ -90,7 +90,7 @@ const reused = await diagnostics.run(created.document.documentId, actorId, { inc
 assert.equal(reused.recheck.reusedExecution, true);
 const currentProjection = await diagnostics.list(created.document.documentId);
 assert.equal(currentProjection.findings.length, 1);
-assert.equal(currentProjection.findings[0]?.finding.code, "empty_section");
+assert.equal(currentProjection.findings[0]?.finding.category, "empty_section");
 
 const renderer = new DeterministicGrantDocxRenderer();
 const artifact = await renderer.render({

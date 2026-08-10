@@ -22,7 +22,7 @@ import { SupabaseGrantEvidenceStorage } from "../infrastructure/supabase/supabas
 import { SharedGrantEvidenceParser } from "../infrastructure/documents/shared-grant-evidence-parser.ts";
 import { GrantExportService } from "../application/export-service.ts";
 import { DeterministicGrantDocxRenderer } from "../infrastructure/documents/deterministic-grant-docx-renderer.ts";
-import { isGrantRecheckEnabled } from "./config.ts";
+import { isGrantRecheckEnabled, isGrantSemanticDiagnosticV3Enabled } from "./config.ts";
 import { resolveGrantAiConfig } from "./grant-ai-config.ts";
 
 function createGrantSupabaseClient() {
@@ -65,7 +65,10 @@ export function createGrantDiagnosticService(ownerId: string): GrantDiagnosticSe
   return new GrantDiagnosticService({
     revisionService: new GrantRevisionService({ repository: revisionRepository }),
     repository: new SupabaseGrantDiagnosticRepository(client, ownerId),
-    checkers: [...createDefaultGrantCheckers(), new GrantSemanticDiagnosticChecker(ai.gateway, ai.config.modelId)],
+    checkers: [
+      ...createDefaultGrantCheckers(),
+      new GrantSemanticDiagnosticChecker(ai.gateway, ai.config.modelId, isGrantSemanticDiagnosticV3Enabled() ? "v3" : "v2"),
+    ],
     incrementalEnabled: isGrantRecheckEnabled(),
   });
 }

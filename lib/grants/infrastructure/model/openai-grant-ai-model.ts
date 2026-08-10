@@ -14,6 +14,7 @@ import {
   type GrantDiagnosticFailureCategory,
   type GrantDiagnosticModel,
   type GrantDiagnosticModelRequest,
+  type GrantSemanticDiagnosticV3ModelResult,
 } from "../../ports/grant-diagnostic-model.ts";
 import type { GrantPatchModel, GrantPatchModelRequest } from "../../ports/grant-patch-model.ts";
 import {
@@ -61,13 +62,6 @@ export function grantDiagnosticV3ResponseFormat() {
   return zodResponseFormat(GrantSemanticDiagnosticProviderResultV3Schema, "grant_semantic_diagnostic_v3");
 }
 
-export type GrantSemanticDiagnosticV3ModelResult = GrantSemanticDiagnosticResultV3 & {
-  provider: "openai";
-  modelId: string;
-  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
-  execution: GrantDiagnosticExecutionMetadata;
-};
-
 type DiagnosticAttemptPurpose = GrantDiagnosticExecutionMetadata["attemptPurpose"];
 
 function responseHash(content?: string | null): string | undefined {
@@ -108,6 +102,10 @@ export class UnavailableGrantAiModel implements GrantPatchModel, GrantDiagnostic
   }
 
   async diagnose(): Promise<never> {
+    throw new GrantAiConfigurationError("OPENAI_API_KEY is not configured for Grant AI.");
+  }
+
+  async diagnoseV3(): Promise<never> {
     throw new GrantAiConfigurationError("OPENAI_API_KEY is not configured for Grant AI.");
   }
 }

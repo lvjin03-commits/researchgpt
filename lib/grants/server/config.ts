@@ -21,3 +21,7 @@ export function isGrantRecheckEnabled(): boolean {
 export function isGrantDocxExportEnabled(): boolean {
   return process.env.GRANT_DOCX_EXPORT_ENABLED?.trim().toLowerCase() === "true";
 }
+
+export function isGrantSemanticDiagnosticV3Enabled(): boolean {
+  return process.env.GRANT_SEMANTIC_DIAGNOSTIC_V3_ENABLED?.trim().toLowerCase() === "true";
+}

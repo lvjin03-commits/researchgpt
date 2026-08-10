@@ -7,6 +7,7 @@ import {
 } from "../components/grants/grant-diagnostic-view-model.ts";
 import { GrantFeedbackService } from "../lib/grants/application/feedback-service.ts";
 import type { GrantFinding } from "../lib/grants/diagnostics/contracts.ts";
+import { normalizeGrantFindingV2 } from "../lib/grants/diagnostics/normalized-finding.ts";
 import { InMemoryGrantFeedbackRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-feedback-repository.ts";
 
 const documentId = "81000000-0000-4000-8000-000000000001";
@@ -47,7 +48,7 @@ const finding: GrantFinding = {
 };
 
 const exact: GrantDiagnosticItem = {
-  finding,
+  finding: normalizeGrantFindingV2(finding),
   resolution: {
     status: "exact",
     targetRevisionId: revisionId,
@@ -67,7 +68,7 @@ assert.deepEqual(grantFindingTarget(exact), {
 assert.deepEqual(indexGrantFindingsByNode([exact]).get(nodeId), [findingId]);
 
 const unlocated: GrantDiagnosticItem = {
-  finding: { ...finding, findingId: "81000000-0000-4000-8000-000000000008" },
+  finding: normalizeGrantFindingV2({ ...finding, findingId: "81000000-0000-4000-8000-000000000008" }),
   resolution: {
     status: "unable_to_match",
     targetRevisionId: revisionId,

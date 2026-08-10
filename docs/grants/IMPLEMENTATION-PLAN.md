@@ -151,6 +151,18 @@ remain inactive. Local repository and rollback contracts pass, while the real
 PostgreSQL write/rollback drill still requires separately authorized temporary
 production fixtures.
 
+Semantic Diagnostic V3 rollout status (2026-08-09): the existing `AI诊断`
+action and semantic-checker authority can now select V3 through
+`GRANT_SEMANTIC_DIAGNOSTIC_V3_ENABLED`. The service assembles and persists the
+rich V3 result without first degrading it to V2, while normalized reads keep
+historical V2 and V3 records readable and project the latest successful checker
+run. The right panel displays diagnostic fact, reason, recommendation, possible
+reviewer question and related locations; its default order remains canonical
+document order, never actionability or confidence. Local rollout, compatibility
+and type contracts pass. Production activation and a signed-in real GPT run
+remain pending effect-first verification; the flag stays off until separately
+authorized.
+
 PR4 implementation status (2026-08-08): the three-pane workspace, collapsed
 Finding cards, source navigation, user feedback persistence and production
 navigation entry are implemented and exposed behind `GRANT_WORKSPACE_ENABLED`.

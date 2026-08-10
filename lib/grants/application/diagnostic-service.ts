@@ -9,6 +9,11 @@ import type { GrantDiagnosticExecution, GrantDiagnosticRepository } from "../por
 import { GrantRevisionService } from "./revision-service.ts";
 import { GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID } from "./semantic-diagnostic-checker.ts";
 import { GrantDiagnosticExecutionError, type GrantDiagnosticFailureCategory } from "../ports/grant-diagnostic-model.ts";
+import { assembleGrantSemanticDiagnosticsV3 } from "../diagnostics/semantic-v3-assembler.ts";
+import { normalizeGrantFindingV2, toGrantFindingCompatibility, type GrantNormalizedFinding } from "../diagnostics/normalized-finding.ts";
+import type { GrantSemanticDiagnosticV3Execution } from "../ports/grant-diagnostic-repository.ts";
+import type { GrantSemanticDiagnosticV3PriorFinding } from "../diagnostics/semantic-v3-input.ts";
+import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 
 type DiagnosticServiceDependencies = {
   revisionService: GrantRevisionService;
@@ -75,6 +80,42 @@ function latestByChecker(runs: GrantDiagnosticRun[]): Map<string, GrantDiagnosti
   return result;
 }
 
+function fundingCategoryFromTemplate(rules: Record<string, unknown>, templateKey: string): string {
+  const configured = rules.fundingCategory;
+  return typeof configured === "string" && configured.trim().length > 0 ? configured.trim() : templateKey;
+}
+
+function semanticPriorFindings(findings: GrantNormalizedFinding[]): GrantSemanticDiagnosticV3PriorFinding[] {
+  return findings.flatMap((finding) => {
+    if (finding.checkerId !== GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID) return [];
+    const { sectionId, nodeId } = finding.sourceAnchor;
+    if (!sectionId || !nodeId) return [];
+    return [{
+      findingFingerprint: finding.fingerprint,
+      category: finding.category,
+      status: finding.lifecycleStatus,
+      sectionId,
+      nodeId,
+    }];
+  }).slice(0, 100);
+}
+
+function canonicalFindingOrder(snapshot: CanonicalGrantSnapshot) {
+  const sectionOrder = new Map(snapshot.sections.map((section, index) => [section.sectionId, index]));
+  const nodeOrder = new Map(snapshot.nodes.map((node) => [node.nodeId, node.order]));
+  return (left: GrantNormalizedFinding, right: GrantNormalizedFinding): number => {
+    const leftSection = left.sourceAnchor.sectionId ? sectionOrder.get(left.sourceAnchor.sectionId) : undefined;
+    const rightSection = right.sourceAnchor.sectionId ? sectionOrder.get(right.sourceAnchor.sectionId) : undefined;
+    const leftNode = left.sourceAnchor.nodeId ? nodeOrder.get(left.sourceAnchor.nodeId) : undefined;
+    const rightNode = right.sourceAnchor.nodeId ? nodeOrder.get(right.sourceAnchor.nodeId) : undefined;
+    return (leftSection ?? Number.MAX_SAFE_INTEGER) - (rightSection ?? Number.MAX_SAFE_INTEGER)
+      || (leftNode ?? Number.MAX_SAFE_INTEGER) - (rightNode ?? Number.MAX_SAFE_INTEGER)
+      || (left.displayOrder ?? Number.MAX_SAFE_INTEGER) - (right.displayOrder ?? Number.MAX_SAFE_INTEGER)
+      || left.createdAt.localeCompare(right.createdAt)
+      || left.findingId.localeCompare(right.findingId);
+  };
+}
+
 export class GrantDiagnosticService {
   private readonly revisionService: GrantRevisionService;
   private readonly repository: GrantDiagnosticRepository;
@@ -109,8 +150,14 @@ export class GrantDiagnosticService {
     const inputSectionSet = new Set(inputSectionIds);
     const inputNodeIds = sourceRevision.snapshot.nodes.filter((node) => inputSectionSet.has(node.sectionId)).map((node) => node.nodeId);
     const existingRuns = this.incrementalEnabled && this.repository.listRuns ? await this.repository.listRuns(documentId) : [];
+    const existingNormalizedFindings = this.repository.listNormalizedFindings
+      ? await this.repository.listNormalizedFindings(documentId)
+      : (await this.repository.listFindings(documentId)).map(normalizeGrantFindingV2);
+    const priorSemanticFindings = semanticPriorFindings(existingNormalizedFindings);
+    const fundingCategory = fundingCategoryFromTemplate(aggregate.templateSnapshot.rules, aggregate.templateSnapshot.templateKey);
     const candidates: Array<{ runId: string; checker: GrantChecker; candidate: GrantCheckerFindingCandidate }> = [];
     const runs: GrantDiagnosticRun[] = [];
+    const semanticV3Executions: GrantSemanticDiagnosticV3Execution[] = [];
     let reusedExecution = true;
 
     for (const checker of this.checkers) {
@@ -142,9 +189,30 @@ export class GrantDiagnosticService {
           inputMode,
           inputNodeIds,
           inputSectionIds,
+          fundingCategory,
+          priorSemanticFindings,
         });
         output.findings.forEach((candidate) => candidates.push({ runId, checker, candidate }));
-        runs.push(GrantDiagnosticRunSchema.parse({
+        const semanticV3Findings = output.semanticV3
+          ? assembleGrantSemanticDiagnosticsV3({
+            metadata: {
+              runId,
+              documentId,
+              sourceRevisionId: sourceRevision.revisionId,
+              checkerId: checker.checkerId,
+              checkerVersion: checker.checkerVersion,
+              contractVersion: checker.contractVersion,
+              schemaVersion: "grant-semantic-finding-v3",
+              policyVersion: output.semanticV3.execution.policyVersion,
+            },
+            snapshot: sourceRevision.snapshot,
+            result: output.semanticV3.result,
+            referenceScope: output.semanticV3.referenceScope,
+            createId: this.createId,
+            now: this.now,
+          })
+          : [];
+        const run = GrantDiagnosticRunSchema.parse({
           runId,
           documentId,
           sourceRevisionId: sourceRevision.revisionId,
@@ -156,16 +224,20 @@ export class GrantDiagnosticService {
           inputHash,
           status: "succeeded",
           parsedOutput: {
-            findingCount: output.findings.length,
-            stableFindingKeys: output.findings.map((candidate) => stableFindingKey(checker, candidate)),
-            stableFindingSubjects: output.findings.map((candidate) => ({ key: stableFindingKey(checker, candidate), sectionId: candidate.sectionId })),
+            findingCount: output.semanticV3 ? semanticV3Findings.length : output.findings.length,
+            stableFindingKeys: output.semanticV3 ? semanticV3Findings.map((finding) => finding.fingerprint) : output.findings.map((candidate) => stableFindingKey(checker, candidate)),
+            stableFindingSubjects: output.semanticV3
+              ? semanticV3Findings.map((finding) => ({ key: finding.fingerprint, sectionId: finding.primaryLocation.sectionId }))
+              : output.findings.map((candidate) => ({ key: stableFindingKey(checker, candidate), sectionId: candidate.sectionId })),
             inputSectionIds,
             metadata: output.metadata ?? {},
           },
           createdBy: actorId,
           startedAt,
           completedAt: this.now(),
-        }));
+        });
+        runs.push(run);
+        if (output.semanticV3) semanticV3Executions.push({ run, findings: semanticV3Findings });
       } catch (error) {
         const diagnosticFailure = error instanceof GrantDiagnosticExecutionError
           ? { category: error.category, ...error.metadata }
@@ -208,12 +280,29 @@ export class GrantDiagnosticService {
       createId: this.createId,
       now: this.now,
     });
-    const execution = await this.repository.saveExecution({ runs, ...assembled });
-    return { ...execution, recheck: this.summarize(runs, existingRuns, inputSectionIds.length, inputNodeIds.length, false) };
+    const semanticV3RunIds = new Set(semanticV3Executions.map((execution) => execution.run.runId));
+    const genericRuns = runs.filter((run) => !semanticV3RunIds.has(run.runId));
+    const genericExecution = genericRuns.length > 0 || assembled.findings.length > 0 || assembled.conflicts.length > 0
+      ? await this.repository.saveExecution({ runs: genericRuns, ...assembled })
+      : { runs: [], findings: [], conflicts: [] };
+    const savedSemanticExecutions: GrantSemanticDiagnosticV3Execution[] = [];
+    for (const execution of semanticV3Executions) {
+      if (!this.repository.saveSemanticV3Execution) throw new Error("Semantic diagnostic V3 persistence is unavailable.");
+      savedSemanticExecutions.push(await this.repository.saveSemanticV3Execution(execution));
+    }
+    return {
+      runs,
+      findings: [
+        ...genericExecution.findings,
+        ...savedSemanticExecutions.flatMap((execution) => execution.findings.map(toGrantFindingCompatibility)),
+      ],
+      conflicts: genericExecution.conflicts,
+      recheck: this.summarize(runs, existingRuns, inputSectionIds.length, inputNodeIds.length, false),
+    };
   }
 
   async list(documentId: string, targetRevisionId?: string): Promise<{
-    findings: Array<{ finding: Awaited<ReturnType<GrantDiagnosticRepository["listFindings"]>>[number]; resolution: GrantAnchorResolution }>;
+    findings: Array<{ finding: GrantNormalizedFinding; resolution: GrantAnchorResolution }>;
     conflicts: Awaited<ReturnType<GrantDiagnosticRepository["listConflicts"]>>;
     recheck: GrantRecheckSummary;
     coverage: GrantDiagnosticCoverage;
@@ -223,14 +312,16 @@ export class GrantDiagnosticService {
       ? await this.revisionService.getRevision(documentId, targetRevisionId)
       : aggregate.currentRevision;
     const [allFindings, allConflicts, allRuns] = await Promise.all([
-      this.repository.listFindings(documentId),
+      this.repository.listNormalizedFindings
+        ? this.repository.listNormalizedFindings(documentId)
+        : this.repository.listFindings(documentId).then((findings) => findings.map(normalizeGrantFindingV2)),
       this.repository.listConflicts(documentId),
       this.repository.listRuns ? this.repository.listRuns(documentId) : Promise.resolve([]),
     ]);
     const coverage = this.coverage(allRuns, targetRevision.revisionId);
-    if (!this.incrementalEnabled || allRuns.length === 0) {
+    if (allRuns.length === 0) {
       return {
-        findings: allFindings.map((finding) => ({ finding, resolution: resolveGrantSourceAnchor(finding.sourceAnchor, targetRevision.revisionId, targetRevision.snapshot) })),
+        findings: [...allFindings].sort(canonicalFindingOrder(targetRevision.snapshot)).map((finding) => ({ finding, resolution: resolveGrantSourceAnchor(finding.sourceAnchor, targetRevision.revisionId, targetRevision.snapshot) })),
         conflicts: allConflicts,
         recheck: { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: allFindings.length, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
         coverage,
@@ -264,12 +355,14 @@ export class GrantDiagnosticService {
     const previousRuns = successfulRuns.filter((run) => !currentRunIds.has(run.runId));
     const sectionIds = new Set(currentRuns.flatMap((run) => Array.isArray(run.parsedOutput.inputSectionIds) ? run.parsedOutput.inputSectionIds.filter((id): id is string => typeof id === "string") : []));
     return {
-      findings: findings.map((finding) => ({
+      findings: findings.sort(canonicalFindingOrder(targetRevision.snapshot)).map((finding) => ({
         finding,
         resolution: resolveGrantSourceAnchor(finding.sourceAnchor, targetRevision.revisionId, targetRevision.snapshot),
       })),
       conflicts,
-      recheck: this.summarize(currentRuns, previousRuns, sectionIds.size, new Set(currentRuns.flatMap((run) => run.inputNodeIds)).size, false),
+      recheck: this.incrementalEnabled
+        ? this.summarize(currentRuns, previousRuns, sectionIds.size, new Set(currentRuns.flatMap((run) => run.inputNodeIds)).size, false)
+        : { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: findings.length, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
       coverage,
     };
   }

@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted, 2026-08-09. Runtime implementation is pending.
+Accepted, 2026-08-09. Runtime wiring is implemented behind a default-off
+rollout flag; production activation and signed-in effect verification are
+pending.
 
 ## Context
 
@@ -41,4 +43,3 @@ The future implementation requires coordinated schema, gateway, assembler,
 repository and UI changes, so it must proceed in staged PRs. Historical data is
 not rewritten and no automatic model cost is incurred by deployment. Until the
 V3 rollout gate passes, production continues to use the current V2 contract.
-

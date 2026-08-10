@@ -22,6 +22,15 @@ const dispositionLabels: Record<GrantFindingDisposition, string> = {
   reported_false_positive: "报告误报",
 };
 
+const relatedLocationLabels = {
+  supporting_location: "支撑位置",
+  conflicting_location: "冲突位置",
+  upstream_dependency: "上游依据",
+  downstream_dependency: "下游对应",
+  comparison_location: "对照位置",
+  missing_expected_location: "预期缺失位置",
+} as const;
+
 type Props = {
   documentId: string;
   currentRevisionId: string;
@@ -161,7 +170,7 @@ export function GrantDiagnosticsPanel(props: Props) {
                   }}
                 >
                   <span className="flex items-start justify-between gap-3">
-                    <span className="text-sm font-medium leading-6 text-slate-900">{finding.message}</span>
+                    <span className="text-sm font-medium leading-6 text-slate-900">{finding.title ?? finding.diagnosticFact}</span>
                     <span aria-hidden className="mt-0.5 text-slate-400">{isExpanded ? "−" : "+"}</span>
                   </span>
                   <span className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
@@ -174,12 +183,43 @@ export function GrantDiagnosticsPanel(props: Props) {
 
                 {isExpanded && (
                   <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                    {finding.title && finding.title !== finding.diagnosticFact && (
+                      <div className="mb-3">
+                        <p className="text-sm font-semibold text-slate-700">诊断事实</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-700">{finding.diagnosticFact}</p>
+                      </div>
+                    )}
+                    {finding.reason && (
+                      <div className="mb-3">
+                        <p className="text-sm font-semibold text-slate-700">判断依据</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-700">{finding.reason}</p>
+                      </div>
+                    )}
                     <p className="text-sm font-semibold text-slate-700">修改建议</p>
                     <p className="mt-2 text-sm leading-6 text-slate-700">{finding.recommendation}</p>
+                    {finding.possibleConsequence && (
+                      <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2">
+                        <p className="text-sm font-semibold text-amber-900">评审可能追问</p>
+                        <p className="mt-1 text-sm leading-6 text-amber-900">{finding.possibleConsequence}</p>
+                      </div>
+                    )}
                     {finding.sourceAnchor.text && (
                       <blockquote className="mt-3 border-l-2 border-slate-200 pl-3 text-sm leading-6 text-slate-500">
                         {finding.sourceAnchor.text}
                       </blockquote>
+                    )}
+                    {finding.relatedLocations.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-sm font-semibold text-slate-700">关联位置</p>
+                        <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-500">
+                          {finding.relatedLocations.map((location) => (
+                            <li key={`${location.sectionId}:${location.nodeId}:${location.role}`} className="rounded-lg bg-slate-50 px-3 py-2">
+                              <span className="font-medium text-slate-600">{relatedLocationLabels[location.role]}</span>
+                              {location.quote ? `：${location.quote}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                     <label className="mt-4 block text-sm font-semibold text-slate-700" htmlFor={`feedback-${finding.findingId}`}>我的处理</label>
                     <select

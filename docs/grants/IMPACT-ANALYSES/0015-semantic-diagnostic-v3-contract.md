@@ -64,6 +64,11 @@
   applicable V2 active projection while retaining V2 audit records.
 - Before V3 activation, rollback is documentation-only. After implementation,
   rollback must keep V2/V3 historical records readable and turn off V3 writes.
+- Runtime selection uses `GRANT_SEMANTIC_DIAGNOSTIC_V3_ENABLED`, defaulting to
+  off. Turning it off stops new V3 writes without deleting either V2 or V3
+  audit data. The temporary flag may be removed only after signed-in V3 runs,
+  rollback-window observation and historical normalized-read verification all
+  pass in production.
 
 ## Verification Required Before Activation
 
@@ -75,4 +80,3 @@
 - Canonical-order UI tests proving actionability does not affect default order.
 - A real signed-in diagnostic run on an anonymized application, including a
   cross-section finding with more than one location.
-

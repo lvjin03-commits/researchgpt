@@ -1,4 +1,6 @@
 import type { GrantDiagnosticInputMode, GrantFindingAssessment } from "../diagnostics/contracts.ts";
+import type { GrantSemanticDiagnosticResultV3 } from "../diagnostics/semantic-v3-contracts.ts";
+import type { GrantSemanticDiagnosticV3PreparedInput } from "../diagnostics/semantic-v3-input.ts";
 
 export type GrantDiagnosticModelNode = {
   nodeId: string;
@@ -48,6 +50,17 @@ export type GrantDiagnosticModelFinding = {
 
 export type GrantDiagnosticModelResult = {
   findings: GrantDiagnosticModelFinding[];
+  provider: "openai";
+  modelId: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+  };
+  execution: GrantDiagnosticExecutionMetadata;
+};
+
+export type GrantSemanticDiagnosticV3ModelResult = GrantSemanticDiagnosticResultV3 & {
   provider: "openai";
   modelId: string;
   usage: {
@@ -111,4 +124,5 @@ export class GrantDiagnosticExecutionError extends Error {
 
 export interface GrantDiagnosticModel {
   diagnose(request: GrantDiagnosticModelRequest): Promise<GrantDiagnosticModelResult>;
+  diagnoseV3?(prepared: GrantSemanticDiagnosticV3PreparedInput): Promise<GrantSemanticDiagnosticV3ModelResult>;
 }

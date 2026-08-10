@@ -1,7 +1,7 @@
 import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantFinding } from "../diagnostics/contracts.ts";
 import type { GrantPatchModel, GrantPatchModelResult } from "../ports/grant-patch-model.ts";
-import type { GrantDiagnosticModel, GrantDiagnosticModelResult } from "../ports/grant-diagnostic-model.ts";
+import type { GrantDiagnosticModel, GrantDiagnosticModelResult, GrantSemanticDiagnosticV3ModelResult } from "../ports/grant-diagnostic-model.ts";
 import { grantEditableNodeText } from "../patching/patch-policy.ts";
 import type { GrantPatchEvidenceBinding } from "../patching/contracts.ts";
 import { GrantEvidenceAuthorizationService } from "./evidence-authorization-service.ts";
@@ -77,6 +77,27 @@ export class GrantModelDataGateway {
       })),
       priorFindings: input.priorFindings,
     });
+  }
+
+  async diagnoseV3(input: {
+    documentId: string;
+    taskId: string;
+    snapshot: CanonicalGrantSnapshot;
+    inputMode: "full_document" | "section_bundle" | "focused_excerpt";
+    inputSectionIds: string[];
+    inputNodeIds: string[];
+    fundingCategory: string;
+    priorFindings: GrantSemanticDiagnosticV3PriorFinding[];
+  }): Promise<{
+    generated: GrantSemanticDiagnosticV3ModelResult;
+    prepared: GrantSemanticDiagnosticV3PreparedInput;
+  }> {
+    if (!this.model.diagnoseV3) {
+      throw new GrantEvidenceProviderPolicyError("Grant semantic diagnostic V3 is not configured.");
+    }
+    const prepared = await this.prepareDiagnosticV3Input(input);
+    const generated = await this.model.diagnoseV3(prepared);
+    return { generated, prepared };
   }
 
   async diagnose(input: {

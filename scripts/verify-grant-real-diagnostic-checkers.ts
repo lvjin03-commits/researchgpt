@@ -44,6 +44,8 @@ const findings = (await Promise.all(checkers.map((checker) => checker.check({
   inputMode: "full_document",
   inputNodeIds: snapshot.nodes.map((node) => node.nodeId),
   inputSectionIds: snapshot.sections.map((section) => section.sectionId),
+  fundingCategory: "青年科学基金项目",
+  priorSemanticFindings: [],
 })))).flatMap((output) => output.findings);
 
 assert.equal(findings.filter((finding) => finding.code === "insufficient_section_content").length, 1);
@@ -63,6 +65,8 @@ const incremental = await Promise.all(checkers.map((checker) => checker.check({
   inputMode: "section_bundle",
   inputNodeIds: [nodeId(5), nodeId(6), nodeId(7)],
   inputSectionIds: [sectionIds.objectives],
+  fundingCategory: "青年科学基金项目",
+  priorSemanticFindings: [],
 })));
 assert.equal(incremental.every((output) => output.findings.every((finding) => !finding.sectionId || finding.sectionId === sectionIds.objectives)), true);
 
