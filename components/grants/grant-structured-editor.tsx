@@ -6,6 +6,7 @@ import { estimateGrantLength } from "@/lib/grants/application/length-estimator";
 import type { CanonicalGrantSnapshot, GrantLengthEstimate, GrantRevisionSummary } from "@/lib/grants/domain/contracts";
 import type { GrantFindingFeedback } from "@/lib/grants/feedback/contracts";
 import type { GrantAggregate } from "@/lib/grants/ports/grant-revision-repository";
+import type { GrantFigureDisplayAsset } from "@/lib/grants/application/figure-display-service";
 import { GrantDiagnosticsPanel } from "./grant-diagnostics-panel";
 import { GrantDocumentCanvas } from "./grant-document-canvas";
 import { GrantDocumentOutline } from "./grant-document-outline";
@@ -19,6 +20,7 @@ import {
 
 type EditorPayload = {
   aggregate: GrantAggregate;
+  figureAssets: GrantFigureDisplayAsset[];
   estimate: GrantLengthEstimate;
   revisionHistory: GrantRevisionSummary[];
 };
@@ -416,6 +418,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
         />}
         center={<GrantDocumentCanvas
           snapshot={snapshot}
+          figureAssets={payload.figureAssets}
           selectedSectionId={selectedSectionId}
           selectedFindingId={selectedFindingId}
           findingsByNode={findingsByNode}

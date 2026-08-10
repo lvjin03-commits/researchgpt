@@ -161,6 +161,11 @@ export class GrantRevisionService {
     return this.repository.listDocuments();
   }
 
+  async listImportedFigureAssets(documentId: string) {
+    await this.getDocument(documentId);
+    return this.repository.listFigureAssets(documentId);
+  }
+
   async archiveDocument(input: {
     documentId: string;
     expectedRevisionId: string;

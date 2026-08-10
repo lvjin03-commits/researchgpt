@@ -45,6 +45,20 @@ feature flag or production composition changes in this step.
 Out of scope: workspace image rendering, image consent UI, model payloads,
 multimodal diagnosis and any parallel import or document model.
 
+## Step 3 Scope
+
+- Extend the existing owner-scoped Figure Asset Repository with one metadata
+  read projection; no UI or route reads the asset table directly.
+- Resolve supported private assets to short-lived read URLs through a storage
+  adapter, returning only an ephemeral browser DTO without bucket/path data.
+- Render each image from its existing canonical `figure` node at the original
+  reading position and use the canonical caption/alt text.
+- Preserve unsupported, missing or expired assets as explicit in-place
+  fallbacks instead of dropping the figure node.
+
+Out of scope: image consent, provider payloads, multimodal diagnosis, caption
+editing, image replacement and export rendering.
+
 ## Compatibility and Risks
 
 - Existing canonical snapshots remain valid because `FigureContentSchema` is
@@ -57,6 +71,12 @@ multimodal diagnosis and any parallel import or document model.
   provider paths.
 - Later extraction must handle unsupported OOXML formats explicitly and must not
   claim page-layout fidelity from an embedded-image record alone.
+- Private signed URLs expire after one hour and are regenerated whenever the
+  committed editor projection reloads. A browser load failure is contained to
+  the figure placeholder and cannot make the canonical document unreadable.
+- SVG, TIFF, BMP, EMF and WMF remain stored but are not rendered inline in this
+  step. This avoids inconsistent browser behavior and untrusted active SVG
+  content without destroying source fidelity.
 
 ## Rollback
 
@@ -70,6 +90,8 @@ or user-visible rollback.
 - `npm run typecheck`
 - `npm run check:encoding`
 - `npm run test:grant-docx-import`
+- `npm run test:grant-figure-workspace`
 
-Migration 048 and a real PostgreSQL atomic-commit test remain pending explicit
-authorization; no production-readiness claim is made before that effect test.
+Migration 048 and its real PostgreSQL atomic-commit test are complete.
+Migration 049 must pass an owner-isolation and signed-byte integrity probe
+before workspace rendering is described as production-verified.

@@ -15,6 +15,7 @@ import type {
   GrantAggregate,
   GrantRevisionRepository,
 } from "../../ports/grant-revision-repository.ts";
+import { GrantImportedFigureAssetSchema } from "../../domain/figure-assets.ts";
 
 type RpcError = { message: string };
 type RpcResult = PromiseLike<{ data: unknown; error: RpcError | null }>;
@@ -79,6 +80,15 @@ export class SupabaseGrantRevisionRepository implements GrantRevisionRepository 
     throwRpcError("get_grant_document_aggregate", error);
     if (data === null) return null;
     return AggregateSchema.parse(data);
+  }
+
+  async listFigureAssets(documentId: string) {
+    const { data, error } = await this.client.rpc("list_grant_imported_figure_assets", {
+      p_owner_id: this.ownerId,
+      p_document_id: documentId,
+    });
+    throwRpcError("list_grant_imported_figure_assets", error);
+    return z.array(GrantImportedFigureAssetSchema).parse(data ?? []);
   }
 
   async listDocuments() {

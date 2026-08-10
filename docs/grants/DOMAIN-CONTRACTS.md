@@ -124,9 +124,16 @@ a revision change. Providers receive an execution-local atomic location
 reference and the authorized image payload; durable storage paths and canonical
 UUID pairs are never provider-generated location data.
 
-This contract-only step does not extract images, store assets, show images in
-the editor, send images to a provider, alter diagnostics or add a feature flag.
-Those effects require later, separately verified implementation steps.
+Workspace display is a read-only projection of the canonical figure node and
+its matching immutable asset record. It may expose only an execution-limited
+read URL, browser-safe media type and dimensions; durable bucket/path metadata
+never enters the client projection. PNG, JPEG, GIF and WebP are displayable.
+Unsupported formats retain their canonical position and caption with an
+explicit fallback instead of being silently omitted.
+
+Workspace ownership is not model authorization. Displaying an owner-scoped
+asset does not change the default-deny model permissions, authorize semantic
+diagnosis, alter the canonical Revision or create a second figure model.
 
 ## Revision and Concurrency
 

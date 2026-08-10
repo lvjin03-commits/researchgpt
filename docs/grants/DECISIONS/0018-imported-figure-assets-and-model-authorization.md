@@ -1,6 +1,6 @@
 # ADR-0018: Imported figure assets and model authorization
 
-- Status: accepted; extraction and persistence implemented, UI/model use deferred
+- Status: accepted; extraction, persistence and owner-scoped workspace display implemented; model use deferred
 - Date: 2026-08-10
 - Owners: Grant DOCX Import Adapter, Grant Figure Asset Repository, Grant Figure Model Authorization Service, Grant Model Data Gateway
 - Supersedes: none
@@ -35,6 +35,13 @@ second image/document model would duplicate authority.
   image parts, hash and store them at immutable paths, and bind them to canonical
   `figure` nodes in source order. UI rendering, provider admission and diagnostic
   composition remain deferred.
+- Step 3 keeps the canonical figure node as presentation authority. The Figure
+  Asset Repository returns owner-scoped immutable metadata and a storage read
+  adapter creates a one-hour private URL. The browser receives no durable
+  storage path and cannot infer source order or caption metadata.
+- Browser-safe raster images render inline. Unsupported or unavailable assets
+  remain visible as an in-place fidelity fallback. Workspace display is not
+  consent to send an image to a model.
 
 ## Alternatives Considered
 
@@ -70,7 +77,7 @@ second image/document model would duplicate authority.
 - Grant architecture, encoding and TypeScript checks pass.
 - A generated DOCX fixture verifies byte extraction, dimensions, caption/source
   anchors, storage hash/path, canonical node order and atomic repository input.
-- Real PostgreSQL verification is deferred until migration 048 is explicitly
-  authorized and applied.
+- Migration 048 atomic persistence is verified. Migration 049 additionally
+  verifies owner isolation and exact signed-byte integrity for workspace reads.
 - Later rollout must measure image extraction success, unsupported media,
   authorization denials and multimodal diagnostic coverage.

@@ -3,9 +3,14 @@ import type { GrantImportedFigureAssetDraft } from "../domain/figure-assets.ts";
 import { estimateGrantLength } from "./length-estimator.ts";
 import { GrantRevisionService } from "./revision-service.ts";
 import { createNsfcDraft, NSFC_DEFAULT_TEMPLATE } from "../templates/nsfc-default.ts";
+import type { GrantFigureDisplayService } from "./figure-display-service.ts";
+import type { GrantAggregate } from "../ports/grant-revision-repository.ts";
 
 export class GrantEditorService {
-  constructor(private readonly revisions: GrantRevisionService) {}
+  constructor(
+    private readonly revisions: GrantRevisionService,
+    private readonly figureDisplay?: GrantFigureDisplayService,
+  ) {}
 
   async listDocuments() {
     return this.revisions.listDocuments();
@@ -49,11 +54,7 @@ export class GrantEditorService {
 
   async loadDocument(documentId: string) {
     const aggregate = await this.revisions.getDocument(documentId);
-    return {
-      aggregate,
-      estimate: estimateGrantLength(aggregate.currentRevision.snapshot, aggregate.templateSnapshot.rules),
-      revisionHistory: await this.revisions.listRevisionHistory(documentId),
-    };
+    return this.presentDocument(aggregate);
   }
 
   async saveDocument(input: {
@@ -67,11 +68,7 @@ export class GrantEditorService {
       actorKind: "user",
       reason: "editor_user_save",
     });
-    return {
-      aggregate,
-      estimate: estimateGrantLength(aggregate.currentRevision.snapshot, aggregate.templateSnapshot.rules),
-      revisionHistory: await this.revisions.listRevisionHistory(input.documentId),
-    };
+    return this.presentDocument(aggregate);
   }
 
   async restoreRevision(input: {
@@ -81,10 +78,20 @@ export class GrantEditorService {
     actorId: string;
   }) {
     const aggregate = await this.revisions.restoreRevision(input);
+    return this.presentDocument(aggregate);
+  }
+
+  private async presentDocument(aggregate: GrantAggregate) {
     return {
       aggregate,
+      figureAssets: this.figureDisplay
+        ? await this.figureDisplay.listForSnapshot(
+          aggregate.document.documentId,
+          aggregate.currentRevision.snapshot,
+        )
+        : [],
       estimate: estimateGrantLength(aggregate.currentRevision.snapshot, aggregate.templateSnapshot.rules),
-      revisionHistory: await this.revisions.listRevisionHistory(input.documentId),
+      revisionHistory: await this.revisions.listRevisionHistory(aggregate.document.documentId),
     };
   }
 }

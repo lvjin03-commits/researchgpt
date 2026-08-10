@@ -43,6 +43,7 @@ export type ArchiveGrantDocumentResult =
 
 export interface GrantRevisionRepository {
   create(input: CreateGrantAggregateInput): Promise<GrantAggregate>;
+  listFigureAssets(documentId: string): Promise<GrantImportedFigureAsset[]>;
   listDocuments(): Promise<GrantDocument[]>;
   get(documentId: string): Promise<GrantAggregate | null>;
   getRevision(documentId: string, revisionId: string): Promise<GrantRevision | null>;

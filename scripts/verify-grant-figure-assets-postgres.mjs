@@ -12,10 +12,13 @@ if (!supabaseUrl || !serviceRoleKey) throw new Error("Supabase service configura
 const client = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
 const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
+const imageBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6nE0AAAAASUVORK5CYII=", "base64");
+const imageHash = createHash("sha256").update(imageBytes).digest("hex");
 
 const runId = `${Date.now()}-${randomUUID()}`;
 let userId;
 let documentId;
+let objectPath;
 try {
   const { data: existingUsers, error: listError } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
   if (listError) throw new Error(`Temporary user preflight failed: ${listError.message}`);
@@ -43,17 +46,23 @@ try {
     sections: [{ sectionId, semanticRole: "verification", title: "正文", order: 0, nodeIds: [nodeId] }],
     nodes: [{ nodeId, sectionId, order: 0, nodeType: "figure", content: { assetId, altText: "测试图片" } }],
   };
+  objectPath = `${userId}/grant-figure-assets/${assetId}/${imageHash}.png`;
+  const { error: uploadError } = await client.storage.from("chat-attachments").upload(objectPath, imageBytes, {
+    contentType: "image/png",
+    upsert: false,
+  });
+  if (uploadError) throw new Error(`Temporary figure upload failed: ${uploadError.message}`);
   const figureAsset = {
     assetId,
     documentId,
     sourceRevisionId: revisionId,
     sourceDocumentChecksum: "a".repeat(64),
-    contentHash: "b".repeat(64),
+    contentHash: imageHash,
     mediaType: "image/png",
-    byteSize: 64,
-    widthPx: 8,
-    heightPx: 8,
-    storage: { bucket: "chat-attachments", path: `${userId}/grant-figure-assets/${assetId}/${"b".repeat(64)}.png` },
+    byteSize: imageBytes.byteLength,
+    widthPx: 1,
+    heightPx: 1,
+    storage: { bucket: "chat-attachments", path: objectPath },
     anchor: {
       sourceOrdinal: 0, relationshipId: "rId1", partName: "word/media/image1.png", anchorKind: "inline",
       sectionLocalKey: "section-1", precedingBlockLocalKey: null, followingBlockLocalKey: null,
@@ -86,8 +95,31 @@ try {
   assert(rows?.length === 1, "Exactly one imported figure asset must be committed.");
   assert(rows[0].document_id === documentId && rows[0].source_revision_id === revisionId, "Figure identity binding is invalid.");
   assert(rows[0].anchor?.sourceOrdinal === 0, "Figure source order was not preserved.");
-  console.log(JSON.stringify({ migration: "048_grant_imported_figure_assets", atomicCommit: true, assetCount: rows.length }, null, 2));
+  const { data: projectedAssets, error: projectionError } = await client.rpc("list_grant_imported_figure_assets", {
+    p_owner_id: userId,
+    p_document_id: documentId,
+  });
+  if (projectionError) throw new Error(`Owner-scoped figure projection failed: ${projectionError.message}`);
+  assert(projectedAssets?.length === 1, "Owner-scoped figure projection did not return the stored asset.");
+  assert(projectedAssets[0].assetId === assetId, "Figure projection changed program-owned asset identity.");
+  const { data: deniedAssets, error: deniedError } = await client.rpc("list_grant_imported_figure_assets", {
+    p_owner_id: randomUUID(),
+    p_document_id: documentId,
+  });
+  if (deniedError) throw new Error(`Cross-owner figure projection probe failed: ${deniedError.message}`);
+  assert(deniedAssets?.length === 0, "Figure metadata leaked across owners.");
+
+  const { data: signed, error: signedError } = await client.storage.from("chat-attachments")
+    .createSignedUrl(objectPath, 60);
+  if (signedError || !signed?.signedUrl) throw new Error(`Temporary figure URL failed: ${signedError?.message ?? "missing URL"}`);
+  const downloaded = Buffer.from(await (await fetch(signed.signedUrl)).arrayBuffer());
+  assert(createHash("sha256").update(downloaded).digest("hex") === imageHash, "Signed figure bytes failed integrity verification.");
+  console.log(JSON.stringify({ migrations: ["048_grant_imported_figure_assets", "049_grant_figure_workspace_read"], atomicCommit: true, assetCount: rows.length, ownerScopedRead: true, signedRead: true }, null, 2));
 } finally {
+  if (objectPath) {
+    const { error } = await client.storage.from("chat-attachments").remove([objectPath]);
+    if (error) throw new Error(`Temporary figure object cleanup failed: ${error.message}`);
+  }
   if (userId) {
     const { error } = await client.auth.admin.deleteUser(userId);
     if (error) throw new Error(`Temporary user cleanup failed: ${error.message}`);

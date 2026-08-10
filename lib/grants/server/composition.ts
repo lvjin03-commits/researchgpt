@@ -24,6 +24,8 @@ import { GrantExportService } from "../application/export-service.ts";
 import { DeterministicGrantDocxRenderer } from "../infrastructure/documents/deterministic-grant-docx-renderer.ts";
 import { isGrantHierarchicalDiagnosticSelected, isGrantRecheckEnabled, isGrantSemanticDiagnosticV3Enabled } from "./config.ts";
 import { resolveGrantAiConfig } from "./grant-ai-config.ts";
+import { GrantFigureDisplayService } from "../application/figure-display-service.ts";
+import { SupabaseGrantFigureAssetReader } from "../infrastructure/supabase/supabase-grant-figure-asset-reader.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -47,7 +49,11 @@ function createGrantModelDataGateway(client: ReturnType<typeof createGrantSupaba
 export function createGrantEditorService(ownerId: string): GrantEditorService {
   const client = createGrantSupabaseClient();
   const repository = new SupabaseGrantRevisionRepository(client, ownerId);
-  return new GrantEditorService(new GrantRevisionService({ repository }));
+  const revisions = new GrantRevisionService({ repository });
+  return new GrantEditorService(
+    revisions,
+    new GrantFigureDisplayService(revisions, new SupabaseGrantFigureAssetReader(client)),
+  );
 }
 
 export function createGrantDocxImportService(ownerId: string): GrantDocxImportService {

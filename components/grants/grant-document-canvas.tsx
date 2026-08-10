@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import type { GrantFigureDisplayAsset } from "@/lib/grants/application/figure-display-service";
 import type { CanonicalGrantSnapshot } from "@/lib/grants/domain/contracts";
 import { grantSectionBreadcrumbs, projectGrantSectionSubtree } from "@/lib/grants/presentation/document-tree";
 import { GrantWordToolbar } from "./grant-word-toolbar";
 
 type Props = {
   snapshot: CanonicalGrantSnapshot;
+  figureAssets: GrantFigureDisplayAsset[];
   selectedSectionId: string | null;
   selectedFindingId: string | null;
   findingsByNode: Map<string, string[]>;
@@ -15,6 +18,46 @@ type Props = {
   onAddParagraph: () => void;
   onRemoveNode: (nodeId: string) => void;
 };
+
+function GrantImportedFigure({
+  node,
+  asset,
+}: {
+  node: Extract<CanonicalGrantSnapshot["nodes"][number], { nodeType: "figure" }>;
+  asset: GrantFigureDisplayAsset | undefined;
+}) {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const readUrl = asset?.status === "ready" ? asset.readUrl : null;
+  useEffect(() => setLoadFailed(false), [asset?.assetId, asset?.status, readUrl]);
+
+  const caption = node.content.caption?.trim() || node.content.altText;
+  const ready = asset?.status === "ready" && !loadFailed;
+  return (
+    <figure className="my-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 text-center text-sm text-slate-600">
+      {ready ? (
+        <img
+          src={asset.readUrl}
+          alt={node.content.altText}
+          width={asset.widthPx ?? undefined}
+          height={asset.heightPx ?? undefined}
+          loading="lazy"
+          decoding="async"
+          onError={() => setLoadFailed(true)}
+          className="mx-auto max-h-[720px] max-w-full rounded-md bg-white object-contain shadow-sm"
+        />
+      ) : (
+        <div className="mx-auto flex min-h-40 max-w-xl items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-6 text-slate-500">
+          {asset?.status === "unsupported_format"
+            ? `当前浏览器暂不支持预览 ${asset.mediaType} 图片，原始资产仍已安全保存。`
+            : loadFailed
+              ? "图片读取地址已失效或加载失败，请刷新页面后重试。"
+              : "图片资产暂时无法读取，正文位置和图注已保留。"}
+        </div>
+      )}
+      <figcaption className="mx-auto mt-3 max-w-2xl leading-6 text-slate-700">{caption}</figcaption>
+    </figure>
+  );
+}
 
 function nodeText(node: CanonicalGrantSnapshot["nodes"][number]): string {
   if (node.nodeType === "paragraph" || node.nodeType === "heading") return node.content.text;
@@ -29,6 +72,7 @@ export function GrantDocumentCanvas(props: Props) {
   const sections = projectGrantSectionSubtree(props.snapshot, props.selectedSectionId);
   const breadcrumbs = grantSectionBreadcrumbs(props.snapshot, props.selectedSectionId);
   const nodesById = new Map(props.snapshot.nodes.map((node) => [node.nodeId, node]));
+  const figureAssetsById = new Map(props.figureAssets.map((asset) => [asset.assetId, asset]));
 
   const updateTableCell = (
     node: Extract<CanonicalGrantSnapshot["nodes"][number], { nodeType: "table" }>,
@@ -79,7 +123,9 @@ export function GrantDocumentCanvas(props: Props) {
           </div>
         )}
         {node.nodeType === "formula" && <input aria-label="公式" className="research-focus w-full border-0 bg-transparent px-4 py-3 text-center font-mono" value={nodeText(node)} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
-        {node.nodeType === "figure" && <figure className="my-4 rounded-lg border border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-600"><div className="mx-auto mb-3 flex h-36 max-w-md items-center justify-center rounded border border-dashed border-slate-300 bg-white">图片资产</div><figcaption>{node.content.altText}</figcaption></figure>}
+        {node.nodeType === "figure" && (
+          <GrantImportedFigure node={node} asset={figureAssetsById.get(node.content.assetId)} />
+        )}
         {node.nodeType === "citation" && <div className="border-l-2 border-slate-300 px-4 py-2 text-sm text-slate-600">引用：{node.content.referenceId}</div>}
         <button type="button" className="absolute -left-2 -top-2 hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-red-700 shadow-sm group-hover:block" onClick={() => props.onRemoveNode(node.nodeId)}>删除</button>
       </div>

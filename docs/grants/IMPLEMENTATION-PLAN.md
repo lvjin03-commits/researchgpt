@@ -296,12 +296,13 @@ document and semantic diagnostic stages. It is not a new top-level pipeline.
 1. **Contracts (completed 2026-08-10):** define one program-owned imported
    figure asset, deterministic OOXML anchor/caption metadata and revision-bound
    model authorization. Runtime behavior remains unchanged.
-2. **Extraction and storage:** extract embedded DOCX image parts, verify hashes,
+2. **Extraction and storage (completed 2026-08-10):** extract embedded DOCX image parts, verify hashes,
    use immutable object paths and create canonical `figure` nodes in source
    order. Preserve unsupported formats with explicit fidelity warnings.
-3. **Workspace rendering:** resolve authorized assets through a read adapter and
-   render them at their canonical position without changing editor revision
-   ownership.
+3. **Workspace rendering (implemented 2026-08-10):** resolve owner-scoped assets
+   through a private read adapter and render them at their canonical position
+   without changing editor revision ownership. Migration 049 and a production
+   signed-byte/user-path probe remain the effect-first gates.
 4. **Model-data admission:** add an explicit user consent surface and make Grant
    Model Data Gateway materialize current, revision-bound image authorization.
 5. **Multimodal diagnosis:** extend the existing semantic checker internally;
