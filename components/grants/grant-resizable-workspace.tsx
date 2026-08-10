@@ -4,7 +4,7 @@ import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from "reac
 import { useState } from "react";
 
 const LEFT_LIMITS = { min: 240, max: 420, initial: 300 } as const;
-const RIGHT_LIMITS = { min: 300, max: 520, initial: 400 } as const;
+const RIGHT_LIMITS = { min: 300, max: 700, initial: 400 } as const;
 const CENTER_MIN_WIDTH = 560;
 const KEYBOARD_STEP = 16;
 
