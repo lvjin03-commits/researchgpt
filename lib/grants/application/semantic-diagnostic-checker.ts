@@ -27,7 +27,7 @@ export class GrantSemanticDiagnosticChecker implements GrantChecker {
   constructor(gateway: GrantModelDataGateway, modelId: string, version: "v2" | "v3" = "v2") {
     this.gateway = gateway;
     this.version = version;
-    this.checkerVersion = version === "v3" ? "3.0.0" : "2.0.0";
+    this.checkerVersion = version === "v3" ? "4.0.0" : "2.0.0";
     this.contractVersion = version === "v3" ? GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION;
     this.configurationFingerprint = sha256Canonical({
       provider: "openai",

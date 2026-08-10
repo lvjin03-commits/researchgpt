@@ -42,7 +42,7 @@ const validContent = JSON.stringify({
     recommendation: "明确关键变量、作用关系和验证该关系的观察指标。",
     possibleConsequence: "评审专家可能追问如何判定所提出机制是否成立。",
     assessment: { scope: "section", confidence: 0.91, actionability: "requires_expert_judgment" },
-    primaryLocation: { sectionId, nodeId },
+    primaryLocation: { locationRef: "N1" },
     relatedLocations: [],
     usedEvidenceCardIds: [],
   }],
@@ -70,6 +70,9 @@ const messages = calls[0]!.messages as Array<{ role: string; content: string }>;
 assert.match(messages[0]!.content, /strict but fair domain reviewer/);
 assert.match(messages[0]!.content, /metadata_only Evidence Card establishes record existence only/);
 assert.match(messages[0]!.content, /scientific_question_gap/);
+assert.match(messages[0]!.content, /Never return sectionId or nodeId/);
+assert.doesNotMatch(messages[1]!.content, /sectionId|nodeId/);
+assert.match(messages[1]!.content, /"locationRef":"N1"/);
 assert.equal(result.execution.policyVersion, GRANT_DIAGNOSTIC_V3_POLICY_VERSION);
 assert.equal(result.execution.schemaVersion, GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION);
 assert.equal(result.execution.promptVersion, GRANT_DIAGNOSTIC_V3_PROMPT_VERSION);
@@ -100,12 +103,7 @@ assert.equal(repaired.usage.outputTokens, 200);
 
 let structuralReferenceCalls = 0;
 const invalidReferencePayload = JSON.parse(validContent) as Record<string, unknown>;
-((invalidReferencePayload.findings as Array<Record<string, unknown>>)[0]!.relatedLocations as unknown[]) = [{
-  sectionId,
-  nodeId: "not-a-uuid",
-  role: "supporting_location",
-  quote: null,
-}];
+((invalidReferencePayload.findings as Array<Record<string, unknown>>)[0]!.primaryLocation as Record<string, unknown>).locationRef = "N999";
 const structuralReferenceClient = {
   chat: { completions: { async create() {
     structuralReferenceCalls += 1;
@@ -123,25 +121,89 @@ await assert.rejects(
   () => new OpenAIGrantAiModel("gpt-5.5", "test", structuralReferenceClient).diagnoseV3(prepared),
   (error: unknown) => {
     assert(error instanceof GrantDiagnosticExecutionError);
-    assert.equal(error.category, "structured_reference_invalid");
+    assert.equal(error.category, "semantic_reference_invalid");
     assert.equal(error.metadata.attemptCount, 1);
-    assert.deepEqual(error.metadata.zodIssuePaths, ["findings.0.relatedLocations.0.nodeId"]);
-    assert.deepEqual(error.metadata.validationIssues, [{
-      path: "findings.0.relatedLocations.0.nodeId",
-      code: "invalid_format",
-      rule: "invalid_format:uuid",
-      fieldClass: "structural",
-    }]);
-    assert.equal(JSON.stringify(error.metadata).includes("not-a-uuid"), false);
+    assert.deepEqual(error.metadata.zodIssuePaths, ["findings.0.primaryLocation.locationRef"]);
+    assert.equal(JSON.stringify(error.metadata).includes("N999"), false);
     return true;
   },
 );
 assert.equal(structuralReferenceCalls, 1, "structural ID failures must not trigger a second paid model call");
 
+const degradedPayload = JSON.parse(validContent) as Record<string, unknown>;
+((degradedPayload.findings as Array<Record<string, unknown>>)[0]!.relatedLocations as unknown[]) = [{
+  locationRef: "N999",
+  role: "supporting_location",
+  quote: null,
+}];
+const degradedClient = {
+  chat: { completions: { async create() {
+    return {
+      id: "degraded-related-location",
+      object: "chat.completion",
+      created: 0,
+      model: "gpt-5.5",
+      choices: [{ index: 0, finish_reason: "stop", logprobs: null, message: { role: "assistant", refusal: null, content: JSON.stringify(degradedPayload) } }],
+      usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200, completion_tokens_details: { reasoning_tokens: 10 } },
+    };
+  } } },
+} as unknown as OpenAI;
+const degraded = await new OpenAIGrantAiModel("gpt-5.5", "test", degradedClient).diagnoseV3(prepared);
+assert.equal(degraded.findings.length, 1, "a bad related location must not discard a Finding with a valid primary location");
+assert.equal(degraded.findings[0]!.relatedLocations.length, 0);
+assert.equal(degraded.execution.normalizationActions?.some((action) => action.rule === "invalid_related_location_ref_removed"), true);
+
+const mixedPrimaryPayload = JSON.parse(validContent) as { findings: Array<Record<string, unknown>> };
+mixedPrimaryPayload.findings.push({
+  ...structuredClone(mixedPrimaryPayload.findings[0]!),
+  title: "invalid primary",
+  primaryLocation: { locationRef: "N404" },
+});
+const mixedPrimaryClient = {
+  chat: { completions: { async create() {
+    return {
+      id: "mixed-primary-location",
+      object: "chat.completion",
+      created: 0,
+      model: "gpt-5.5",
+      choices: [{ index: 0, finish_reason: "stop", logprobs: null, message: { role: "assistant", refusal: null, content: JSON.stringify(mixedPrimaryPayload) } }],
+      usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200, completion_tokens_details: { reasoning_tokens: 10 } },
+    };
+  } } },
+} as unknown as OpenAI;
+const mixedPrimary = await new OpenAIGrantAiModel("gpt-5.5", "test", mixedPrimaryClient).diagnoseV3(prepared);
+assert.equal(mixedPrimary.findings.length, 1, "an invalid primary location must discard only its own Finding");
+assert.equal(mixedPrimary.execution.normalizationActions?.some((action) => action.rule === "finding_invalid_primary_location_removed"), true);
+
+const invalidCrossSectionPayload = JSON.parse(validContent) as { findings: Array<Record<string, unknown>> };
+invalidCrossSectionPayload.findings[0] = {
+  ...invalidCrossSectionPayload.findings[0]!,
+  category: "cross_section_inconsistency",
+  relatedLocations: [{ locationRef: "N404", role: "upstream_dependency", quote: null }],
+};
+const invalidCrossSectionClient = {
+  chat: { completions: { async create() {
+    return {
+      id: "invalid-cross-section-location",
+      object: "chat.completion",
+      created: 0,
+      model: "gpt-5.5",
+      choices: [{ index: 0, finish_reason: "stop", logprobs: null, message: { role: "assistant", refusal: null, content: JSON.stringify(invalidCrossSectionPayload) } }],
+      usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200, completion_tokens_details: { reasoning_tokens: 10 } },
+    };
+  } } },
+} as unknown as OpenAI;
+await assert.rejects(
+  () => new OpenAIGrantAiModel("gpt-5.5", "test", invalidCrossSectionClient).diagnoseV3(prepared),
+  (error: unknown) => error instanceof GrantDiagnosticExecutionError
+    && error.category === "semantic_reference_invalid"
+    && error.metadata.normalizationActions?.some((action) => action.rule === "finding_required_related_location_missing_removed") === true,
+);
+
 const normalizedPayload = JSON.parse(validContent) as Record<string, unknown>;
 ((normalizedPayload.findings as Array<Record<string, unknown>>)[0]!.relatedLocations as unknown[]) = [
-  { sectionId, nodeId, role: "supporting_location", quote: "   " },
-  { sectionId, nodeId, role: "supporting_location", quote: "duplicate" },
+  { locationRef: "N1", role: "supporting_location", quote: "   " },
+  { locationRef: "N1", role: "supporting_location", quote: "duplicate" },
 ];
 const normalizationClient = {
   chat: { completions: { async create() {

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { assembleGrantSemanticDiagnosticsV3 } from "../lib/grants/diagnostics/semantic-v3-assembler.ts";
 import type { CanonicalGrantSnapshot } from "../lib/grants/domain/contracts.ts";
 import type { GrantSemanticDiagnosticResultV3 } from "../lib/grants/diagnostics/semantic-v3-contracts.ts";
+import {
+  GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION,
+  GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+} from "../lib/grants/ports/grant-diagnostic-model.ts";
 
 const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 const section1 = id("11"), section2 = id("12"), node1 = id("21"), node2 = id("22"), node3 = id("23");
@@ -36,9 +40,9 @@ const base: GrantSemanticDiagnosticResultV3["findings"][number] = {
 };
 const metadata = {
   runId: id("1"), documentId: id("2"), sourceRevisionId: id("3"),
-  checkerId: "grant-semantic-review", checkerVersion: "3.0.0",
-  contractVersion: "grant-semantic-diagnostic-v3", schemaVersion: "grant-semantic-finding-v3",
-  policyVersion: "grant-semantic-review-v3",
+  checkerId: "grant-semantic-review", checkerVersion: "4.0.0",
+  contractVersion: GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION, schemaVersion: "grant-semantic-finding-v3",
+  policyVersion: GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
 };
 const findingIds = [id("41"), id("42")];
 let nextId = 0;

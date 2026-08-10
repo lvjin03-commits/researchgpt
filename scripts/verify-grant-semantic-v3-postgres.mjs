@@ -119,7 +119,7 @@ try {
   assert(count === 0, "Failed V3 transaction left a partial base run.");
 
   console.log(JSON.stringify({
-    migration: "045_grant_semantic_diagnostic_v3_projection",
+    migration: "046_grant_semantic_atomic_location_refs",
     compatibilityRead: true, normalizedRead: true, ownerIsolation: true, atomicRollback: true,
   }, null, 2));
 } finally {

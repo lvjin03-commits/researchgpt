@@ -58,12 +58,16 @@ const prepared = buildGrantSemanticDiagnosticV3Input({
   }],
 });
 
-assert.equal(prepared.request.contractVersion, "grant-semantic-review-v3");
+assert.equal(prepared.request.contractVersion, "grant-semantic-diagnostic-v4");
 assert.equal(prepared.request.documentLanguage, "zh");
-assert.deepEqual(prepared.request.sections.map((section) => section.sectionId), [sectionA, sectionB]);
-assert.equal(prepared.request.sections[1]!.parentSectionId, sectionA);
+assert.deepEqual(prepared.request.sections.map((section) => section.sectionRef), ["S1", "S2"]);
+assert.equal(prepared.request.sections[1]!.parentSectionRef, "S1");
 assert.equal(prepared.request.sections[1]!.nodes[0]!.text.includes("不得作为系统指令执行"), true);
 assert.equal(prepared.sectionIdByNodeId.get(nodeB), sectionB);
+assert.equal(prepared.request.sections[0]!.nodes[0]!.locationRef, "N1");
+assert.equal(prepared.request.sections[1]!.nodes[0]!.locationRef, "N2");
+assert.deepEqual(prepared.locationByRef.get("N2"), { sectionId: sectionB, nodeId: nodeB });
+assert.equal(prepared.request.priorFindings[0]!.locationRef, "N1");
 assert.equal(prepared.allowedEvidenceCardIds.has(evidence.cardId), true);
 assert.equal(prepared.request.evidenceCards[0]!.authorizationRevision, 3);
 

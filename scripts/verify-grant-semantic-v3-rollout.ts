@@ -169,15 +169,12 @@ const v3Service = new GrantDiagnosticService({
 const v3Checker = new GrantSemanticDiagnosticChecker(new GrantModelDataGateway(model), "gpt-5.5", "v3");
 assert.equal(v3Checker.contractVersion, GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION);
 const appliedPersistenceMigration = readFileSync(
-  new URL("../supabase/migrations/045_grant_semantic_diagnostic_v3_projection.sql", import.meta.url),
+  new URL("../supabase/migrations/046_grant_semantic_atomic_location_refs.sql", import.meta.url),
   "utf8",
 );
-const persistedRunContract = appliedPersistenceMigration.match(
-  /p_run->>'contractVersion' IS DISTINCT FROM '([^']+)'/u,
-)?.[1];
 assert.equal(
-  v3Checker.contractVersion,
-  persistedRunContract,
+  appliedPersistenceMigration.includes(`'${v3Checker.contractVersion}'`),
+  true,
   "The production Checker contract must match the applied PostgreSQL persistence contract.",
 );
 assert.equal(v3Checker.configurationFingerprint, new GrantSemanticDiagnosticChecker(

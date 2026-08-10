@@ -76,9 +76,9 @@ export type GrantSemanticDiagnosticV3ModelResult = GrantSemanticDiagnosticResult
 export const GRANT_DIAGNOSTIC_POLICY_VERSION = "grant-ai-policy-v2";
 export const GRANT_DIAGNOSTIC_SCHEMA_VERSION = "grant-semantic-diagnostic-v2";
 export const GRANT_DIAGNOSTIC_PROMPT_VERSION = "grant-semantic-prompt-v2";
-export const GRANT_DIAGNOSTIC_V3_POLICY_VERSION = "grant-ai-policy-v3.1";
-export const GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION = "grant-semantic-diagnostic-v3";
-export const GRANT_DIAGNOSTIC_V3_PROMPT_VERSION = "grant-semantic-review-v3";
+export const GRANT_DIAGNOSTIC_V3_POLICY_VERSION = "grant-ai-policy-v3.2";
+export const GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION = "grant-semantic-diagnostic-v4";
+export const GRANT_DIAGNOSTIC_V3_PROMPT_VERSION = "grant-semantic-review-v4";
 /**
  * Durable run contract accepted by save_grant_semantic_v3_execution.
  * The V3 model-output schema and durable run contract intentionally advance

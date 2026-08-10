@@ -1,9 +1,11 @@
 import { z } from "zod";
-import { GRANT_DIAGNOSTIC_V3_PROMPT_VERSION } from "../ports/grant-diagnostic-model.ts";
+import { GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION } from "../ports/grant-diagnostic-model.ts";
 import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import { grantNodeText } from "./node-text.ts";
 
 const UuidSchema = z.string().uuid();
+const LocationRefSchema = z.string().regex(/^N[1-9]\d*$/);
+const SectionRefSchema = z.string().regex(/^S[1-9]\d*$/);
 
 export const GrantSemanticDiagnosticV3PriorFindingSchema = z.object({
   findingFingerprint: z.string().trim().min(1).max(128),
@@ -51,31 +53,35 @@ export const GrantSemanticDiagnosticV3EvidenceInputSchema = z.object({
 });
 
 const DiagnosticNodeSchema = z.object({
-  nodeId: UuidSchema,
-  sectionId: UuidSchema,
+  locationRef: LocationRefSchema,
   nodeType: z.enum(["heading", "paragraph", "list", "table", "figure", "citation", "formula"]),
   order: z.number().int().nonnegative(),
   text: z.string(),
 }).strict();
 
 const DiagnosticSectionSchema = z.object({
-  sectionId: UuidSchema,
+  sectionRef: SectionRefSchema,
   semanticRole: z.string().trim().min(1),
   title: z.string().trim().min(1),
-  parentSectionId: UuidSchema.nullable(),
+  parentSectionRef: SectionRefSchema.nullable(),
   order: z.number().int().nonnegative(),
   nodes: z.array(DiagnosticNodeSchema),
 }).strict();
 
 export const GrantSemanticDiagnosticV3ModelInputSchema = z.object({
-  contractVersion: z.literal(GRANT_DIAGNOSTIC_V3_PROMPT_VERSION),
+  contractVersion: z.literal(GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION),
   documentLanguage: z.enum(["zh", "en"]),
   documentTitle: z.string().trim().min(1),
   fundingCategory: z.string().trim().min(1).max(200),
   inputMode: z.enum(["full_document", "section_bundle", "focused_excerpt"]),
   sections: z.array(DiagnosticSectionSchema).min(1),
   evidenceCards: z.array(GrantSemanticDiagnosticV3EvidenceInputSchema).max(8),
-  priorFindings: z.array(GrantSemanticDiagnosticV3PriorFindingSchema).max(100),
+  priorFindings: z.array(z.object({
+    findingFingerprint: z.string().trim().min(1).max(128),
+    category: z.string().trim().min(1).max(80),
+    status: z.enum(["open", "closed", "superseded"]),
+    locationRef: LocationRefSchema,
+  }).strict()).max(100),
 }).strict();
 
 export type GrantSemanticDiagnosticV3EvidenceInput = z.infer<typeof GrantSemanticDiagnosticV3EvidenceInputSchema>;
@@ -84,6 +90,8 @@ export type GrantSemanticDiagnosticV3ModelInput = z.infer<typeof GrantSemanticDi
 
 export type GrantSemanticDiagnosticV3PreparedInput = {
   request: GrantSemanticDiagnosticV3ModelInput;
+  locationByRef: ReadonlyMap<string, { sectionId: string; nodeId: string }>;
+  locationRefByNodeId: ReadonlyMap<string, string>;
   sectionIdByNodeId: ReadonlyMap<string, string>;
   allowedEvidenceCardIds: ReadonlySet<string>;
 };
@@ -119,28 +127,37 @@ export function buildGrantSemanticDiagnosticV3Input(input: {
     throw new GrantSemanticDiagnosticV3InputScopeError("Diagnostic input referenced a node outside the canonical snapshot.");
   }
 
-  const sections = input.snapshot.sections
+  const orderedSections = input.snapshot.sections
     .filter((section) => requestedSectionIds.has(section.sectionId))
-    .sort((left, right) => left.order - right.order)
-    .map((section) => ({
-      sectionId: section.sectionId,
+    .sort((left, right) => left.order - right.order || left.sectionId.localeCompare(right.sectionId));
+  const sectionRefById = new Map(orderedSections.map((section, index) => [section.sectionId, `S${index + 1}`]));
+  const orderedNodes = orderedSections.flatMap((section) => input.snapshot.nodes
+    .filter((node) => node.sectionId === section.sectionId && requestedNodeIds.has(node.nodeId))
+    .sort((left, right) => left.order - right.order || left.nodeId.localeCompare(right.nodeId)));
+  const locationRefByNodeId = new Map(orderedNodes.map((node, index) => [node.nodeId, `N${index + 1}`]));
+  const locationByRef = new Map(orderedNodes.map((node) => [locationRefByNodeId.get(node.nodeId)!, {
+    sectionId: node.sectionId,
+    nodeId: node.nodeId,
+  }]));
+
+  const sections = orderedSections.map((section) => ({
+      sectionRef: sectionRefById.get(section.sectionId)!,
       semanticRole: section.semanticRole,
       title: section.title,
-      parentSectionId: section.parentSectionId ?? null,
+      parentSectionRef: section.parentSectionId ? sectionRefById.get(section.parentSectionId) ?? null : null,
       order: section.order,
       nodes: input.snapshot.nodes
         .filter((node) => node.sectionId === section.sectionId && requestedNodeIds.has(node.nodeId))
         .sort((left, right) => left.order - right.order)
         .map((node) => ({
-          nodeId: node.nodeId,
-          sectionId: node.sectionId,
+          locationRef: locationRefByNodeId.get(node.nodeId)!,
           nodeType: node.nodeType,
           order: node.order,
           text: grantNodeText(node),
         })),
     }));
 
-  const includedNodeIds = new Set(sections.flatMap((section) => section.nodes.map((node) => node.nodeId)));
+  const includedNodeIds = new Set(orderedNodes.map((node) => node.nodeId));
   if (includedNodeIds.size !== requestedNodeIds.size) {
     throw new GrantSemanticDiagnosticV3InputScopeError("Every requested node must belong to a requested section.");
   }
@@ -151,19 +168,31 @@ export function buildGrantSemanticDiagnosticV3Input(input: {
 
   const queryText = [input.snapshot.title, ...sections.flatMap((section) => [section.title, ...section.nodes.map((node) => node.text)])].join("\n");
   const request = GrantSemanticDiagnosticV3ModelInputSchema.parse({
-    contractVersion: GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
+    contractVersion: GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION,
     documentLanguage: /[\u3400-\u9fff]/u.test(queryText) ? "zh" : "en",
     documentTitle: input.snapshot.title,
     fundingCategory: input.fundingCategory,
     inputMode: input.inputMode,
     sections,
     evidenceCards: input.evidenceCards,
-    priorFindings: input.priorFindings,
+    priorFindings: input.priorFindings.flatMap((finding) => {
+      const locationRef = locationRefByNodeId.get(finding.nodeId);
+      const location = locationRef ? locationByRef.get(locationRef) : undefined;
+      if (!locationRef || location?.sectionId !== finding.sectionId) return [];
+      return [{
+        findingFingerprint: finding.findingFingerprint,
+        category: finding.category,
+        status: finding.status,
+        locationRef,
+      }];
+    }),
   });
 
   return {
     request,
-    sectionIdByNodeId: new Map(sections.flatMap((section) => section.nodes.map((node) => [node.nodeId, node.sectionId]))),
+    locationByRef,
+    locationRefByNodeId,
+    sectionIdByNodeId: new Map([...locationByRef.values()].map((location) => [location.nodeId, location.sectionId])),
     allowedEvidenceCardIds: new Set(evidenceIds),
   };
 }

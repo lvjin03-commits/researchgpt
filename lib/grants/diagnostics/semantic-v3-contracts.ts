@@ -27,13 +27,11 @@ const ProviderAssessmentSchema = z.object({
 }).strict();
 
 const ProviderLocationSchema = z.object({
-  sectionId: z.string(),
-  nodeId: z.string(),
+  locationRef: z.string(),
 }).strict();
 
 const ProviderRelatedLocationSchema = z.object({
-  sectionId: z.string(),
-  nodeId: z.string(),
+  locationRef: z.string(),
   role: GrantSemanticRelatedLocationRoleV3Schema,
   quote: z.string().nullable(),
 }).strict();
@@ -107,7 +105,14 @@ export const GrantSemanticDiagnosticResultV3Schema = z.object({
 
 export type GrantSemanticDiagnosticV3NormalizationAction = {
   path: string;
-  rule: "empty_quote_to_null" | "related_location_duplicate_removed" | "evidence_id_duplicate_removed";
+  rule:
+    | "empty_quote_to_null"
+    | "related_location_duplicate_removed"
+    | "evidence_id_duplicate_removed"
+    | "invalid_related_location_ref_removed"
+    | "finding_invalid_primary_location_removed"
+    | "finding_invalid_evidence_reference_removed"
+    | "finding_required_related_location_missing_removed";
 };
 
 export function normalizeGrantSemanticDiagnosticV3ProviderResult(
@@ -119,7 +124,7 @@ export function normalizeGrantSemanticDiagnosticV3ProviderResult(
       findings: result.findings.map((finding, findingIndex) => {
         const seenLocations = new Set<string>();
         const relatedLocations = finding.relatedLocations.flatMap((location, locationIndex) => {
-          const key = `${location.sectionId}:${location.nodeId}:${location.role}`;
+          const key = `${location.locationRef}:${location.role}`;
           if (seenLocations.has(key)) {
             actions.push({ path: `findings.${findingIndex}.relatedLocations.${locationIndex}`, rule: "related_location_duplicate_removed" });
             return [];
@@ -144,6 +149,66 @@ export function normalizeGrantSemanticDiagnosticV3ProviderResult(
       }),
     },
     actions,
+  };
+}
+
+export function resolveGrantSemanticDiagnosticV3LocationReferences(
+  result: z.infer<typeof GrantSemanticDiagnosticProviderResultV3Schema>,
+  scope: {
+    locationByRef: ReadonlyMap<string, { sectionId: string; nodeId: string }>;
+    allowedEvidenceCardIds: ReadonlySet<string>;
+  },
+): {
+  result: GrantSemanticDiagnosticResultV3;
+  actions: GrantSemanticDiagnosticV3NormalizationAction[];
+  invalidPaths: string[];
+} {
+  const actions: GrantSemanticDiagnosticV3NormalizationAction[] = [];
+  const invalidPaths: string[] = [];
+  const findings = result.findings.flatMap((finding, findingIndex) => {
+    const primaryLocation = scope.locationByRef.get(finding.primaryLocation.locationRef);
+    if (!primaryLocation) {
+      const path = `findings.${findingIndex}.primaryLocation.locationRef`;
+      actions.push({ path, rule: "finding_invalid_primary_location_removed" });
+      invalidPaths.push(path);
+      return [];
+    }
+
+    const invalidEvidenceIndex = finding.usedEvidenceCardIds.findIndex((cardId) => !scope.allowedEvidenceCardIds.has(cardId));
+    if (invalidEvidenceIndex >= 0) {
+      const path = `findings.${findingIndex}.usedEvidenceCardIds.${invalidEvidenceIndex}`;
+      actions.push({ path, rule: "finding_invalid_evidence_reference_removed" });
+      invalidPaths.push(path);
+      return [];
+    }
+
+    const relatedLocations = finding.relatedLocations.flatMap((location, locationIndex) => {
+      const resolved = scope.locationByRef.get(location.locationRef);
+      if (!resolved) {
+        const path = `findings.${findingIndex}.relatedLocations.${locationIndex}.locationRef`;
+        actions.push({ path, rule: "invalid_related_location_ref_removed" });
+        invalidPaths.push(path);
+        return [];
+      }
+      return [{ ...resolved, role: location.role, quote: location.quote }];
+    });
+    if (finding.category === "cross_section_inconsistency" && relatedLocations.length === 0) {
+      const path = `findings.${findingIndex}.relatedLocations`;
+      actions.push({ path, rule: "finding_required_related_location_missing_removed" });
+      invalidPaths.push(path);
+      return [];
+    }
+    return [{
+      ...finding,
+      primaryLocation,
+      relatedLocations,
+    }];
+  });
+
+  return {
+    result: GrantSemanticDiagnosticResultV3Schema.parse({ findings }),
+    actions,
+    invalidPaths,
   };
 }
 

@@ -20,8 +20,8 @@ import type { GrantPatchModel, GrantPatchModelRequest } from "../../ports/grant-
 import {
   GrantSemanticDiagnosticProviderResultV3Schema,
   GrantSemanticDiagnosticResultV3Schema,
-  assertGrantSemanticDiagnosticV3References,
   normalizeGrantSemanticDiagnosticV3ProviderResult,
+  resolveGrantSemanticDiagnosticV3LocationReferences,
   type GrantSemanticDiagnosticResultV3,
 } from "../../diagnostics/semantic-v3-contracts.ts";
 import type { GrantSemanticDiagnosticV3PreparedInput } from "../../diagnostics/semantic-v3-input.ts";
@@ -64,7 +64,7 @@ export function grantDiagnosticResponseFormat() {
 }
 
 export function grantDiagnosticV3ResponseFormat() {
-  return zodResponseFormat(GrantSemanticDiagnosticProviderResultV3Schema, "grant_semantic_diagnostic_v3");
+  return zodResponseFormat(GrantSemanticDiagnosticProviderResultV3Schema, "grant_semantic_diagnostic_v4");
 }
 
 type DiagnosticAttemptPurpose = GrantDiagnosticExecutionMetadata["attemptPurpose"];
@@ -224,14 +224,20 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         }
 
         let parsed: GrantSemanticDiagnosticResultV3;
+        let providerFindingCount = 0;
+        let resolutionInvalidPaths: string[] = [];
         let validatedMetadata = metadata;
         try {
           const providerParsed = GrantSemanticDiagnosticProviderResultV3Schema.parse(JSON.parse(content));
+          providerFindingCount = providerParsed.findings.length;
           const normalized = normalizeGrantSemanticDiagnosticV3ProviderResult(providerParsed);
-          validatedMetadata = normalized.actions.length > 0
-            ? { ...metadata, normalizationActions: normalized.actions }
+          const resolved = resolveGrantSemanticDiagnosticV3LocationReferences(normalized.result, prepared);
+          resolutionInvalidPaths = resolved.invalidPaths;
+          const normalizationActions = [...normalized.actions, ...resolved.actions];
+          validatedMetadata = normalizationActions.length > 0
+            ? { ...metadata, normalizationActions }
             : metadata;
-          parsed = GrantSemanticDiagnosticResultV3Schema.parse(normalized.result);
+          parsed = GrantSemanticDiagnosticResultV3Schema.parse(resolved.result);
         } catch (error) {
           const validationIssues = error instanceof z.ZodError
             ? safeGrantDiagnosticValidationIssues(error)
@@ -248,21 +254,17 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
             { ...validatedMetadata, zodIssuePaths: paths, validationIssues },
           );
         }
-        try {
-          assertGrantSemanticDiagnosticV3References(parsed, prepared);
-        } catch (error) {
-          const invalidPaths = error && typeof error === "object" && "invalidPaths" in error
-            ? (error as { invalidPaths: string[] }).invalidPaths
-            : ["$"];
+        if (providerFindingCount > 0 && parsed.findings.length === 0) {
+          const invalidPaths = resolutionInvalidPaths.length > 0 ? resolutionInvalidPaths : ["$"];
           const validationIssues = invalidPaths.map((path) => ({
             path,
             code: "reference_out_of_scope",
-            rule: "reference_not_in_authorized_input",
+            rule: "location_reference_not_in_frozen_map",
             fieldClass: "structural" as const,
           }));
           throw new GrantDiagnosticExecutionError(
             "semantic_reference_invalid",
-            "GPT V3 diagnostic referenced content outside the authorized input.",
+            "GPT diagnostic returned no usable Finding after deterministic reference resolution.",
             { ...validatedMetadata, zodIssuePaths: invalidPaths, validationIssues },
           );
         }
@@ -292,7 +294,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
           purpose = "capacity_retry";
         } else if (executionError.category === "structured_output_invalid") {
           purpose = "schema_repair";
-          repairInstruction = `Correct only the prior contract failure. Return a complete schema-valid result using only supplied IDs. Invalid paths: ${(executionError.metadata.zodIssuePaths ?? ["unknown"]).join(", ")}.`;
+          repairInstruction = `Correct only the prior contract failure. Return a complete schema-valid result using only supplied atomic location references and Evidence Card IDs. Invalid paths: ${(executionError.metadata.zodIssuePaths ?? ["unknown"]).join(", ")}.`;
         } else {
           purpose = "transient_retry";
         }

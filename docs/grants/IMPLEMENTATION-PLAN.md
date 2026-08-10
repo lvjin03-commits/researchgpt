@@ -95,6 +95,17 @@ for an explicitly recoverable category, and token usage is accumulated across
 both attempts. No raw application or model text is copied into diagnostic
 telemetry.
 
+Semantic atomic-location update (2026-08-10): production evidence showed that
+a full-document GPT run could return nonexistent section/node combinations even
+when both identity fields looked structurally valid. The provider boundary now
+assigns one deterministic atomic `locationRef` to every authorized node, reuses
+the frozen map across retries and resolves references back to canonical UUIDs
+before assembly. Invalid primary references discard their Finding; invalid
+related references are contained at field/Finding scope instead of rejecting an
+otherwise usable run. Provider/run contract V4, prompt V4, policy v3.2, checker
+4.0.0 and migration 046 are staged. A real signed-in run remains required after
+migration and deployment.
+
 Semantic Diagnostic V3 planning status (2026-08-09): the contract, impact
 analysis and ADR are frozen in Impact Analysis 0015 and ADR-0015. This step
 changes no runtime behavior. Implementation must remain staged: strict schema

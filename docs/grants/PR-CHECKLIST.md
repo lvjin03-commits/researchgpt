@@ -47,8 +47,10 @@ Copy the relevant sections into every grant-platform PR.
       arrays rather than optional properties.
 - [ ] Semantic categories have boundary fixtures, including positive and
       negative examples for overlapping categories.
-- [ ] Every returned section, node and Evidence Card ID was supplied and is
-      currently authorized for its claimed scope.
+- [ ] Model-facing locations use one atomic, execution-local reference per
+      authorized canonical node; models never combine section and node IDs.
+- [ ] Every resolved location reference and Evidence Card ID was supplied and
+      is currently authorized for its claimed scope.
 - [ ] Finding fingerprints exclude recommendation phrasing and other unstable
       presentation text.
 - [ ] Default issue order follows canonical source order and does not treat

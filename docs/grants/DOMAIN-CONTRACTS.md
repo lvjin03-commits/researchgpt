@@ -181,17 +181,31 @@ empty or successful semantic result.
 V3 version ownership is explicit and must not be inferred from similar-looking
 strings:
 
-- `contractVersion = grant-semantic-diagnostic-v3` is the durable Diagnostic
+- `contractVersion = grant-semantic-diagnostic-v4` is the active durable Diagnostic
   Run contract accepted by PostgreSQL.
-- `schemaVersion = grant-semantic-diagnostic-v3` is the provider-output schema.
-  In V3 these two versions intentionally advance together and share one
+- `schemaVersion = grant-semantic-diagnostic-v4` is the provider-output schema.
+  These two versions intentionally advance together and share one
   authoritative constant.
-- `promptVersion = grant-semantic-review-v3` versions model instructions only;
+- `promptVersion = grant-semantic-review-v4` versions model instructions only;
   it must never be persisted as the run contract.
 - durable Finding content uses the separate
   `schemaVersion = grant-semantic-finding-v3`.
-- `policyVersion = grant-ai-policy-v3.1` versions execution, deterministic
+- `policyVersion = grant-ai-policy-v3.2` versions execution, deterministic
   normalization and retry policy.
+
+Provider-facing document locations use one atomic execution-local reference per
+canonical node (`N1`, `N2`, ...). A reference is indivisible and maps to exactly
+one program-owned `(sectionId, nodeId)` pair. The provider never emits or
+combines canonical section/node IDs. Grant Model Data Gateway freezes the map
+once per execution; retries reuse the same prepared input. Programs resolve the
+reference before program validation and persistence, while durable Finding V3
+locations remain canonical UUID pairs.
+
+Unknown primary references discard only their Finding. Unknown related
+references are removed; a `cross_section_inconsistency` Finding with no
+surviving related location is discarded. Invalid Evidence Card references also
+discard only their Finding. If a non-empty provider response leaves no usable
+Finding, the semantic execution fails as `semantic_reference_invalid`.
 
 Production code and PostgreSQL integration fixtures must obtain these values
 from the same production constants/checker instance. Tests may assert literal
@@ -209,9 +223,10 @@ Version linkage is governed by the changed authority, not by convenience:
 | Checker logic that changes reported Findings | `checkerVersion` |
 
 More than one row may apply to one change. Observability-only additions that do
-not change decisions retain existing semantic versions. Provider-facing long
-IDs remain the active V3 contract; replacing them with short references
-requires measured failure evidence and an explicit schema/contract migration.
+not change decisions retain existing semantic versions. Migration 046 provides
+the bounded V3/V4 rollback window through the existing save RPC. V3 acceptance
+is compatibility only and may be removed after the observation period recorded
+in Impact Analysis 0016.
 
 Validation telemetry must never persist application prose. It may retain the
 issue path, Zod code, a whitelisted rule, field class, expected/received value

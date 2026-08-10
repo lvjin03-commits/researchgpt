@@ -8,6 +8,8 @@ import {
   GrantSemanticDiagnosticResultV3Schema,
   GrantSemanticDiagnosticV3ReferenceError,
   assertGrantSemanticDiagnosticV3References,
+  normalizeGrantSemanticDiagnosticV3ProviderResult,
+  resolveGrantSemanticDiagnosticV3LocationReferences,
 } from "../lib/grants/diagnostics/semantic-v3-contracts.ts";
 
 const sectionId = randomUUID();
@@ -25,10 +27,9 @@ const validResult = {
     recommendation: "统一研究对象，或补充碱金属体系对应的研究内容和验证路线。",
     possibleConsequence: null,
     assessment: { scope: "cross_section" as const, confidence: 0.94, actionability: "directly_actionable" as const },
-    primaryLocation: { sectionId, nodeId },
+    primaryLocation: { locationRef: "N1" },
     relatedLocations: [{
-      sectionId: relatedSectionId,
-      nodeId: relatedNodeId,
+      locationRef: "N2",
       role: "downstream_dependency" as const,
       quote: "预期形成适用于多种碱金属体系的规律。",
     }],
@@ -36,7 +37,7 @@ const validResult = {
   }],
 };
 
-const responseFormat = zodResponseFormat(GrantSemanticDiagnosticProviderResultV3Schema, "grant_semantic_diagnostic_v3");
+const responseFormat = zodResponseFormat(GrantSemanticDiagnosticProviderResultV3Schema, "grant_semantic_diagnostic_v4");
 assert.equal(responseFormat.type, "json_schema");
 assert.equal(responseFormat.json_schema.strict, true);
 const jsonSchema = responseFormat.json_schema.schema as Record<string, unknown>;
@@ -68,32 +69,54 @@ function assertStrictProviderSchema(value: unknown, path = "$schema"): void {
 }
 
 assertStrictProviderSchema(jsonSchema);
+const serializedProviderSchema = JSON.stringify(jsonSchema);
+assert.match(serializedProviderSchema, /locationRef/);
+assert.doesNotMatch(serializedProviderSchema, /sectionId|nodeId/);
 assert.deepEqual(GrantSemanticDiagnosticProviderResultV3Schema.parse(validResult), validResult);
-assert.deepEqual(GrantSemanticDiagnosticResultV3Schema.parse(validResult), validResult);
+const resolvedResult = resolveGrantSemanticDiagnosticV3LocationReferences(
+  normalizeGrantSemanticDiagnosticV3ProviderResult(validResult).result,
+  {
+    locationByRef: new Map([
+      ["N1", { sectionId, nodeId }],
+      ["N2", { sectionId: relatedSectionId, nodeId: relatedNodeId }],
+    ]),
+    allowedEvidenceCardIds: new Set([evidenceCardId]),
+  },
+).result;
+assert.doesNotThrow(() => GrantSemanticDiagnosticResultV3Schema.parse(resolvedResult));
 
 const nullAndEmptyArrays = structuredClone(validResult);
 nullAndEmptyArrays.findings[0]!.possibleConsequence = null;
 nullAndEmptyArrays.findings[0]!.relatedLocations = [];
 nullAndEmptyArrays.findings[0]!.usedEvidenceCardIds = [];
-assert.doesNotThrow(() => GrantSemanticDiagnosticResultV3Schema.parse(nullAndEmptyArrays));
+assert.doesNotThrow(() => GrantSemanticDiagnosticProviderResultV3Schema.parse(nullAndEmptyArrays));
 
 const missingNullableField = structuredClone(validResult) as Record<string, unknown>;
 delete ((missingNullableField.findings as Array<Record<string, unknown>>)[0]!).possibleConsequence;
 assert.throws(() => GrantSemanticDiagnosticProviderResultV3Schema.parse(missingNullableField));
 
-const invalidUuid = structuredClone(validResult) as unknown as {
-  findings: Array<{ primaryLocation: { nodeId: string } }>;
-};
-invalidUuid.findings[0]!.primaryLocation.nodeId = "not-a-uuid";
-assert.doesNotThrow(() => GrantSemanticDiagnosticProviderResultV3Schema.parse(invalidUuid));
-assert.throws(() => GrantSemanticDiagnosticResultV3Schema.parse(invalidUuid));
+const invalidReference = structuredClone(validResult);
+invalidReference.findings[0]!.primaryLocation.locationRef = "N999";
+assert.doesNotThrow(() => GrantSemanticDiagnosticProviderResultV3Schema.parse(invalidReference));
+const invalidReferenceResolution = resolveGrantSemanticDiagnosticV3LocationReferences(invalidReference, {
+  locationByRef: new Map([["N1", { sectionId, nodeId }]]),
+  allowedEvidenceCardIds: new Set([evidenceCardId]),
+});
+assert.equal(invalidReferenceResolution.result.findings.length, 0);
+assert.deepEqual(invalidReferenceResolution.invalidPaths, ["findings.0.primaryLocation.locationRef"]);
 
 const invalidConfidence = structuredClone(validResult);
 invalidConfidence.findings[0]!.assessment.confidence = 1.5;
 assert.doesNotThrow(() => GrantSemanticDiagnosticProviderResultV3Schema.parse(invalidConfidence));
-assert.throws(() => GrantSemanticDiagnosticResultV3Schema.parse(invalidConfidence));
+assert.throws(() => resolveGrantSemanticDiagnosticV3LocationReferences(invalidConfidence, {
+  locationByRef: new Map([
+    ["N1", { sectionId, nodeId }],
+    ["N2", { sectionId: relatedSectionId, nodeId: relatedNodeId }],
+  ]),
+  allowedEvidenceCardIds: new Set([evidenceCardId]),
+}));
 
-const parsed = GrantSemanticDiagnosticResultV3Schema.parse(validResult);
+const parsed = GrantSemanticDiagnosticResultV3Schema.parse(resolvedResult);
 assert.doesNotThrow(() => assertGrantSemanticDiagnosticV3References(parsed, {
   sectionIdByNodeId: new Map([[nodeId, sectionId], [relatedNodeId, relatedSectionId]]),
   allowedEvidenceCardIds: new Set([evidenceCardId]),

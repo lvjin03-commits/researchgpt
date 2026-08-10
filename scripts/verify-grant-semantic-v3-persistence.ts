@@ -4,6 +4,10 @@ import { InMemoryGrantDiagnosticRepository } from "../lib/grants/infrastructure/
 import { assembleGrantSemanticDiagnosticsV3 } from "../lib/grants/diagnostics/semantic-v3-assembler.ts";
 import { GrantDiagnosticRunSchema, GrantFindingSchema } from "../lib/grants/diagnostics/contracts.ts";
 import type { CanonicalGrantSnapshot } from "../lib/grants/domain/contracts.ts";
+import {
+  GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION,
+  GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+} from "../lib/grants/ports/grant-diagnostic-model.ts";
 
 const id = (suffix: string) => `10000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 const documentId = id("1"), revisionId = id("2"), sectionId = id("3"), nodeId = id("4"), runId = id("5");
@@ -15,8 +19,8 @@ const snapshot: CanonicalGrantSnapshot = {
 };
 const run = GrantDiagnosticRunSchema.parse({
   runId, documentId, sourceRevisionId: revisionId,
-  checkerId: "grant-semantic-review", checkerVersion: "3.0.0",
-  contractVersion: "grant-semantic-diagnostic-v3", inputMode: "full_document",
+  checkerId: "grant-semantic-review", checkerVersion: "4.0.0",
+  contractVersion: GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION, inputMode: "full_document",
   inputNodeIds: [nodeId], inputHash: "a".repeat(64), status: "succeeded",
   parsedOutput: { findingCount: 1 }, createdBy: id("6"),
   startedAt: "2026-08-09T12:00:00.000Z", completedAt: "2026-08-09T12:00:01.000Z",
@@ -26,7 +30,7 @@ const [v3Finding] = assembleGrantSemanticDiagnosticsV3({
     runId, documentId, sourceRevisionId: revisionId,
     checkerId: run.checkerId, checkerVersion: run.checkerVersion,
     contractVersion: run.contractVersion, schemaVersion: "grant-semantic-finding-v3",
-    policyVersion: "grant-semantic-review-v3",
+    policyVersion: GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
   },
   snapshot,
   result: { findings: [{
@@ -66,8 +70,8 @@ assert.equal(normalizedV3?.schemaVersion, "grant-semantic-finding-v3");
 assert.equal(normalizedV3?.reason, v3Finding.reason);
 assert.deepEqual(normalizedV3?.relatedLocations, []);
 
-const migration = readFileSync("supabase/migrations/045_grant_semantic_diagnostic_v3_projection.sql", "utf8");
+const migration = readFileSync("supabase/migrations/046_grant_semantic_atomic_location_refs.sql", "utf8");
 assert.match(migration, /PERFORM public\.save_grant_diagnostic_execution/);
-assert.match(migration, /CREATE OR REPLACE FUNCTION public\.list_grant_normalized_findings/);
-assert.match(migration, /V2 rows stay immutable/);
+assert.match(migration, /grant-semantic-diagnostic-v3/);
+assert.match(migration, /grant-semantic-diagnostic-v4/);
 console.log("Grant semantic diagnostic V3 persistence and normalized projection contracts passed.");
