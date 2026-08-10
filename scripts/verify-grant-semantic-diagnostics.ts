@@ -86,12 +86,15 @@ const service = new GrantDiagnosticService({
   incrementalEnabled: true,
 });
 const execution = await service.run(aggregate.document.documentId, ownerId);
+assert.equal(execution.executionStatus, "complete");
 assert.equal(requests.length, 1);
 assert.equal(requests[0]!.sections[0]!.nodes[0]!.nodeId, nodeId);
 assert.equal(execution.findings.some((finding) => finding.code === "scientific_question_gap"), true);
 const semanticRun = execution.runs.find((run) => run.checkerId === "grant-semantic-argument-diagnostic");
 assert.equal(semanticRun?.parsedOutput.metadata && (semanticRun.parsedOutput.metadata as Record<string, unknown>).modelId, "gpt-5.5");
-assert.equal((await service.list(aggregate.document.documentId)).coverage.semantic, "complete");
+const completeProjection = await service.list(aggregate.document.documentId);
+assert.equal(completeProjection.coverage.semantic, "complete");
+assert.equal(completeProjection.executionStatus, "complete");
 
 const failingModel: GrantPatchModel & GrantDiagnosticModel = {
   ...model,
@@ -123,9 +126,12 @@ const failureService = new GrantDiagnosticService({
   incrementalEnabled: true,
 });
 const partial = await failureService.run(aggregate.document.documentId, ownerId);
+assert.equal(partial.executionStatus, "partial");
 assert.equal(partial.runs.some((run) => run.checkerId === "grant.structural_completeness" && run.status === "succeeded"), true);
 assert.equal(partial.runs.some((run) => run.checkerId === "grant-semantic-argument-diagnostic" && run.status === "failed"), true);
-const failedCoverage = (await failureService.list(aggregate.document.documentId)).coverage;
+const failedProjection = await failureService.list(aggregate.document.documentId);
+const failedCoverage = failedProjection.coverage;
+assert.equal(failedProjection.executionStatus, "partial");
 assert.equal(failedCoverage.semantic, "failed");
 assert.equal(failedCoverage.semanticFailure?.category, "output_truncated");
 assert.equal(failedCoverage.semanticFailure?.finishReason, "length");

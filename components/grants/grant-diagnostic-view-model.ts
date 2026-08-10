@@ -1,7 +1,7 @@
 import type { GrantAnchorResolution, GrantDiagnosticConflict } from "@/lib/grants/diagnostics/contracts";
 import type { GrantNormalizedFinding } from "@/lib/grants/diagnostics/normalized-finding";
 import type { GrantFindingFeedback } from "@/lib/grants/feedback/contracts";
-import type { GrantDiagnosticCoverage, GrantRecheckSummary } from "@/lib/grants/application/diagnostic-service";
+import type { GrantDiagnosticCoverage, GrantDiagnosticExecutionStatus, GrantRecheckSummary } from "@/lib/grants/application/diagnostic-service";
 
 export type GrantDiagnosticItem = {
   finding: GrantNormalizedFinding;
@@ -14,6 +14,7 @@ export type GrantDiagnosticsPayload = {
   feedback: GrantFindingFeedback[];
   recheck: GrantRecheckSummary;
   coverage: GrantDiagnosticCoverage;
+  executionStatus: GrantDiagnosticExecutionStatus | null;
 };
 
 export type GrantFindingTarget = {

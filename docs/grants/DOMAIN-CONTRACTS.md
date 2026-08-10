@@ -190,12 +190,45 @@ strings:
   it must never be persisted as the run contract.
 - durable Finding content uses the separate
   `schemaVersion = grant-semantic-finding-v3`.
-- `policyVersion = grant-ai-policy-v3` versions execution and retry policy.
+- `policyVersion = grant-ai-policy-v3.1` versions execution, deterministic
+  normalization and retry policy.
 
 Production code and PostgreSQL integration fixtures must obtain these values
 from the same production constants/checker instance. Tests may assert literal
 database expectations, but must not inject handwritten "correct" values in
 place of the production object under test.
+
+Version linkage is governed by the changed authority, not by convenience:
+
+| Change | Versions that must advance |
+| --- | --- |
+| Provider output fields or meanings | `schemaVersion` and `contractVersion` |
+| Durable Finding fields or meanings | Finding `schemaVersion` |
+| Model instructions only | `promptVersion` |
+| Retry, capacity, normalization or failure classification | `policyVersion` |
+| Checker logic that changes reported Findings | `checkerVersion` |
+
+More than one row may apply to one change. Observability-only additions that do
+not change decisions retain existing semantic versions. Provider-facing long
+IDs remain the active V3 contract; replacing them with short references
+requires measured failure evidence and an explicit schema/contract migration.
+
+Validation telemetry must never persist application prose. It may retain the
+issue path, Zod code, a whitelisted rule, field class, expected/received value
+types and numeric bounds. It must not retain received values or free-form Zod
+messages for content fields.
+
+Diagnostic execution has one explicit aggregate status:
+
+- `complete`: every configured checker succeeded;
+- `partial`: at least one checker succeeded and at least one did not;
+- `failed`: no configured checker succeeded.
+
+Before any execution exists, the read projection uses `null`; it must not label
+an unstarted diagnostic as failed.
+
+The diagnostics POST endpoint returns HTTP `201`, `207`, or `502` respectively.
+A partial response must never be represented as a complete AI diagnosis.
 
 The following contract is accepted for the next semantic-checker version but is
 not the active production schema until its staged rollout is verified:

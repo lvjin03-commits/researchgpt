@@ -54,6 +54,7 @@ type Props = {
 
 function semanticFailureMessage(coverage: GrantDiagnosticCoverage): string {
   switch (coverage.semanticFailure?.category) {
+    case "structured_reference_invalid": return "GPT 返回的位置或证据标识不符合程序合同。系统已记录具体校验规则，并停止盲目重试；程序检查结果仍然保留。";
     case "output_truncated": return "GPT 输出达到长度上限，语义诊断在完成前被截断。系统已按统一预算受控重试，当前没有把不完整结果写成诊断。";
     case "content_filtered": return "GPT 的内容过滤器中止了本次语义诊断，程序检查结果仍然保留。";
     case "provider_refusal": return "GPT 拒绝了本次语义诊断请求，程序检查结果仍然保留。";

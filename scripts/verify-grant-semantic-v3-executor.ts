@@ -7,10 +7,13 @@ import {
   OpenAIGrantAiModel,
   grantDiagnosticV3ResponseFormat,
 } from "../lib/grants/infrastructure/model/openai-grant-ai-model.ts";
+import { GrantSemanticDiagnosticResultV3Schema } from "../lib/grants/diagnostics/semantic-v3-contracts.ts";
+import { safeGrantDiagnosticValidationIssues } from "../lib/grants/diagnostics/validation-telemetry.ts";
 import {
   GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
   GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
   GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
+  GrantDiagnosticExecutionError,
 } from "../lib/grants/ports/grant-diagnostic-model.ts";
 
 const sectionId = randomUUID();
@@ -94,5 +97,85 @@ assert.equal(repairCalls, 2);
 assert.equal(repaired.execution.attemptPurpose, "schema_repair");
 assert.equal(repaired.execution.recoveredFrom, "structured_output_invalid");
 assert.equal(repaired.usage.outputTokens, 200);
+
+let structuralReferenceCalls = 0;
+const invalidReferencePayload = JSON.parse(validContent) as Record<string, unknown>;
+((invalidReferencePayload.findings as Array<Record<string, unknown>>)[0]!.relatedLocations as unknown[]) = [{
+  sectionId,
+  nodeId: "not-a-uuid",
+  role: "supporting_location",
+  quote: null,
+}];
+const structuralReferenceClient = {
+  chat: { completions: { async create() {
+    structuralReferenceCalls += 1;
+    return {
+      id: "invalid-reference",
+      object: "chat.completion",
+      created: 0,
+      model: "gpt-5.5",
+      choices: [{ index: 0, finish_reason: "stop", logprobs: null, message: { role: "assistant", refusal: null, content: JSON.stringify(invalidReferencePayload) } }],
+      usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200, completion_tokens_details: { reasoning_tokens: 10 } },
+    };
+  } } },
+} as unknown as OpenAI;
+await assert.rejects(
+  () => new OpenAIGrantAiModel("gpt-5.5", "test", structuralReferenceClient).diagnoseV3(prepared),
+  (error: unknown) => {
+    assert(error instanceof GrantDiagnosticExecutionError);
+    assert.equal(error.category, "structured_reference_invalid");
+    assert.equal(error.metadata.attemptCount, 1);
+    assert.deepEqual(error.metadata.zodIssuePaths, ["findings.0.relatedLocations.0.nodeId"]);
+    assert.deepEqual(error.metadata.validationIssues, [{
+      path: "findings.0.relatedLocations.0.nodeId",
+      code: "invalid_format",
+      rule: "invalid_format:uuid",
+      fieldClass: "structural",
+    }]);
+    assert.equal(JSON.stringify(error.metadata).includes("not-a-uuid"), false);
+    return true;
+  },
+);
+assert.equal(structuralReferenceCalls, 1, "structural ID failures must not trigger a second paid model call");
+
+const normalizedPayload = JSON.parse(validContent) as Record<string, unknown>;
+((normalizedPayload.findings as Array<Record<string, unknown>>)[0]!.relatedLocations as unknown[]) = [
+  { sectionId, nodeId, role: "supporting_location", quote: "   " },
+  { sectionId, nodeId, role: "supporting_location", quote: "duplicate" },
+];
+const normalizationClient = {
+  chat: { completions: { async create() {
+    return {
+      id: "normalized-reference",
+      object: "chat.completion",
+      created: 0,
+      model: "gpt-5.5",
+      choices: [{ index: 0, finish_reason: "stop", logprobs: null, message: { role: "assistant", refusal: null, content: JSON.stringify(normalizedPayload) } }],
+      usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200, completion_tokens_details: { reasoning_tokens: 10 } },
+    };
+  } } },
+} as unknown as OpenAI;
+const normalized = await new OpenAIGrantAiModel("gpt-5.5", "test", normalizationClient).diagnoseV3(prepared);
+assert.equal(normalized.findings[0]!.relatedLocations.length, 1);
+assert.equal(normalized.findings[0]!.relatedLocations[0]!.quote, null);
+assert.deepEqual(normalized.execution.normalizationActions?.map((action) => action.rule), [
+  "empty_quote_to_null",
+  "related_location_duplicate_removed",
+]);
+
+const privateText = "PRIVATE-GRANT-CONTENT";
+const contentFailure = GrantSemanticDiagnosticResultV3Schema.safeParse({
+  findings: [{
+    ...(JSON.parse(validContent).findings[0] as Record<string, unknown>),
+    diagnosticFact: "",
+    reason: privateText,
+  }],
+});
+assert.equal(contentFailure.success, false);
+if (!contentFailure.success) {
+  const safeIssues = safeGrantDiagnosticValidationIssues(contentFailure.error);
+  assert.equal(safeIssues.some((issue) => issue.path === "findings.0.diagnosticFact" && issue.fieldClass === "content"), true);
+  assert.equal(JSON.stringify(safeIssues).includes(privateText), false);
+}
 
 console.log("Grant semantic diagnostic V3 prompt and unified execution contracts passed.");

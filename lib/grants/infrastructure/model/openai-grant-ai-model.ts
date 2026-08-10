@@ -21,10 +21,15 @@ import {
   GrantSemanticDiagnosticProviderResultV3Schema,
   GrantSemanticDiagnosticResultV3Schema,
   assertGrantSemanticDiagnosticV3References,
+  normalizeGrantSemanticDiagnosticV3ProviderResult,
   type GrantSemanticDiagnosticResultV3,
 } from "../../diagnostics/semantic-v3-contracts.ts";
 import type { GrantSemanticDiagnosticV3PreparedInput } from "../../diagnostics/semantic-v3-input.ts";
 import { buildGrantSemanticDiagnosticV3Messages } from "../../diagnostics/semantic-v3-prompt.ts";
+import {
+  isGrantStructuralReferenceFailure,
+  safeGrantDiagnosticValidationIssues,
+} from "../../diagnostics/validation-telemetry.ts";
 
 const PatchResultSchema = z.object({
   replacementText: z.string().trim().min(1),
@@ -84,7 +89,6 @@ function apiFailureCategory(error: unknown): GrantDiagnosticFailureCategory {
 function isRetryable(category: GrantDiagnosticFailureCategory): boolean {
   return category === "output_truncated"
     || category === "structured_output_invalid"
-    || category === "semantic_reference_invalid"
     || category === "provider_rate_limited"
     || category === "provider_transient_error";
 }
@@ -220,15 +224,28 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         }
 
         let parsed: GrantSemanticDiagnosticResultV3;
+        let validatedMetadata = metadata;
         try {
           const providerParsed = GrantSemanticDiagnosticProviderResultV3Schema.parse(JSON.parse(content));
-          parsed = GrantSemanticDiagnosticResultV3Schema.parse(providerParsed);
+          const normalized = normalizeGrantSemanticDiagnosticV3ProviderResult(providerParsed);
+          validatedMetadata = normalized.actions.length > 0
+            ? { ...metadata, normalizationActions: normalized.actions }
+            : metadata;
+          parsed = GrantSemanticDiagnosticResultV3Schema.parse(normalized.result);
         } catch (error) {
-          const paths = error instanceof z.ZodError ? issuePaths(error) : ["$"];
+          const validationIssues = error instanceof z.ZodError
+            ? safeGrantDiagnosticValidationIssues(error)
+            : error instanceof SyntaxError
+              ? [{ path: "$", code: "syntax_error", rule: "json_parse_error", fieldClass: "unknown" as const }]
+              : [];
+          const paths = validationIssues.length > 0 ? validationIssues.map((issue) => issue.path) : ["$"];
+          const category = isGrantStructuralReferenceFailure(validationIssues)
+            ? "structured_reference_invalid"
+            : "structured_output_invalid";
           throw new GrantDiagnosticExecutionError(
-            "structured_output_invalid",
+            category,
             "GPT V3 diagnostic output did not satisfy the diagnostic schema.",
-            { ...metadata, zodIssuePaths: paths },
+            { ...validatedMetadata, zodIssuePaths: paths, validationIssues },
           );
         }
         try {
@@ -237,13 +254,19 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
           const invalidPaths = error && typeof error === "object" && "invalidPaths" in error
             ? (error as { invalidPaths: string[] }).invalidPaths
             : ["$"];
+          const validationIssues = invalidPaths.map((path) => ({
+            path,
+            code: "reference_out_of_scope",
+            rule: "reference_not_in_authorized_input",
+            fieldClass: "structural" as const,
+          }));
           throw new GrantDiagnosticExecutionError(
             "semantic_reference_invalid",
             "GPT V3 diagnostic referenced content outside the authorized input.",
-            { ...metadata, zodIssuePaths: invalidPaths },
+            { ...validatedMetadata, zodIssuePaths: invalidPaths, validationIssues },
           );
         }
-        return { ...parsed, provider: "openai", modelId: this.modelId, usage: totalUsage, execution: metadata };
+        return { ...parsed, provider: "openai", modelId: this.modelId, usage: totalUsage, execution: validatedMetadata };
       } catch (error) {
         const executionError = error instanceof GrantDiagnosticExecutionError
           ? error
@@ -267,7 +290,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         recoveredFrom = executionError.category;
         if (executionError.category === "output_truncated") {
           purpose = "capacity_retry";
-        } else if (executionError.category === "structured_output_invalid" || executionError.category === "semantic_reference_invalid") {
+        } else if (executionError.category === "structured_output_invalid") {
           purpose = "schema_repair";
           repairInstruction = `Correct only the prior contract failure. Return a complete schema-valid result using only supplied IDs. Invalid paths: ${(executionError.metadata.zodIssuePaths ?? ["unknown"]).join(", ")}.`;
         } else {

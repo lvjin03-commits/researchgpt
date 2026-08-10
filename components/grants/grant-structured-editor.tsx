@@ -31,6 +31,7 @@ const emptyDiagnostics: GrantDiagnosticsPayload = {
   feedback: [],
   recheck: { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: 0, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
   coverage: { deterministic: "not_run", semantic: "not_run", failedCheckerIds: [] },
+  executionStatus: null,
 };
 
 async function fetchEditorPayload(documentId: string): Promise<EditorPayload> {
@@ -292,8 +293,11 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
       const mode = recheckEnabled ? "?mode=recheck" : "";
       const response = await fetch(`/api/grants/documents/${documentId}/diagnostics${mode}`, { method: "POST" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "申请书检查失败。");
       await refreshDiagnostics();
+      if (data.executionStatus === "failed") {
+        throw new Error("AI 诊断未完成，系统没有把失败结果当作完整诊断写入。");
+      }
+      if (!response.ok) throw new Error(data.error ?? "申请书检查失败。");
     } catch (error) {
       setDiagnosticsError(error instanceof Error ? error.message : "申请书检查失败。");
     } finally {

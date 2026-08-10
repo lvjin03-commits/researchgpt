@@ -9,6 +9,7 @@ import type { GrantDiagnosticExecution, GrantDiagnosticRepository } from "../por
 import { GrantRevisionService } from "./revision-service.ts";
 import { GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID } from "./semantic-diagnostic-checker.ts";
 import { GrantDiagnosticExecutionError, type GrantDiagnosticFailureCategory } from "../ports/grant-diagnostic-model.ts";
+import type { GrantDiagnosticValidationIssue } from "../diagnostics/validation-telemetry.ts";
 import {
   GRANT_SEMANTIC_FINDING_V3_SCHEMA_VERSION,
   assembleGrantSemanticDiagnosticsV3,
@@ -47,8 +48,22 @@ export type GrantDiagnosticCoverage = {
     category: GrantDiagnosticFailureCategory | "checker_failed";
     finishReason?: string;
     attemptCount?: number;
+    validationIssues?: GrantDiagnosticValidationIssue[];
   };
 };
+
+export type GrantDiagnosticExecutionStatus = "complete" | "partial" | "failed";
+
+export function grantDiagnosticExecutionStatus(
+  runs: GrantDiagnosticRun[],
+  expectedCheckerCount: number,
+): GrantDiagnosticExecutionStatus {
+  const succeeded = runs.filter((run) => run.status === "succeeded").length;
+  const failed = runs.filter((run) => run.status === "failed").length;
+  if (expectedCheckerCount > 0 && succeeded === expectedCheckerCount && failed === 0) return "complete";
+  if (succeeded > 0) return "partial";
+  return "failed";
+}
 
 function stableFindingKey(checker: GrantChecker, candidate: GrantCheckerFindingCandidate): string {
   return sha256Canonical({
@@ -136,7 +151,7 @@ export class GrantDiagnosticService {
     this.incrementalEnabled = incrementalEnabled;
   }
 
-  async run(documentId: string, actorId: string, options: { incremental?: boolean } = {}): Promise<GrantDiagnosticExecution & { recheck: GrantRecheckSummary }> {
+  async run(documentId: string, actorId: string, options: { incremental?: boolean } = {}): Promise<GrantDiagnosticExecution & { recheck: GrantRecheckSummary; executionStatus: GrantDiagnosticExecutionStatus }> {
     const aggregate = await this.revisionService.getDocument(documentId);
     const sourceRevision = aggregate.currentRevision;
     const priorRevision = sourceRevision.parentRevisionId
@@ -276,7 +291,13 @@ export class GrantDiagnosticService {
       const allConflicts = await this.repository.listConflicts(documentId);
       const findingIds = new Set(findings.map((finding) => finding.findingId));
       const conflicts = allConflicts.filter((conflict) => conflict.findingIds.every((findingId) => findingIds.has(findingId)));
-      return { runs, findings, conflicts, recheck: this.summarize(runs, existingRuns, inputSectionIds.length, inputNodeIds.length, true) };
+      return {
+        runs,
+        findings,
+        conflicts,
+        recheck: this.summarize(runs, existingRuns, inputSectionIds.length, inputNodeIds.length, true),
+        executionStatus: grantDiagnosticExecutionStatus(runs, this.checkers.length),
+      };
     }
 
     const assembled = assembleGrantDiagnostics({
@@ -305,6 +326,7 @@ export class GrantDiagnosticService {
       ],
       conflicts: genericExecution.conflicts,
       recheck: this.summarize(runs, existingRuns, inputSectionIds.length, inputNodeIds.length, false),
+      executionStatus: grantDiagnosticExecutionStatus(runs, this.checkers.length),
     };
   }
 
@@ -313,6 +335,7 @@ export class GrantDiagnosticService {
     conflicts: Awaited<ReturnType<GrantDiagnosticRepository["listConflicts"]>>;
     recheck: GrantRecheckSummary;
     coverage: GrantDiagnosticCoverage;
+    executionStatus: GrantDiagnosticExecutionStatus | null;
   }> {
     const aggregate = await this.revisionService.getDocument(documentId);
     const targetRevision = targetRevisionId
@@ -332,6 +355,7 @@ export class GrantDiagnosticService {
         conflicts: allConflicts,
         recheck: { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: allFindings.length, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
         coverage,
+        executionStatus: null,
       };
     }
     const runsForTarget = allRuns.filter((run) => run.status === "succeeded" && run.sourceRevisionId === targetRevision.revisionId);
@@ -371,6 +395,7 @@ export class GrantDiagnosticService {
         ? this.summarize(currentRuns, previousRuns, sectionIds.size, new Set(currentRuns.flatMap((run) => run.inputNodeIds)).size, false)
         : { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: findings.length, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
       coverage,
+      executionStatus: grantDiagnosticExecutionStatus(currentRuns, this.checkers.length),
     };
   }
 
@@ -397,6 +422,14 @@ export class GrantDiagnosticService {
           category: semanticFailure.category as GrantDiagnosticFailureCategory | "checker_failed",
           finishReason: "finishReason" in semanticFailure && typeof semanticFailure.finishReason === "string" ? semanticFailure.finishReason : undefined,
           attemptCount: "attemptCount" in semanticFailure && typeof semanticFailure.attemptCount === "number" ? semanticFailure.attemptCount : undefined,
+          validationIssues: "validationIssues" in semanticFailure && Array.isArray(semanticFailure.validationIssues)
+            ? semanticFailure.validationIssues.filter((issue): issue is GrantDiagnosticValidationIssue => Boolean(
+              issue && typeof issue === "object" && "path" in issue && typeof issue.path === "string"
+              && "code" in issue && typeof issue.code === "string"
+              && "rule" in issue && typeof issue.rule === "string"
+              && "fieldClass" in issue && (issue.fieldClass === "structural" || issue.fieldClass === "content" || issue.fieldClass === "unknown")
+            ))
+            : undefined,
         }
         : undefined,
     };

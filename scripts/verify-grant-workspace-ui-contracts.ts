@@ -96,6 +96,7 @@ const resizableWorkspaceSource = await readFile(new URL("../components/grants/gr
 const globalStylesSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const evidenceSource = await readFile(new URL("../components/grants/grant-evidence-panel.tsx", import.meta.url), "utf8");
 const aiPatchSource = await readFile(new URL("../components/grants/grant-ai-patch-panel.tsx", import.meta.url), "utf8");
+const diagnosticsRouteSource = await readFile(new URL("../app/api/grants/documents/[id]/diagnostics/route.ts", import.meta.url), "utf8");
 assert.match(panelSource, /建议默认收起/);
 assert.match(panelSource, /isExpanded\s*&&/);
 assert.doesNotMatch(panelSource, /严重性|高风险|中风险|低风险/);
@@ -126,6 +127,9 @@ assert.match(canvasSource, /连续编辑视图/);
 assert.match(canvasSource, /projectGrantSectionSubtree/);
 assert.match(wordToolbarSource, /格式由导出模板控制/);
 assert.match(wordToolbarSource, /aria-label=\{label\}/);
+assert.match(diagnosticsRouteSource, /executionStatus === "complete" \? 201/);
+assert.match(diagnosticsRouteSource, /executionStatus === "partial" \? 207 : 502/);
+assert.match(editorSource, /data\.executionStatus === "failed"/);
 
 const migration = await readFile(new URL("../supabase/migrations/038_grant_finding_feedback.sql", import.meta.url), "utf8");
 assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.grant_finding_feedback/);

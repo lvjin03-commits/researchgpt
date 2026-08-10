@@ -55,6 +55,8 @@ Copy the relevant sections into every grant-platform PR.
       actionability or confidence as severity or priority.
 - [ ] V2/V3 compatibility is normalized below the UI, and historical records
       remain auditable without becoming duplicate active Findings.
+- [ ] Validation/failure telemetry contains no grant prose, quotes, or evidence
+      excerpts; content fields are represented only by safe structural facts.
 
 ## Verification
 

@@ -1,6 +1,8 @@
 import type { GrantDiagnosticInputMode, GrantFindingAssessment } from "../diagnostics/contracts.ts";
 import type { GrantSemanticDiagnosticResultV3 } from "../diagnostics/semantic-v3-contracts.ts";
 import type { GrantSemanticDiagnosticV3PreparedInput } from "../diagnostics/semantic-v3-input.ts";
+import type { GrantDiagnosticValidationIssue } from "../diagnostics/validation-telemetry.ts";
+import type { GrantSemanticDiagnosticV3NormalizationAction } from "../diagnostics/semantic-v3-contracts.ts";
 
 export type GrantDiagnosticModelNode = {
   nodeId: string;
@@ -74,7 +76,7 @@ export type GrantSemanticDiagnosticV3ModelResult = GrantSemanticDiagnosticResult
 export const GRANT_DIAGNOSTIC_POLICY_VERSION = "grant-ai-policy-v2";
 export const GRANT_DIAGNOSTIC_SCHEMA_VERSION = "grant-semantic-diagnostic-v2";
 export const GRANT_DIAGNOSTIC_PROMPT_VERSION = "grant-semantic-prompt-v2";
-export const GRANT_DIAGNOSTIC_V3_POLICY_VERSION = "grant-ai-policy-v3";
+export const GRANT_DIAGNOSTIC_V3_POLICY_VERSION = "grant-ai-policy-v3.1";
 export const GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION = "grant-semantic-diagnostic-v3";
 export const GRANT_DIAGNOSTIC_V3_PROMPT_VERSION = "grant-semantic-review-v3";
 /**
@@ -89,6 +91,7 @@ export type GrantDiagnosticFailureCategory =
   | "content_filtered"
   | "provider_refusal"
   | "structured_output_invalid"
+  | "structured_reference_invalid"
   | "semantic_reference_invalid"
   | "provider_rate_limited"
   | "provider_transient_error"
@@ -114,6 +117,8 @@ export type GrantDiagnosticExecutionMetadata = {
   outputTokens: number;
   reasoningTokens: number;
   zodIssuePaths?: string[];
+  validationIssues?: GrantDiagnosticValidationIssue[];
+  normalizationActions?: GrantSemanticDiagnosticV3NormalizationAction[];
 };
 
 export class GrantDiagnosticExecutionError extends Error {

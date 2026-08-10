@@ -30,7 +30,9 @@ export async function POST(request: Request, context: Context) {
     const { user, diagnostics } = incremental
       ? await requireGrantRecheckRequestContext()
       : await requireGrantRequestContext();
-    return Response.json(await diagnostics.run(z.string().uuid().parse(id), user.id, { incremental }), { status: 201, headers: { "Cache-Control": "no-store" } });
+    const result = await diagnostics.run(z.string().uuid().parse(id), user.id, { incremental });
+    const status = result.executionStatus === "complete" ? 201 : result.executionStatus === "partial" ? 207 : 502;
+    return Response.json(result, { status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return grantApiError(error, "run_grant_diagnostics");
   }

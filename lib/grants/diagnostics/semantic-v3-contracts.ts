@@ -105,6 +105,48 @@ export const GrantSemanticDiagnosticResultV3Schema = z.object({
   findings: z.array(GrantSemanticFindingContentV3Schema).max(24),
 }).strict();
 
+export type GrantSemanticDiagnosticV3NormalizationAction = {
+  path: string;
+  rule: "empty_quote_to_null" | "related_location_duplicate_removed" | "evidence_id_duplicate_removed";
+};
+
+export function normalizeGrantSemanticDiagnosticV3ProviderResult(
+  result: z.infer<typeof GrantSemanticDiagnosticProviderResultV3Schema>,
+): { result: z.infer<typeof GrantSemanticDiagnosticProviderResultV3Schema>; actions: GrantSemanticDiagnosticV3NormalizationAction[] } {
+  const actions: GrantSemanticDiagnosticV3NormalizationAction[] = [];
+  return {
+    result: {
+      findings: result.findings.map((finding, findingIndex) => {
+        const seenLocations = new Set<string>();
+        const relatedLocations = finding.relatedLocations.flatMap((location, locationIndex) => {
+          const key = `${location.sectionId}:${location.nodeId}:${location.role}`;
+          if (seenLocations.has(key)) {
+            actions.push({ path: `findings.${findingIndex}.relatedLocations.${locationIndex}`, rule: "related_location_duplicate_removed" });
+            return [];
+          }
+          seenLocations.add(key);
+          if (location.quote !== null && location.quote.trim().length === 0) {
+            actions.push({ path: `findings.${findingIndex}.relatedLocations.${locationIndex}.quote`, rule: "empty_quote_to_null" });
+            return [{ ...location, quote: null }];
+          }
+          return [location];
+        });
+        const seenEvidence = new Set<string>();
+        const usedEvidenceCardIds = finding.usedEvidenceCardIds.filter((cardId, evidenceIndex) => {
+          if (seenEvidence.has(cardId)) {
+            actions.push({ path: `findings.${findingIndex}.usedEvidenceCardIds.${evidenceIndex}`, rule: "evidence_id_duplicate_removed" });
+            return false;
+          }
+          seenEvidence.add(cardId);
+          return true;
+        });
+        return { ...finding, relatedLocations, usedEvidenceCardIds };
+      }),
+    },
+    actions,
+  };
+}
+
 export type GrantSemanticDiagnosticCategoryV3 = z.infer<typeof GrantSemanticDiagnosticCategoryV3Schema>;
 export type GrantSemanticFindingContentV3 = z.infer<typeof GrantSemanticFindingContentV3Schema>;
 export type GrantSemanticDiagnosticResultV3 = z.infer<typeof GrantSemanticDiagnosticResultV3Schema>;
