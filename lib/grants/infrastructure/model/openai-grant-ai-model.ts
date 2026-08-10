@@ -15,6 +15,7 @@ import {
   type GrantDiagnosticModel,
   type GrantDiagnosticModelRequest,
   type GrantSemanticDiagnosticV3ModelResult,
+  GrantHierarchicalDiagnosticModelError,
 } from "../../ports/grant-diagnostic-model.ts";
 import type { GrantPatchModel, GrantPatchModelRequest } from "../../ports/grant-patch-model.ts";
 import {
@@ -30,6 +31,12 @@ import {
   isGrantStructuralReferenceFailure,
   safeGrantDiagnosticValidationIssues,
 } from "../../diagnostics/validation-telemetry.ts";
+import type { GrantArgumentMapV1 } from "../../diagnostics/hierarchical-semantic-contracts.ts";
+import type { GrantHierarchicalDiagnosticPreparedInputV1 } from "../../diagnostics/hierarchical-semantic-input.ts";
+import {
+  executeGrantHierarchicalDiagnosticV1,
+  GrantHierarchicalDiagnosticExecutionError,
+} from "./openai-grant-hierarchical-diagnostic.ts";
 
 const PatchResultSchema = z.object({
   replacementText: z.string().trim().min(1),
@@ -112,6 +119,10 @@ export class UnavailableGrantAiModel implements GrantPatchModel, GrantDiagnostic
   async diagnoseV3(): Promise<never> {
     throw new GrantAiConfigurationError("OPENAI_API_KEY is not configured for Grant AI.");
   }
+
+  async diagnoseHierarchical(): Promise<never> {
+    throw new GrantAiConfigurationError("OPENAI_API_KEY is not configured for Grant AI.");
+  }
 }
 
 export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel {
@@ -121,6 +132,31 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
   constructor(modelId: string, apiKey: string, client?: OpenAI) {
     this.modelId = modelId;
     this.client = client ?? new OpenAI({ apiKey });
+  }
+
+  async diagnoseHierarchical(
+    prepared: GrantHierarchicalDiagnosticPreparedInputV1,
+    argumentMapCheckpoint?: GrantArgumentMapV1,
+  ) {
+    try {
+      const result = await executeGrantHierarchicalDiagnosticV1({
+        client: this.client,
+        modelId: this.modelId,
+        prepared,
+        argumentMapCheckpoint,
+      });
+      return { ...result, provider: "openai" as const, modelId: this.modelId };
+    } catch (error) {
+      if (!(error instanceof GrantHierarchicalDiagnosticExecutionError)) throw error;
+      throw new GrantHierarchicalDiagnosticModelError({
+        failureCode: error.failureCode,
+        message: error.message,
+        stages: error.stages,
+        providerCallCount: error.providerCallCount,
+        usage: error.usage,
+        argumentMapCheckpoint: error.argumentMapCheckpoint,
+      });
+    }
   }
 
   async generate(request: GrantPatchModelRequest) {

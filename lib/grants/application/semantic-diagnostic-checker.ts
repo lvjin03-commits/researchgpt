@@ -10,8 +10,30 @@ import {
   GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
 } from "../ports/grant-diagnostic-model.ts";
 import { GrantModelDataGateway } from "./grant-model-data-gateway.ts";
+import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
+import {
+  createGrantArgumentMapCheckpointV1,
+  grantHierarchicalDiagnosticInputFingerprintV1,
+} from "../diagnostics/hierarchical-diagnostic-persistence.ts";
+import {
+  GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS,
+  type GrantArgumentMapCheckpointV1,
+} from "../diagnostics/hierarchical-semantic-contracts.ts";
+import { GrantHierarchicalDiagnosticModelError } from "../ports/grant-diagnostic-model.ts";
 
 export const GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID = "grant-semantic-argument-diagnostic";
+
+export class GrantHierarchicalSemanticCheckerError extends Error {
+  readonly modelError: GrantHierarchicalDiagnosticModelError;
+  readonly checkpoint?: GrantArgumentMapCheckpointV1;
+
+  constructor(modelError: GrantHierarchicalDiagnosticModelError, checkpoint?: GrantArgumentMapCheckpointV1) {
+    super(modelError.message);
+    this.name = "GrantHierarchicalSemanticCheckerError";
+    this.modelError = modelError;
+    this.checkpoint = checkpoint;
+  }
+}
 
 export class GrantSemanticDiagnosticChecker implements GrantChecker {
   readonly checkerId = GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID;
@@ -21,24 +43,97 @@ export class GrantSemanticDiagnosticChecker implements GrantChecker {
   readonly supportedInputModes = ["full_document", "section_bundle"] as const;
   readonly configurationFingerprint: string;
   private readonly gateway: GrantModelDataGateway;
+  private readonly repository?: GrantDiagnosticRepository;
 
-  private readonly version: "v2" | "v3";
+  private readonly version: "v2" | "v3" | "hierarchical";
 
-  constructor(gateway: GrantModelDataGateway, modelId: string, version: "v2" | "v3" = "v2") {
+  constructor(
+    gateway: GrantModelDataGateway,
+    modelId: string,
+    version: "v2" | "v3" | "hierarchical" = "v2",
+    repository?: GrantDiagnosticRepository,
+  ) {
     this.gateway = gateway;
     this.version = version;
-    this.checkerVersion = version === "v3" ? "4.0.0" : "2.0.0";
-    this.contractVersion = version === "v3" ? GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION;
+    this.repository = repository;
+    this.checkerVersion = version === "hierarchical"
+      ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.checkerVersion
+      : version === "v3" ? "4.0.0" : "2.0.0";
+    this.contractVersion = version === "hierarchical"
+      ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.providerContractVersion
+      : version === "v3" ? GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION;
     this.configurationFingerprint = sha256Canonical({
       provider: "openai",
       modelId,
-      promptVersion: version === "v3" ? GRANT_DIAGNOSTIC_V3_PROMPT_VERSION : GRANT_DIAGNOSTIC_PROMPT_VERSION,
-      policyVersion: version === "v3" ? GRANT_DIAGNOSTIC_V3_POLICY_VERSION : GRANT_DIAGNOSTIC_POLICY_VERSION,
-      schemaVersion: version === "v3" ? GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION,
+      promptVersion: version === "hierarchical"
+        ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.promptVersion
+        : version === "v3" ? GRANT_DIAGNOSTIC_V3_PROMPT_VERSION : GRANT_DIAGNOSTIC_PROMPT_VERSION,
+      policyVersion: version === "hierarchical"
+        ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.policyVersion
+        : version === "v3" ? GRANT_DIAGNOSTIC_V3_POLICY_VERSION : GRANT_DIAGNOSTIC_POLICY_VERSION,
+      schemaVersion: version === "hierarchical"
+        ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.durableFindingSchemaVersion
+        : version === "v3" ? GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION,
     });
   }
 
   async check(input: GrantCheckerInput) {
+    if (this.version === "hierarchical") {
+      const prepared = await this.gateway.prepareDiagnosticHierarchicalInput({
+        documentId: input.documentId,
+        taskId: input.executionId,
+        snapshot: input.snapshot,
+        inputMode: input.inputMode,
+        inputSectionIds: input.inputSectionIds,
+        inputNodeIds: input.inputNodeIds,
+        fundingCategory: input.fundingCategory,
+        priorFindings: input.priorSemanticFindings,
+        sourceRevisionId: input.revisionId,
+      });
+      const inputFingerprint = grantHierarchicalDiagnosticInputFingerprintV1(prepared);
+      const checkpoint = this.repository?.findArgumentMapCheckpoint
+        ? await this.repository.findArgumentMapCheckpoint({
+          documentId: input.documentId,
+          sourceRevisionId: input.revisionId,
+          checkerId: this.checkerId,
+          checkerVersion: this.checkerVersion,
+          inputFingerprint,
+          locationScopeFingerprint: prepared.locationScopeFingerprint,
+        })
+        : undefined;
+      try {
+        const generated = await this.gateway.executeDiagnosticHierarchicalInput(prepared, checkpoint?.argumentMap);
+        return {
+          findings: [],
+          metadata: {
+            provider: generated.provider,
+            modelId: generated.modelId,
+            inputTokens: generated.usage.inputTokens,
+            outputTokens: generated.usage.outputTokens,
+            reasoningTokens: generated.usage.reasoningTokens,
+            providerCallCount: generated.providerCallCount,
+            resumedFromArgumentMap: generated.resumedFromArgumentMap,
+          },
+          semanticHierarchical: {
+            prepared,
+            execution: generated,
+            checkpointId: checkpoint?.checkpointId,
+          },
+        };
+      } catch (error) {
+        if (!(error instanceof GrantHierarchicalDiagnosticModelError)) throw error;
+        const readyCheckpoint = error.argumentMapCheckpoint
+          ? createGrantArgumentMapCheckpointV1({
+            documentId: input.documentId,
+            checkerId: this.checkerId,
+            checkerVersion: this.checkerVersion,
+            prepared,
+            argumentMap: error.argumentMapCheckpoint,
+          })
+          : undefined;
+        throw new GrantHierarchicalSemanticCheckerError(error, readyCheckpoint);
+      }
+    }
     if (this.version === "v3") {
       const { generated, prepared } = await this.gateway.diagnoseV3({
         documentId: input.documentId,

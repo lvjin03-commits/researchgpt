@@ -388,6 +388,71 @@ A user report does not convert a Finding into a confirmed false positive.
 Checker disagreements are separate `DiagnosticConflict` records and are never
 silently resolved by selecting the higher-confidence output.
 
+### Hierarchical Semantic Diagnostic Target Contract
+
+The next semantic-checker contract may perform two internal model operations
+behind the existing `AI诊断` action and semantic-checker authority:
+
+```text
+canonical revision + current authorized evidence
+  -> descriptive ArgumentMap
+  -> root diagnosis with one or more canonical occurrences
+  -> existing Diagnostic Assembler and normalized projection
+```
+
+ArgumentMap is revision-bound diagnostic scaffolding, not a second document
+model and not cross-run identity. Its fixed roles cover research context,
+domain bottleneck, knowledge gap, scientific question, central hypothesis,
+objectives, content, technical route, feasibility basis, innovation claim and
+expected contribution. Step A may state whether a role is explicit, implicit or
+missing and identify the source locations and relations stated by the
+application. It must not diagnose quality, recommend changes, assign severity,
+prioritize or predict funding outcomes. The user-facing structure overview is a
+program projection that combines this description with Step B Findings.
+
+Provider-facing locations remain execution-local atomic references. Programs
+resolve them to canonical `(sectionId, nodeId)` pairs before program validation,
+assembly or persistence. ArgumentMap ordering, role-instance numbering,
+statements and location references do not participate in recheck continuity.
+The existing atomic-location input builder is the only owner of this mapping.
+Argument mapping and root diagnosis receive views derived from one prepared
+input and one revision-scoped location fingerprint; neither stage may rebuild
+aliases, canonical pairs or evidence authorization independently.
+
+Occurrence continuity is owned by Diagnostic Assembler and is derived from:
+
+```text
+checker identity/version
++ category
++ canonical primary node
++ normalized canonical related nodes and roles
+```
+
+Root continuity is derived from:
+
+```text
+checker identity/version
++ category
++ affected ArgumentMap roles
++ stable occurrence fingerprints
+```
+
+Recommendation wording, possible consequence, diagnostic wording, provider
+return order and execution-local references are excluded. When a node changes
+between revisions, the existing source-anchor relocation policy resolves the
+canonical occurrence before continuity is evaluated.
+
+The accepted target versions are `grant-argument-map-v1`, provider/run contract
+`grant-semantic-diagnostic-v5`, prompt `grant-semantic-review-v5`, durable root
+Finding content `grant-semantic-finding-v4`, policy `grant-ai-policy-v4` and
+checker `5.0.0`. These are target contracts only. Active V4 production
+selection is unchanged until later stages update runtime owners and database
+acceptance together.
+
+Stage states for argument mapping, root diagnosis and assembly explain progress,
+failure, skip and stale-revision outcomes. They do not replace the existing
+aggregate `complete | partial | failed` diagnostic status.
+
 ## Checker Versioning
 
 Every run records checker, checker version, prompt/contract version, input mode,
@@ -480,3 +545,36 @@ Automatic assistance stops when:
 
 Default cost limits may apply, but a user may explicitly open a new, audited
 resolution session.
+
+## Hierarchical Diagnostic Persistence
+
+Hierarchical durable Findings remain attached to the existing `grant_findings`
+envelope. One root Finding may own multiple canonical occurrences. Each
+occurrence fingerprint is derived only from checker identity, category and
+canonical node/role relationships; the root fingerprint is derived from sorted
+occurrence fingerprints and affected argument roles. Model wording,
+recommendations, ArgumentMap aliases and provider order never participate in
+continuity identity.
+
+A successful ArgumentMap may be stored as a recovery checkpoint only when it is
+bound to document, source revision, checker version, input fingerprint and
+location-scope fingerprint. Successful root-diagnosis persistence consumes the
+checkpoint in the same repository transaction. Checkpoints never become
+Findings and never cross a revision or scope mismatch.
+
+## Hierarchical Diagnostic Rollout
+
+The hierarchical checker replaces the internals of the existing semantic
+checker only after two independent server-side gates succeed:
+
+```text
+GRANT_HIERARCHICAL_DIAGNOSTIC_MODE = canary | on
+GRANT_HIERARCHICAL_DIAGNOSTIC_DATABASE_SCHEMA = 047
+```
+
+`canary` additionally requires the authenticated owner ID in
+`GRANT_HIERARCHICAL_DIAGNOSTIC_CANARY_OWNER_IDS`. Invalid configuration fails
+closed to the existing semantic implementation. Selection is server-only and
+stable by owner; a request or browser cannot override it. Setting mode `off`
+is the immediate rollback and preserves canonical content, checkpoints and
+historical Findings.

@@ -2,7 +2,8 @@ import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantDiagnosticInputMode, GrantFindingAssessment } from "./contracts.ts";
 import type { GrantSemanticDiagnosticResultV3, GrantSemanticDiagnosticV3ReferenceScope } from "./semantic-v3-contracts.ts";
 import type { GrantSemanticDiagnosticV3PriorFinding } from "./semantic-v3-input.ts";
-import type { GrantDiagnosticExecutionMetadata } from "../ports/grant-diagnostic-model.ts";
+import type { GrantDiagnosticExecutionMetadata, GrantHierarchicalDiagnosticModelResult } from "../ports/grant-diagnostic-model.ts";
+import type { GrantHierarchicalDiagnosticPreparedInputV1 } from "./hierarchical-semantic-input.ts";
 
 export type GrantCheckerInput = {
   executionId: string;
@@ -39,6 +40,11 @@ export type GrantCheckerOutput = {
     provider: "openai";
     modelId: string;
     usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  };
+  semanticHierarchical?: {
+    prepared: GrantHierarchicalDiagnosticPreparedInputV1;
+    execution: GrantHierarchicalDiagnosticModelResult;
+    checkpointId?: string;
   };
 };
 

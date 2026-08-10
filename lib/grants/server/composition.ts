@@ -22,7 +22,7 @@ import { SupabaseGrantEvidenceStorage } from "../infrastructure/supabase/supabas
 import { SharedGrantEvidenceParser } from "../infrastructure/documents/shared-grant-evidence-parser.ts";
 import { GrantExportService } from "../application/export-service.ts";
 import { DeterministicGrantDocxRenderer } from "../infrastructure/documents/deterministic-grant-docx-renderer.ts";
-import { isGrantRecheckEnabled, isGrantSemanticDiagnosticV3Enabled } from "./config.ts";
+import { isGrantHierarchicalDiagnosticSelected, isGrantRecheckEnabled, isGrantSemanticDiagnosticV3Enabled } from "./config.ts";
 import { resolveGrantAiConfig } from "./grant-ai-config.ts";
 
 function createGrantSupabaseClient() {
@@ -62,12 +62,16 @@ export function createGrantDiagnosticService(ownerId: string): GrantDiagnosticSe
   const client = createGrantSupabaseClient();
   const revisionRepository = new SupabaseGrantRevisionRepository(client, ownerId);
   const ai = createGrantModelDataGateway(client, ownerId);
+  const diagnosticRepository = new SupabaseGrantDiagnosticRepository(client, ownerId);
+  const semanticVersion = isGrantHierarchicalDiagnosticSelected(ownerId)
+    ? "hierarchical" as const
+    : isGrantSemanticDiagnosticV3Enabled() ? "v3" as const : "v2" as const;
   return new GrantDiagnosticService({
     revisionService: new GrantRevisionService({ repository: revisionRepository }),
-    repository: new SupabaseGrantDiagnosticRepository(client, ownerId),
+    repository: diagnosticRepository,
     checkers: [
       ...createDefaultGrantCheckers(),
-      new GrantSemanticDiagnosticChecker(ai.gateway, ai.config.modelId, isGrantSemanticDiagnosticV3Enabled() ? "v3" : "v2"),
+      new GrantSemanticDiagnosticChecker(ai.gateway, ai.config.modelId, semanticVersion, diagnosticRepository),
     ],
     incrementalEnabled: isGrantRecheckEnabled(),
   });

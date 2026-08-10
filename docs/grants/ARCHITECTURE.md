@@ -98,6 +98,8 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Finding conclusion | Owning Checker | Assembler may normalize, not reinterpret |
 | Semantic Finding content | Versioned Semantic Checker Contract | Model returns semantic content only; supplied IDs and evidence references are validated |
 | Finding identity and conflicts | Diagnostic Assembler | Conflicts are retained explicitly |
+| ArgumentMap interpretation | Versioned Semantic Checker Contract | Descriptive, revision-bound scaffold only; never durable identity |
+| Finding occurrence/root continuity | Diagnostic Assembler | Uses canonical nodes and anchors; never ArgumentMap numbering or model prose |
 | User disposition | Feedback Service | Does not rewrite system conclusions |
 | Evidence read/use/citation permission | Evidence Authorization Service | Current authorization is authoritative |
 | Model access to sensitive data | Grant Model Data Gateway | Must enforce provider policy per call |

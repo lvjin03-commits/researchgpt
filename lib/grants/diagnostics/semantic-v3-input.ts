@@ -52,20 +52,20 @@ export const GrantSemanticDiagnosticV3EvidenceInputSchema = z.object({
   }
 });
 
-const DiagnosticNodeSchema = z.object({
+export const GrantDiagnosticAtomicNodeSchema = z.object({
   locationRef: LocationRefSchema,
   nodeType: z.enum(["heading", "paragraph", "list", "table", "figure", "citation", "formula"]),
   order: z.number().int().nonnegative(),
   text: z.string(),
 }).strict();
 
-const DiagnosticSectionSchema = z.object({
+export const GrantDiagnosticAtomicSectionSchema = z.object({
   sectionRef: SectionRefSchema,
   semanticRole: z.string().trim().min(1),
   title: z.string().trim().min(1),
   parentSectionRef: SectionRefSchema.nullable(),
   order: z.number().int().nonnegative(),
-  nodes: z.array(DiagnosticNodeSchema),
+  nodes: z.array(GrantDiagnosticAtomicNodeSchema),
 }).strict();
 
 export const GrantSemanticDiagnosticV3ModelInputSchema = z.object({
@@ -74,7 +74,7 @@ export const GrantSemanticDiagnosticV3ModelInputSchema = z.object({
   documentTitle: z.string().trim().min(1),
   fundingCategory: z.string().trim().min(1).max(200),
   inputMode: z.enum(["full_document", "section_bundle", "focused_excerpt"]),
-  sections: z.array(DiagnosticSectionSchema).min(1),
+  sections: z.array(GrantDiagnosticAtomicSectionSchema).min(1),
   evidenceCards: z.array(GrantSemanticDiagnosticV3EvidenceInputSchema).max(8),
   priorFindings: z.array(z.object({
     findingFingerprint: z.string().trim().min(1).max(128),
@@ -87,6 +87,14 @@ export const GrantSemanticDiagnosticV3ModelInputSchema = z.object({
 export type GrantSemanticDiagnosticV3EvidenceInput = z.infer<typeof GrantSemanticDiagnosticV3EvidenceInputSchema>;
 export type GrantSemanticDiagnosticV3PriorFinding = z.infer<typeof GrantSemanticDiagnosticV3PriorFindingSchema>;
 export type GrantSemanticDiagnosticV3ModelInput = z.infer<typeof GrantSemanticDiagnosticV3ModelInputSchema>;
+export type GrantDiagnosticAtomicSection = z.infer<typeof GrantDiagnosticAtomicSectionSchema>;
+
+export type GrantDiagnosticAtomicLocationScope = {
+  sections: GrantDiagnosticAtomicSection[];
+  locationByRef: ReadonlyMap<string, { sectionId: string; nodeId: string }>;
+  locationRefByNodeId: ReadonlyMap<string, string>;
+  sectionIdByNodeId: ReadonlyMap<string, string>;
+};
 
 export type GrantSemanticDiagnosticV3PreparedInput = {
   request: GrantSemanticDiagnosticV3ModelInput;
@@ -103,15 +111,16 @@ export class GrantSemanticDiagnosticV3InputScopeError extends Error {
   }
 }
 
-export function buildGrantSemanticDiagnosticV3Input(input: {
+/**
+ * The single authority for provider-facing grant location aliases. Every
+ * semantic stage in one execution must reuse this prepared scope instead of
+ * rebuilding or combining section/node identifiers independently.
+ */
+export function buildGrantDiagnosticAtomicLocationScope(input: {
   snapshot: CanonicalGrantSnapshot;
-  inputMode: "full_document" | "section_bundle" | "focused_excerpt";
   inputSectionIds: string[];
   inputNodeIds: string[];
-  fundingCategory: string;
-  evidenceCards: GrantSemanticDiagnosticV3EvidenceInput[];
-  priorFindings: GrantSemanticDiagnosticV3PriorFinding[];
-}): GrantSemanticDiagnosticV3PreparedInput {
+}): GrantDiagnosticAtomicLocationScope {
   const requestedSectionIds = new Set(input.inputSectionIds);
   const requestedNodeIds = new Set(input.inputNodeIds);
   if (requestedSectionIds.size !== input.inputSectionIds.length || requestedNodeIds.size !== input.inputNodeIds.length) {
@@ -140,7 +149,13 @@ export function buildGrantSemanticDiagnosticV3Input(input: {
     nodeId: node.nodeId,
   }]));
 
-  const sections = orderedSections.map((section) => ({
+  const includedNodeIds = new Set(orderedNodes.map((node) => node.nodeId));
+  if (includedNodeIds.size !== requestedNodeIds.size) {
+    throw new GrantSemanticDiagnosticV3InputScopeError("Every requested node must belong to a requested section.");
+  }
+
+  return {
+    sections: orderedSections.map((section) => ({
       sectionRef: sectionRefById.get(section.sectionId)!,
       semanticRole: section.semanticRole,
       title: section.title,
@@ -155,12 +170,24 @@ export function buildGrantSemanticDiagnosticV3Input(input: {
           order: node.order,
           text: grantNodeText(node),
         })),
-    }));
+    })),
+    locationByRef,
+    locationRefByNodeId,
+    sectionIdByNodeId: new Map([...locationByRef.values()].map((location) => [location.nodeId, location.sectionId])),
+  };
+}
 
-  const includedNodeIds = new Set(orderedNodes.map((node) => node.nodeId));
-  if (includedNodeIds.size !== requestedNodeIds.size) {
-    throw new GrantSemanticDiagnosticV3InputScopeError("Every requested node must belong to a requested section.");
-  }
+export function buildGrantSemanticDiagnosticV3Input(input: {
+  snapshot: CanonicalGrantSnapshot;
+  inputMode: "full_document" | "section_bundle" | "focused_excerpt";
+  inputSectionIds: string[];
+  inputNodeIds: string[];
+  fundingCategory: string;
+  evidenceCards: GrantSemanticDiagnosticV3EvidenceInput[];
+  priorFindings: GrantSemanticDiagnosticV3PriorFinding[];
+}): GrantSemanticDiagnosticV3PreparedInput {
+  const locationScope = buildGrantDiagnosticAtomicLocationScope(input);
+  const { sections, locationByRef, locationRefByNodeId, sectionIdByNodeId } = locationScope;
   const evidenceIds = input.evidenceCards.map((evidence) => evidence.cardId);
   if (new Set(evidenceIds).size !== evidenceIds.length) {
     throw new GrantSemanticDiagnosticV3InputScopeError("Evidence Card IDs must be unique.");
@@ -192,7 +219,7 @@ export function buildGrantSemanticDiagnosticV3Input(input: {
     request,
     locationByRef,
     locationRefByNodeId,
-    sectionIdByNodeId: new Map([...locationByRef.values()].map((location) => [location.nodeId, location.sectionId])),
+    sectionIdByNodeId,
     allowedEvidenceCardIds: new Set(evidenceIds),
   };
 }

@@ -49,16 +49,43 @@ Copy the relevant sections into every grant-platform PR.
       negative examples for overlapping categories.
 - [ ] Model-facing locations use one atomic, execution-local reference per
       authorized canonical node; models never combine section and node IDs.
+- [ ] Multi-stage semantic operations reuse one prepared atomic-location map
+      and revision-scoped fingerprint; no stage rebuilds aliases independently.
 - [ ] Every resolved location reference and Evidence Card ID was supplied and
       is currently authorized for its claimed scope.
 - [ ] Finding fingerprints exclude recommendation phrasing and other unstable
       presentation text.
+- [ ] ArgumentMap aliases, ordering and prose do not participate in durable
+      Finding or recheck identity; continuity resolves to canonical nodes.
+- [ ] ArgumentMap output is descriptive only; diagnostic judgments and advice
+      remain owned by the semantic Finding contract.
+- [ ] ArgumentMap provider code stays in the existing Grant model adapter
+      boundary; diagnostics owns only prompt, contracts and deterministic
+      assembly.
+- [ ] ArgumentMap does not add a private retry counter; all future retries must
+      consume the unified two-stage provider budget.
+- [ ] Root diagnosis groups repeated manifestations semantically in one card;
+      deterministic code does not attempt prose-based root-cause merging.
+- [ ] Invalid related locations degrade locally, while findings without a valid
+      primary occurrence or with unauthorized Evidence Cards are not published.
+- [ ] The two-stage diagnostic has one aggregate call-budget owner and cannot
+      exceed one ArgumentMap call plus two root-diagnosis calls.
+- [ ] Retry changes the failed condition; unknown outcomes, 400s, structural
+      references and Evidence authorization failures do not retry.
+- [ ] ArgumentMap checkpoint recovery validates revision and frozen location
+      scope before any provider call.
 - [ ] Default issue order follows canonical source order and does not treat
       actionability or confidence as severity or priority.
 - [ ] V2/V3 compatibility is normalized below the UI, and historical records
       remain auditable without becoming duplicate active Findings.
 - [ ] Validation/failure telemetry contains no grant prose, quotes, or evidence
       excerpts; content fields are represented only by safe structural facts.
+- [ ] Durable root identity is derived from canonical occurrence fingerprints,
+      never ArgumentMap aliases, model prose, recommendation wording or model order.
+- [ ] A successful hierarchical save writes the existing Finding envelope,
+      V4 details and checkpoint consumption atomically.
+- [ ] Root-card occurrence navigation resolves canonical nodes through the
+      normalized projection; UI does not reconstruct continuity or root grouping.
 
 ## Verification
 
@@ -79,3 +106,8 @@ Copy the relevant sections into every grant-platform PR.
 - [ ] Rollback keeps canonical content readable.
 - [ ] Migration and deletion steps are documented.
 - [ ] Logs and metrics do not expose sensitive application content.
+- [ ] Hierarchical diagnosis requires rollout admission and database schema
+      `047` readiness; either missing gate fails closed before a model call.
+- [ ] Canary selection is server-owned and stable by authenticated owner ID.
+- [ ] Rollback mode `off` restores the existing semantic implementation without
+      deleting canonical content, checkpoints or historical Findings.

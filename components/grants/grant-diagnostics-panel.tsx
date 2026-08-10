@@ -48,6 +48,7 @@ type Props = {
   coverage: GrantDiagnosticCoverage;
   onRun: () => Promise<void>;
   onSelect: (item: GrantDiagnosticItem) => void;
+  onNavigateNode: (nodeId: string, findingId: string) => void;
   onFeedbackChange: (item: GrantFindingFeedback) => void;
   onPatchAccepted: () => Promise<void>;
 };
@@ -202,6 +203,23 @@ export function GrantDiagnosticsPanel(props: Props) {
                       <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2">
                         <p className="text-sm font-semibold text-amber-900">评审可能追问</p>
                         <p className="mt-1 text-sm leading-6 text-amber-900">{finding.possibleConsequence}</p>
+                      </div>
+                    )}
+                    {finding.rootOccurrences.length > 1 && (
+                      <div className="mt-3">
+                        <p className="text-sm font-semibold text-slate-700">同一根因的原文表现（{finding.rootOccurrences.length}处）</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {finding.rootOccurrences.map((occurrence, index) => (
+                            <button
+                              type="button"
+                              key={occurrence.occurrenceFingerprint}
+                              onClick={() => props.onNavigateNode(occurrence.primaryLocation.nodeId, finding.findingId)}
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-800"
+                            >
+                              定位表现 {index + 1}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {finding.sourceAnchor.text && (

@@ -12,6 +12,8 @@ import {
   type GrantSemanticDiagnosticV3PreparedInput,
   type GrantSemanticDiagnosticV3PriorFinding,
 } from "../diagnostics/semantic-v3-input.ts";
+import { buildGrantHierarchicalDiagnosticPreparedInputV1 } from "../diagnostics/hierarchical-semantic-input.ts";
+import type { GrantArgumentMapV1 } from "../diagnostics/hierarchical-semantic-contracts.ts";
 
 export class GrantEvidenceProviderPolicyError extends Error {}
 export class GrantPatchEvidenceMismatchError extends Error {}
@@ -98,6 +100,54 @@ export class GrantModelDataGateway {
     const prepared = await this.prepareDiagnosticV3Input(input);
     const generated = await this.model.diagnoseV3(prepared);
     return { generated, prepared };
+  }
+
+  async diagnoseHierarchical(input: {
+    documentId: string;
+    taskId: string;
+    snapshot: CanonicalGrantSnapshot;
+    inputMode: "full_document" | "section_bundle" | "focused_excerpt";
+    inputSectionIds: string[];
+    inputNodeIds: string[];
+    fundingCategory: string;
+    priorFindings: GrantSemanticDiagnosticV3PriorFinding[];
+    sourceRevisionId: string;
+    argumentMapCheckpoint?: GrantArgumentMapV1;
+  }) {
+    if (!this.model.diagnoseHierarchical) {
+      throw new GrantEvidenceProviderPolicyError("Grant hierarchical semantic diagnosis is not configured.");
+    }
+    const prepared = await this.prepareDiagnosticHierarchicalInput(input);
+    const generated = await this.model.diagnoseHierarchical(prepared, input.argumentMapCheckpoint);
+    return { generated, prepared };
+  }
+
+  async prepareDiagnosticHierarchicalInput(input: {
+    documentId: string;
+    taskId: string;
+    snapshot: CanonicalGrantSnapshot;
+    inputMode: "full_document" | "section_bundle" | "focused_excerpt";
+    inputSectionIds: string[];
+    inputNodeIds: string[];
+    fundingCategory: string;
+    priorFindings: GrantSemanticDiagnosticV3PriorFinding[];
+    sourceRevisionId: string;
+  }) {
+    const v3Prepared = await this.prepareDiagnosticV3Input(input);
+    return buildGrantHierarchicalDiagnosticPreparedInputV1({
+      sourceRevisionId: input.sourceRevisionId,
+      prepared: v3Prepared,
+    });
+  }
+
+  async executeDiagnosticHierarchicalInput(
+    prepared: ReturnType<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]> extends Promise<infer T> ? T : never,
+    argumentMapCheckpoint?: GrantArgumentMapV1,
+  ) {
+    if (!this.model.diagnoseHierarchical) {
+      throw new GrantEvidenceProviderPolicyError("Grant hierarchical semantic diagnosis is not configured.");
+    }
+    return this.model.diagnoseHierarchical(prepared, argumentMapCheckpoint);
   }
 
   async diagnose(input: {

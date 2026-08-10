@@ -21,6 +21,15 @@ const STRUCTURAL_FIELDS = new Set([
   "scope",
   "confidence",
   "actionability",
+  "modules",
+  "relations",
+  "sourceLocationRefs",
+  "fromRole",
+  "toRole",
+  "presence",
+  "affectedArgumentRoles",
+  "occurrences",
+  "evidenceBasis",
 ]);
 
 const CONTENT_FIELDS = new Set([

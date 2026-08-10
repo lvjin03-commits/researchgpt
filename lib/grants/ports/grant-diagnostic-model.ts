@@ -3,6 +3,12 @@ import type { GrantSemanticDiagnosticResultV3 } from "../diagnostics/semantic-v3
 import type { GrantSemanticDiagnosticV3PreparedInput } from "../diagnostics/semantic-v3-input.ts";
 import type { GrantDiagnosticValidationIssue } from "../diagnostics/validation-telemetry.ts";
 import type { GrantSemanticDiagnosticV3NormalizationAction } from "../diagnostics/semantic-v3-contracts.ts";
+import type {
+  GrantArgumentMapV1,
+  GrantHierarchicalDiagnosticStageState,
+  GrantRootDiagnosticResultV1,
+} from "../diagnostics/hierarchical-semantic-contracts.ts";
+import type { GrantHierarchicalDiagnosticPreparedInputV1 } from "../diagnostics/hierarchical-semantic-input.ts";
 
 export type GrantDiagnosticModelNode = {
   nodeId: string;
@@ -73,6 +79,42 @@ export type GrantSemanticDiagnosticV3ModelResult = GrantSemanticDiagnosticResult
   execution: GrantDiagnosticExecutionMetadata;
 };
 
+export type GrantHierarchicalDiagnosticModelResult = {
+  argumentMap: GrantArgumentMapV1;
+  rootDiagnosis: GrantRootDiagnosticResultV1;
+  stages: GrantHierarchicalDiagnosticStageState[];
+  providerCallCount: number;
+  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  resumedFromArgumentMap: boolean;
+  provider: "openai";
+  modelId: string;
+};
+
+export class GrantHierarchicalDiagnosticModelError extends Error {
+  readonly failureCode: string;
+  readonly stages: GrantHierarchicalDiagnosticStageState[];
+  readonly providerCallCount: number;
+  readonly usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  readonly argumentMapCheckpoint?: GrantArgumentMapV1;
+
+  constructor(input: {
+    failureCode: string;
+    message: string;
+    stages: GrantHierarchicalDiagnosticStageState[];
+    providerCallCount: number;
+    usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+    argumentMapCheckpoint?: GrantArgumentMapV1;
+  }) {
+    super(input.message);
+    this.name = "GrantHierarchicalDiagnosticModelError";
+    this.failureCode = input.failureCode;
+    this.stages = input.stages;
+    this.providerCallCount = input.providerCallCount;
+    this.usage = input.usage;
+    this.argumentMapCheckpoint = input.argumentMapCheckpoint;
+  }
+}
+
 export const GRANT_DIAGNOSTIC_POLICY_VERSION = "grant-ai-policy-v2";
 export const GRANT_DIAGNOSTIC_SCHEMA_VERSION = "grant-semantic-diagnostic-v2";
 export const GRANT_DIAGNOSTIC_PROMPT_VERSION = "grant-semantic-prompt-v2";
@@ -136,4 +178,8 @@ export class GrantDiagnosticExecutionError extends Error {
 export interface GrantDiagnosticModel {
   diagnose(request: GrantDiagnosticModelRequest): Promise<GrantDiagnosticModelResult>;
   diagnoseV3?(prepared: GrantSemanticDiagnosticV3PreparedInput): Promise<GrantSemanticDiagnosticV3ModelResult>;
+  diagnoseHierarchical?(
+    prepared: GrantHierarchicalDiagnosticPreparedInputV1,
+    argumentMapCheckpoint?: GrantArgumentMapV1,
+  ): Promise<GrantHierarchicalDiagnosticModelResult>;
 }

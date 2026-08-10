@@ -106,6 +106,47 @@ otherwise usable run. Provider/run contract V4, prompt V4, policy v3.2, checker
 4.0.0 and migration 046 are staged. A real signed-in run remains required after
 migration and deployment.
 
+Hierarchical semantic diagnostic contract status: Impact Analysis 0017,
+ADR-0017 and pure target schemas freeze the next architecture without changing
+production. ArgumentMap is descriptive per-run scaffolding; canonical nodes and
+the existing Diagnostic Assembler remain the only continuity authority. Strict
+contract tests cover role completeness, the Step A/Step B responsibility split,
+no severity and wording-free canonical continuity. Runtime, persistence,
+budgets, flags and UI remain on Semantic V4 until later staged work.
+
+Hierarchical semantic diagnostic input status: the existing V4 atomic-location
+builder is now the single reusable mapping authority. A pure target adapter
+derives Step A and Step B base requests from one already-authorized prepared
+input, binds them to one deterministic revision-scoped fingerprint and reuses
+the exact canonical resolver maps. It performs no provider call, evidence
+lookup, persistence or production selection. Semantic V4 behavior remains
+covered by its existing input tests.
+
+Hierarchical ArgumentMap status: the descriptive system prompt, strict provider
+schema call, canonical reference resolver and program-level role/relation
+validation are implemented behind an unused target adapter. Step A cannot emit
+diagnoses, recommendations, severity or funding predictions; it uses only the
+frozen `N*` scope and returns a revision-bound canonical map. The adapter has no
+local retry. Production composition, persistence, UI and Semantic V4 selection
+remain unchanged until subsequent stages are authorized and verified.
+
+Hierarchical root-diagnosis status: Step B now consumes the validated Step A map
+through the same frozen location scope, asks one model call to group repeated
+manifestations into root issues, and deterministically resolves occurrences and
+Evidence Card IDs. Invalid related references degrade at field scope; invalid
+primary occurrences and unauthorized-evidence findings are not published. No
+severity, priority or funding prediction is accepted. The target adapter remains
+unused by production; unified budget, persistence, projection and rollout are
+later stages.
+
+Hierarchical execution-policy status: one aggregate executor now owns the target
+call ceiling (`1` ArgumentMap, `2` root diagnosis, `3` total), accumulates usage
+from failed and successful calls, classifies retryable failures and changes the
+retry condition. It exposes a successful ArgumentMap as a resumable checkpoint
+and validates revision/scope before reuse. This checkpoint is not durable yet;
+persistence and production recovery remain later work. Production composition
+and Semantic V4 selection remain unchanged.
+
 Semantic Diagnostic V3 planning status (2026-08-09): the contract, impact
 analysis and ADR are frozen in Impact Analysis 0015 and ADR-0015. This step
 changes no runtime behavior. Implementation must remain staged: strict schema
@@ -262,3 +303,29 @@ Every phase records:
 - rollback behavior.
 
 A copied parallel code path is not a rollback strategy.
+
+## Hierarchical Diagnostic Step 6 Status
+
+The target Diagnostic Assembler derives wording-free occurrence and root
+continuity fingerprints, attaches root cards to the existing Finding envelope
+and exposes every manifestation through the normalized projection. Migration
+047 defines additive V4 detail tables and revision/scope-bound ArgumentMap
+checkpoints. The existing right panel can show one root card with navigation to
+each canonical occurrence. Production composition and Semantic V4 selection
+remain unchanged; migration 047 has not been applied and the V5 target is not
+active.
+
+## Hierarchical Diagnostic Step 7 Status
+
+The existing semantic checker can now select the two-stage implementation
+through a fail-closed, owner-stable server cohort. Selection requires both a
+rollout mode and explicit database schema `047` readiness; invalid or incomplete
+configuration keeps the current Semantic V4 implementation. The existing
+route, button, checker ID, Diagnostic Service, repository and normalized
+projection are reused. A paid Step A result can resume from its revision/scope-
+bound checkpoint, and successful root Findings use the atomic migration 047
+save operation.
+
+Local contract, compatibility, type and architecture verification is complete.
+Migration 047 is not applied, rollout mode is not enabled, and a signed-in real
+GPT run has not been performed. Production behavior therefore remains unchanged.

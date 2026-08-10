@@ -5,9 +5,11 @@ import {
   GrantFindingSchema,
 } from "../../diagnostics/contracts.ts";
 import type { GrantDiagnosticExecution, GrantDiagnosticRepository } from "../../ports/grant-diagnostic-repository.ts";
-import type { GrantSemanticDiagnosticV3Execution } from "../../ports/grant-diagnostic-repository.ts";
+import type { GrantHierarchicalDiagnosticExecutionV1, GrantSemanticDiagnosticV3Execution } from "../../ports/grant-diagnostic-repository.ts";
 import { GrantNormalizedFindingSchema } from "../../diagnostics/normalized-finding.ts";
 import { AssembledGrantSemanticFindingV3Schema } from "../../diagnostics/semantic-v3-assembler.ts";
+import { AssembledGrantHierarchicalFindingV1Schema } from "../../diagnostics/hierarchical-finding-assembler.ts";
+import { GrantArgumentMapCheckpointV1Schema, GrantHierarchicalContinuityLinkV1Schema } from "../../diagnostics/hierarchical-semantic-contracts.ts";
 import type { GrantSupabaseRpcClient } from "./supabase-grant-revision-repository.ts";
 
 type RpcError = { message: string };
@@ -75,6 +77,62 @@ export class SupabaseGrantDiagnosticRepository implements GrantDiagnosticReposit
     });
     throwRpcError("save_grant_semantic_v3_execution", error);
     if (data !== true) throw new Error("Semantic V3 execution was not persisted.");
+    return structuredClone(parsed);
+  }
+
+  async saveArgumentMapCheckpoint(input: import("../../diagnostics/hierarchical-semantic-contracts.ts").GrantArgumentMapCheckpointV1) {
+    const parsed = GrantArgumentMapCheckpointV1Schema.parse(input);
+    const { data, error } = await this.client.rpc("save_grant_argument_map_checkpoint", {
+      p_owner_id: this.ownerId,
+      p_checkpoint: parsed,
+    });
+    throwRpcError("save_grant_argument_map_checkpoint", error);
+    return GrantArgumentMapCheckpointV1Schema.parse(data);
+  }
+
+  async findArgumentMapCheckpoint(input: {
+    documentId: string;
+    sourceRevisionId: string;
+    checkerId: string;
+    checkerVersion: string;
+    inputFingerprint: string;
+    locationScopeFingerprint: string;
+  }) {
+    const { data, error } = await this.client.rpc("find_grant_argument_map_checkpoint", {
+      p_owner_id: this.ownerId,
+      p_document_id: input.documentId,
+      p_source_revision_id: input.sourceRevisionId,
+      p_checker_id: input.checkerId,
+      p_checker_version: input.checkerVersion,
+      p_input_fingerprint: input.inputFingerprint,
+      p_location_scope_fingerprint: input.locationScopeFingerprint,
+    });
+    throwRpcError("find_grant_argument_map_checkpoint", error);
+    return data ? GrantArgumentMapCheckpointV1Schema.parse(data) : null;
+  }
+
+  async saveHierarchicalExecution(input: GrantHierarchicalDiagnosticExecutionV1) {
+    const parsed = {
+      run: GrantDiagnosticRunSchema.parse(input.run),
+      findings: z.array(AssembledGrantHierarchicalFindingV1Schema).parse(input.findings),
+      argumentMapCheckpoint: GrantArgumentMapCheckpointV1Schema.parse(input.argumentMapCheckpoint),
+      continuityLinks: z.array(GrantHierarchicalContinuityLinkV1Schema).parse(input.continuityLinks),
+    };
+    if (parsed.run.contractVersion !== parsed.argumentMapCheckpoint.contractVersion
+      || parsed.run.sourceRevisionId !== parsed.argumentMapCheckpoint.sourceRevisionId
+      || parsed.findings.some((finding) => finding.runId !== parsed.run.runId || finding.documentId !== parsed.run.documentId)) {
+      throw new Error("Hierarchical diagnostic execution contains mismatched run, Finding or checkpoint identity.");
+    }
+    const { data, error } = await this.client.rpc("save_grant_hierarchical_diagnostic_execution", {
+      p_owner_id: this.ownerId,
+      p_document_id: parsed.run.documentId,
+      p_run: parsed.run,
+      p_findings: parsed.findings,
+      p_argument_map_checkpoint: parsed.argumentMapCheckpoint,
+      p_continuity_links: parsed.continuityLinks,
+    });
+    throwRpcError("save_grant_hierarchical_diagnostic_execution", error);
+    if (data !== true) throw new Error("Hierarchical diagnostic execution was not persisted.");
     return structuredClone(parsed);
   }
 

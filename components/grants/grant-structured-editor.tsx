@@ -308,12 +308,18 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   function navigateToFinding(item: GrantDiagnosticItem) {
     setSelectedFindingId(item.finding.findingId);
     const target = grantFindingTarget(item);
-    if (!target.nodeId || !snapshot) return;
-    const targetNode = snapshot.nodes.find((node) => node.nodeId === target.nodeId);
+    if (!target.nodeId) return;
+    navigateToDiagnosticNode(target.nodeId, item.finding.findingId);
+  }
+
+  function navigateToDiagnosticNode(nodeId: string, findingId: string) {
+    setSelectedFindingId(findingId);
+    if (!snapshot) return;
+    const targetNode = snapshot.nodes.find((node) => node.nodeId === nodeId);
     if (!targetNode) return;
     setSelectedSectionId(targetNode.sectionId);
     window.setTimeout(() => {
-      const element = document.getElementById(`grant-node-${target.nodeId}`);
+      const element = document.getElementById(`grant-node-${nodeId}`);
       element?.scrollIntoView({ behavior: "smooth", block: "center" });
       element?.querySelector<HTMLElement>("textarea, input, button")?.focus({ preventScroll: true });
     }, 0);
@@ -441,6 +447,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           coverage={diagnostics.coverage}
           onRun={runDiagnostics}
           onSelect={navigateToFinding}
+          onNavigateNode={navigateToDiagnosticNode}
           onFeedbackChange={updateFeedback}
           onPatchAccepted={loadLatest}
         />}
