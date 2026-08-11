@@ -100,6 +100,8 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Finding identity and conflicts | Diagnostic Assembler | Conflicts are retained explicitly |
 | ArgumentMap interpretation | Versioned Semantic Checker Contract | Descriptive, revision-bound scaffold only; never durable identity |
 | Semantic object recognition | Versioned Semantic Checker Contract | Revision-bound interpretation only; never creates canonical document nodes |
+| Semantic-object review disposition | Versioned Semantic Checker Contract | Explicit residual-gap, verified-no-gap, or unable-to-verify judgment; no severity |
+| Fact Map coverage completeness | Fact Map Coverage Assembler | Validates the frozen semantic-object and Finding sets; never infers completeness from prose |
 | Semantic object cross-run calibration | Diagnostic Assembler | Uses canonical physical anchors and calibrated similarity; never trusts execution-local semantic references |
 | Finding occurrence/root continuity | Diagnostic Assembler | Uses canonical nodes and anchors; never ArgumentMap numbering or model prose |
 | User disposition | Feedback Service | Does not rewrite system conclusions |

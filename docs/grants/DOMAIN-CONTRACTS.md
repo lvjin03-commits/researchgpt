@@ -572,6 +572,34 @@ These values are not active production selection. Semantic V5 runtime,
 persistence, canary admission and user-visible behavior remain unchanged in
 this contract-only step.
 
+#### Fact Map coverage target
+
+Every semantic object in one frozen review run must receive exactly one
+machine-checkable disposition:
+
+```text
+residual_gap_found
+verified_no_residual_gap
+unable_to_verify
+```
+
+`residual_gap_found` must bind at least one valid execution-local Finding
+reference. `verified_no_residual_gap` and `unable_to_verify` must bind none;
+the latter also requires a bounded reason such as unavailable authorization or
+insufficient document content. A candidate that was fully covered is therefore
+discarded explicitly rather than becoming a weak Finding, while an object that
+could not be checked is never misreported as resolved.
+
+Fact Map Coverage Assembler validates that the provider covers every frozen
+semantic object exactly once, preserves the object type, references only the
+current run's Finding set and leaves no orphan Finding. It derives completeness
+from those sets, never from `residualGap` or other model prose. Coverage remains
+revision-bound scaffolding and does not replace durable Finding continuity.
+
+The target-only schema is `grant-fact-map-coverage-v1` in
+`semantic-review-v6-contracts.ts`. It is not an active provider output,
+persistence or UI contract in this step.
+
 ## Checker Versioning
 
 Every run records checker, checker version, prompt/contract version, input mode,

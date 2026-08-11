@@ -3,6 +3,7 @@ import { z } from "zod";
 const UuidSchema = z.string().uuid();
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const SemanticRefSchema = z.string().regex(/^S[1-9][0-9]*$/);
+const FindingRefSchema = z.string().regex(/^F[1-9][0-9]*$/);
 const NormalizedFacetSchema = z.string().regex(/^[a-z][a-z0-9_]{2,63}$/);
 
 /**
@@ -13,6 +14,7 @@ const NormalizedFacetSchema = z.string().regex(/^[a-z][a-z0-9_]{2,63}$/);
 export const GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS = {
   canonicalDocumentSchemaVersion: "grant-canonical-v1",
   semanticObjectSchemaVersion: "grant-semantic-object-v1",
+  factMapCoverageSchemaVersion: "grant-fact-map-coverage-v1",
   providerContractVersion: "grant-semantic-diagnostic-v6",
   providerSchemaVersion: "grant-semantic-diagnostic-v6",
   scientificFindingSchemaVersion: "grant-scientific-finding-v1",
@@ -109,6 +111,236 @@ export const GrantSemanticObjectV1Schema = z.object({
   });
 });
 
+export const GrantFactMapCoverageDispositionV1Schema = z.enum([
+  "residual_gap_found",
+  "verified_no_residual_gap",
+  "unable_to_verify",
+]);
+
+export const GrantFactMapUnableToVerifyReasonV1Schema = z.enum([
+  "insufficient_document_content",
+  "evidence_not_authorized",
+  "image_not_authorized",
+  "unsupported_input",
+  "ambiguous_semantic_boundary",
+]);
+
+/**
+ * Strict provider boundary for Fact Map coverage. Provider references remain
+ * simple strings because Structured Outputs cannot enforce application regexes;
+ * the program-owned assembler validates every reference below.
+ */
+export const GrantFactMapCoverageProviderResultV1Schema = z.object({
+  coverageItems: z.array(z.object({
+    semanticObjectRef: z.string(),
+    objectType: GrantSemanticObjectTypeV1Schema,
+    disposition: GrantFactMapCoverageDispositionV1Schema,
+    findingRefs: z.array(z.string()),
+    unableToVerifyReason: GrantFactMapUnableToVerifyReasonV1Schema.nullable(),
+  }).strict()),
+}).strict();
+
+export const GrantFactMapCoverageItemV1Schema = z.object({
+  semanticObjectRef: SemanticRefSchema,
+  objectType: GrantSemanticObjectTypeV1Schema,
+  disposition: GrantFactMapCoverageDispositionV1Schema,
+  findingRefs: z.array(FindingRefSchema).max(16),
+  unableToVerifyReason: GrantFactMapUnableToVerifyReasonV1Schema.nullable(),
+}).strict().superRefine((value, context) => {
+  if (new Set(value.findingRefs).size !== value.findingRefs.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["findingRefs"],
+      message: "A coverage item cannot bind the same Finding twice.",
+    });
+  }
+  if (value.disposition === "residual_gap_found") {
+    if (value.findingRefs.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["findingRefs"],
+        message: "A residual gap must bind at least one Finding.",
+      });
+    }
+    if (value.unableToVerifyReason !== null) {
+      context.addIssue({
+        code: "custom",
+        path: ["unableToVerifyReason"],
+        message: "A verified residual gap cannot claim that verification was unavailable.",
+      });
+    }
+  }
+  if (value.disposition === "verified_no_residual_gap") {
+    if (value.findingRefs.length > 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["findingRefs"],
+        message: "A verified no-gap object cannot publish a Finding.",
+      });
+    }
+    if (value.unableToVerifyReason !== null) {
+      context.addIssue({
+        code: "custom",
+        path: ["unableToVerifyReason"],
+        message: "A verified no-gap object cannot claim that verification was unavailable.",
+      });
+    }
+  }
+  if (value.disposition === "unable_to_verify") {
+    if (value.findingRefs.length > 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["findingRefs"],
+        message: "An unverified object cannot publish a Finding.",
+      });
+    }
+    if (value.unableToVerifyReason === null) {
+      context.addIssue({
+        code: "custom",
+        path: ["unableToVerifyReason"],
+        message: "An unverified object requires a bounded reason.",
+      });
+    }
+  }
+});
+
+export const GrantFactMapCoverageReportV1Schema = z.object({
+  schemaVersion: z.literal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.factMapCoverageSchemaVersion),
+  sourceRevisionId: UuidSchema,
+  coverageItems: z.array(GrantFactMapCoverageItemV1Schema).max(256),
+}).strict().superRefine((value, context) => {
+  const seen = new Set<string>();
+  value.coverageItems.forEach((item, index) => {
+    if (seen.has(item.semanticObjectRef)) {
+      context.addIssue({
+        code: "custom",
+        path: ["coverageItems", index, "semanticObjectRef"],
+        message: "Each semantic object must have exactly one coverage disposition.",
+      });
+    }
+    seen.add(item.semanticObjectRef);
+  });
+});
+
+export const GrantFactMapCoverageIssueCodeV1Schema = z.enum([
+  "provider_output_invalid",
+  "semantic_object_input_invalid",
+  "semantic_object_duplicate",
+  "source_revision_mismatch",
+  "coverage_item_invalid",
+  "coverage_item_duplicate",
+  "coverage_item_missing",
+  "coverage_item_unknown",
+  "coverage_object_type_mismatch",
+  "coverage_finding_unknown",
+  "coverage_finding_orphan",
+]);
+
+export type GrantFactMapCoverageIssueV1 = {
+  code: z.infer<typeof GrantFactMapCoverageIssueCodeV1Schema>;
+  path: string;
+};
+
+export type AssembleGrantFactMapCoverageInputV1 = {
+  sourceRevisionId: string;
+  semanticObjects: readonly unknown[];
+  providerResult: unknown;
+  validFindingRefs: readonly string[];
+};
+
+export type AssembleGrantFactMapCoverageResultV1 =
+  | { success: true; report: z.infer<typeof GrantFactMapCoverageReportV1Schema> }
+  | { success: false; issues: GrantFactMapCoverageIssueV1[] };
+
+/**
+ * Program-owned completeness gate. It does not infer whether a scientific gap
+ * exists; it verifies that every frozen semantic object was reviewed exactly
+ * once and that every published Finding is bound to at least one reviewed
+ * object. Free text never decides coverage completeness.
+ */
+export function assembleGrantFactMapCoverageV1(
+  input: AssembleGrantFactMapCoverageInputV1,
+): AssembleGrantFactMapCoverageResultV1 {
+  const issues: GrantFactMapCoverageIssueV1[] = [];
+  const provider = GrantFactMapCoverageProviderResultV1Schema.safeParse(input.providerResult);
+  if (!provider.success) {
+    return { success: false, issues: [{ code: "provider_output_invalid", path: "providerResult" }] };
+  }
+
+  const expectedObjects = new Map<string, z.infer<typeof GrantSemanticObjectV1Schema>>();
+  input.semanticObjects.forEach((candidate, index) => {
+    const parsed = GrantSemanticObjectV1Schema.safeParse(candidate);
+    if (!parsed.success) {
+      issues.push({ code: "semantic_object_input_invalid", path: `semanticObjects.${index}` });
+      return;
+    }
+    if (parsed.data.sourceRevisionId !== input.sourceRevisionId) {
+      issues.push({ code: "source_revision_mismatch", path: `semanticObjects.${index}.sourceRevisionId` });
+    }
+    if (expectedObjects.has(parsed.data.semanticObjectRef)) {
+      issues.push({ code: "semantic_object_duplicate", path: `semanticObjects.${index}.semanticObjectRef` });
+    }
+    expectedObjects.set(parsed.data.semanticObjectRef, parsed.data);
+  });
+
+  const validFindingRefs = new Set<string>();
+  input.validFindingRefs.forEach((findingRef, index) => {
+    if (FindingRefSchema.safeParse(findingRef).success) validFindingRefs.add(findingRef);
+    else issues.push({ code: "coverage_finding_unknown", path: `validFindingRefs.${index}` });
+  });
+
+  const seenObjects = new Set<string>();
+  const usedFindingRefs = new Set<string>();
+  const coverageItems: z.infer<typeof GrantFactMapCoverageItemV1Schema>[] = [];
+  provider.data.coverageItems.forEach((candidate, index) => {
+    const parsed = GrantFactMapCoverageItemV1Schema.safeParse(candidate);
+    if (!parsed.success) {
+      issues.push({ code: "coverage_item_invalid", path: `coverageItems.${index}` });
+      return;
+    }
+    const item = parsed.data;
+    if (seenObjects.has(item.semanticObjectRef)) {
+      issues.push({ code: "coverage_item_duplicate", path: `coverageItems.${index}.semanticObjectRef` });
+    }
+    seenObjects.add(item.semanticObjectRef);
+    const expected = expectedObjects.get(item.semanticObjectRef);
+    if (!expected) {
+      issues.push({ code: "coverage_item_unknown", path: `coverageItems.${index}.semanticObjectRef` });
+    } else if (expected.objectType !== item.objectType) {
+      issues.push({ code: "coverage_object_type_mismatch", path: `coverageItems.${index}.objectType` });
+    }
+    item.findingRefs.forEach((findingRef, findingIndex) => {
+      if (!validFindingRefs.has(findingRef)) {
+        issues.push({ code: "coverage_finding_unknown", path: `coverageItems.${index}.findingRefs.${findingIndex}` });
+      }
+      usedFindingRefs.add(findingRef);
+    });
+    coverageItems.push(item);
+  });
+
+  for (const semanticObjectRef of expectedObjects.keys()) {
+    if (!seenObjects.has(semanticObjectRef)) {
+      issues.push({ code: "coverage_item_missing", path: `semanticObjects.${semanticObjectRef}` });
+    }
+  }
+  for (const findingRef of validFindingRefs) {
+    if (!usedFindingRefs.has(findingRef)) {
+      issues.push({ code: "coverage_finding_orphan", path: `findings.${findingRef}` });
+    }
+  }
+  if (issues.length > 0) return { success: false, issues };
+
+  const report = GrantFactMapCoverageReportV1Schema.safeParse({
+    schemaVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.factMapCoverageSchemaVersion,
+    sourceRevisionId: input.sourceRevisionId,
+    coverageItems,
+  });
+  if (!report.success) {
+    return { success: false, issues: [{ code: "coverage_item_invalid", path: "coverageReport" }] };
+  }
+  return { success: true, report: report.data };
+}
+
 /**
  * Cross-run calibration input. Execution-local semanticObjectRef values and
  * free model prose are intentionally impossible in this strict schema.
@@ -153,5 +385,8 @@ export type GrantDiagnosticPhysicalNodeAnchorV1 = z.infer<typeof GrantDiagnostic
 export type GrantSemanticObjectTypeV1 = z.infer<typeof GrantSemanticObjectTypeV1Schema>;
 export type GrantSemanticObjectAnchorRangeV1 = z.infer<typeof GrantSemanticObjectAnchorRangeV1Schema>;
 export type GrantSemanticObjectV1 = z.infer<typeof GrantSemanticObjectV1Schema>;
+export type GrantFactMapCoverageProviderResultV1 = z.infer<typeof GrantFactMapCoverageProviderResultV1Schema>;
+export type GrantFactMapCoverageItemV1 = z.infer<typeof GrantFactMapCoverageItemV1Schema>;
+export type GrantFactMapCoverageReportV1 = z.infer<typeof GrantFactMapCoverageReportV1Schema>;
 export type GrantSemanticObjectContinuityIdentityV1 = z.infer<typeof GrantSemanticObjectContinuityIdentityV1Schema>;
 export type GrantSemanticObjectContinuityAssessmentV1 = z.infer<typeof GrantSemanticObjectContinuityAssessmentV1Schema>;

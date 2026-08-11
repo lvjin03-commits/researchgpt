@@ -383,4 +383,15 @@ references anchored to canonical node ranges. Cross-run semantic calibration
 excludes those aliases and model prose and defines an explicit `ambiguous`
 state. Impact Analysis 0019 and ADR-0019 reserve coordinated V6 target versions.
 Active Semantic V5 constants, canary selection, provider calls, persistence and
-UI remain unchanged. Fact Map coverage is Step 2 and is not implemented here.
+UI remain unchanged.
+
+## Semantic Review Quality Step 2 Status
+
+The target-only Fact Map coverage contract is implemented. Every frozen
+semantic object now requires one explicit disposition: residual gap found,
+verified with no residual gap, or unable to verify. A pure program-owned quality
+gate checks full object coverage, type agreement, Finding bindings and orphan
+Findings; it does not infer completeness from model prose. Strict provider
+schema compatibility and business-invariant regressions are included. Active
+Semantic V5 calls, persistence, rollout and UI remain unchanged. Scientific and
+narrative Finding content contracts are Step 3 and are not implemented here.

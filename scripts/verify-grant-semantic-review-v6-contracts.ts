@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { zodResponseFormat } from "openai/helpers/zod";
 import {
   GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS,
+  assembleGrantFactMapCoverageV1,
   GrantDiagnosticPhysicalNodeAnchorV1Schema,
+  GrantFactMapCoverageProviderResultV1Schema,
   GrantSemanticObjectAnchorRangeV1Schema,
   GrantSemanticObjectContinuityAssessmentV1Schema,
   GrantSemanticObjectContinuityIdentityV1Schema,
@@ -16,6 +19,25 @@ const sectionId = randomUUID();
 const nodeId = randomUUID();
 const contentHash = "a".repeat(64);
 const anchorHash = "b".repeat(64);
+
+const forbiddenProviderKeywords = new Set([
+  "default", "format", "pattern", "minLength", "maxLength", "minimum",
+  "maximum", "minItems", "maxItems",
+]);
+
+function assertStrictProviderSchema(value: unknown, path = "$schema"): void {
+  if (!value || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  for (const keyword of forbiddenProviderKeywords) {
+    assert.equal(keyword in record, false, `${path} must not use ${keyword}`);
+  }
+  if (record.type === "object") {
+    assert.equal(record.additionalProperties, false, `${path} must reject additional properties`);
+    const propertyNames = Object.keys((record.properties ?? {}) as Record<string, unknown>);
+    assert.deepEqual(record.required, propertyNames, `${path} must require every property`);
+  }
+  for (const [key, child] of Object.entries(record)) assertStrictProviderSchema(child, `${path}.${key}`);
+}
 
 assert.doesNotThrow(() => GrantDiagnosticPhysicalNodeAnchorV1Schema.parse({
   sourceRevisionId: revisionId,
@@ -84,8 +106,175 @@ assert.doesNotThrow(() => GrantSemanticObjectContinuityAssessmentV1Schema.parse(
   anchorTextSimilarity: 0.74,
 }));
 
+const secondSemanticObject = {
+  ...semanticObject,
+  semanticObjectRef: "S2",
+  objectType: "scientific_question" as const,
+  normalizedFacet: "interface_reaction_control",
+};
+const thirdSemanticObject = {
+  ...semanticObject,
+  semanticObjectRef: "S3",
+  objectType: "preliminary_evidence" as const,
+  normalizedFacet: "preliminary_mechanism_evidence",
+};
+const providerCoverage = {
+  coverageItems: [
+    {
+      semanticObjectRef: "S1",
+      objectType: "innovation_claim",
+      disposition: "residual_gap_found",
+      findingRefs: ["F1"],
+      unableToVerifyReason: null,
+    },
+    {
+      semanticObjectRef: "S2",
+      objectType: "scientific_question",
+      disposition: "verified_no_residual_gap",
+      findingRefs: [],
+      unableToVerifyReason: null,
+    },
+    {
+      semanticObjectRef: "S3",
+      objectType: "preliminary_evidence",
+      disposition: "unable_to_verify",
+      findingRefs: [],
+      unableToVerifyReason: "evidence_not_authorized",
+    },
+  ],
+};
+
+const coverageResponseFormat = zodResponseFormat(
+  GrantFactMapCoverageProviderResultV1Schema,
+  "grant_fact_map_coverage_v1",
+);
+assert.equal(coverageResponseFormat.type, "json_schema");
+assert.equal(coverageResponseFormat.json_schema.strict, true);
+assertStrictProviderSchema(coverageResponseFormat.json_schema.schema);
+
+const assembledCoverage = assembleGrantFactMapCoverageV1({
+  sourceRevisionId: revisionId,
+  semanticObjects: [semanticObject, secondSemanticObject, thirdSemanticObject],
+  providerResult: providerCoverage,
+  validFindingRefs: ["F1"],
+});
+assert.equal(assembledCoverage.success, true);
+if (assembledCoverage.success) {
+  assert.equal(assembledCoverage.report.coverageItems.length, 3);
+  assert.equal(assembledCoverage.report.schemaVersion, "grant-fact-map-coverage-v1");
+}
+
+const missingCoverage = assembleGrantFactMapCoverageV1({
+  sourceRevisionId: revisionId,
+  semanticObjects: [semanticObject, secondSemanticObject, thirdSemanticObject],
+  providerResult: { coverageItems: providerCoverage.coverageItems.slice(0, 2) },
+  validFindingRefs: ["F1"],
+});
+assert.equal(missingCoverage.success, false);
+if (!missingCoverage.success) {
+  assert(missingCoverage.issues.some((issue) => issue.code === "coverage_item_missing"));
+}
+
+const duplicateCoverage = assembleGrantFactMapCoverageV1({
+  sourceRevisionId: revisionId,
+  semanticObjects: [semanticObject, secondSemanticObject, thirdSemanticObject],
+  providerResult: {
+    coverageItems: [...providerCoverage.coverageItems, providerCoverage.coverageItems[0]],
+  },
+  validFindingRefs: ["F1"],
+});
+assert.equal(duplicateCoverage.success, false);
+if (!duplicateCoverage.success) {
+  assert(duplicateCoverage.issues.some((issue) => issue.code === "coverage_item_duplicate"));
+}
+
+const noGapWithFinding = assembleGrantFactMapCoverageV1({
+  sourceRevisionId: revisionId,
+  semanticObjects: [semanticObject],
+  providerResult: {
+    coverageItems: [{
+      semanticObjectRef: "S1",
+      objectType: "innovation_claim",
+      disposition: "verified_no_residual_gap",
+      findingRefs: ["F1"],
+      unableToVerifyReason: null,
+    }],
+  },
+  validFindingRefs: ["F1"],
+});
+assert.equal(noGapWithFinding.success, false);
+if (!noGapWithFinding.success) {
+  assert(noGapWithFinding.issues.some((issue) => issue.code === "coverage_item_invalid"));
+}
+
+const residualGapWithoutFinding = assembleGrantFactMapCoverageV1({
+  sourceRevisionId: revisionId,
+  semanticObjects: [semanticObject],
+  providerResult: {
+    coverageItems: [{
+      semanticObjectRef: "S1",
+      objectType: "innovation_claim",
+      disposition: "residual_gap_found",
+      findingRefs: [],
+      unableToVerifyReason: null,
+    }],
+  },
+  validFindingRefs: [],
+});
+assert.equal(residualGapWithoutFinding.success, false);
+if (!residualGapWithoutFinding.success) {
+  assert(residualGapWithoutFinding.issues.some((issue) => issue.code === "coverage_item_invalid"));
+}
+
+const unableWithoutReason = assembleGrantFactMapCoverageV1({
+  sourceRevisionId: revisionId,
+  semanticObjects: [semanticObject],
+  providerResult: {
+    coverageItems: [{
+      semanticObjectRef: "S1",
+      objectType: "innovation_claim",
+      disposition: "unable_to_verify",
+      findingRefs: [],
+      unableToVerifyReason: null,
+    }],
+  },
+  validFindingRefs: [],
+});
+assert.equal(unableWithoutReason.success, false);
+if (!unableWithoutReason.success) {
+  assert(unableWithoutReason.issues.some((issue) => issue.code === "coverage_item_invalid"));
+}
+
+const orphanFinding = assembleGrantFactMapCoverageV1({
+  sourceRevisionId: revisionId,
+  semanticObjects: [semanticObject, secondSemanticObject, thirdSemanticObject],
+  providerResult: providerCoverage,
+  validFindingRefs: ["F1", "F2"],
+});
+assert.equal(orphanFinding.success, false);
+if (!orphanFinding.success) {
+  assert(orphanFinding.issues.some((issue) => issue.code === "coverage_finding_orphan"));
+}
+
+const wrongObjectType = assembleGrantFactMapCoverageV1({
+  sourceRevisionId: revisionId,
+  semanticObjects: [semanticObject, secondSemanticObject, thirdSemanticObject],
+  providerResult: {
+    coverageItems: providerCoverage.coverageItems.map((item) => item.semanticObjectRef === "S2"
+      ? { ...item, objectType: "innovation_claim" }
+      : item),
+  },
+  validFindingRefs: ["F1"],
+});
+assert.equal(wrongObjectType.success, false);
+if (!wrongObjectType.success) {
+  assert(wrongObjectType.issues.some((issue) => issue.code === "coverage_object_type_mismatch"));
+}
+
 assert.equal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerContractVersion,
   GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerSchemaVersion);
+assert.equal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.factMapCoverageSchemaVersion,
+  "grant-fact-map-coverage-v1");
 assert.equal(GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.providerContractVersion,
   "grant-semantic-diagnostic-v5", "contract-only V6 work must not advance active V5 runtime versions");
 assert.equal(GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.checkerVersion,

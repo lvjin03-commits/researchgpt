@@ -69,6 +69,12 @@ Copy the relevant sections into every grant-platform PR.
       canonical physical anchors; they never mint or impersonate document nodes.
 - [ ] Semantic-object continuity excludes local aliases and model prose, and an
       ambiguous calibration is not silently treated as the same or a new object.
+- [ ] Fact Map coverage accounts for every frozen semantic object exactly once;
+      absence of a Finding is never treated as proof that review occurred.
+- [ ] Verified-no-gap and unable-to-verify objects cannot publish Findings, and
+      authorization loss is represented as unable to verify rather than fixed.
+- [ ] Every target Finding is bound to at least one covered semantic object;
+      unknown or orphan Finding references fail the coverage quality gate.
 - [ ] ArgumentMap output is descriptive only; diagnostic judgments and advice
       remain owned by the semantic Finding contract.
 - [ ] ArgumentMap provider code stays in the existing Grant model adapter
