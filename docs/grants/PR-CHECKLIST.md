@@ -65,6 +65,10 @@ Copy the relevant sections into every grant-platform PR.
       presentation text.
 - [ ] ArgumentMap aliases, ordering and prose do not participate in durable
       Finding or recheck identity; continuity resolves to canonical nodes.
+- [ ] Model-recognized semantic objects use execution-local references and
+      canonical physical anchors; they never mint or impersonate document nodes.
+- [ ] Semantic-object continuity excludes local aliases and model prose, and an
+      ambiguous calibration is not silently treated as the same or a new object.
 - [ ] ArgumentMap output is descriptive only; diagnostic judgments and advice
       remain owned by the semantic Finding contract.
 - [ ] ArgumentMap provider code stays in the existing Grant model adapter

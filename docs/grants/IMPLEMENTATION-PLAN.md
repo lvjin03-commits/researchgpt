@@ -372,3 +372,15 @@ Migration 047 is applied and an owner-scoped production canary is enabled. A
 signed-in real GPT run completed in multimodal mode, and a second run after
 authorization revocation completed in explicit text-only mode. Global rollout
 is not enabled; rollback is the existing hierarchical diagnostic mode flag.
+
+## Semantic Review Quality Step 1 Status
+
+The dual-node target contract is implemented without changing production.
+Existing `GrantNode.nodeId` remains the only canonical physical-node identity;
+model-recognized scientific questions, innovation claims, objectives,
+mechanisms, metrics and evidence use revision-bound execution-local semantic
+references anchored to canonical node ranges. Cross-run semantic calibration
+excludes those aliases and model prose and defines an explicit `ambiguous`
+state. Impact Analysis 0019 and ADR-0019 reserve coordinated V6 target versions.
+Active Semantic V5 constants, canary selection, provider calls, persistence and
+UI remain unchanged. Fact Map coverage is Step 2 and is not implemented here.

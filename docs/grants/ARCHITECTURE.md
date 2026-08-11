@@ -99,6 +99,8 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Semantic Finding content | Versioned Semantic Checker Contract | Model returns semantic content only; supplied IDs and evidence references are validated |
 | Finding identity and conflicts | Diagnostic Assembler | Conflicts are retained explicitly |
 | ArgumentMap interpretation | Versioned Semantic Checker Contract | Descriptive, revision-bound scaffold only; never durable identity |
+| Semantic object recognition | Versioned Semantic Checker Contract | Revision-bound interpretation only; never creates canonical document nodes |
+| Semantic object cross-run calibration | Diagnostic Assembler | Uses canonical physical anchors and calibrated similarity; never trusts execution-local semantic references |
 | Finding occurrence/root continuity | Diagnostic Assembler | Uses canonical nodes and anchors; never ArgumentMap numbering or model prose |
 | User disposition | Feedback Service | Does not rewrite system conclusions |
 | Evidence read/use/citation permission | Evidence Authorization Service | Current authorization is authoritative |

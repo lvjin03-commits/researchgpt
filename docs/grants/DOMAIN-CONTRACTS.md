@@ -538,6 +538,40 @@ Stage states for argument mapping, root diagnosis and assembly explain progress,
 failure, skip and stale-revision outcomes. They do not replace the existing
 aggregate `complete | partial | failed` diagnostic status.
 
+### Semantic Review V6 Dual-node Target Contract
+
+The next diagnostic-quality phase distinguishes deterministic physical document
+nodes from model-recognized semantic objects. This is an identity boundary, not
+a second document model.
+
+Physical diagnostic anchors are read-only projections of the existing canonical
+`GrantNode.nodeId`, section, order and revision. Sections, headings, paragraphs,
+lists, tables, figures, citations and formulas retain their existing program-
+owned identity. No diagnostic component may mint another canonical node ID.
+
+Scientific questions, innovation claims, objectives, research content,
+technical routes, mechanism claims, expected metrics, preliminary evidence and
+expected contributions are semantic objects. Their boundaries require model
+interpretation and may vary between runs. They therefore use an execution-local
+`semanticObjectRef` plus bounded ranges anchored to canonical nodes. They are
+revision-bound scaffolding and never canonical document identity.
+
+Cross-run semantic calibration excludes `semanticObjectRef`, model summaries
+and free prose. Diagnostic Assembler will later compare semantic object type,
+normalized facet, canonical physical-node overlap and anchored-text similarity.
+Its match state is `same | likely_same | ambiguous | different`; `ambiguous`
+must not be silently converted to either continuity or a new issue.
+
+The target-only contracts are implemented in
+`lib/grants/diagnostics/semantic-review-v6-contracts.ts`. They reserve provider
+contract/schema `grant-semantic-diagnostic-v6`, semantic object
+`grant-semantic-object-v1`, scientific Finding `grant-scientific-finding-v1`,
+narrative Finding `grant-narrative-finding-v1`, prompt
+`grant-semantic-review-v6`, policy `grant-ai-policy-v5` and checker `6.0.0`.
+These values are not active production selection. Semantic V5 runtime,
+persistence, canary admission and user-visible behavior remain unchanged in
+this contract-only step.
+
 ## Checker Versioning
 
 Every run records checker, checker version, prompt/contract version, input mode,
