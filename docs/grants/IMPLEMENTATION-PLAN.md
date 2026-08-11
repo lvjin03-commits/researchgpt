@@ -299,10 +299,10 @@ document and semantic diagnostic stages. It is not a new top-level pipeline.
 2. **Extraction and storage (completed 2026-08-10):** extract embedded DOCX image parts, verify hashes,
    use immutable object paths and create canonical `figure` nodes in source
    order. Preserve unsupported formats with explicit fidelity warnings.
-3. **Workspace rendering (implemented 2026-08-10):** resolve owner-scoped assets
+3. **Workspace rendering (verified 2026-08-11):** resolve owner-scoped assets
    through a private read adapter and render them at their canonical position
-   without changing editor revision ownership. Migration 049 and a production
-   signed-byte/user-path probe remain the effect-first gates.
+   without changing editor revision ownership. Migration 049, the signed
+   private-byte path and the real workspace display were verified in production.
 4. **Model-data admission (implemented 2026-08-10):** add an explicit user
    consent surface and a single Figure Model Authorization Service. Consent is
    denied by default, asset-scoped, compare-and-swap protected and invalidated
@@ -316,9 +316,14 @@ document and semantic diagnostic stages. It is not a new top-level pipeline.
    image/location references. Unauthorized or unusable figures degrade to
    text-only diagnosis with explicit image coverage; figure-bearing documents
    never reuse an older successful semantic run without rechecking consent.
-6. **Effect-first verification and rollout:** use a real image-bearing NSFC DOCX,
-   verify extraction order, captions, workspace display, provider input,
-   diagnosis location and revocation. Rollout is separately authorized.
+6. **Effect-first verification and rollout (completed 2026-08-11):** a temporary
+   figure was inserted into a real NSFC DOCX and imported through production.
+   Source order, caption binding, private workspace display and complete browser
+   image loading were verified. The owner-scoped Semantic V5 canary then proved
+   both paths: authorized diagnosis supplied 1/1 raster asset to the provider;
+   after revocation a new run supplied 0/1 assets, completed text-only and
+   exposed `not_authorized` coverage. The temporary project was recoverably
+   archived after verification. Global rollout remains separately authorized.
 
 Each step replaces a missing capability within an existing owner. No parallel
 import route, canonical model, model gateway, diagnostic button or Finding
@@ -347,9 +352,9 @@ continuity fingerprints, attaches root cards to the existing Finding envelope
 and exposes every manifestation through the normalized projection. Migration
 047 defines additive V4 detail tables and revision/scope-bound ArgumentMap
 checkpoints. The existing right panel can show one root card with navigation to
-each canonical occurrence. Production composition and Semantic V4 selection
-remain unchanged; migration 047 has not been applied and the V5 target is not
-active.
+each canonical occurrence. Migration 047 is applied. Production composition
+remains unchanged outside the explicit owner canary; the authorized owner uses
+Semantic V5 while other owners remain on the existing selection path.
 
 ## Hierarchical Diagnostic Step 7 Status
 
@@ -363,5 +368,7 @@ bound checkpoint, and successful root Findings use the atomic migration 047
 save operation.
 
 Local contract, compatibility, type and architecture verification is complete.
-Migration 047 is not applied, rollout mode is not enabled, and a signed-in real
-GPT run has not been performed. Production behavior therefore remains unchanged.
+Migration 047 is applied and an owner-scoped production canary is enabled. A
+signed-in real GPT run completed in multimodal mode, and a second run after
+authorization revocation completed in explicit text-only mode. Global rollout
+is not enabled; rollback is the existing hierarchical diagnostic mode flag.
