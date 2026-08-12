@@ -35,6 +35,7 @@ export const GrantScientificReviewModelInputV1Schema = z.object({
   sections: z.array(GrantDiagnosticAtomicSectionSchema).min(1),
   evidenceCards: z.array(GrantSemanticDiagnosticV3EvidenceInputSchema).max(8),
   priorFindings: z.array(PriorFindingReferenceSchema).max(100),
+  expectedCoverageItemCount: z.number().int().min(1).max(256),
   factMapObjects: z.array(z.object({
     semanticObjectRef: SemanticRefSchema,
     objectType: GrantSemanticObjectTypeV1Schema,
@@ -94,7 +95,7 @@ export function buildGrantScientificReviewModelInputV1(input: {
     ...input.prepared.reviewBaseRequest,
     schemaVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.scientificFindingSchemaVersion,
     stage: "scientific_review",
+    expectedCoverageItemCount: factMapObjects.length,
     factMapObjects,
   });
 }
-

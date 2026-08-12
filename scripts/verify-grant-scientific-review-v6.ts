@@ -215,7 +215,27 @@ assert.equal(assembleGrantScientificReviewV1({ prepared, factMap, providerResult
 const messages = buildGrantScientificReviewMessagesV1(request);
 assert.match(messages[0]!.content, /Never invent a residual gap/);
 assert.match(messages[0]!.content, /metadata_only establishes record existence only/);
+assert.equal(request.expectedCoverageItemCount, factMap.semanticObjects.length);
+assert.match(messages[0]!.content, /exactly expectedCoverageItemCount entries/);
+assert.match(messages[0]!.content, /Every emitted Finding ref must be used/);
+assert.match(messages[1]!.content, /"expectedCoverageItemCount":2/);
 assert.equal(/severity|priority/.test(JSON.stringify(validResult)), false);
+
+const largeCoverageRequest = {
+  ...request,
+  expectedCoverageItemCount: 71,
+  factMapObjects: Array.from({ length: 71 }, (_, index) => ({
+    semanticObjectRef: `S${index + 1}` as `S${number}`,
+    objectType: "scientific_question" as const,
+    normalizedFacet: `coverage_object_${index + 1}`,
+    sourceLocationRefs: ["N1" as const],
+  })),
+};
+const largeCoverageMessages = buildGrantScientificReviewMessagesV1(largeCoverageRequest);
+const largeCoveragePayload = JSON.parse(largeCoverageMessages[1]!.content);
+assert.equal(largeCoveragePayload.expectedCoverageItemCount, 71);
+assert.equal(largeCoveragePayload.factMapObjects.length, 71);
+assert.equal(largeCoveragePayload.factMapObjects[70]?.semanticObjectRef, "S71");
 
 const calls: Array<Record<string, unknown>> = [];
 function fakeClient(result: unknown, finishReason = "stop"): OpenAI {
