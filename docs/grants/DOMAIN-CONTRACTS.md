@@ -678,6 +678,32 @@ coverage assembler then checks the complete semantic-object and successfully
 assembled Finding sets. The OpenAI adapter performs one attempt and receives a
 completion budget from its future aggregate owner; it owns no retry policy.
 
+#### Unified Semantic Review V6 execution target
+
+One aggregate executor owns the target-only three-stage sequence:
+
+```text
+Fact Map -> Scientific Review -> Narrative Review
+```
+
+The normal path makes exactly three provider calls. The complete operation may
+make at most four calls and allocate at most 46,000 completion tokens. Fact Map
+is single-attempt. Across Scientific and Narrative Review together, only one
+exceptional recovery is available, and only for an explicit provider-truncation
+or retryable transient-provider outcome. Schema, coverage, reference,
+authorization, stale-input and other deterministic failures do not retry.
+
+The executor may expose a revision- and location-scope-bound checkpoint after a
+mature Fact Map or Scientific Review. Resume revalidates the frozen input
+fingerprint and supplied mature objects before any provider call. Checkpoints
+are in-memory target contracts in this step; they are not durable persistence,
+production recovery or a second diagnostic run model.
+
+Image authorization is materialized immediately before every paid Narrative
+Review attempt. A retry therefore cannot reuse stale authorization or cached
+image bytes. Stage adapters remain one-attempt model ports and cannot define a
+private token default, retry counter or fallback model.
+
 #### Narrative Review V6 execution
 
 Narrative Review consumes the same frozen revision, document ordering and `N*`

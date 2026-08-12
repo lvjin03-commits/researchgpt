@@ -101,6 +101,14 @@ Copy the relevant sections into every grant-platform PR.
       and does not create a second authorization or materialization path.
 - [ ] Narrative Review executor has no private retry or default token budget;
       image bytes and document prose are absent from durable failure telemetry.
+- [ ] Semantic Review V6 normal execution is exactly Fact Map, Scientific
+      Review and Narrative Review; the aggregate executor is the only owner of
+      the four-call/46,000-completion-token ceiling.
+- [ ] Fact Map never retries; Scientific and Narrative Review share no more
+      than one exceptional recovery for truncation or explicit transient
+      provider failure, and deterministic failures consume no retry.
+- [ ] Resume checkpoints validate revision, input and location scope before a
+      provider call; Narrative image authorization is rebuilt per paid attempt.
 - [ ] ArgumentMap output is descriptive only; diagnostic judgments and advice
       remain owned by the semantic Finding contract.
 - [ ] ArgumentMap provider code stays in the existing Grant model adapter

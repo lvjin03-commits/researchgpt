@@ -108,6 +108,7 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Fact Map identity and anchor assembly | Fact Map Assembler | Assigns execution-local semantic refs and resolves canonical anchors/hashes; model never mints IDs |
 | Semantic-object review disposition | Versioned Semantic Checker Contract | Explicit residual-gap, verified-no-gap, or unable-to-verify judgment; no severity |
 | Fact Map coverage completeness | Fact Map Coverage Assembler | Validates the frozen semantic-object and Finding sets; never infers completeness from prose |
+| Semantic Review V6 aggregate execution budget | Semantic Review V6 Executor | Owns the three-stage call/token ceiling, the single exceptional recovery and checkpoint reuse; stage adapters have no retry authority |
 | Semantic object cross-run calibration | Diagnostic Assembler | Uses canonical physical anchors and calibrated similarity; never trusts execution-local semantic references |
 | Finding occurrence/root continuity | Diagnostic Assembler | Uses canonical nodes and anchors; never ArgumentMap numbering or model prose |
 | User disposition | Feedback Service | Does not rewrite system conclusions |

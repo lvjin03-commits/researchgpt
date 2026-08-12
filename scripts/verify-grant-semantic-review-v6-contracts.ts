@@ -4,6 +4,7 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import "./verify-grant-semantic-review-v6-input.ts";
 import "./verify-grant-narrative-review-v6.ts";
 import "./verify-grant-scientific-review-v6.ts";
+import "./verify-grant-semantic-review-v6-execution.ts";
 import {
   GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS,
   assembleGrantFactMapCoverageV1,

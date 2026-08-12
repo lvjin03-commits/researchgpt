@@ -147,6 +147,16 @@ and validates revision/scope before reuse. This checkpoint is not durable yet;
 persistence and production recovery remain later work. Production composition
 and Semantic V4 selection remain unchanged.
 
+Semantic Review V6 unified-execution status (2026-08-12): the target-only Fact
+Map, Scientific Review and Narrative Review adapters now run through one
+aggregate executor. The normal path uses three calls; the aggregate ceiling is
+four calls and one exceptional recovery across both review stages. Fact Map is
+single-attempt, deterministic failures do not retry, current image authorization
+is rebuilt before each Narrative attempt, and revision/scope-bound in-memory
+checkpoints can resume after Fact Map or Scientific Review. Production
+composition, persistence, rollout and user-visible Semantic V5 behavior remain
+unchanged until later authorized steps.
+
 Semantic Diagnostic V3 planning status (2026-08-09): the contract, impact
 analysis and ADR are frozen in Impact Analysis 0015 and ADR-0015. This step
 changes no runtime behavior. Implementation must remain staged: strict schema
