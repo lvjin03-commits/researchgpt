@@ -417,3 +417,15 @@ fingerprint. The model identifies semantic type/facet and selects supplied
 computes hashes. Fact Map output cannot contain diagnosis or recommendations.
 No production model operation, persistence, migration, rollout or UI changes in
 this step. Scientific review execution is Step 5.
+
+## Semantic Review Quality Step 5 Status
+
+Target-only Scientific Review V6 execution is implemented. It consumes the
+frozen V6 input and mature Fact Map, applies verify-before-report instructions,
+returns Findings and explicit coverage in one strict response, resolves every
+semantic/location/evidence alias programmatically and runs the Fact Map
+coverage gate. Metadata-only evidence cannot support a scientific conclusion;
+invalid related locations degrade locally while invalid primary or existing-
+design locations reject the result. The adapter performs one paid attempt with
+a caller-supplied completion budget and no private retry. Production selection,
+persistence, migration and UI remain unchanged. Narrative Review is Step 6.

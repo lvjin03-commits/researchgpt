@@ -466,6 +466,14 @@ export const GrantScientificFindingProviderResultV1Schema = z.object({
   }).strict()),
 }).strict();
 
+/** One scientific-review call returns both candidate Findings and an explicit
+ * disposition for every frozen Fact Map object. Completeness is still decided
+ * by the program-owned coverage assembler, never by provider prose. */
+export const GrantScientificReviewProviderResultV1Schema = z.object({
+  findings: GrantScientificFindingProviderResultV1Schema.shape.findings,
+  coverageItems: GrantFactMapCoverageProviderResultV1Schema.shape.coverageItems,
+}).strict();
+
 const CanonicalLocationV1Schema = z.object({
   sectionId: UuidSchema,
   nodeId: UuidSchema,
@@ -501,6 +509,9 @@ export const GrantScientificFindingContentV1Schema = z.object({
   }
   if (value.evidenceBasis === "document_only" && value.usedEvidenceCardIds.length > 0) {
     context.addIssue({ code: "custom", path: ["usedEvidenceCardIds"], message: "Document-only findings cannot claim Evidence Cards." });
+  }
+  if (value.evidenceBasis === "requires_external_verification" && value.usedEvidenceCardIds.length > 0) {
+    context.addIssue({ code: "custom", path: ["usedEvidenceCardIds"], message: "External-verification findings cannot claim supplied Evidence Cards as support." });
   }
   const seenDesignLocations = new Set<string>();
   value.existingDesign.forEach((design, index) => {
@@ -606,10 +617,12 @@ export type GrantDiagnosticPhysicalNodeAnchorV1 = z.infer<typeof GrantDiagnostic
 export type GrantSemanticObjectTypeV1 = z.infer<typeof GrantSemanticObjectTypeV1Schema>;
 export type GrantSemanticObjectAnchorRangeV1 = z.infer<typeof GrantSemanticObjectAnchorRangeV1Schema>;
 export type GrantSemanticObjectV1 = z.infer<typeof GrantSemanticObjectV1Schema>;
+export type GrantFactMapV1 = z.infer<typeof GrantFactMapV1Schema>;
 export type GrantFactMapCoverageProviderResultV1 = z.infer<typeof GrantFactMapCoverageProviderResultV1Schema>;
 export type GrantFactMapCoverageItemV1 = z.infer<typeof GrantFactMapCoverageItemV1Schema>;
 export type GrantFactMapCoverageReportV1 = z.infer<typeof GrantFactMapCoverageReportV1Schema>;
 export type GrantScientificFindingContentV1 = z.infer<typeof GrantScientificFindingContentV1Schema>;
+export type GrantScientificReviewProviderResultV1 = z.infer<typeof GrantScientificReviewProviderResultV1Schema>;
 export type GrantNarrativeFindingContentV1 = z.infer<typeof GrantNarrativeFindingContentV1Schema>;
 export type GrantSemanticReviewFindingSetV1 = z.infer<typeof GrantSemanticReviewFindingSetV1Schema>;
 export type GrantSemanticObjectContinuityIdentityV1 = z.infer<typeof GrantSemanticObjectContinuityIdentityV1Schema>;

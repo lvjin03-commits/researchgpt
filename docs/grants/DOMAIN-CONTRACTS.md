@@ -661,6 +661,23 @@ durable identity. The target schemas are `grant-scientific-finding-v1` and
 `grant-narrative-finding-v1`; they are not active provider, persistence or UI
 contracts in this step.
 
+#### Scientific Review V6 execution
+
+Scientific Review consumes the frozen document/evidence base and mature Fact
+Map. One strict response contains candidate Scientific Findings and coverage
+dispositions for all Fact Map objects. A fully covered object produces
+`verified_no_residual_gap` and no Finding; review uncertainty produces
+`unable_to_verify`, not a fabricated problem.
+
+The model may choose only supplied `S*`, `N*` and Evidence Card aliases. The
+program resolves canonical locations, rejects invalid primary or existing-
+design references, drops only invalid related locations and enforces current
+evidence scope. `authorized_evidence` requires a `verified` card within its
+supported scope; `metadata_only` establishes record existence only. The
+coverage assembler then checks the complete semantic-object and successfully
+assembled Finding sets. The OpenAI adapter performs one attempt and receives a
+completion budget from its future aggregate owner; it owns no retry policy.
+
 ## Checker Versioning
 
 Every run records checker, checker version, prompt/contract version, input mode,

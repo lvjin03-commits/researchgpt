@@ -83,6 +83,12 @@ Copy the relevant sections into every grant-platform PR.
       unknown or orphan Finding references fail the coverage quality gate.
 - [ ] Scientific Findings acknowledge existing design and evidence tier before
       reporting only the residual gap; performance is not mechanism or causality.
+- [ ] Scientific Review returns coverage for every frozen Fact Map object;
+      verified-no-gap and unable-to-verify never manufacture a Finding.
+- [ ] `authorized_evidence` scientific conclusions use only currently admitted
+      verified Evidence Cards; metadata-only records cannot support them.
+- [ ] Scientific Review executor has no private retry or default token budget;
+      both remain owned by the aggregate diagnostic operation.
 - [ ] Narrative Findings use their own categories and fields; presentation
       friction is not represented as a scientific evidence gap.
 - [ ] Scientific and narrative provider schemas reject severity, priority and

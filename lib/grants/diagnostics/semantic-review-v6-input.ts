@@ -21,7 +21,6 @@ const PriorFindingReferenceSchema = z.object({
 
 const SemanticReviewV6InputHeaderSchema = z.object({
   contractVersion: z.literal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerContractVersion),
-  schemaVersion: z.literal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.factMapSchemaVersion),
   promptVersion: z.literal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.promptVersion),
   locationScopeFingerprint: Sha256Schema,
   documentLanguage: z.enum(["zh", "en"]),
@@ -31,6 +30,7 @@ const SemanticReviewV6InputHeaderSchema = z.object({
 }).strict();
 
 export const GrantFactMapModelInputV1Schema = SemanticReviewV6InputHeaderSchema.extend({
+  schemaVersion: z.literal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.factMapSchemaVersion),
   stage: z.literal("fact_mapping"),
   sections: z.array(GrantDiagnosticAtomicSectionSchema).min(1),
 }).strict();
@@ -39,7 +39,7 @@ export const GrantFactMapModelInputV1Schema = SemanticReviewV6InputHeaderSchema.
  * not dispatch either review; it only proves that both will consume the same
  * revision, atomic locations and current Evidence Card admission. */
 export const GrantSemanticReviewBaseInputV1Schema = SemanticReviewV6InputHeaderSchema.extend({
-  stage: z.literal("semantic_review"),
+  stage: z.literal("semantic_review_base"),
   sections: z.array(GrantDiagnosticAtomicSectionSchema).min(1),
   evidenceCards: z.array(GrantSemanticDiagnosticV3EvidenceInputSchema).max(8),
   priorFindings: z.array(PriorFindingReferenceSchema).max(100),
@@ -80,7 +80,6 @@ export function buildGrantSemanticReviewV6PreparedInputV1(input: {
 }): GrantSemanticReviewV6PreparedInputV1 {
   const common = {
     contractVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerContractVersion,
-    schemaVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.factMapSchemaVersion,
     promptVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.promptVersion,
     locationScopeFingerprint: input.prepared.locationScopeFingerprint,
     documentLanguage: input.prepared.argumentMapRequest.documentLanguage,
@@ -91,12 +90,13 @@ export function buildGrantSemanticReviewV6PreparedInputV1(input: {
 
   const factMapRequest = GrantFactMapModelInputV1Schema.parse({
     ...common,
+    schemaVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.factMapSchemaVersion,
     stage: "fact_mapping",
     sections: input.prepared.argumentMapRequest.sections,
   });
   const reviewBaseRequest = GrantSemanticReviewBaseInputV1Schema.parse({
     ...common,
-    stage: "semantic_review",
+    stage: "semantic_review_base",
     sections: input.prepared.rootDiagnosisBaseRequest.sections,
     evidenceCards: input.prepared.rootDiagnosisBaseRequest.evidenceCards,
     priorFindings: input.prepared.rootDiagnosisBaseRequest.priorFindings,

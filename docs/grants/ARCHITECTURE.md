@@ -98,6 +98,7 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Finding conclusion | Owning Checker | Assembler may normalize, not reinterpret |
 | Semantic Finding content | Versioned Semantic Checker Contract | Model returns semantic content only; supplied IDs and evidence references are validated |
 | Scientific Finding content | Versioned Semantic Checker Contract | Accounts for existing design and evidence tier before reporting a residual scientific gap |
+| Scientific Finding reference/evidence assembly | Scientific Review Assembler | Resolves frozen aliases and current Evidence Card scope; never changes the scientific conclusion |
 | Narrative Finding content | Versioned Semantic Checker Contract | Describes presentation friction and bounded organization advice; never masquerades as scientific evidence judgment |
 | Finding identity and conflicts | Diagnostic Assembler | Conflicts are retained explicitly |
 | ArgumentMap interpretation | Versioned Semantic Checker Contract | Descriptive, revision-bound scaffold only; never durable identity |
