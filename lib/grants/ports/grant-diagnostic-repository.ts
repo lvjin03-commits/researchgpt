@@ -3,6 +3,7 @@ import type { GrantNormalizedFinding } from "../diagnostics/normalized-finding.t
 import type { AssembledGrantSemanticFindingV3 } from "../diagnostics/semantic-v3-assembler.ts";
 import type { AssembledGrantHierarchicalFindingV1 } from "../diagnostics/hierarchical-finding-assembler.ts";
 import type { GrantArgumentMapCheckpointV1, GrantHierarchicalContinuityLinkV1 } from "../diagnostics/hierarchical-semantic-contracts.ts";
+import type { GrantSemanticReviewV6CheckpointRecord, GrantSemanticReviewV6FindingDetail } from "../diagnostics/semantic-review-v6-persistence.ts";
 
 export type GrantDiagnosticExecution = {
   runs: GrantDiagnosticRun[];
@@ -22,6 +23,13 @@ export type GrantHierarchicalDiagnosticExecutionV1 = {
   continuityLinks: GrantHierarchicalContinuityLinkV1[];
 };
 
+export type GrantSemanticReviewV6Execution = {
+  run: GrantDiagnosticRun;
+  findings: GrantFinding[];
+  findingDetails: GrantSemanticReviewV6FindingDetail[];
+  checkpoint: GrantSemanticReviewV6CheckpointRecord;
+};
+
 export interface GrantDiagnosticRepository {
   saveExecution(input: GrantDiagnosticExecution): Promise<GrantDiagnosticExecution>;
   listFindings(documentId: string): Promise<GrantFinding[]>;
@@ -29,6 +37,16 @@ export interface GrantDiagnosticRepository {
   listRuns?(documentId: string): Promise<GrantDiagnosticRun[]>;
   saveSemanticV3Execution?(input: GrantSemanticDiagnosticV3Execution): Promise<GrantSemanticDiagnosticV3Execution>;
   saveHierarchicalExecution?(input: GrantHierarchicalDiagnosticExecutionV1): Promise<GrantHierarchicalDiagnosticExecutionV1>;
+  saveSemanticReviewV6Execution?(input: GrantSemanticReviewV6Execution): Promise<GrantSemanticReviewV6Execution>;
+  saveSemanticReviewV6Checkpoint?(input: GrantSemanticReviewV6CheckpointRecord): Promise<GrantSemanticReviewV6CheckpointRecord>;
+  findSemanticReviewV6Checkpoint?(input: {
+    documentId: string;
+    sourceRevisionId: string;
+    checkerId: string;
+    checkerVersion: string;
+    inputFingerprint: string;
+    locationScopeFingerprint: string;
+  }): Promise<GrantSemanticReviewV6CheckpointRecord | null>;
   saveArgumentMapCheckpoint?(input: GrantArgumentMapCheckpointV1): Promise<GrantArgumentMapCheckpointV1>;
   findArgumentMapCheckpoint?(input: {
     documentId: string;

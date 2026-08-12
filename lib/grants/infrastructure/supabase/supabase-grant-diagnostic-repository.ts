@@ -11,6 +11,8 @@ import { AssembledGrantSemanticFindingV3Schema } from "../../diagnostics/semanti
 import { AssembledGrantHierarchicalFindingV1Schema } from "../../diagnostics/hierarchical-finding-assembler.ts";
 import { GrantArgumentMapCheckpointV1Schema, GrantHierarchicalContinuityLinkV1Schema } from "../../diagnostics/hierarchical-semantic-contracts.ts";
 import type { GrantSupabaseRpcClient } from "./supabase-grant-revision-repository.ts";
+import { GrantSemanticReviewV6CheckpointRecordSchema, GrantSemanticReviewV6FindingDetailSchema } from "../../diagnostics/semantic-review-v6-persistence.ts";
+import type { GrantSemanticReviewV6Execution } from "../../ports/grant-diagnostic-repository.ts";
 
 type RpcError = { message: string };
 
@@ -143,5 +145,63 @@ export class SupabaseGrantDiagnosticRepository implements GrantDiagnosticReposit
     });
     throwRpcError("list_grant_normalized_findings", error);
     return z.array(GrantNormalizedFindingSchema).parse(data ?? []);
+  }
+
+  async saveSemanticReviewV6Checkpoint(input: import("../../diagnostics/semantic-review-v6-persistence.ts").GrantSemanticReviewV6CheckpointRecord) {
+    const parsed = GrantSemanticReviewV6CheckpointRecordSchema.parse(input);
+    const { data, error } = await this.client.rpc("save_grant_semantic_review_v6_checkpoint", {
+      p_owner_id: this.ownerId,
+      p_checkpoint: parsed,
+    });
+    throwRpcError("save_grant_semantic_review_v6_checkpoint", error);
+    return GrantSemanticReviewV6CheckpointRecordSchema.parse(data);
+  }
+
+  async findSemanticReviewV6Checkpoint(input: {
+    documentId: string;
+    sourceRevisionId: string;
+    checkerId: string;
+    checkerVersion: string;
+    inputFingerprint: string;
+    locationScopeFingerprint: string;
+  }) {
+    const { data, error } = await this.client.rpc("find_grant_semantic_review_v6_checkpoint", {
+      p_owner_id: this.ownerId,
+      p_document_id: input.documentId,
+      p_source_revision_id: input.sourceRevisionId,
+      p_checker_id: input.checkerId,
+      p_checker_version: input.checkerVersion,
+      p_input_fingerprint: input.inputFingerprint,
+      p_location_scope_fingerprint: input.locationScopeFingerprint,
+    });
+    throwRpcError("find_grant_semantic_review_v6_checkpoint", error);
+    return data ? GrantSemanticReviewV6CheckpointRecordSchema.parse(data) : null;
+  }
+
+  async saveSemanticReviewV6Execution(input: GrantSemanticReviewV6Execution) {
+    const parsed = {
+      run: GrantDiagnosticRunSchema.parse(input.run),
+      findings: z.array(GrantFindingSchema).parse(input.findings),
+      findingDetails: z.array(GrantSemanticReviewV6FindingDetailSchema).parse(input.findingDetails),
+      checkpoint: GrantSemanticReviewV6CheckpointRecordSchema.parse(input.checkpoint),
+    };
+    const findingIds = new Set(parsed.findings.map((finding) => finding.findingId));
+    if (parsed.run.contractVersion !== parsed.checkpoint.contractVersion
+      || parsed.run.sourceRevisionId !== parsed.checkpoint.sourceRevisionId
+      || parsed.findings.some((finding) => finding.runId !== parsed.run.runId || finding.documentId !== parsed.run.documentId)
+      || parsed.findingDetails.some((detail) => !findingIds.has(detail.findingId))) {
+      throw new Error("Semantic Review V6 execution contains mismatched run, Finding or checkpoint identity.");
+    }
+    const { data, error } = await this.client.rpc("save_grant_semantic_review_v6_execution", {
+      p_owner_id: this.ownerId,
+      p_document_id: parsed.run.documentId,
+      p_run: parsed.run,
+      p_findings: parsed.findings,
+      p_finding_details: parsed.findingDetails,
+      p_checkpoint: parsed.checkpoint,
+    });
+    throwRpcError("save_grant_semantic_review_v6_execution", error);
+    if (data !== true) throw new Error("Semantic Review V6 execution was not persisted.");
+    return structuredClone(parsed);
   }
 }

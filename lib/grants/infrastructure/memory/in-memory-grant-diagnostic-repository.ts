@@ -1,6 +1,8 @@
 import { normalizeGrantFindingHierarchical, normalizeGrantFindingV2, normalizeGrantFindingV3, toGrantFindingCompatibility, toGrantFindingHierarchicalCompatibility } from "../../diagnostics/normalized-finding.ts";
 import type { GrantArgumentMapCheckpointV1 } from "../../diagnostics/hierarchical-semantic-contracts.ts";
 import type { GrantDiagnosticExecution, GrantDiagnosticRepository, GrantHierarchicalDiagnosticExecutionV1, GrantSemanticDiagnosticV3Execution } from "../../ports/grant-diagnostic-repository.ts";
+import type { GrantSemanticReviewV6CheckpointRecord } from "../../diagnostics/semantic-review-v6-persistence.ts";
+import type { GrantSemanticReviewV6Execution } from "../../ports/grant-diagnostic-repository.ts";
 
 function clone<T>(value: T): T { return structuredClone(value); }
 
@@ -9,6 +11,8 @@ export class InMemoryGrantDiagnosticRepository implements GrantDiagnosticReposit
   private readonly semanticV3Executions: GrantSemanticDiagnosticV3Execution[] = [];
   private readonly hierarchicalExecutions: GrantHierarchicalDiagnosticExecutionV1[] = [];
   private readonly argumentMapCheckpoints: GrantArgumentMapCheckpointV1[] = [];
+  private readonly semanticReviewV6Executions: GrantSemanticReviewV6Execution[] = [];
+  private readonly semanticReviewV6Checkpoints: GrantSemanticReviewV6CheckpointRecord[] = [];
 
   async saveExecution(input: GrantDiagnosticExecution) {
     this.executions.push(clone(input));
@@ -75,6 +79,42 @@ export class InMemoryGrantDiagnosticRepository implements GrantDiagnosticReposit
       conflicts: [],
     });
     await this.saveArgumentMapCheckpoint({ ...stored.argumentMapCheckpoint, status: "consumed" });
+    return clone(stored);
+  }
+
+  async saveSemanticReviewV6Checkpoint(input: GrantSemanticReviewV6CheckpointRecord) {
+    const stored = clone(input);
+    const existingIndex = this.semanticReviewV6Checkpoints.findIndex((item) => item.checkpointId === stored.checkpointId);
+    if (existingIndex >= 0) this.semanticReviewV6Checkpoints[existingIndex] = stored;
+    else this.semanticReviewV6Checkpoints.push(stored);
+    return clone(stored);
+  }
+
+  async findSemanticReviewV6Checkpoint(input: {
+    documentId: string;
+    sourceRevisionId: string;
+    checkerId: string;
+    checkerVersion: string;
+    inputFingerprint: string;
+    locationScopeFingerprint: string;
+  }) {
+    const checkpoint = [...this.semanticReviewV6Checkpoints].reverse().find((candidate) =>
+      candidate.status === "ready"
+      && candidate.documentId === input.documentId
+      && candidate.sourceRevisionId === input.sourceRevisionId
+      && candidate.checkerId === input.checkerId
+      && candidate.checkerVersion === input.checkerVersion
+      && candidate.inputFingerprint === input.inputFingerprint
+      && candidate.locationScopeFingerprint === input.locationScopeFingerprint
+    );
+    return checkpoint ? clone(checkpoint) : null;
+  }
+
+  async saveSemanticReviewV6Execution(input: GrantSemanticReviewV6Execution) {
+    const stored = clone(input);
+    this.semanticReviewV6Executions.push(stored);
+    this.executions.push({ runs: [stored.run], findings: stored.findings, conflicts: [] });
+    await this.saveSemanticReviewV6Checkpoint({ ...stored.checkpoint, status: "consumed" });
     return clone(stored);
   }
 

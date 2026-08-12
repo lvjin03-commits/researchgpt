@@ -109,6 +109,13 @@ Copy the relevant sections into every grant-platform PR.
       provider failure, and deterministic failures consume no retry.
 - [ ] Resume checkpoints validate revision, input and location scope before a
       provider call; Narrative image authorization is rebuilt per paid attempt.
+- [ ] V6 checkpoint lookup/save is owner-, current-Revision-, checker-, input-
+      and location-scope-bound; checkpoints never become Finding identity.
+- [ ] V6 success persists the existing run/Finding envelope, both V6 detail
+      families and checkpoint consumption in one stale-Revision-guarded RPC.
+- [ ] V6 fingerprints exclude model prose and execution-local `F*`/`S*` refs;
+      Scientific identity uses stable semantic facets/anchors and Narrative
+      identity uses canonical locations/scope/authorized figure IDs.
 - [ ] ArgumentMap output is descriptive only; diagnostic judgments and advice
       remain owned by the semantic Finding contract.
 - [ ] ArgumentMap provider code stays in the existing Grant model adapter

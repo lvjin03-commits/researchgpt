@@ -696,13 +696,36 @@ authorization, stale-input and other deterministic failures do not retry.
 The executor may expose a revision- and location-scope-bound checkpoint after a
 mature Fact Map or Scientific Review. Resume revalidates the frozen input
 fingerprint and supplied mature objects before any provider call. Checkpoints
-are in-memory target contracts in this step; they are not durable persistence,
-production recovery or a second diagnostic run model.
+are portable recovery contracts; persistence is owned only by the Grant
+Diagnostic Repository and never creates a second diagnostic run model.
 
 Image authorization is materialized immediately before every paid Narrative
 Review attempt. A retry therefore cannot reuse stale authorization or cached
 image bytes. Stage adapters remain one-attempt model ports and cannot define a
 private token default, retry counter or fallback model.
+
+#### Semantic Review V6 persistence target
+
+V6 recovery state is stored through the existing Grant Diagnostic Repository.
+A checkpoint is bound to document, current source Revision, checker/version,
+input fingerprint and location-scope fingerprint. It contains a mature Fact Map
+and may also contain the mature Scientific Review and coverage report. It is
+never durable Finding identity and cannot cross a Revision or admitted scope.
+
+A successful save is one PostgreSQL transaction containing:
+
+```text
+existing immutable Diagnostic Run
++ existing compatibility Finding envelopes
++ Scientific/Narrative V6 detail records
++ matching checkpoint consumption
+```
+
+The transaction rechecks that the diagnosed Revision is still current. Any
+identity, version, owner, revision or detail mismatch rolls back all writes.
+Scientific and narrative details remain separate families; their compatibility
+envelopes do not erase the richer fields. V6 checkpoints and detail tables do
+not select V6 runtime or create another diagnostic route.
 
 #### Narrative Review V6 execution
 

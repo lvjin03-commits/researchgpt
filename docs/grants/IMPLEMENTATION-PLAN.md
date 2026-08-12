@@ -157,6 +157,14 @@ checkpoints can resume after Fact Map or Scientific Review. Production
 composition, persistence, rollout and user-visible Semantic V5 behavior remain
 unchanged until later authorized steps.
 
+Semantic Review V6 persistence status (2026-08-12): the target-only execution
+now has revision/scope/input-bound Fact Map and Scientific Review checkpoint
+contracts, existing-repository memory/Supabase adapters, stable program-derived
+Finding envelopes and one atomic PostgreSQL save contract for the run, both
+Finding families and checkpoint consumption. Migration 051 is authored but is
+not applied by this code step. Production composition, rollout and visible
+Semantic V5 behavior remain unchanged.
+
 Semantic Diagnostic V3 planning status (2026-08-09): the contract, impact
 analysis and ADR are frozen in Impact Analysis 0015 and ADR-0015. This step
 changes no runtime behavior. Implementation must remain staged: strict schema
