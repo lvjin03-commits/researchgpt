@@ -67,6 +67,12 @@ Copy the relevant sections into every grant-platform PR.
       Finding or recheck identity; continuity resolves to canonical nodes.
 - [ ] Model-recognized semantic objects use execution-local references and
       canonical physical anchors; they never mint or impersonate document nodes.
+- [ ] V6 Fact Map input reuses the admitted atomic-location scope, Evidence
+      authorization set and figure map; it never reparses or rebuilds aliases.
+- [ ] Fact Map provider output contains no canonical IDs, semantic-object IDs,
+      Findings, diagnosis, recommendation, severity or priority.
+- [ ] Fact Map Assembler allocates `S*`, resolves every `N*` and derives anchor
+      offsets/hashes from frozen canonical node text.
 - [ ] Semantic-object continuity excludes local aliases and model prose, and an
       ambiguous calibration is not silently treated as the same or a new object.
 - [ ] Fact Map coverage accounts for every frozen semantic object exactly once;

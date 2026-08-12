@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { zodResponseFormat } from "openai/helpers/zod";
+import "./verify-grant-semantic-review-v6-input.ts";
 import {
   GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS,
   assembleGrantFactMapCoverageV1,
   GrantDiagnosticPhysicalNodeAnchorV1Schema,
+  GrantFactMapProviderResultV1Schema,
   GrantFactMapCoverageProviderResultV1Schema,
   GrantNarrativeFindingContentV1Schema,
   GrantNarrativeFindingProviderResultV1Schema,
@@ -150,6 +152,7 @@ const providerCoverage = {
 };
 
 for (const [schema, name] of [
+  [GrantFactMapProviderResultV1Schema, "grant_fact_map_v1"],
   [GrantFactMapCoverageProviderResultV1Schema, "grant_fact_map_coverage_v1"],
   [GrantScientificFindingProviderResultV1Schema, "grant_scientific_finding_v1"],
   [GrantNarrativeFindingProviderResultV1Schema, "grant_narrative_finding_v1"],

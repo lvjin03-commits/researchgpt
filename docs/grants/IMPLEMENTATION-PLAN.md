@@ -405,4 +405,15 @@ bounded organization suggestion without borrowing scientific-gap fields.
 Severity and priority are absent, visual findings require resolved figure
 assets, and Finding references are unique across both families. Active Semantic
 V5 calls, persistence, rollout and UI remain unchanged. Frozen V6 model input
-and Fact Map construction are Step 4 and are not implemented here.
+and Fact Map construction were reserved for Step 4.
+
+## Semantic Review Quality Step 4 Status
+
+The frozen V6 prepared input and descriptive Fact Map construction are now
+implemented as target-only infrastructure. The adapter reuses the existing
+Model Data Gateway location, Evidence Card and figure admission maps and scope
+fingerprint. The model identifies semantic type/facet and selects supplied
+`N*` locations only; the program allocates `S*`, resolves canonical anchors and
+computes hashes. Fact Map output cannot contain diagnosis or recommendations.
+No production model operation, persistence, migration, rollout or UI changes in
+this step. Scientific review execution is Step 5.

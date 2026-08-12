@@ -600,6 +600,21 @@ The target-only schema is `grant-fact-map-coverage-v1` in
 `semantic-review-v6-contracts.ts`. It is not an active provider output,
 persistence or UI contract in this step.
 
+#### Frozen V6 input and descriptive Fact Map
+
+Semantic Review V6 adapts the already-authorized hierarchical prepared input;
+it does not parse the canonical document, query Evidence authorization or build
+`N*` aliases again. One input fingerprint binds source revision, location-scope
+fingerprint, admitted text, Evidence Cards and prior-Finding references.
+
+Fact Map provider output contains semantic object type, a normalized facet and
+one or more supplied atomic `N*` locations. It contains no canonical IDs, `S*`
+identity, Findings, diagnostic conclusion, severity, recommendation or review
+outcome. Fact Map Assembler validates every `N*`, assigns `S1...Sn`, resolves
+canonical section/node IDs and derives full-node anchor offsets and hashes from
+the frozen node text. The mature target is `grant-fact-map-v1`; it remains
+revision- and location-scope-bound scaffolding, not durable identity.
+
 #### Scientific and narrative Finding targets
 
 Semantic Review V6 has two content families, not one permissive Finding object.

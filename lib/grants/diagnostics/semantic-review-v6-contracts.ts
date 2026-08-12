@@ -18,6 +18,7 @@ const BoundedTextSchema = z.string().trim().min(1).max(2400);
  */
 export const GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS = {
   canonicalDocumentSchemaVersion: "grant-canonical-v1",
+  factMapSchemaVersion: "grant-fact-map-v1",
   semanticObjectSchemaVersion: "grant-semantic-object-v1",
   factMapCoverageSchemaVersion: "grant-fact-map-coverage-v1",
   providerContractVersion: "grant-semantic-diagnostic-v6",
@@ -64,6 +65,20 @@ export const GrantSemanticObjectTypeV1Schema = z.enum([
   "preliminary_evidence",
   "expected_contribution",
 ]);
+
+/**
+ * Provider-facing Fact Map output. The provider identifies descriptive
+ * semantic objects and selects only execution-local atomic locations supplied
+ * in the frozen input. It never creates semantic-object IDs, canonical IDs,
+ * Findings, diagnoses or recommendations.
+ */
+export const GrantFactMapProviderResultV1Schema = z.object({
+  semanticObjects: z.array(z.object({
+    objectType: GrantSemanticObjectTypeV1Schema,
+    normalizedFacet: z.string(),
+    sourceLocationRefs: z.array(z.string()),
+  }).strict()),
+}).strict();
 
 export const GrantSemanticObjectAnchorRangeV1Schema = z.object({
   sourceRevisionId: UuidSchema,
@@ -113,6 +128,32 @@ export const GrantSemanticObjectV1Schema = z.object({
       });
     }
     seenAnchors.add(key);
+  });
+});
+
+export const GrantFactMapV1Schema = z.object({
+  schemaVersion: z.literal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.factMapSchemaVersion),
+  sourceRevisionId: UuidSchema,
+  locationScopeFingerprint: Sha256Schema,
+  semanticObjects: z.array(GrantSemanticObjectV1Schema).max(256),
+}).strict().superRefine((value, context) => {
+  const seen = new Set<string>();
+  value.semanticObjects.forEach((semanticObject, index) => {
+    if (semanticObject.sourceRevisionId !== value.sourceRevisionId) {
+      context.addIssue({
+        code: "custom",
+        path: ["semanticObjects", index, "sourceRevisionId"],
+        message: "Every Fact Map object must belong to the frozen source revision.",
+      });
+    }
+    if (seen.has(semanticObject.semanticObjectRef)) {
+      context.addIssue({
+        code: "custom",
+        path: ["semanticObjects", index, "semanticObjectRef"],
+        message: "Fact Map semantic references must be unique.",
+      });
+    }
+    seen.add(semanticObject.semanticObjectRef);
   });
 });
 
