@@ -18,6 +18,7 @@ Copy the relevant sections into every grant-platform PR.
 - [ ] A failing regression/contract scenario exists for the old problem.
 - [ ] Replaced code is removed, or its migration/deletion condition is recorded.
 - [ ] Schema changes include a forward-compatible migration and rollback reader.
+- [ ] New grant persistence RPCs have a repeatable real-PostgreSQL probe covering success, authorization, stale Revision and rollback behavior.
 
 ## Revision and Patch Safety
 

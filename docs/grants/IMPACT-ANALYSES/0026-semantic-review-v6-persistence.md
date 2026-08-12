@@ -46,3 +46,12 @@ durable representation.
 
 Remove the additive repository methods, V6 persistence assembly, tests and
 migration objects. No production selector uses them in this step.
+
+## Production verification
+
+Migration 051 was applied on 2026-08-12 after confirming that migrations
+001-050 already matched the linked production project. The repeatable
+`test:grant-semantic-review-v6:postgres` probe verified checkpoint round-trip,
+owner isolation, stale-Revision rejection, transaction rollback, successful
+atomic persistence and both V6 Finding families, then removed its temporary
+users and document. V6 runtime selection remains disabled.
