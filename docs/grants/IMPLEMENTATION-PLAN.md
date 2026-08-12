@@ -429,3 +429,14 @@ invalid related locations degrade locally while invalid primary or existing-
 design locations reject the result. The adapter performs one paid attempt with
 a caller-supplied completion budget and no private retry. Production selection,
 persistence, migration and UI remain unchanged. Narrative Review is Step 6.
+
+## Semantic Review Quality Step 6 Status
+
+Target-only Narrative Review V6 execution is implemented as a separate
+presentation axis. It reuses the frozen V6 document/location scope and the
+existing current image-admission provider, produces only Narrative Finding V1,
+resolves all `N*` and `I*` aliases programmatically, and forbids visual findings
+when no image was actually supplied. The adapter performs one paid attempt with
+a caller-supplied completion budget and no private retry. Production selection,
+persistence, migration and UI remain unchanged. Aggregate budgeting,
+persistence and rollout are later steps.

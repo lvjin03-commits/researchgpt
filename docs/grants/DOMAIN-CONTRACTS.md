@@ -678,6 +678,23 @@ coverage assembler then checks the complete semantic-object and successfully
 assembled Finding sets. The OpenAI adapter performs one attempt and receives a
 completion budget from its future aggregate owner; it owns no retry policy.
 
+#### Narrative Review V6 execution
+
+Narrative Review consumes the same frozen revision, document ordering and `N*`
+location scope as the other V6 stages. It reports only presentation friction:
+flow, emphasis, opening persuasion, abstract independent readability, language
+register and visual communication. It does not judge scientific novelty,
+correctness, feasibility or evidence sufficiency and does not consume
+Scientific Findings as a second source of truth.
+
+Application images enter only through the existing current-authorization image
+admission. Text-only coverage forbids `visual_communication`. In multimodal
+coverage, the model may select only actually supplied `I*` aliases; the
+Narrative Review Assembler resolves them to program-owned figure asset IDs.
+Invalid primary or image aliases reject the candidate result, while invalid
+related locations are deterministically removed. The adapter performs one
+provider attempt with a caller-supplied completion budget and owns no retry.
+
 ## Checker Versioning
 
 Every run records checker, checker version, prompt/contract version, input mode,

@@ -95,6 +95,12 @@ Copy the relevant sections into every grant-platform PR.
       fields owned by the other Finding family.
 - [ ] Visual-communication Findings use only currently authorized, program-
       resolved figure assets; nonvisual Findings cannot claim figure use.
+- [ ] Text-only Narrative Review cannot emit `visual_communication`; captions
+      and omitted figures are not treated as visual access.
+- [ ] Narrative Review reuses the current Model Data Gateway image admission
+      and does not create a second authorization or materialization path.
+- [ ] Narrative Review executor has no private retry or default token budget;
+      image bytes and document prose are absent from durable failure telemetry.
 - [ ] ArgumentMap output is descriptive only; diagnostic judgments and advice
       remain owned by the semantic Finding contract.
 - [ ] ArgumentMap provider code stays in the existing Grant model adapter

@@ -100,6 +100,7 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Scientific Finding content | Versioned Semantic Checker Contract | Accounts for existing design and evidence tier before reporting a residual scientific gap |
 | Scientific Finding reference/evidence assembly | Scientific Review Assembler | Resolves frozen aliases and current Evidence Card scope; never changes the scientific conclusion |
 | Narrative Finding content | Versioned Semantic Checker Contract | Describes presentation friction and bounded organization advice; never masquerades as scientific evidence judgment |
+| Narrative Finding reference/image assembly | Narrative Review Assembler | Resolves frozen location and currently admitted image aliases; never changes narrative meaning or grants image access |
 | Finding identity and conflicts | Diagnostic Assembler | Conflicts are retained explicitly |
 | ArgumentMap interpretation | Versioned Semantic Checker Contract | Descriptive, revision-bound scaffold only; never durable identity |
 | Semantic object recognition | Versioned Semantic Checker Contract | Revision-bound interpretation only; never creates canonical document nodes |
