@@ -110,6 +110,7 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Fact Map coverage completeness | Fact Map Coverage Assembler | Validates the frozen semantic-object and Finding sets; never infers completeness from prose |
 | Semantic Review V6 aggregate execution budget | Semantic Review V6 Executor | Owns the three-stage call/token ceiling, the single exceptional recovery and checkpoint reuse; stage adapters have no retry authority |
 | Semantic Review V6 recovery/result persistence | Grant Diagnostic Repository | Stores revision-bound checkpoints and atomically saves the existing run/Finding envelope plus V6 details; never chooses runtime or retries |
+| Semantic diagnostic runtime version | Grant Semantic Diagnostic Runtime Selector | Selects exactly one of V6, hierarchical/V5, V3 or V2 for an owner; API, checker, repository and UI never reinterpret the selection |
 | Semantic object cross-run calibration | Diagnostic Assembler | Uses canonical physical anchors and calibrated similarity; never trusts execution-local semantic references |
 | Finding occurrence/root continuity | Diagnostic Assembler | Uses canonical nodes and anchors; never ArgumentMap numbering or model prose |
 | User disposition | Feedback Service | Does not rewrite system conclusions |

@@ -16,6 +16,7 @@ import {
   type GrantDiagnosticModelRequest,
   type GrantSemanticDiagnosticV3ModelResult,
   GrantHierarchicalDiagnosticModelError,
+  GrantSemanticReviewV6ModelError,
 } from "../../ports/grant-diagnostic-model.ts";
 import type { GrantPatchModel, GrantPatchModelRequest } from "../../ports/grant-patch-model.ts";
 import {
@@ -38,6 +39,12 @@ import {
   GrantHierarchicalDiagnosticExecutionError,
 } from "./openai-grant-hierarchical-diagnostic.ts";
 import type { GrantDiagnosticImageAdmissionProvider } from "../../diagnostics/multimodal-diagnostic-input.ts";
+import type { GrantSemanticReviewV6PreparedInputV1 } from "../../diagnostics/semantic-review-v6-input.ts";
+import type { GrantSemanticReviewV6PortableCheckpoint } from "../../diagnostics/semantic-review-v6-persistence.ts";
+import {
+  executeGrantSemanticReviewV6,
+  GrantSemanticReviewV6ExecutionError,
+} from "./openai-grant-semantic-review-v6.ts";
 
 const PatchResultSchema = z.object({
   replacementText: z.string().trim().min(1),
@@ -124,6 +131,10 @@ export class UnavailableGrantAiModel implements GrantPatchModel, GrantDiagnostic
   async diagnoseHierarchical(): Promise<never> {
     throw new GrantAiConfigurationError("OPENAI_API_KEY is not configured for Grant AI.");
   }
+
+  async diagnoseSemanticReviewV6(): Promise<never> {
+    throw new GrantAiConfigurationError("OPENAI_API_KEY is not configured for Grant AI.");
+  }
 }
 
 export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel {
@@ -133,6 +144,36 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
   constructor(modelId: string, apiKey: string, client?: OpenAI) {
     this.modelId = modelId;
     this.client = client ?? new OpenAI({ apiKey });
+  }
+
+  async diagnoseSemanticReviewV6(
+    prepared: GrantSemanticReviewV6PreparedInputV1,
+    checkpoint?: GrantSemanticReviewV6PortableCheckpoint,
+    imageAdmission?: GrantDiagnosticImageAdmissionProvider,
+  ) {
+    try {
+      const result = await executeGrantSemanticReviewV6({
+        client: this.client,
+        modelId: this.modelId,
+        prepared,
+        checkpoint,
+        imageAdmission,
+      });
+      return { ...result, provider: "openai" as const, modelId: this.modelId };
+    } catch (error) {
+      if (!(error instanceof GrantSemanticReviewV6ExecutionError)) throw error;
+      throw new GrantSemanticReviewV6ModelError({
+        failureCode: error.failureCode,
+        failedStage: error.failedStage,
+        message: error.message,
+        providerCallCount: error.providerCallCount,
+        completionTokenAllocation: error.completionTokenAllocation,
+        usage: error.usage,
+        stages: error.stages,
+        checkpoint: error.checkpoint,
+        imageCoverage: error.imageCoverage,
+      });
+    }
   }
 
   async diagnoseHierarchical(

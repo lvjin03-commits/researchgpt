@@ -7,7 +7,11 @@ import { resolveGrantSourceAnchor } from "../diagnostics/anchors.ts";
 import { analyzeGrantDiagnosticImpact } from "../diagnostics/impact-analyzer.ts";
 import type { GrantDiagnosticExecution, GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import { GrantRevisionService } from "./revision-service.ts";
-import { GrantHierarchicalSemanticCheckerError, GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID } from "./semantic-diagnostic-checker.ts";
+import {
+  GrantHierarchicalSemanticCheckerError,
+  GrantSemanticReviewV6CheckerError,
+  GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID,
+} from "./semantic-diagnostic-checker.ts";
 import { GrantDiagnosticExecutionError, type GrantDiagnosticFailureCategory } from "../ports/grant-diagnostic-model.ts";
 import type { GrantDiagnosticValidationIssue } from "../diagnostics/validation-telemetry.ts";
 import {
@@ -15,11 +19,16 @@ import {
   assembleGrantSemanticDiagnosticsV3,
 } from "../diagnostics/semantic-v3-assembler.ts";
 import { normalizeGrantFindingV2, toGrantFindingCompatibility, toGrantFindingHierarchicalCompatibility, type GrantNormalizedFinding } from "../diagnostics/normalized-finding.ts";
-import type { GrantHierarchicalDiagnosticExecutionV1, GrantSemanticDiagnosticV3Execution } from "../ports/grant-diagnostic-repository.ts";
+import type {
+  GrantHierarchicalDiagnosticExecutionV1,
+  GrantSemanticDiagnosticV3Execution,
+  GrantSemanticReviewV6Execution,
+} from "../ports/grant-diagnostic-repository.ts";
 import type { GrantSemanticDiagnosticV3PriorFinding } from "../diagnostics/semantic-v3-input.ts";
 import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import { assembleGrantHierarchicalExecutionForPersistenceV1 } from "../diagnostics/hierarchical-diagnostic-persistence.ts";
 import type { GrantDiagnosticImageCoverage } from "../diagnostics/multimodal-diagnostic-input.ts";
+import { assembleGrantSemanticReviewV6ExecutionForPersistence } from "../diagnostics/semantic-review-v6-persistence.ts";
 
 type DiagnosticServiceDependencies = {
   revisionService: GrantRevisionService;
@@ -181,6 +190,7 @@ export class GrantDiagnosticService {
     const runsToPersist: GrantDiagnosticRun[] = [];
     const semanticV3Executions: GrantSemanticDiagnosticV3Execution[] = [];
     const hierarchicalExecutions: GrantHierarchicalDiagnosticExecutionV1[] = [];
+    const semanticReviewV6Executions: GrantSemanticReviewV6Execution[] = [];
     let reusedExecution = true;
 
     for (const checker of this.checkers) {
@@ -219,6 +229,24 @@ export class GrantDiagnosticService {
           fundingCategory,
           priorSemanticFindings,
         });
+        if (output.semanticReviewV6) {
+          const execution = assembleGrantSemanticReviewV6ExecutionForPersistence({
+            documentId,
+            actorId,
+            checkerId: checker.checkerId,
+            snapshot: sourceRevision.snapshot,
+            prepared: output.semanticReviewV6.prepared,
+            execution: output.semanticReviewV6.execution,
+            runId,
+            checkpointId: output.semanticReviewV6.checkpointId,
+            startedAt,
+            completedAt: this.now(),
+            createId: this.createId,
+          });
+          runs.push(execution.run);
+          semanticReviewV6Executions.push(execution);
+          continue;
+        }
         if (output.semanticHierarchical) {
           const execution = assembleGrantHierarchicalExecutionForPersistenceV1({
             documentId,
@@ -287,10 +315,26 @@ export class GrantDiagnosticService {
         runsToPersist.push(run);
         if (output.semanticV3) semanticV3Executions.push({ run, findings: semanticV3Findings });
       } catch (error) {
+        if (error instanceof GrantSemanticReviewV6CheckerError
+          && error.checkpoint
+          && this.repository.saveSemanticReviewV6Checkpoint) {
+          await this.repository.saveSemanticReviewV6Checkpoint(error.checkpoint);
+        }
         if (error instanceof GrantHierarchicalSemanticCheckerError && error.checkpoint && this.repository.saveArgumentMapCheckpoint) {
           await this.repository.saveArgumentMapCheckpoint(error.checkpoint);
         }
-        const diagnosticFailure = error instanceof GrantHierarchicalSemanticCheckerError
+        const diagnosticFailure = error instanceof GrantSemanticReviewV6CheckerError
+          ? {
+            category: error.modelError.failureCode,
+            failedStage: error.modelError.failedStage,
+            providerCallCount: error.modelError.providerCallCount,
+            completionTokenAllocation: error.modelError.completionTokenAllocation,
+            usage: error.modelError.usage,
+            stages: error.modelError.stages,
+            checkpointSaved: Boolean(error.checkpoint),
+            imageCoverage: error.modelError.imageCoverage,
+          }
+          : error instanceof GrantHierarchicalSemanticCheckerError
           ? {
             category: error.modelError.failureCode,
             providerCallCount: error.modelError.providerCallCount,
@@ -314,7 +358,9 @@ export class GrantDiagnosticService {
           inputHash,
           status: "failed",
           parsedOutput: { inputSectionIds, failure: diagnosticFailure },
-          failureCode: error instanceof GrantHierarchicalSemanticCheckerError
+          failureCode: error instanceof GrantSemanticReviewV6CheckerError
+            ? error.modelError.failureCode
+            : error instanceof GrantHierarchicalSemanticCheckerError
             ? error.modelError.failureCode
             : error instanceof GrantDiagnosticExecutionError ? error.category : error instanceof Error ? error.name : "checker_failed",
           createdBy: actorId,
@@ -352,7 +398,12 @@ export class GrantDiagnosticService {
     });
     const semanticV3RunIds = new Set(semanticV3Executions.map((execution) => execution.run.runId));
     const hierarchicalRunIds = new Set(hierarchicalExecutions.map((execution) => execution.run.runId));
-    const genericRuns = runsToPersist.filter((run) => !semanticV3RunIds.has(run.runId) && !hierarchicalRunIds.has(run.runId));
+    const semanticReviewV6RunIds = new Set(semanticReviewV6Executions.map((execution) => execution.run.runId));
+    const genericRuns = runsToPersist.filter((run) =>
+      !semanticV3RunIds.has(run.runId)
+      && !hierarchicalRunIds.has(run.runId)
+      && !semanticReviewV6RunIds.has(run.runId)
+    );
     const genericExecution = genericRuns.length > 0 || assembled.findings.length > 0 || assembled.conflicts.length > 0
       ? await this.repository.saveExecution({ runs: genericRuns, ...assembled })
       : { runs: [], findings: [], conflicts: [] };
@@ -366,12 +417,18 @@ export class GrantDiagnosticService {
       if (!this.repository.saveHierarchicalExecution) throw new Error("Hierarchical semantic diagnostic persistence is unavailable.");
       savedHierarchicalExecutions.push(await this.repository.saveHierarchicalExecution(execution));
     }
+    const savedSemanticReviewV6Executions: GrantSemanticReviewV6Execution[] = [];
+    for (const execution of semanticReviewV6Executions) {
+      if (!this.repository.saveSemanticReviewV6Execution) throw new Error("Semantic Review V6 persistence is unavailable.");
+      savedSemanticReviewV6Executions.push(await this.repository.saveSemanticReviewV6Execution(execution));
+    }
     return {
       runs,
       findings: [
         ...genericExecution.findings,
         ...savedSemanticExecutions.flatMap((execution) => execution.findings.map(toGrantFindingCompatibility)),
         ...savedHierarchicalExecutions.flatMap((execution) => execution.findings.map(toGrantFindingHierarchicalCompatibility)),
+        ...savedSemanticReviewV6Executions.flatMap((execution) => execution.findings),
       ],
       conflicts: genericExecution.conflicts,
       recheck: this.summarize(runs, existingRuns, inputSectionIds.length, inputNodeIds.length, false),

@@ -14,6 +14,8 @@ import {
   type GrantSemanticDiagnosticV3PriorFinding,
 } from "../diagnostics/semantic-v3-input.ts";
 import { buildGrantHierarchicalDiagnosticPreparedInputV1 } from "../diagnostics/hierarchical-semantic-input.ts";
+import { buildGrantSemanticReviewV6PreparedInputV1 } from "../diagnostics/semantic-review-v6-input.ts";
+import type { GrantSemanticReviewV6PortableCheckpoint } from "../diagnostics/semantic-review-v6-persistence.ts";
 import type { GrantArgumentMapV1 } from "../diagnostics/hierarchical-semantic-contracts.ts";
 import { GrantFigureAuthorizationDeniedError, GrantFigureModelAuthorizationService } from "./figure-model-authorization-service.ts";
 import type { GrantFigureAssetReader } from "../ports/grant-figure-asset-reader.ts";
@@ -178,16 +180,38 @@ export class GrantModelDataGateway {
     );
   }
 
+  async prepareDiagnosticSemanticReviewV6Input(input: Parameters<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]>[0]) {
+    const hierarchical = await this.prepareDiagnosticHierarchicalInput(input);
+    return buildGrantSemanticReviewV6PreparedInputV1({ prepared: hierarchical });
+  }
+
+  async executeDiagnosticSemanticReviewV6Input(
+    documentId: string,
+    prepared: Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticSemanticReviewV6Input"]>>,
+    checkpoint?: GrantSemanticReviewV6PortableCheckpoint,
+  ) {
+    if (!this.model.diagnoseSemanticReviewV6) {
+      throw new GrantEvidenceProviderPolicyError("Grant Semantic Review V6 is not configured.");
+    }
+    return this.model.diagnoseSemanticReviewV6(
+      prepared,
+      checkpoint,
+      this.createDiagnosticImageAdmission(documentId, prepared),
+    );
+  }
+
   private createDiagnosticImageAdmission(
     documentId: string,
-    prepared: Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]>>,
+    prepared: Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]>>
+      | Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticSemanticReviewV6Input"]>>,
   ) {
     return () => this.materializeDiagnosticImages(documentId, prepared);
   }
 
   private async materializeDiagnosticImages(
     documentId: string,
-    prepared: Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]>>,
+    prepared: Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticHierarchicalInput"]>>
+      | Awaited<ReturnType<GrantModelDataGateway["prepareDiagnosticSemanticReviewV6Input"]>>,
   ): Promise<GrantDiagnosticImageAdmission> {
     const candidateCount = prepared.figureLocationRefByAssetId.size;
     if (candidateCount === 0) {

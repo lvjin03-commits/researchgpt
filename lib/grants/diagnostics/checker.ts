@@ -4,6 +4,8 @@ import type { GrantSemanticDiagnosticResultV3, GrantSemanticDiagnosticV3Referenc
 import type { GrantSemanticDiagnosticV3PriorFinding } from "./semantic-v3-input.ts";
 import type { GrantDiagnosticExecutionMetadata, GrantHierarchicalDiagnosticModelResult } from "../ports/grant-diagnostic-model.ts";
 import type { GrantHierarchicalDiagnosticPreparedInputV1 } from "./hierarchical-semantic-input.ts";
+import type { GrantSemanticReviewV6PreparedInputV1 } from "./semantic-review-v6-input.ts";
+import type { GrantSemanticReviewV6ModelResult } from "../ports/grant-diagnostic-model.ts";
 
 export type GrantCheckerInput = {
   executionId: string;
@@ -44,6 +46,11 @@ export type GrantCheckerOutput = {
   semanticHierarchical?: {
     prepared: GrantHierarchicalDiagnosticPreparedInputV1;
     execution: GrantHierarchicalDiagnosticModelResult;
+    checkpointId?: string;
+  };
+  semanticReviewV6?: {
+    prepared: GrantSemanticReviewV6PreparedInputV1;
+    execution: GrantSemanticReviewV6ModelResult;
     checkpointId?: string;
   };
 };

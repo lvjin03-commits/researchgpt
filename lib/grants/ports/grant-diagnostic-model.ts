@@ -13,6 +13,11 @@ import type {
   GrantDiagnosticImageAdmissionProvider,
   GrantDiagnosticImageCoverage,
 } from "../diagnostics/multimodal-diagnostic-input.ts";
+import type { GrantSemanticReviewV6PreparedInputV1 } from "../diagnostics/semantic-review-v6-input.ts";
+import type {
+  GrantSemanticReviewV6PortableCheckpoint,
+  GrantSemanticReviewV6PortableExecutionResult,
+} from "../diagnostics/semantic-review-v6-persistence.ts";
 
 export type GrantDiagnosticModelNode = {
   nodeId: string;
@@ -123,6 +128,45 @@ export class GrantHierarchicalDiagnosticModelError extends Error {
   }
 }
 
+export type GrantSemanticReviewV6ModelResult = GrantSemanticReviewV6PortableExecutionResult & {
+  provider: "openai";
+  modelId: string;
+};
+
+export class GrantSemanticReviewV6ModelError extends Error {
+  readonly failureCode: string;
+  readonly failedStage: string;
+  readonly providerCallCount: number;
+  readonly completionTokenAllocation: number;
+  readonly usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  readonly stages: GrantSemanticReviewV6PortableExecutionResult["stages"];
+  readonly checkpoint?: GrantSemanticReviewV6PortableCheckpoint;
+  readonly imageCoverage: GrantDiagnosticImageCoverage;
+
+  constructor(input: {
+    failureCode: string;
+    failedStage: string;
+    message: string;
+    providerCallCount: number;
+    completionTokenAllocation: number;
+    usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+    stages: GrantSemanticReviewV6PortableExecutionResult["stages"];
+    checkpoint?: GrantSemanticReviewV6PortableCheckpoint;
+    imageCoverage: GrantDiagnosticImageCoverage;
+  }) {
+    super(input.message);
+    this.name = "GrantSemanticReviewV6ModelError";
+    this.failureCode = input.failureCode;
+    this.failedStage = input.failedStage;
+    this.providerCallCount = input.providerCallCount;
+    this.completionTokenAllocation = input.completionTokenAllocation;
+    this.usage = input.usage;
+    this.stages = input.stages;
+    this.checkpoint = input.checkpoint;
+    this.imageCoverage = input.imageCoverage;
+  }
+}
+
 export const GRANT_DIAGNOSTIC_POLICY_VERSION = "grant-ai-policy-v2";
 export const GRANT_DIAGNOSTIC_SCHEMA_VERSION = "grant-semantic-diagnostic-v2";
 export const GRANT_DIAGNOSTIC_PROMPT_VERSION = "grant-semantic-prompt-v2";
@@ -191,4 +235,9 @@ export interface GrantDiagnosticModel {
     argumentMapCheckpoint?: GrantArgumentMapV1,
     imageAdmission?: GrantDiagnosticImageAdmissionProvider,
   ): Promise<GrantHierarchicalDiagnosticModelResult>;
+  diagnoseSemanticReviewV6?(
+    prepared: GrantSemanticReviewV6PreparedInputV1,
+    checkpoint?: GrantSemanticReviewV6PortableCheckpoint,
+    imageAdmission?: GrantDiagnosticImageAdmissionProvider,
+  ): Promise<GrantSemanticReviewV6ModelResult>;
 }

@@ -39,15 +39,17 @@ assert.throws(() => GrantHierarchicalDiagnosticRolloutPolicySchema.parse({
   canaryOwnerIds: ["not-a-user-id"],
 }));
 
-const [composition, service, checker, route, migration] = await Promise.all([
+const [composition, config, service, checker, route, migration] = await Promise.all([
   readFile("lib/grants/server/composition.ts", "utf8"),
+  readFile("lib/grants/server/config.ts", "utf8"),
   readFile("lib/grants/application/diagnostic-service.ts", "utf8"),
   readFile("lib/grants/application/semantic-diagnostic-checker.ts", "utf8"),
   readFile("app/api/grants/documents/[id]/diagnostics/route.ts", "utf8"),
   readFile("supabase/migrations/047_grant_hierarchical_diagnostic_projection.sql", "utf8"),
 ]);
 
-assert.match(composition, /isGrantHierarchicalDiagnosticSelected\(ownerId\)/);
+assert.match(composition, /selectGrantSemanticDiagnosticRuntime\(ownerId\)/);
+assert.match(config, /isGrantHierarchicalDiagnosticSelected\(ownerId\)/);
 assert.match(composition, /new GrantSemanticDiagnosticChecker/);
 assert.doesNotMatch(composition, /new GrantDiagnosticService[\s\S]*new GrantDiagnosticService/);
 assert.match(checker, /findArgumentMapCheckpoint/);

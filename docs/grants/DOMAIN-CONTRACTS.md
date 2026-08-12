@@ -727,6 +727,16 @@ Scientific and narrative details remain separate families; their compatibility
 envelopes do not erase the richer fields. V6 checkpoints and detail tables do
 not select V6 runtime or create another diagnostic route.
 
+#### Semantic Review V6 runtime-selection contract
+
+V6 is an implementation behind the existing `AI诊断` route, service and
+semantic checker. `selectGrantSemanticDiagnosticRuntime(ownerId)` is the sole
+version authority. The V6 policy is fail-closed and requires both an enabled
+server mode and database schema declaration `051`; canary mode additionally
+requires an explicit owner UUID. With V6 off or not ready, the established
+hierarchical/V3/V2 selection remains unchanged. No browser code or API handler
+may read the V6 rollout variables directly.
+
 #### Narrative Review V6 execution
 
 Narrative Review consumes the same frozen revision, document ordering and `N*`

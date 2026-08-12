@@ -175,6 +175,12 @@ assembler/location/fingerprint; additive persistence and normalized projection;
 then UI, historical activation and real signed-in verification. V3 must use the
 existing `AI诊断` action and semantic checker authority, not a parallel route.
 
+Semantic Review V6 runtime-selection status (2026-08-12): V6 is now connected
+to the existing semantic checker pipeline through the sole server-side runtime
+selector. The selector is default-off, requires schema `051`, preserves the
+existing hierarchical/V3/V2 fallback and adds no route or UI branch. Production
+traffic remains disabled until a separately authorized canary step.
+
 Semantic Diagnostic V3 contract implementation status (2026-08-09): the V3
 provider schema, stricter program-validation schema, supplied-reference guard
 and category-boundary fixtures are implemented but are not connected to the
