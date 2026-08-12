@@ -1,10 +1,15 @@
 import { z } from "zod";
+import {
+  GrantSemanticDiagnosticCategoryV3Schema,
+  GrantSemanticRelatedLocationRoleV3Schema,
+} from "./semantic-v3-contracts.ts";
 
 const UuidSchema = z.string().uuid();
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const SemanticRefSchema = z.string().regex(/^S[1-9][0-9]*$/);
 const FindingRefSchema = z.string().regex(/^F[1-9][0-9]*$/);
 const NormalizedFacetSchema = z.string().regex(/^[a-z][a-z0-9_]{2,63}$/);
+const BoundedTextSchema = z.string().trim().min(1).max(2400);
 
 /**
  * Contract-only version reservation for the next diagnostic-quality upgrade.
@@ -361,6 +366,181 @@ export const GrantSemanticObjectContinuityMatchV1Schema = z.enum([
   "different",
 ]);
 
+export const GrantScientificEvidenceTierV1Schema = z.enum([
+  "description_only",
+  "performance_improvement",
+  "structural_evidence",
+  "mechanistic_evidence",
+  "causal_evidence",
+]);
+
+export const GrantScientificEvidenceBasisV1Schema = z.enum([
+  "document_only",
+  "authorized_evidence",
+  "requires_external_verification",
+]);
+
+export const GrantFindingAssessmentV1Schema = z.object({
+  scope: z.enum(["cross_section", "section", "paragraph", "sentence", "term_or_citation"]),
+  confidence: z.number().min(0).max(1),
+  actionability: z.enum(["directly_actionable", "requires_evidence", "requires_expert_judgment"]),
+}).strict();
+
+const ProviderFindingAssessmentV1Schema = z.object({
+  scope: z.enum(["cross_section", "section", "paragraph", "sentence", "term_or_citation"]),
+  confidence: z.number(),
+  actionability: z.enum(["directly_actionable", "requires_evidence", "requires_expert_judgment"]),
+}).strict();
+
+const ProviderScientificExistingDesignV1Schema = z.object({
+  locationRef: z.string(),
+  summary: z.string(),
+  evidenceTier: GrantScientificEvidenceTierV1Schema,
+}).strict();
+
+const ProviderFindingRelatedLocationV1Schema = z.object({
+  locationRef: z.string(),
+  role: GrantSemanticRelatedLocationRoleV3Schema,
+}).strict();
+
+/** Scientific review asks what the application already does before naming the
+ * residual gap. It must not be reused for prose-flow or visual-style advice. */
+export const GrantScientificFindingProviderResultV1Schema = z.object({
+  findings: z.array(z.object({
+    findingRef: z.string(),
+    category: GrantSemanticDiagnosticCategoryV3Schema,
+    semanticObjectRefs: z.array(z.string()),
+    title: z.string(),
+    diagnosticFact: z.string(),
+    existingDesign: z.array(ProviderScientificExistingDesignV1Schema),
+    residualGap: z.string(),
+    reasonExistingDesignIsInsufficient: z.string(),
+    recommendation: z.string(),
+    possibleReviewerQuestion: z.string().nullable(),
+    assessment: ProviderFindingAssessmentV1Schema,
+    primaryLocationRef: z.string(),
+    relatedLocations: z.array(ProviderFindingRelatedLocationV1Schema),
+    evidenceBasis: GrantScientificEvidenceBasisV1Schema,
+    usedEvidenceCardIds: z.array(z.string()),
+  }).strict()),
+}).strict();
+
+const CanonicalLocationV1Schema = z.object({
+  sectionId: UuidSchema,
+  nodeId: UuidSchema,
+}).strict();
+
+export const GrantScientificFindingContentV1Schema = z.object({
+  findingRef: FindingRefSchema,
+  category: GrantSemanticDiagnosticCategoryV3Schema,
+  semanticObjectRefs: z.array(SemanticRefSchema).min(1).max(24),
+  title: z.string().trim().min(1).max(240),
+  diagnosticFact: BoundedTextSchema,
+  existingDesign: z.array(CanonicalLocationV1Schema.extend({
+    summary: z.string().trim().min(1).max(1200),
+    evidenceTier: GrantScientificEvidenceTierV1Schema,
+  }).strict()).max(4),
+  residualGap: BoundedTextSchema,
+  reasonExistingDesignIsInsufficient: BoundedTextSchema,
+  recommendation: BoundedTextSchema,
+  possibleReviewerQuestion: z.string().trim().min(1).max(1600).nullable(),
+  assessment: GrantFindingAssessmentV1Schema,
+  primaryLocation: CanonicalLocationV1Schema,
+  relatedLocations: z.array(CanonicalLocationV1Schema.extend({
+    role: GrantSemanticRelatedLocationRoleV3Schema,
+  }).strict()).max(12),
+  evidenceBasis: GrantScientificEvidenceBasisV1Schema,
+  usedEvidenceCardIds: z.array(UuidSchema).max(24),
+}).strict().superRefine((value, context) => {
+  if (new Set(value.semanticObjectRefs).size !== value.semanticObjectRefs.length) {
+    context.addIssue({ code: "custom", path: ["semanticObjectRefs"], message: "Semantic object references must be unique." });
+  }
+  if (value.evidenceBasis === "authorized_evidence" && value.usedEvidenceCardIds.length === 0) {
+    context.addIssue({ code: "custom", path: ["usedEvidenceCardIds"], message: "Authorized-evidence findings must name Evidence Cards." });
+  }
+  if (value.evidenceBasis === "document_only" && value.usedEvidenceCardIds.length > 0) {
+    context.addIssue({ code: "custom", path: ["usedEvidenceCardIds"], message: "Document-only findings cannot claim Evidence Cards." });
+  }
+  const seenDesignLocations = new Set<string>();
+  value.existingDesign.forEach((design, index) => {
+    const key = `${design.sectionId}:${design.nodeId}`;
+    if (seenDesignLocations.has(key)) {
+      context.addIssue({ code: "custom", path: ["existingDesign", index], message: "Existing-design locations must be unique." });
+    }
+    seenDesignLocations.add(key);
+  });
+});
+
+export const GrantNarrativeFindingCategoryV1Schema = z.enum([
+  "narrative_flow",
+  "emphasis_balance",
+  "opening_persuasion",
+  "abstract_independent_readability",
+  "language_register",
+  "visual_communication",
+]);
+
+export const GrantNarrativeAffectedScopeV1Schema = z.enum([
+  "abstract",
+  "opening",
+  "section",
+  "paragraph",
+  "cross_section",
+  "figure",
+]);
+
+export const GrantNarrativeFindingProviderResultV1Schema = z.object({
+  findings: z.array(z.object({
+    findingRef: z.string(),
+    category: GrantNarrativeFindingCategoryV1Schema,
+    title: z.string(),
+    observedPresentation: z.string(),
+    readerFriction: z.string(),
+    suggestedOrganization: z.string(),
+    affectedScope: GrantNarrativeAffectedScopeV1Schema,
+    assessment: ProviderFindingAssessmentV1Schema,
+    primaryLocationRef: z.string(),
+    relatedLocations: z.array(ProviderFindingRelatedLocationV1Schema),
+    usedImageRefs: z.array(z.string()),
+  }).strict()),
+}).strict();
+
+export const GrantNarrativeFindingContentV1Schema = z.object({
+  findingRef: FindingRefSchema,
+  category: GrantNarrativeFindingCategoryV1Schema,
+  title: z.string().trim().min(1).max(240),
+  observedPresentation: BoundedTextSchema,
+  readerFriction: BoundedTextSchema,
+  suggestedOrganization: BoundedTextSchema,
+  affectedScope: GrantNarrativeAffectedScopeV1Schema,
+  assessment: GrantFindingAssessmentV1Schema,
+  primaryLocation: CanonicalLocationV1Schema,
+  relatedLocations: z.array(CanonicalLocationV1Schema.extend({
+    role: GrantSemanticRelatedLocationRoleV3Schema,
+  }).strict()).max(12),
+  usedFigureAssetIds: z.array(UuidSchema).max(12),
+}).strict().superRefine((value, context) => {
+  if (value.category === "visual_communication" && value.usedFigureAssetIds.length === 0) {
+    context.addIssue({ code: "custom", path: ["usedFigureAssetIds"], message: "Visual findings require an authorized figure asset." });
+  }
+  if (value.category !== "visual_communication" && value.usedFigureAssetIds.length > 0) {
+    context.addIssue({ code: "custom", path: ["usedFigureAssetIds"], message: "Only visual findings may claim figure assets." });
+  }
+});
+
+export const GrantSemanticReviewFindingSetV1Schema = z.object({
+  scientificFindings: z.array(GrantScientificFindingContentV1Schema).max(16),
+  narrativeFindings: z.array(GrantNarrativeFindingContentV1Schema).max(16),
+}).strict().superRefine((value, context) => {
+  const seen = new Set<string>();
+  [...value.scientificFindings, ...value.narrativeFindings].forEach((finding, index) => {
+    if (seen.has(finding.findingRef)) {
+      context.addIssue({ code: "custom", path: ["findings", index, "findingRef"], message: "Finding references must be unique across both axes." });
+    }
+    seen.add(finding.findingRef);
+  });
+});
+
 /** Program-owned calibration result. Similarity scores are evidence for the
  * match state; no threshold or match decision is delegated to the model. */
 export const GrantSemanticObjectContinuityAssessmentV1Schema = z.object({
@@ -388,5 +568,8 @@ export type GrantSemanticObjectV1 = z.infer<typeof GrantSemanticObjectV1Schema>;
 export type GrantFactMapCoverageProviderResultV1 = z.infer<typeof GrantFactMapCoverageProviderResultV1Schema>;
 export type GrantFactMapCoverageItemV1 = z.infer<typeof GrantFactMapCoverageItemV1Schema>;
 export type GrantFactMapCoverageReportV1 = z.infer<typeof GrantFactMapCoverageReportV1Schema>;
+export type GrantScientificFindingContentV1 = z.infer<typeof GrantScientificFindingContentV1Schema>;
+export type GrantNarrativeFindingContentV1 = z.infer<typeof GrantNarrativeFindingContentV1Schema>;
+export type GrantSemanticReviewFindingSetV1 = z.infer<typeof GrantSemanticReviewFindingSetV1Schema>;
 export type GrantSemanticObjectContinuityIdentityV1 = z.infer<typeof GrantSemanticObjectContinuityIdentityV1Schema>;
 export type GrantSemanticObjectContinuityAssessmentV1 = z.infer<typeof GrantSemanticObjectContinuityAssessmentV1Schema>;

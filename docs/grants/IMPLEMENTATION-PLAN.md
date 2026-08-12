@@ -393,5 +393,16 @@ verified with no residual gap, or unable to verify. A pure program-owned quality
 gate checks full object coverage, type agreement, Finding bindings and orphan
 Findings; it does not infer completeness from model prose. Strict provider
 schema compatibility and business-invariant regressions are included. Active
-Semantic V5 calls, persistence, rollout and UI remain unchanged. Scientific and
-narrative Finding content contracts are Step 3 and are not implemented here.
+Semantic V5 calls, persistence, rollout and UI remain unchanged.
+
+## Semantic Review Quality Step 3 Status
+
+Target-only Scientific Finding V1 and Narrative Finding V1 contracts are
+implemented as separate strict provider and bounded program schemas. Scientific
+Findings acknowledge existing design and its evidence tier before naming a
+residual gap. Narrative Findings describe presentation, reader friction and a
+bounded organization suggestion without borrowing scientific-gap fields.
+Severity and priority are absent, visual findings require resolved figure
+assets, and Finding references are unique across both families. Active Semantic
+V5 calls, persistence, rollout and UI remain unchanged. Frozen V6 model input
+and Fact Map construction are Step 4 and are not implemented here.

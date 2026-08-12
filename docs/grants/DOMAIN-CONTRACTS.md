@@ -600,6 +600,52 @@ The target-only schema is `grant-fact-map-coverage-v1` in
 `semantic-review-v6-contracts.ts`. It is not an active provider output,
 persistence or UI contract in this step.
 
+#### Scientific and narrative Finding targets
+
+Semantic Review V6 has two content families, not one permissive Finding object.
+
+Scientific Findings retain the established scientific categories and contain:
+
+```text
+semantic objects reviewed
+observable diagnostic fact
+existing design with source location and evidence tier
+residual gap after deducting that design
+why the existing design remains insufficient
+bounded recommendation and optional reviewer question
+canonical locations and authorized Evidence Card provenance
+```
+
+Evidence tiers are `description_only`, `performance_improvement`,
+`structural_evidence`, `mechanistic_evidence`, or `causal_evidence`. They prevent
+performance improvement from being silently presented as mechanism or causal
+proof. A Scientific Finding may cite at most four existing-design locations in
+the mature program contract; later capacity policy must prevent oversized
+provider output before assembly.
+
+Narrative Findings use a separate category set:
+
+```text
+narrative_flow
+emphasis_balance
+opening_persuasion
+abstract_independent_readability
+language_register
+visual_communication
+```
+
+They contain observed presentation, reader friction and a suggested
+organization. They do not contain `existingDesign`, `residualGap` or scientific
+evidence-tier fields. Visual communication requires at least one resolved,
+currently authorized figure asset; other narrative categories cannot claim
+figure use.
+
+Neither family contains severity, priority or a funding prediction. Execution-
+local Finding references are unique across both families, but never become
+durable identity. The target schemas are `grant-scientific-finding-v1` and
+`grant-narrative-finding-v1`; they are not active provider, persistence or UI
+contracts in this step.
+
 ## Checker Versioning
 
 Every run records checker, checker version, prompt/contract version, input mode,

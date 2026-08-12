@@ -75,6 +75,14 @@ Copy the relevant sections into every grant-platform PR.
       authorization loss is represented as unable to verify rather than fixed.
 - [ ] Every target Finding is bound to at least one covered semantic object;
       unknown or orphan Finding references fail the coverage quality gate.
+- [ ] Scientific Findings acknowledge existing design and evidence tier before
+      reporting only the residual gap; performance is not mechanism or causality.
+- [ ] Narrative Findings use their own categories and fields; presentation
+      friction is not represented as a scientific evidence gap.
+- [ ] Scientific and narrative provider schemas reject severity, priority and
+      fields owned by the other Finding family.
+- [ ] Visual-communication Findings use only currently authorized, program-
+      resolved figure assets; nonvisual Findings cannot claim figure use.
 - [ ] ArgumentMap output is descriptive only; diagnostic judgments and advice
       remain owned by the semantic Finding contract.
 - [ ] ArgumentMap provider code stays in the existing Grant model adapter

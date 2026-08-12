@@ -6,6 +6,11 @@ import {
   assembleGrantFactMapCoverageV1,
   GrantDiagnosticPhysicalNodeAnchorV1Schema,
   GrantFactMapCoverageProviderResultV1Schema,
+  GrantNarrativeFindingContentV1Schema,
+  GrantNarrativeFindingProviderResultV1Schema,
+  GrantScientificFindingContentV1Schema,
+  GrantScientificFindingProviderResultV1Schema,
+  GrantSemanticReviewFindingSetV1Schema,
   GrantSemanticObjectAnchorRangeV1Schema,
   GrantSemanticObjectContinuityAssessmentV1Schema,
   GrantSemanticObjectContinuityIdentityV1Schema,
@@ -144,13 +149,16 @@ const providerCoverage = {
   ],
 };
 
-const coverageResponseFormat = zodResponseFormat(
-  GrantFactMapCoverageProviderResultV1Schema,
-  "grant_fact_map_coverage_v1",
-);
-assert.equal(coverageResponseFormat.type, "json_schema");
-assert.equal(coverageResponseFormat.json_schema.strict, true);
-assertStrictProviderSchema(coverageResponseFormat.json_schema.schema);
+for (const [schema, name] of [
+  [GrantFactMapCoverageProviderResultV1Schema, "grant_fact_map_coverage_v1"],
+  [GrantScientificFindingProviderResultV1Schema, "grant_scientific_finding_v1"],
+  [GrantNarrativeFindingProviderResultV1Schema, "grant_narrative_finding_v1"],
+] as const) {
+  const responseFormat = zodResponseFormat(schema, name);
+  assert.equal(responseFormat.type, "json_schema");
+  assert.equal(responseFormat.json_schema.strict, true);
+  assertStrictProviderSchema(responseFormat.json_schema.schema);
+}
 
 const assembledCoverage = assembleGrantFactMapCoverageV1({
   sourceRevisionId: revisionId,
@@ -270,6 +278,123 @@ assert.equal(wrongObjectType.success, false);
 if (!wrongObjectType.success) {
   assert(wrongObjectType.issues.some((issue) => issue.code === "coverage_object_type_mismatch"));
 }
+
+const evidenceCardId = randomUUID();
+const figureAssetId = randomUUID();
+const scientificProviderFinding = {
+  findingRef: "F1",
+  category: "evidence_support_gap" as const,
+  semanticObjectRefs: ["S1"],
+  title: "The claimed mechanism exceeds the evidence shown",
+  diagnosticFact: "The application presents cycling performance as support for a molecular mechanism.",
+  existingDesign: [{
+    locationRef: "N1",
+    summary: "Long-cycle performance is reported under one condition.",
+    evidenceTier: "performance_improvement" as const,
+  }],
+  residualGap: "The design does not directly observe the claimed molecular transition.",
+  reasonExistingDesignIsInsufficient: "Performance evidence cannot by itself establish a mechanism or causal pathway.",
+  recommendation: "Add a direct mechanism-sensitive observation and a falsifiable comparison.",
+  possibleReviewerQuestion: null,
+  assessment: { scope: "cross_section" as const, confidence: 0.91, actionability: "requires_evidence" as const },
+  primaryLocationRef: "N1",
+  relatedLocations: [{ locationRef: "N2", role: "supporting_location" as const }],
+  evidenceBasis: "authorized_evidence" as const,
+  usedEvidenceCardIds: [evidenceCardId],
+};
+assert.doesNotThrow(() => GrantScientificFindingProviderResultV1Schema.parse({ findings: [scientificProviderFinding] }));
+assert.throws(() => GrantScientificFindingProviderResultV1Schema.parse({
+  findings: [{ ...scientificProviderFinding, severity: "high" }],
+}), "scientific findings must not accept severity");
+assert.throws(() => GrantScientificFindingProviderResultV1Schema.parse({
+  findings: [{ ...scientificProviderFinding, readerFriction: "This belongs to narrative review." }],
+}), "scientific findings must not absorb narrative fields");
+
+const scientificFinding = {
+  ...scientificProviderFinding,
+  primaryLocation: { sectionId, nodeId },
+  relatedLocations: [{ sectionId, nodeId: randomUUID(), role: "supporting_location" as const }],
+  existingDesign: [{
+    sectionId,
+    nodeId,
+    summary: scientificProviderFinding.existingDesign[0].summary,
+    evidenceTier: "performance_improvement" as const,
+  }],
+};
+const { primaryLocationRef: _scientificPrimaryRef, ...scientificWithoutPrimaryRef } = scientificFinding;
+assert.doesNotThrow(() => GrantScientificFindingContentV1Schema.parse(scientificWithoutPrimaryRef));
+assert.throws(() => GrantScientificFindingContentV1Schema.parse({
+  ...scientificWithoutPrimaryRef,
+  evidenceBasis: "authorized_evidence",
+  usedEvidenceCardIds: [],
+}));
+assert.throws(() => GrantScientificFindingContentV1Schema.parse({
+  ...scientificWithoutPrimaryRef,
+  evidenceBasis: "document_only",
+  usedEvidenceCardIds: [evidenceCardId],
+}));
+assert.throws(() => GrantScientificFindingContentV1Schema.parse({
+  ...scientificWithoutPrimaryRef,
+  existingDesign: [scientificWithoutPrimaryRef.existingDesign[0], scientificWithoutPrimaryRef.existingDesign[0]],
+}));
+
+const narrativeProviderFinding = {
+  findingRef: "F2",
+  category: "narrative_flow" as const,
+  title: "The central hypothesis appears after implementation detail",
+  observedPresentation: "Two implementation paragraphs precede the first explicit hypothesis statement.",
+  readerFriction: "The reader must infer why the listed methods answer the proposed question.",
+  suggestedOrganization: "State the hypothesis before the implementation sequence, then map each method to it.",
+  affectedScope: "section" as const,
+  assessment: { scope: "section" as const, confidence: 0.88, actionability: "directly_actionable" as const },
+  primaryLocationRef: "N3",
+  relatedLocations: [{ locationRef: "N4", role: "upstream_dependency" as const }],
+  usedImageRefs: [],
+};
+assert.doesNotThrow(() => GrantNarrativeFindingProviderResultV1Schema.parse({ findings: [narrativeProviderFinding] }));
+assert.throws(() => GrantNarrativeFindingProviderResultV1Schema.parse({
+  findings: [{ ...narrativeProviderFinding, residualGap: "This belongs to scientific review." }],
+}), "narrative findings must not absorb scientific residual-gap fields");
+assert.throws(() => GrantNarrativeFindingProviderResultV1Schema.parse({
+  findings: [{ ...narrativeProviderFinding, priority: "high" }],
+}), "narrative findings must not accept priority");
+
+const narrativeFinding = {
+  findingRef: "F2",
+  category: "narrative_flow" as const,
+  title: narrativeProviderFinding.title,
+  observedPresentation: narrativeProviderFinding.observedPresentation,
+  readerFriction: narrativeProviderFinding.readerFriction,
+  suggestedOrganization: narrativeProviderFinding.suggestedOrganization,
+  affectedScope: "section" as const,
+  assessment: narrativeProviderFinding.assessment,
+  primaryLocation: { sectionId, nodeId },
+  relatedLocations: [{ sectionId, nodeId: randomUUID(), role: "upstream_dependency" as const }],
+  usedFigureAssetIds: [],
+};
+assert.doesNotThrow(() => GrantNarrativeFindingContentV1Schema.parse(narrativeFinding));
+const visualFinding = {
+  ...narrativeFinding,
+  findingRef: "F3",
+  category: "visual_communication" as const,
+  affectedScope: "figure" as const,
+  usedFigureAssetIds: [figureAssetId],
+};
+assert.doesNotThrow(() => GrantNarrativeFindingContentV1Schema.parse(visualFinding));
+assert.throws(() => GrantNarrativeFindingContentV1Schema.parse({ ...visualFinding, usedFigureAssetIds: [] }));
+assert.throws(() => GrantNarrativeFindingContentV1Schema.parse({
+  ...narrativeFinding,
+  usedFigureAssetIds: [figureAssetId],
+}));
+
+assert.doesNotThrow(() => GrantSemanticReviewFindingSetV1Schema.parse({
+  scientificFindings: [scientificWithoutPrimaryRef],
+  narrativeFindings: [narrativeFinding],
+}));
+assert.throws(() => GrantSemanticReviewFindingSetV1Schema.parse({
+  scientificFindings: [scientificWithoutPrimaryRef],
+  narrativeFindings: [{ ...narrativeFinding, findingRef: "F1" }],
+}), "Finding references must be unique across scientific and narrative axes");
 
 assert.equal(GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerContractVersion,
   GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerSchemaVersion);
