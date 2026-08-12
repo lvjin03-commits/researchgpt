@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { GrantFigureDisplayAsset } from "@/lib/grants/application/figure-display-service";
 import type { CanonicalGrantSnapshot } from "@/lib/grants/domain/contracts";
 import { grantSectionBreadcrumbs, projectGrantSectionSubtree } from "@/lib/grants/presentation/document-tree";
@@ -12,6 +12,8 @@ type Props = {
   selectedSectionId: string | null;
   selectedFindingId: string | null;
   findingsByNode: Map<string, string[]>;
+  selectedAiNodeId: string | null;
+  aiEditPanel: ReactNode;
   onSectionTitleChange: (sectionId: string, title: string) => void;
   onNodeContentChange: (nodeId: string, value: string) => void;
   onNodeFindingSelect: (nodeId: string) => void;
@@ -90,12 +92,13 @@ export function GrantDocumentCanvas(props: Props) {
   const renderNode = (node: CanonicalGrantSnapshot["nodes"][number]) => {
     const findingIds = props.findingsByNode.get(node.nodeId) ?? [];
     const selectedNode = findingIds.includes(props.selectedFindingId ?? "");
+    const aiEditSelected = props.selectedAiNodeId === node.nodeId;
     return (
       <div
         id={`grant-node-${node.nodeId}`}
         key={node.nodeId}
         data-grant-node-id={node.nodeId}
-        className={`group relative rounded-xl border p-2 transition ${selectedNode ? "border-[#155eef] bg-blue-50/40 ring-2 ring-blue-100" : "border-transparent hover:border-slate-200"}`}
+        className={`group relative rounded-xl border p-2 transition ${selectedNode || aiEditSelected ? "border-[#155eef] bg-blue-50/40 ring-2 ring-blue-100" : "border-transparent hover:border-slate-200"}`}
       >
         {findingIds.length > 0 && (
           <button
@@ -132,6 +135,11 @@ export function GrantDocumentCanvas(props: Props) {
           <button type="button" className="absolute -left-2 -top-2 hidden rounded-full border border-blue-200 bg-white px-2 py-1 text-xs font-semibold text-[#155eef] shadow-sm group-hover:block focus:block" onClick={() => props.onNodeAiEdit(node.nodeId)}>AI 修改</button>
         )}
         <button type="button" className="absolute -left-2 top-7 hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-red-700 shadow-sm group-hover:block focus:block" onClick={() => props.onRemoveNode(node.nodeId)}>删除</button>
+        {aiEditSelected && (
+          <div className="relative z-20 mt-3 rounded-xl border border-blue-200 bg-white p-3 font-sans shadow-lg xl:absolute xl:left-[calc(100%+1rem)] xl:top-0 xl:mt-0 xl:w-[340px]">
+            {props.aiEditPanel}
+          </div>
+        )}
       </div>
     );
   };
@@ -145,7 +153,7 @@ export function GrantDocumentCanvas(props: Props) {
           {breadcrumbs.map((section) => <span key={section.sectionId}>› {section.title}</span>)}
         </nav>
       </div>
-      <div className="relative mx-auto my-8 min-h-[1123px] w-[calc(100%-2rem)] max-w-[794px] border border-slate-300 bg-white px-10 py-16 shadow-[0_3px_16px_rgba(15,23,42,0.16)] sm:px-20" style={{ fontFamily: 'SimSun, "Songti SC", serif' }}>
+      <div className={`relative my-8 min-h-[1123px] w-[calc(100%-2rem)] max-w-[794px] border border-slate-300 bg-white px-10 py-16 shadow-[0_3px_16px_rgba(15,23,42,0.16)] sm:px-20 ${props.selectedAiNodeId ? "mx-4 xl:ml-4 xl:mr-[356px]" : "mx-auto"}`} style={{ fontFamily: 'SimSun, "Songti SC", serif' }}>
         <div aria-hidden className="absolute bottom-10 left-5 top-10 w-4 border-r border-slate-200 text-[9px] text-slate-400">
           {Array.from({ length: 20 }, (_, index) => <span key={index} className="absolute right-0 w-2 border-t border-slate-300" style={{ top: `${index * 5}%` }} />)}
         </div>

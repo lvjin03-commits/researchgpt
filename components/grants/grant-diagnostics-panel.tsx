@@ -114,8 +114,8 @@ export function GrantDiagnosticsPanel(props: Props) {
   }
 
   return (
-    <aside aria-label="申请书问题" className="border-l border-slate-200 bg-white xl:h-full xl:min-h-0 xl:overflow-hidden">
-      <div className="sticky top-16 max-h-[calc(100vh-4rem)] overflow-y-auto p-4 xl:static xl:h-full xl:max-h-none">
+    <aside aria-label="申请书问题" className="border-l border-slate-200 bg-white xl:flex xl:h-full xl:min-h-0 xl:w-full xl:flex-col xl:overflow-hidden">
+      <div className="sticky top-16 max-h-[calc(100vh-4rem)] overflow-y-auto p-4 xl:static xl:h-auto xl:min-h-0 xl:flex-1 xl:max-h-none xl:overscroll-contain">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="research-eyebrow">问题</p>

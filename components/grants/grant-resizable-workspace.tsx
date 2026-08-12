@@ -102,7 +102,7 @@ export function GrantResizableWorkspace({ left, center, right }: Props) {
 
   return (
     <div
-      className={`grant-workspace-grid min-h-[calc(100vh-4rem)] xl:min-h-0 xl:flex-1 xl:overflow-hidden ${drag ? "select-none" : ""}`}
+      className={`grant-workspace-grid min-h-[calc(100vh-4rem)] xl:h-full xl:min-h-0 xl:flex-1 xl:overflow-hidden ${drag ? "select-none" : ""}`}
       style={gridStyle}
     >
       <div className="grant-resizable-panel min-w-0 xl:h-full xl:min-h-0 xl:overflow-hidden" style={panelStyle(leftWidth, LEFT_LIMITS.min, LEFT_LIMITS.max)}>
@@ -131,7 +131,7 @@ export function GrantResizableWorkspace({ left, center, right }: Props) {
         onPointerCancel={endDrag}
         onKeyDown={(event) => resizeWithKeyboard("right", event)}
       />
-      <div className="grant-resizable-panel min-w-0 xl:h-full xl:min-h-0 xl:overflow-hidden" style={panelStyle(rightWidth, RIGHT_LIMITS.min, RIGHT_LIMITS.max)}>
+      <div className="grant-resizable-panel min-w-0 xl:flex xl:h-full xl:min-h-0 xl:overflow-hidden" style={panelStyle(rightWidth, RIGHT_LIMITS.min, RIGHT_LIMITS.max)}>
         {right}
       </div>
     </div>

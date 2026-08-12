@@ -424,21 +424,9 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           selectedSectionId={selectedSectionId}
           selectedFindingId={selectedFindingId}
           findingsByNode={findingsByNode}
-          onSectionTitleChange={(sectionId, title) => {
-            mutate((current) => ({
-              ...current,
-              sections: current.sections.map((section) => section.sectionId === sectionId ? { ...section, title } : section),
-            }));
-          }}
-          onNodeContentChange={changeNodeContent}
-          onNodeFindingSelect={navigateFromNode}
-          onNodeAiEdit={setSelectedAiNodeId}
-          onAddParagraph={addParagraph}
-          onRemoveNode={removeNode}
-        />}
-        right={<div className="space-y-4">
-          {selectedAiNodeId && (
-            <div className="rounded-xl border border-blue-200 bg-white p-3 shadow-sm">
+          selectedAiNodeId={selectedAiNodeId}
+          aiEditPanel={selectedAiNodeId ? (
+            <>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-slate-900">自由 AI 修改</p>
                 <button type="button" className="text-xs text-slate-500 hover:text-slate-900" onClick={() => setSelectedAiNodeId(null)}>关闭</button>
@@ -454,9 +442,21 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
                 mode="free"
                 onAccepted={loadLatest}
               />
-            </div>
-          )}
-          <GrantDiagnosticsPanel
+            </>
+          ) : null}
+          onSectionTitleChange={(sectionId, title) => {
+            mutate((current) => ({
+              ...current,
+              sections: current.sections.map((section) => section.sectionId === sectionId ? { ...section, title } : section),
+            }));
+          }}
+          onNodeContentChange={changeNodeContent}
+          onNodeFindingSelect={navigateFromNode}
+          onNodeAiEdit={setSelectedAiNodeId}
+          onAddParagraph={addParagraph}
+          onRemoveNode={removeNode}
+        />}
+        right={<GrantDiagnosticsPanel
           documentId={documentId}
           currentRevisionId={payload.aggregate.currentRevision.revisionId}
           aiPatchEnabled={aiPatchEnabled}
@@ -476,7 +476,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           onNavigateNode={navigateToDiagnosticNode}
           onFeedbackChange={updateFeedback}
           onPatchAccepted={loadLatest}
-        /></div>}
+        />}
       />
     </main>
   );

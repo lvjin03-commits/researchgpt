@@ -145,6 +145,7 @@ a {
 
 @media (min-width: 80rem) {
   .grant-workspace-grid {
+    grid-template-rows: minmax(0, 1fr);
     grid-template-columns:
       var(--grant-left-panel-width, 300px)
       8px
