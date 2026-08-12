@@ -13,6 +13,7 @@ export type GrantPatchModelRequest = {
   findingMessage?: string;
   findingRecommendation?: string;
   userInstruction: string;
+  editMode: "replace" | "insert_after";
   evidence: GrantPatchEvidenceExcerpt[];
 };
 

@@ -4,13 +4,23 @@ const UuidSchema = z.string().uuid();
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const IsoTimestampSchema = z.string().datetime({ offset: true });
 
-export const GrantPatchOperationSchema = z.object({
-  type: z.literal("replace_text"),
-  nodeId: UuidSchema,
-  expectedTextHash: Sha256Schema,
-  oldText: z.string(),
-  newText: z.string().trim().min(1),
-}).strict();
+export const GrantPatchOperationSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("replace_text"),
+    nodeId: UuidSchema,
+    expectedTextHash: Sha256Schema,
+    oldText: z.string(),
+    newText: z.string().trim().min(1),
+  }).strict(),
+  z.object({
+    type: z.literal("insert_after"),
+    anchorNodeId: UuidSchema,
+    expectedAnchorTextHash: Sha256Schema,
+    anchorText: z.string(),
+    newNodeId: UuidSchema,
+    newText: z.string().trim().min(1),
+  }).strict(),
+]);
 
 export const GrantPatchEvidenceBindingSchema = z.object({
   sourceId: UuidSchema,
@@ -44,10 +54,11 @@ export const GrantPatchProposalSchema = z.object({
   updatedAt: IsoTimestampSchema,
 }).strict().superRefine((proposal, context) => {
   const operation = proposal.operations[0];
-  if (operation && operation.nodeId !== proposal.targetNodeIds[0]) {
+  const operationTarget = operation?.type === "replace_text" ? operation.nodeId : operation?.anchorNodeId;
+  if (operationTarget && operationTarget !== proposal.targetNodeIds[0]) {
     context.addIssue({ code: "custom", path: ["operations", 0, "nodeId"], message: "Patch operation exceeds the authorized target." });
   }
-  if (operation && operation.oldText === operation.newText) {
+  if (operation?.type === "replace_text" && operation.oldText === operation.newText) {
     context.addIssue({ code: "custom", path: ["operations", 0, "newText"], message: "Patch must change visible text." });
   }
 });

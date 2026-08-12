@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { GrantDiagnosticService } from "../lib/grants/application/diagnostic-service.ts";
+import { GrantDiagnosticService, grantFindingReviewState } from "../lib/grants/application/diagnostic-service.ts";
 import { GrantRevisionService } from "../lib/grants/application/revision-service.ts";
 import { createGrantSourceAnchor, resolveGrantSourceAnchor } from "../lib/grants/diagnostics/anchors.ts";
 import type { GrantChecker } from "../lib/grants/diagnostics/checker.ts";
@@ -74,6 +74,7 @@ assert.equal(new Set(execution.conflicts[0]!.findingIds).size, 2);
 const listed = await service.list(created.document.documentId);
 assert.equal(listed.findings.length, 3);
 assert.equal(listed.findings.find((item) => item.finding.findingId === placeholder.findingId)?.resolution.status, "exact");
+assert.equal(listed.findings.find((item) => item.finding.findingId === placeholder.findingId)?.reviewState, "current");
 
 const sourceRevisionId = created.currentRevision.revisionId;
 const sourceSnapshot = created.currentRevision.snapshot;
@@ -90,6 +91,8 @@ const makeSnapshot = (options: { text: string; sectionRole?: string; heading?: s
 
 const targetRevisionId = "60000000-0000-4000-8000-000000000010";
 assert.equal(resolveGrantSourceAnchor(anchor, targetRevisionId, makeSnapshot({ text: anchor.text })).status, "exact");
+assert.equal(grantFindingReviewState({ sourceRevisionId }, targetRevisionId, resolveGrantSourceAnchor(anchor, targetRevisionId, makeSnapshot({ text: anchor.text }))), "needs_recheck");
+assert.equal(grantFindingReviewState({ sourceRevisionId }, targetRevisionId, resolveGrantSourceAnchor(anchor, targetRevisionId, makeSnapshot({ text: "changed beyond reliable matching" }))), "stale");
 assert.equal(resolveGrantSourceAnchor(anchor, targetRevisionId, makeSnapshot({ text: anchor.text, nodeId: "60000000-0000-4000-8000-000000000011" })).status, "relocated");
 assert.notEqual(resolveGrantSourceAnchor(anchor, targetRevisionId, makeSnapshot({ text: anchor.text, sectionRole: "scientific_question", heading: "关键科学问题" })).status, "exact");
 assert.notEqual(resolveGrantSourceAnchor(anchor, targetRevisionId, makeSnapshot({ text: "替换后的不同表述" })).status, "relocated");

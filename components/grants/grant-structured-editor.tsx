@@ -9,6 +9,7 @@ import type { GrantAggregate } from "@/lib/grants/ports/grant-revision-repositor
 import type { GrantFigureDisplayAsset } from "@/lib/grants/application/figure-display-service";
 import { GrantDiagnosticsPanel } from "./grant-diagnostics-panel";
 import { GrantDocumentCanvas } from "./grant-document-canvas";
+import { GrantAiPatchPanel } from "./grant-ai-patch-panel";
 import { GrantDocumentOutline } from "./grant-document-outline";
 import { GrantResizableWorkspace } from "./grant-resizable-workspace";
 import {
@@ -63,6 +64,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const [selectedAiNodeId, setSelectedAiNodeId] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<GrantDiagnosticsPayload>(emptyDiagnostics);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(true);
   const [diagnosticsRunning, setDiagnosticsRunning] = useState(false);
@@ -430,10 +432,31 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           }}
           onNodeContentChange={changeNodeContent}
           onNodeFindingSelect={navigateFromNode}
+          onNodeAiEdit={setSelectedAiNodeId}
           onAddParagraph={addParagraph}
           onRemoveNode={removeNode}
         />}
-        right={<GrantDiagnosticsPanel
+        right={<div className="space-y-4">
+          {selectedAiNodeId && (
+            <div className="rounded-xl border border-blue-200 bg-white p-3 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-900">自由 AI 修改</p>
+                <button type="button" className="text-xs text-slate-500 hover:text-slate-900" onClick={() => setSelectedAiNodeId(null)}>关闭</button>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-slate-500">仅修改当前选中的一个内容块。AI 只会生成提案，确认后才会保存为新版本。</p>
+              <GrantAiPatchPanel
+                documentId={documentId}
+                currentRevisionId={payload.aggregate.currentRevision.revisionId}
+                targetNodeId={selectedAiNodeId}
+                enabled={aiPatchEnabled}
+                evidencePatchEnabled={evidencePatchEnabled && evidenceEnabled}
+                canGenerate={saveStatus === "saved"}
+                mode="free"
+                onAccepted={loadLatest}
+              />
+            </div>
+          )}
+          <GrantDiagnosticsPanel
           documentId={documentId}
           currentRevisionId={payload.aggregate.currentRevision.revisionId}
           aiPatchEnabled={aiPatchEnabled}
@@ -453,7 +476,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           onNavigateNode={navigateToDiagnosticNode}
           onFeedbackChange={updateFeedback}
           onPatchAccepted={loadLatest}
-        />}
+        /></div>}
       />
     </main>
   );

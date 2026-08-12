@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { readFile } from "node:fs/promises";
 import {
   grantFindingTarget,
@@ -49,6 +51,7 @@ const finding: GrantFinding = {
 
 const exact: GrantDiagnosticItem = {
   finding: normalizeGrantFindingV2(finding),
+  reviewState: "current",
   resolution: {
     status: "exact",
     targetRevisionId: revisionId,
@@ -69,6 +72,7 @@ assert.deepEqual(indexGrantFindingsByNode([exact]).get(nodeId), [findingId]);
 
 const unlocated: GrantDiagnosticItem = {
   finding: normalizeGrantFindingV2({ ...finding, findingId: "81000000-0000-4000-8000-000000000008" }),
+  reviewState: "stale",
   resolution: {
     status: "unable_to_match",
     targetRevisionId: revisionId,
@@ -159,3 +163,18 @@ assert.doesNotMatch(previewRouteSource, /createDocument|importDocument/);
 assert.match(confirmRouteSource, /docxImporter\.confirm/);
 
 console.log("Grant three-pane workspace contracts passed.");
+
+const root = path.resolve(import.meta.dirname, "..");
+const freeAiEditorSource = fs.readFileSync(path.join(root, "components/grants/grant-structured-editor.tsx"), "utf8");
+const freeAiCanvasSource = fs.readFileSync(path.join(root, "components/grants/grant-document-canvas.tsx"), "utf8");
+const freeAiPatchPanelSource = fs.readFileSync(path.join(root, "components/grants/grant-ai-patch-panel.tsx"), "utf8");
+assert.match(freeAiCanvasSource, /onNodeAiEdit/);
+assert.match(freeAiCanvasSource, />AI 修改<\/button>/);
+assert.match(freeAiEditorSource, /自由 AI 修改/);
+assert.match(freeAiEditorSource, /mode="free"/);
+assert.match(freeAiEditorSource, /canGenerate=\{saveStatus === "saved"\}/);
+assert.match(freeAiEditorSource, /evidencePatchEnabled=\{evidencePatchEnabled && evidenceEnabled\}/);
+assert.match(freeAiPatchPanelSource, /findingId\?: string/);
+assert.match(freeAiPatchPanelSource, /findingId: props\.findingId/);
+assert.match(freeAiPatchPanelSource, /在后面补充一段/);
+assert.match(freeAiPatchPanelSource, /editMode/);

@@ -12,6 +12,7 @@ const ProposalRequestSchema = z.object({
   targetNodeId: z.string().uuid(),
   findingId: z.string().uuid().optional(),
   instruction: z.string().trim().min(1).max(2000),
+  editMode: z.enum(["replace", "insert_after"]).default("replace"),
   evidenceSourceIds: z.array(z.string().uuid()).max(8).default([]),
 }).strict();
 

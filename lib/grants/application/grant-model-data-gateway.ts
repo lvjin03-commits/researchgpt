@@ -436,6 +436,7 @@ export class GrantModelDataGateway {
     targetNodeId: string;
     finding?: GrantFinding;
     userInstruction: string;
+    editMode: "replace" | "insert_after";
     proposalId: string;
     evidenceSourceIds?: string[];
   }): Promise<GrantModelPatchResult> {
@@ -477,6 +478,7 @@ export class GrantModelDataGateway {
       findingMessage: input.finding?.message,
       findingRecommendation: input.finding?.recommendation,
       userInstruction: input.userInstruction,
+      editMode: input.editMode,
       evidence: selected.map(({ resource, card }) => ({
         sourceId: resource.source.sourceId,
         cardId: card.cardId,

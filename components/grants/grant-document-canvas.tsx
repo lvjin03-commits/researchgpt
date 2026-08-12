@@ -15,6 +15,7 @@ type Props = {
   onSectionTitleChange: (sectionId: string, title: string) => void;
   onNodeContentChange: (nodeId: string, value: string) => void;
   onNodeFindingSelect: (nodeId: string) => void;
+  onNodeAiEdit: (nodeId: string) => void;
   onAddParagraph: () => void;
   onRemoveNode: (nodeId: string) => void;
 };
@@ -127,7 +128,10 @@ export function GrantDocumentCanvas(props: Props) {
           <GrantImportedFigure node={node} asset={figureAssetsById.get(node.content.assetId)} />
         )}
         {node.nodeType === "citation" && <div className="border-l-2 border-slate-300 px-4 py-2 text-sm text-slate-600">引用：{node.content.referenceId}</div>}
-        <button type="button" className="absolute -left-2 -top-2 hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-red-700 shadow-sm group-hover:block" onClick={() => props.onRemoveNode(node.nodeId)}>删除</button>
+        {(node.nodeType === "paragraph" || node.nodeType === "heading" || node.nodeType === "list" || node.nodeType === "table" || node.nodeType === "formula") && (
+          <button type="button" className="absolute -left-2 -top-2 hidden rounded-full border border-blue-200 bg-white px-2 py-1 text-xs font-semibold text-[#155eef] shadow-sm group-hover:block focus:block" onClick={() => props.onNodeAiEdit(node.nodeId)}>AI 修改</button>
+        )}
+        <button type="button" className="absolute -left-2 top-7 hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-red-700 shadow-sm group-hover:block focus:block" onClick={() => props.onRemoveNode(node.nodeId)}>删除</button>
       </div>
     );
   };

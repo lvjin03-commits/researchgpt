@@ -66,6 +66,26 @@ export type GrantDiagnosticCoverage = {
 
 export type GrantDiagnosticExecutionStatus = "complete" | "partial" | "failed";
 
+export type GrantFindingReviewState = "current" | "needs_recheck" | "stale";
+
+export function grantFindingReviewState(
+  finding: Pick<GrantNormalizedFinding, "sourceRevisionId">,
+  targetRevisionId: string,
+  resolution: GrantAnchorResolution,
+): GrantFindingReviewState {
+  if (finding.sourceRevisionId === targetRevisionId) return "current";
+  return resolution.status === "exact" || resolution.status === "relocated" ? "needs_recheck" : "stale";
+}
+
+function projectFindingForRevision(
+  finding: GrantNormalizedFinding,
+  targetRevisionId: string,
+  snapshot: CanonicalGrantSnapshot,
+) {
+  const resolution = resolveGrantSourceAnchor(finding.sourceAnchor, targetRevisionId, snapshot);
+  return { finding, resolution, reviewState: grantFindingReviewState(finding, targetRevisionId, resolution) };
+}
+
 export function grantDiagnosticExecutionStatus(
   runs: GrantDiagnosticRun[],
   expectedCheckerCount: number,
@@ -437,7 +457,7 @@ export class GrantDiagnosticService {
   }
 
   async list(documentId: string, targetRevisionId?: string): Promise<{
-    findings: Array<{ finding: GrantNormalizedFinding; resolution: GrantAnchorResolution }>;
+    findings: Array<{ finding: GrantNormalizedFinding; resolution: GrantAnchorResolution; reviewState: GrantFindingReviewState }>;
     conflicts: Awaited<ReturnType<GrantDiagnosticRepository["listConflicts"]>>;
     recheck: GrantRecheckSummary;
     coverage: GrantDiagnosticCoverage;
@@ -457,7 +477,7 @@ export class GrantDiagnosticService {
     const coverage = this.coverage(allRuns, targetRevision.revisionId);
     if (allRuns.length === 0) {
       return {
-        findings: [...allFindings].sort(canonicalFindingOrder(targetRevision.snapshot)).map((finding) => ({ finding, resolution: resolveGrantSourceAnchor(finding.sourceAnchor, targetRevision.revisionId, targetRevision.snapshot) })),
+        findings: [...allFindings].sort(canonicalFindingOrder(targetRevision.snapshot)).map((finding) => projectFindingForRevision(finding, targetRevision.revisionId, targetRevision.snapshot)),
         conflicts: allConflicts,
         recheck: { state: "not_run", checkedSectionCount: 0, checkedNodeCount: 0, currentFindingCount: allFindings.length, resolvedCount: 0, introducedCount: 0, reusedExecution: false },
         coverage,
@@ -492,10 +512,7 @@ export class GrantDiagnosticService {
     const previousRuns = successfulRuns.filter((run) => !currentRunIds.has(run.runId));
     const sectionIds = new Set(currentRuns.flatMap((run) => Array.isArray(run.parsedOutput.inputSectionIds) ? run.parsedOutput.inputSectionIds.filter((id): id is string => typeof id === "string") : []));
     return {
-      findings: findings.sort(canonicalFindingOrder(targetRevision.snapshot)).map((finding) => ({
-        finding,
-        resolution: resolveGrantSourceAnchor(finding.sourceAnchor, targetRevision.revisionId, targetRevision.snapshot),
-      })),
+      findings: findings.sort(canonicalFindingOrder(targetRevision.snapshot)).map((finding) => projectFindingForRevision(finding, targetRevision.revisionId, targetRevision.snapshot)),
       conflicts,
       recheck: this.incrementalEnabled
         ? this.summarize(currentRuns, previousRuns, sectionIds.size, new Set(currentRuns.flatMap((run) => run.inputNodeIds)).size, false)

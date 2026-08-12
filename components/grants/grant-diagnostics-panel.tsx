@@ -209,6 +209,12 @@ export function GrantDiagnosticsPanel(props: Props) {
                     <span>{scopeLabels[finding.assessment.scope]}</span>
                     <span>·</span>
                     <span>{target.navigable ? "可定位原文" : "需要人工定位"}</span>
+                    {item.reviewState === "needs_recheck" && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">需复检</span>
+                    )}
+                    {item.reviewState === "stale" && (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">锚点已失效</span>
+                    )}
                     {disposition !== "none" && <span className="rounded-full bg-slate-100 px-2 py-0.5">{dispositionLabels[disposition]}</span>}
                   </span>
                 </button>

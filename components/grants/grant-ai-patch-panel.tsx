@@ -7,8 +7,9 @@ import type { GrantEvidenceResource } from "@/lib/grants/evidence/contracts";
 type Props = {
   documentId: string;
   currentRevisionId: string;
-  findingId: string;
+  findingId?: string;
   targetNodeId?: string;
+  mode?: "finding" | "free";
   enabled: boolean;
   evidencePatchEnabled: boolean;
   canGenerate: boolean;
@@ -16,7 +17,9 @@ type Props = {
 };
 
 export function GrantAiPatchPanel(props: Props) {
+  const panelId = props.findingId ?? props.targetNodeId ?? "free";
   const [instruction, setInstruction] = useState("");
+  const [editMode, setEditMode] = useState<"replace" | "insert_after">("replace");
   const [proposal, setProposal] = useState<GrantPatchProposal | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -55,6 +58,7 @@ export function GrantAiPatchPanel(props: Props) {
           targetNodeId: props.targetNodeId,
           findingId: props.findingId,
           instruction,
+          editMode,
           evidenceSourceIds: selectedSourceIds,
         }),
       });
@@ -82,6 +86,7 @@ export function GrantAiPatchPanel(props: Props) {
       if (action === "accept") await props.onAccepted();
       setProposal(null);
       setInstruction("");
+      setEditMode("replace");
       setSelectedSourceIds([]);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "无法处理修改提案。");
@@ -92,16 +97,22 @@ export function GrantAiPatchPanel(props: Props) {
 
   return (
     <section className="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
-      <label className="text-sm font-semibold text-slate-800" htmlFor={`grant-ai-instruction-${props.findingId}`}>
+      <label className="text-sm font-semibold text-slate-800" htmlFor={`grant-ai-instruction-${panelId}`}>
         指挥 AI 如何修改
       </label>
       <textarea
-        id={`grant-ai-instruction-${props.findingId}`}
+        id={`grant-ai-instruction-${panelId}`}
         value={instruction}
         onChange={(event) => setInstruction(event.target.value)}
         placeholder="例如：强化科学问题与前期结果的逻辑连接，但不要增加新结论。"
         className="research-focus mt-2 min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
       />
+      {props.mode === "free" && (
+        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+          <button type="button" onClick={() => setEditMode("replace")} className={`rounded-lg border px-3 py-2 ${editMode === "replace" ? "border-blue-500 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600"}`}>改写当前段落</button>
+          <button type="button" onClick={() => setEditMode("insert_after")} className={`rounded-lg border px-3 py-2 ${editMode === "insert_after" ? "border-blue-500 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600"}`}>在后面补充一段</button>
+        </div>
+      )}
       {props.evidencePatchEnabled && (
         <fieldset className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
           <legend className="px-1 text-xs font-semibold text-slate-700">选择资料作为修改依据（可选）</legend>
@@ -140,11 +151,11 @@ export function GrantAiPatchPanel(props: Props) {
       {operation && (
         <div className="mt-3 space-y-2" aria-label="AI 修改差异预览">
           <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-            <p className="text-xs font-semibold text-red-700">修改前</p>
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{operation.oldText}</p>
+            <p className="text-xs font-semibold text-red-700">{operation.type === "insert_after" ? "插入位置（不会改动）" : "修改前"}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{operation.type === "replace_text" ? operation.oldText : operation.anchorText}</p>
           </div>
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-            <p className="text-xs font-semibold text-emerald-700">修改后</p>
+            <p className="text-xs font-semibold text-emerald-700">{operation.type === "insert_after" ? "新增段落" : "修改后"}</p>
             <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{operation.newText}</p>
           </div>
           {proposal?.rationale && <p className="text-sm leading-6 text-slate-600">说明：{proposal.rationale}</p>}

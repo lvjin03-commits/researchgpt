@@ -7,7 +7,7 @@ import { InMemoryGrantPatchRepository } from "../lib/grants/infrastructure/memor
 import { InMemoryGrantRevisionRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-revision-repository.ts";
 import type { GrantDiagnosticRepository } from "../lib/grants/ports/grant-diagnostic-repository.ts";
 import type { GrantPatchModel } from "../lib/grants/ports/grant-patch-model.ts";
-import { applyGrantPatch, GrantPatchPolicyError } from "../lib/grants/patching/patch-policy.ts";
+import { applyGrantPatch, GrantPatchPolicyError, validateGrantPatchFactSafety } from "../lib/grants/patching/patch-policy.ts";
 
 const ownerId = randomUUID();
 const revisionRepository = new InMemoryGrantRevisionRepository();
@@ -89,6 +89,29 @@ const audit = (await revisionService.listAuditEvents(aggregate.document.document
 assert.equal(audit?.metadata.contentOrigin, "ai_proposal");
 assert.equal(audit?.actorKind, "user", "the accepting user remains the canonical writer actor");
 
+assert.throws(
+  () => validateGrantPatchFactSafety({ oldText: "已有设计。", newText: "实验结果表明效率提升30%。", hasAuthorizedEvidence: false }),
+  (error) => error instanceof GrantPatchPolicyError && error.code === "grant_patch_new_numeric_claim_blocked",
+);
+assert.throws(
+  () => validateGrantPatchFactSafety({ oldText: "已有设计。", newText: "前期实验已证实该机制。", hasAuthorizedEvidence: false }),
+  (error) => error instanceof GrantPatchPolicyError && error.code === "grant_patch_new_factual_claim_blocked",
+);
+assert.throws(
+  () => validateGrantPatchFactSafety({ oldText: "已有设计。", newText: "已有研究支持该结论[12]。", hasAuthorizedEvidence: true }),
+  (error) => error instanceof GrantPatchPolicyError && error.code === "grant_patch_new_reference_blocked",
+);
+assert.doesNotThrow(() => validateGrantPatchFactSafety({
+  oldText: "循环寿命达到4000 h。",
+  newText: "循环寿命达到4000 h，说明性能较稳定。",
+  hasAuthorizedEvidence: false,
+}), "existing measurements may be preserved without being treated as new claims");
+assert.doesNotThrow(() => validateGrantPatchFactSafety({
+  oldText: "已有设计。",
+  newText: "证据支持效率提升30%。",
+  hasAuthorizedEvidence: true,
+}), "authorized evidence may support a new numeric claim");
+
 const second = await service.propose({
   documentId: aggregate.document.documentId,
   baseRevisionId: accepted.aggregate.currentRevision.revisionId,
@@ -98,5 +121,28 @@ const second = await service.propose({
 });
 await service.reject(aggregate.document.documentId, second.proposalId);
 assert.equal((await revisionService.getDocument(aggregate.document.documentId)).document.currentRevisionNumber, 2, "reject must not write canonical content");
+
+const inserted = await service.propose({
+  documentId: aggregate.document.documentId,
+  baseRevisionId: accepted.aggregate.currentRevision.revisionId,
+  targetNodeId,
+  instruction: "在当前段落后补充一段过渡说明，不要增加新事实。",
+  editMode: "insert_after",
+  actorId: ownerId,
+});
+assert.equal(inserted.operations[0]?.type, "insert_after");
+const insertedPreview = applyGrantPatch(accepted.aggregate.currentRevision.snapshot, inserted);
+const insertOperation = inserted.operations[0];
+assert.equal(insertedPreview.sections[0]?.nodeIds.length, 2);
+if (insertOperation?.type === "insert_after") {
+  assert.equal(insertedPreview.sections[0]?.nodeIds[1], insertOperation.newNodeId);
+  const newNode = insertedPreview.nodes.find((node) => node.nodeId === insertOperation.newNodeId);
+  assert.equal(newNode?.nodeType, "paragraph");
+  assert.equal(newNode?.order, 1);
+}
+const acceptedInsert = await service.accept(aggregate.document.documentId, inserted.proposalId, ownerId);
+assert.equal(acceptedInsert.aggregate.document.currentRevisionNumber, 3);
+assert.equal(acceptedInsert.aggregate.currentRevision.snapshot.sections[0]?.nodeIds.length, 2);
+assert.equal(modelRequests.at(-1)?.editMode, "insert_after");
 
 console.log("Grant AI patch contracts passed.");

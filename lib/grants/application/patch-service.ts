@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import type { GrantPatchRepository } from "../ports/grant-patch-repository.ts";
 import { GrantPatchProposalSchema, type GrantPatchProposal } from "../patching/contracts.ts";
-import { applyGrantPatch, grantEditableNodeText, grantTextHash } from "../patching/patch-policy.ts";
+import { applyGrantPatch, grantEditableNodeText, grantTextHash, validateGrantPatchFactSafety } from "../patching/patch-policy.ts";
 import { sha256Canonical } from "../domain/canonical-json.ts";
 import { GrantModelDataGateway } from "./grant-model-data-gateway.ts";
 import { GrantRevisionConflictError, GrantRevisionService } from "./revision-service.ts";
@@ -46,6 +46,7 @@ export class GrantPatchService {
     targetNodeId: string;
     findingId?: string;
     instruction: string;
+    editMode?: "replace" | "insert_after";
     actorId: string;
     evidenceSourceIds?: string[];
   }): Promise<GrantPatchProposal> {
@@ -75,10 +76,16 @@ export class GrantPatchService {
       targetNodeId: input.targetNodeId,
       finding,
       userInstruction: input.instruction,
+      editMode: input.editMode ?? "replace",
       proposalId,
       evidenceSourceIds: input.evidenceSourceIds,
     });
     const timestamp = this.now();
+    validateGrantPatchFactSafety({
+      oldText,
+      newText: generated.replacementText,
+      hasAuthorizedEvidence: generated.evidenceBindings.length > 0,
+    });
     const proposal = GrantPatchProposalSchema.parse({
       proposalId,
       documentId: input.documentId,
@@ -86,7 +93,14 @@ export class GrantPatchService {
       findingId: input.findingId,
       targetNodeIds: [input.targetNodeId],
       instruction: input.instruction,
-      operations: [{
+      operations: input.editMode === "insert_after" ? [{
+        type: "insert_after",
+        anchorNodeId: input.targetNodeId,
+        expectedAnchorTextHash: grantTextHash(oldText),
+        anchorText: oldText,
+        newNodeId: this.createId(),
+        newText: generated.replacementText,
+      }] : [{
         type: "replace_text",
         nodeId: input.targetNodeId,
         expectedTextHash: grantTextHash(oldText),
