@@ -76,21 +76,27 @@ export function validateGrantPatchOperation(
     throw new GrantPatchPolicyError("grant_patch_scope_invalid", "A proposal must target exactly one node.");
   }
   const operation = proposal.operations[0];
-  const operationTarget = operation.type === "replace_text" ? operation.nodeId : operation.anchorNodeId;
+  const operationTarget = operation.type === "insert_after" ? operation.anchorNodeId : operation.nodeId;
   if (operationTarget !== proposal.targetNodeIds[0]) {
     throw new GrantPatchPolicyError("grant_patch_scope_invalid", "The model output exceeded the authorized target.");
   }
   const currentText = grantEditableNodeText(snapshot, operationTarget);
-  const expectedText = operation.type === "replace_text" ? operation.oldText : operation.anchorText;
-  const expectedHash = operation.type === "replace_text" ? operation.expectedTextHash : operation.expectedAnchorTextHash;
-  if (expectedText !== currentText || expectedHash !== grantTextHash(currentText)) {
+  const expectedHash = operation.type === "insert_after" ? operation.expectedAnchorTextHash : operation.expectedTextHash;
+  const expectedTextMatches = operation.type === "insert_after"
+    ? operation.anchorText === currentText
+    : operation.type === "replace_text"
+      ? operation.oldText === currentText
+      : operation.startOffset < operation.endOffset
+        && operation.endOffset <= currentText.length
+        && currentText.slice(operation.startOffset, operation.endOffset) === operation.oldText;
+  if (!expectedTextMatches || expectedHash !== grantTextHash(currentText)) {
     throw new GrantPatchPolicyError("grant_patch_stale", "The target text changed after this proposal was created.");
   }
-  if (!operation.newText.trim() || (operation.type === "replace_text" && operation.newText === currentText)) {
+  if (!operation.newText.trim() || (operation.type !== "insert_after" && operation.newText === operation.oldText)) {
     throw new GrantPatchPolicyError("grant_patch_empty_change", "The proposal does not contain a valid text change.");
   }
   validateGrantPatchFactSafety({
-    oldText: operation.type === "replace_text" ? operation.oldText : "",
+    oldText: operation.type === "insert_after" ? "" : operation.oldText,
     newText: operation.newText,
     hasAuthorizedEvidence: proposal.evidenceBindings.length > 0,
   });
@@ -125,6 +131,14 @@ export function applyGrantPatch(
           content: { text: operation.newText },
         },
       ],
+    });
+  }
+  if (operation.type === "replace_selection") {
+    return CanonicalGrantSnapshotSchema.parse({
+      ...snapshot,
+      nodes: snapshot.nodes.map((node) => node.nodeId === operation.nodeId
+        ? { ...node, content: { ...node.content, text: `${grantEditableNodeText(snapshot, node.nodeId).slice(0, operation.startOffset)}${operation.newText}${grantEditableNodeText(snapshot, node.nodeId).slice(operation.endOffset)}` } }
+        : node),
     });
   }
   return CanonicalGrantSnapshotSchema.parse({

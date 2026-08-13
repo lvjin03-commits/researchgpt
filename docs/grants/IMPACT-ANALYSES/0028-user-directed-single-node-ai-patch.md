@@ -4,7 +4,7 @@
 
 Allow a user to select one editable canonical node and give a free-form revision
 instruction without first selecting a diagnostic Finding. The user may replace
-that node or ask for one new paragraph immediately after it. The request reuses
+that node, replace a user-selected text range inside it, or ask for one new paragraph immediately after it. Selection replacement stores the full-node hash plus validated string offsets, so acceptance fails if the paragraph or selected text changed. The request reuses
 the existing Patch Service, proposal contract, preview, acceptance and Revision
 CAS path. It adds no route, renderer, repository or write authority. New node
 identity, section membership and order are assigned by the program, not the

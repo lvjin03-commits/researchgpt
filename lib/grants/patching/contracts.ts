@@ -20,6 +20,15 @@ export const GrantPatchOperationSchema = z.discriminatedUnion("type", [
     newNodeId: UuidSchema,
     newText: z.string().trim().min(1),
   }).strict(),
+  z.object({
+    type: z.literal("replace_selection"),
+    nodeId: UuidSchema,
+    expectedTextHash: Sha256Schema,
+    startOffset: z.number().int().nonnegative(),
+    endOffset: z.number().int().positive(),
+    oldText: z.string().min(1),
+    newText: z.string().trim().min(1),
+  }).strict(),
 ]);
 
 export const GrantPatchEvidenceBindingSchema = z.object({
@@ -54,11 +63,11 @@ export const GrantPatchProposalSchema = z.object({
   updatedAt: IsoTimestampSchema,
 }).strict().superRefine((proposal, context) => {
   const operation = proposal.operations[0];
-  const operationTarget = operation?.type === "replace_text" ? operation.nodeId : operation?.anchorNodeId;
+  const operationTarget = operation?.type === "insert_after" ? operation.anchorNodeId : operation?.nodeId;
   if (operationTarget && operationTarget !== proposal.targetNodeIds[0]) {
     context.addIssue({ code: "custom", path: ["operations", 0, "nodeId"], message: "Patch operation exceeds the authorized target." });
   }
-  if (operation?.type === "replace_text" && operation.oldText === operation.newText) {
+  if (operation?.type !== "insert_after" && operation?.oldText === operation?.newText) {
     context.addIssue({ code: "custom", path: ["operations", 0, "newText"], message: "Patch must change visible text." });
   }
 });

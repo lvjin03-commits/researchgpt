@@ -46,7 +46,8 @@ export class GrantPatchService {
     targetNodeId: string;
     findingId?: string;
     instruction: string;
-    editMode?: "replace" | "insert_after";
+    editMode?: "replace" | "replace_selection" | "insert_after";
+    selection?: { startOffset: number; endOffset: number; text: string };
     actorId: string;
     evidenceSourceIds?: string[];
   }): Promise<GrantPatchProposal> {
@@ -70,6 +71,13 @@ export class GrantPatchService {
     }
     const proposalId = this.createId();
     const oldText = grantEditableNodeText(aggregate.currentRevision.snapshot, input.targetNodeId);
+    const selection = input.editMode === "replace_selection" ? input.selection : undefined;
+    if (input.editMode === "replace_selection" && (!selection
+      || selection.startOffset >= selection.endOffset
+      || selection.endOffset > oldText.length
+      || oldText.slice(selection.startOffset, selection.endOffset) !== selection.text)) {
+      throw new GrantPatchStateError("The selected text no longer matches the target node.");
+    }
     const generated = await this.gateway.propose({
       documentId: input.documentId,
       snapshot: aggregate.currentRevision.snapshot,
@@ -77,12 +85,13 @@ export class GrantPatchService {
       finding,
       userInstruction: input.instruction,
       editMode: input.editMode ?? "replace",
+      selectedText: selection?.text,
       proposalId,
       evidenceSourceIds: input.evidenceSourceIds,
     });
     const timestamp = this.now();
     validateGrantPatchFactSafety({
-      oldText,
+      oldText: selection?.text ?? oldText,
       newText: generated.replacementText,
       hasAuthorizedEvidence: generated.evidenceBindings.length > 0,
     });
@@ -99,6 +108,14 @@ export class GrantPatchService {
         expectedAnchorTextHash: grantTextHash(oldText),
         anchorText: oldText,
         newNodeId: this.createId(),
+        newText: generated.replacementText,
+      }] : input.editMode === "replace_selection" ? [{
+        type: "replace_selection",
+        nodeId: input.targetNodeId,
+        expectedTextHash: grantTextHash(oldText),
+        startOffset: selection!.startOffset,
+        endOffset: selection!.endOffset,
+        oldText: selection!.text,
         newText: generated.replacementText,
       }] : [{
         type: "replace_text",

@@ -17,7 +17,7 @@ type Props = {
   onSectionTitleChange: (sectionId: string, title: string) => void;
   onNodeContentChange: (nodeId: string, value: string) => void;
   onNodeFindingSelect: (nodeId: string) => void;
-  onNodeAiEdit: (nodeId: string) => void;
+  onNodeAiEdit: (nodeId: string, selection?: { startOffset: number; endOffset: number; text: string }) => void;
   onAddParagraph: () => void;
   onRemoveNode: (nodeId: string) => void;
 };
@@ -72,6 +72,7 @@ function nodeText(node: CanonicalGrantSnapshot["nodes"][number]): string {
 }
 
 export function GrantDocumentCanvas(props: Props) {
+  const [textSelections, setTextSelections] = useState<Record<string, { startOffset: number; endOffset: number; text: string }>>({});
   const sections = projectGrantSectionSubtree(props.snapshot, props.selectedSectionId);
   const breadcrumbs = grantSectionBreadcrumbs(props.snapshot, props.selectedSectionId);
   const nodesById = new Map(props.snapshot.nodes.map((node) => [node.nodeId, node]));
@@ -110,7 +111,7 @@ export function GrantDocumentCanvas(props: Props) {
             {findingIds.length}
           </button>
         )}
-        {node.nodeType === "paragraph" && <textarea aria-label="正文段落" className="research-focus min-h-12 w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-2 py-1 text-[15px] leading-8 text-slate-800 [field-sizing:content] hover:bg-slate-50/70 focus:bg-blue-50/30" value={nodeText(node)} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
+        {node.nodeType === "paragraph" && <textarea aria-label="正文段落" className="research-focus min-h-12 w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-2 py-1 text-[15px] leading-8 text-slate-800 [field-sizing:content] hover:bg-slate-50/70 focus:bg-blue-50/30" value={nodeText(node)} onSelect={(event) => { const target = event.currentTarget; const startOffset = target.selectionStart; const endOffset = target.selectionEnd; setTextSelections((current) => ({ ...current, [node.nodeId]: { startOffset, endOffset, text: target.value.slice(startOffset, endOffset) } })); }} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
         {node.nodeType === "heading" && <input aria-label="正文标题" className="research-focus w-full rounded border border-transparent bg-transparent px-2 py-1 text-base font-semibold hover:bg-slate-50/70 focus:bg-blue-50/30" value={nodeText(node)} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
         {node.nodeType === "list" && <textarea aria-label="列表内容" className="research-focus min-h-20 w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-8 py-1 text-[15px] leading-8 [field-sizing:content] hover:bg-slate-50/70 focus:bg-blue-50/30" value={nodeText(node)} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
         {node.nodeType === "table" && (
@@ -132,7 +133,7 @@ export function GrantDocumentCanvas(props: Props) {
         )}
         {node.nodeType === "citation" && <div className="border-l-2 border-slate-300 px-4 py-2 text-sm text-slate-600">引用：{node.content.referenceId}</div>}
         {(node.nodeType === "paragraph" || node.nodeType === "heading" || node.nodeType === "list" || node.nodeType === "table" || node.nodeType === "formula") && (
-          <button type="button" className="absolute -left-2 -top-2 hidden rounded-full border border-blue-200 bg-white px-2 py-1 text-xs font-semibold text-[#155eef] shadow-sm group-hover:block focus:block" onClick={() => props.onNodeAiEdit(node.nodeId)}>AI 修改</button>
+          <button type="button" className="absolute -left-2 -top-2 hidden rounded-full border border-blue-200 bg-white px-2 py-1 text-xs font-semibold text-[#155eef] shadow-sm group-hover:block focus:block" onClick={() => { const selection = textSelections[node.nodeId]; props.onNodeAiEdit(node.nodeId, selection?.text ? selection : undefined); }}>AI 修改</button>
         )}
         <button type="button" className="absolute -left-2 top-7 hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-red-700 shadow-sm group-hover:block focus:block" onClick={() => props.onRemoveNode(node.nodeId)}>删除</button>
         {aiEditSelected && (

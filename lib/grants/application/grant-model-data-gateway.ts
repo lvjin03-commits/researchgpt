@@ -436,7 +436,8 @@ export class GrantModelDataGateway {
     targetNodeId: string;
     finding?: GrantFinding;
     userInstruction: string;
-    editMode: "replace" | "insert_after";
+    editMode: "replace" | "replace_selection" | "insert_after";
+    selectedText?: string;
     proposalId: string;
     evidenceSourceIds?: string[];
   }): Promise<GrantModelPatchResult> {
@@ -474,7 +475,7 @@ export class GrantModelDataGateway {
     const generated = await this.model.generate({
       documentLanguage,
       sectionTitle: section?.title ?? "",
-      targetText,
+      targetText: input.editMode === "replace_selection" ? input.selectedText ?? "" : targetText,
       findingMessage: input.finding?.message,
       findingRecommendation: input.finding?.recommendation,
       userInstruction: input.userInstruction,

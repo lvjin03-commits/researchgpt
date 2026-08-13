@@ -122,6 +122,41 @@ const second = await service.propose({
 await service.reject(aggregate.document.documentId, second.proposalId);
 assert.equal((await revisionService.getDocument(aggregate.document.documentId)).document.currentRevisionNumber, 2, "reject must not write canonical content");
 
+const selectionBase = accepted.aggregate.currentRevision.snapshot.nodes[0];
+assert.equal(selectionBase?.nodeType, "paragraph");
+const selectionBaseText = selectionBase?.nodeType === "paragraph" ? selectionBase.content.text : "";
+const selectionText = selectionBaseText.slice(0, 2);
+const selected = await service.propose({
+  documentId: aggregate.document.documentId,
+  baseRevisionId: accepted.aggregate.currentRevision.revisionId,
+  targetNodeId,
+  instruction: "只改写选中的文字。",
+  editMode: "replace_selection",
+  selection: { startOffset: 0, endOffset: 2, text: selectionText },
+  actorId: ownerId,
+});
+assert.equal(selected.operations[0]?.type, "replace_selection");
+assert.equal(modelRequests.at(-1)?.targetText, selectionText, "the model receives only the authorized selection");
+const selectionPreview = applyGrantPatch(accepted.aggregate.currentRevision.snapshot, selected);
+const selectedPreviewNode = selectionPreview.nodes.find((node) => node.nodeId === targetNodeId);
+assert.equal(selectedPreviewNode?.nodeType, "paragraph");
+if (selected.operations[0]?.type === "replace_selection" && selectedPreviewNode?.nodeType === "paragraph") {
+  assert.equal(selectedPreviewNode.content.text, `${selected.operations[0].newText}${selectionBaseText.slice(2)}`);
+}
+await service.reject(aggregate.document.documentId, selected.proposalId);
+await assert.rejects(
+  service.propose({
+    documentId: aggregate.document.documentId,
+    baseRevisionId: accepted.aggregate.currentRevision.revisionId,
+    targetNodeId,
+    instruction: "错误选区不应执行。",
+    editMode: "replace_selection",
+    selection: { startOffset: 0, endOffset: 2, text: "不匹配" },
+    actorId: ownerId,
+  }),
+  /selected text no longer matches/i,
+);
+
 const inserted = await service.propose({
   documentId: aggregate.document.documentId,
   baseRevisionId: accepted.aggregate.currentRevision.revisionId,

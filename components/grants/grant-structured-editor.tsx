@@ -65,6 +65,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [selectedAiNodeId, setSelectedAiNodeId] = useState<string | null>(null);
+  const [selectedAiText, setSelectedAiText] = useState<{ startOffset: number; endOffset: number; text: string } | undefined>();
   const [diagnostics, setDiagnostics] = useState<GrantDiagnosticsPayload>(emptyDiagnostics);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(true);
   const [diagnosticsRunning, setDiagnosticsRunning] = useState(false);
@@ -436,6 +437,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
                 documentId={documentId}
                 currentRevisionId={payload.aggregate.currentRevision.revisionId}
                 targetNodeId={selectedAiNodeId}
+                selection={selectedAiText}
                 enabled={aiPatchEnabled}
                 evidencePatchEnabled={evidencePatchEnabled && evidenceEnabled}
                 canGenerate={saveStatus === "saved"}
@@ -452,7 +454,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
           }}
           onNodeContentChange={changeNodeContent}
           onNodeFindingSelect={navigateFromNode}
-          onNodeAiEdit={setSelectedAiNodeId}
+          onNodeAiEdit={(nodeId, selection) => { setSelectedAiNodeId(nodeId); setSelectedAiText(selection); }}
           onAddParagraph={addParagraph}
           onRemoveNode={removeNode}
         />}
