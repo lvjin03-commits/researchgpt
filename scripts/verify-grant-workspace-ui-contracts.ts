@@ -172,6 +172,9 @@ assert.match(panelSource, /xl:min-h-0 xl:flex-1 xl:max-h-none xl:overscroll-cont
 assert.match(resizableWorkspaceSource, /xl:h-full xl:min-h-0 xl:flex-1 xl:overflow-hidden/);
 assert.match(globalStylesSource, /grid-template-rows: minmax\(0, 1fr\)/);
 assert.match(freeAiCanvasSource, /onNodeAiEdit/);
+assert.match(freeAiCanvasSource, /textareaSelectionAnchor/);
+assert.match(freeAiCanvasSource, /aria-label="用 AI 修改选中文字"/);
+assert.match(freeAiCanvasSource, /onMouseDown=\{\(event\) => event\.preventDefault\(\)\}/);
 assert.match(freeAiCanvasSource, /aiEditPanel: ReactNode/);
 assert.match(freeAiCanvasSource, /xl:left-\[calc\(100%\+1rem\)\]/);
 assert.match(freeAiCanvasSource, />AI 修改<\/button>/);

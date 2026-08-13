@@ -71,8 +71,30 @@ function nodeText(node: CanonicalGrantSnapshot["nodes"][number]): string {
   return node.content.referenceId;
 }
 
+type TextSelection = { startOffset: number; endOffset: number; text: string; anchorTop: number; anchorLeft: number };
+
+function textareaSelectionAnchor(textarea: HTMLTextAreaElement, offset: number) {
+  const style = window.getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  const marker = document.createElement("span");
+  const properties = ["boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "textTransform", "textIndent", "wordSpacing", "tabSize"] as const;
+  for (const property of properties) mirror.style[property] = style[property];
+  mirror.style.position = "fixed";
+  mirror.style.left = "-10000px";
+  mirror.style.top = "0";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.overflowWrap = "break-word";
+  mirror.textContent = textarea.value.slice(0, offset);
+  marker.textContent = textarea.value.slice(offset, offset + 1) || "\u200b";
+  mirror.append(marker);
+  document.body.append(mirror);
+  const result = { top: marker.offsetTop - textarea.scrollTop, left: marker.offsetLeft - textarea.scrollLeft };
+  mirror.remove();
+  return result;
+}
+
 export function GrantDocumentCanvas(props: Props) {
-  const [textSelections, setTextSelections] = useState<Record<string, { startOffset: number; endOffset: number; text: string }>>({});
+  const [textSelections, setTextSelections] = useState<Record<string, TextSelection>>({});
   const sections = projectGrantSectionSubtree(props.snapshot, props.selectedSectionId);
   const breadcrumbs = grantSectionBreadcrumbs(props.snapshot, props.selectedSectionId);
   const nodesById = new Map(props.snapshot.nodes.map((node) => [node.nodeId, node]));
@@ -111,7 +133,7 @@ export function GrantDocumentCanvas(props: Props) {
             {findingIds.length}
           </button>
         )}
-        {node.nodeType === "paragraph" && <textarea aria-label="正文段落" className="research-focus min-h-12 w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-2 py-1 text-[15px] leading-8 text-slate-800 [field-sizing:content] hover:bg-slate-50/70 focus:bg-blue-50/30" value={nodeText(node)} onSelect={(event) => { const target = event.currentTarget; const startOffset = target.selectionStart; const endOffset = target.selectionEnd; setTextSelections((current) => ({ ...current, [node.nodeId]: { startOffset, endOffset, text: target.value.slice(startOffset, endOffset) } })); }} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
+        {node.nodeType === "paragraph" && <textarea aria-label="正文段落" className="research-focus min-h-12 w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-2 py-1 text-[15px] leading-8 text-slate-800 [field-sizing:content] hover:bg-slate-50/70 focus:bg-blue-50/30" value={nodeText(node)} onSelect={(event) => { const target = event.currentTarget; const startOffset = target.selectionStart; const endOffset = target.selectionEnd; if (startOffset === endOffset) { setTextSelections((current) => { const next = { ...current }; delete next[node.nodeId]; return next; }); return; } const anchor = textareaSelectionAnchor(target, startOffset); setTextSelections((current) => ({ ...current, [node.nodeId]: { startOffset, endOffset, text: target.value.slice(startOffset, endOffset), anchorTop: anchor.top, anchorLeft: anchor.left } })); }} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
         {node.nodeType === "heading" && <input aria-label="正文标题" className="research-focus w-full rounded border border-transparent bg-transparent px-2 py-1 text-base font-semibold hover:bg-slate-50/70 focus:bg-blue-50/30" value={nodeText(node)} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
         {node.nodeType === "list" && <textarea aria-label="列表内容" className="research-focus min-h-20 w-full resize-none overflow-hidden rounded border border-transparent bg-transparent px-8 py-1 text-[15px] leading-8 [field-sizing:content] hover:bg-slate-50/70 focus:bg-blue-50/30" value={nodeText(node)} onChange={(event) => props.onNodeContentChange(node.nodeId, event.target.value)} />}
         {node.nodeType === "table" && (
@@ -134,6 +156,18 @@ export function GrantDocumentCanvas(props: Props) {
         {node.nodeType === "citation" && <div className="border-l-2 border-slate-300 px-4 py-2 text-sm text-slate-600">引用：{node.content.referenceId}</div>}
         {(node.nodeType === "paragraph" || node.nodeType === "heading" || node.nodeType === "list" || node.nodeType === "table" || node.nodeType === "formula") && (
           <button type="button" className="absolute -left-2 -top-2 hidden rounded-full border border-blue-200 bg-white px-2 py-1 text-xs font-semibold text-[#155eef] shadow-sm group-hover:block focus:block" onClick={() => { const selection = textSelections[node.nodeId]; props.onNodeAiEdit(node.nodeId, selection?.text ? selection : undefined); }}>AI 修改</button>
+        )}
+        {node.nodeType === "paragraph" && textSelections[node.nodeId]?.text && !aiEditSelected && (
+          <button
+            type="button"
+            aria-label="用 AI 修改选中文字"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => { const { startOffset, endOffset, text } = textSelections[node.nodeId]!; props.onNodeAiEdit(node.nodeId, { startOffset, endOffset, text }); }}
+            className="absolute z-30 -translate-y-full rounded-full border border-blue-300 bg-white px-3 py-1.5 font-sans text-xs font-semibold text-[#155eef] shadow-lg hover:bg-blue-50"
+            style={{ top: Math.max(4, textSelections[node.nodeId]!.anchorTop), left: Math.max(8, Math.min(textSelections[node.nodeId]!.anchorLeft, 520)) }}
+          >
+            AI 修改
+          </button>
         )}
         <button type="button" className="absolute -left-2 top-7 hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-red-700 shadow-sm group-hover:block focus:block" onClick={() => props.onRemoveNode(node.nodeId)}>删除</button>
         {aiEditSelected && (
