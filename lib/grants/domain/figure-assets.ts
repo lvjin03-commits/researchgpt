@@ -67,8 +67,9 @@ export const GrantImportedFigureAssetDraftSchema = GrantImportedFigureAssetSchem
 export const GrantFigureModelPermissionsSchema = z.object({
   sendImageToModel: z.boolean(),
   useForSemanticDiagnosis: z.boolean(),
+  useForAiEditing: z.boolean().default(false),
 }).strict().superRefine((permissions, context) => {
-  if (permissions.useForSemanticDiagnosis && !permissions.sendImageToModel) {
+  if ((permissions.useForSemanticDiagnosis || permissions.useForAiEditing) && !permissions.sendImageToModel) {
     context.addIssue({
       code: "custom",
       path: ["useForSemanticDiagnosis"],
@@ -109,4 +110,5 @@ export type GrantFigureModelAuthorization = z.infer<typeof GrantFigureModelAutho
 export const DEFAULT_GRANT_FIGURE_MODEL_PERMISSIONS: GrantFigureModelPermissions = {
   sendImageToModel: false,
   useForSemanticDiagnosis: false,
+  useForAiEditing: false,
 };

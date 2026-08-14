@@ -147,6 +147,66 @@ export class GrantPatchService {
     return this.repository.create(proposal, evidenceDependencies);
   }
 
+  async proposeApprovedCandidate(input: {
+    documentId: string;
+    baseRevisionId: string;
+    targetNodeId: string;
+    findingId?: string;
+    instruction: string;
+    editMode: "replace" | "replace_selection" | "insert_after";
+    selection?: { startOffset: number; endOffset: number; text: string };
+    candidateText: string;
+    candidateProvider: "openai";
+    candidateModelId: string;
+    candidateRationale?: string;
+    evidenceBindings: GrantPatchProposal["evidenceBindings"];
+    actorId: string;
+  }): Promise<GrantPatchProposal> {
+    const aggregate = await this.revisionService.getDocument(input.documentId);
+    if (aggregate.currentRevision.revisionId !== input.baseRevisionId) throw new GrantRevisionConflictError(aggregate.currentRevision.revisionId);
+    const finding = input.findingId
+      ? (await this.diagnosticRepository.listFindings(input.documentId)).find((candidate) => candidate.findingId === input.findingId)
+      : undefined;
+    if (input.findingId && !finding) throw new GrantPatchNotFoundError("The originating finding was not found.");
+    if (finding) {
+      const resolution = resolveGrantSourceAnchor(finding.sourceAnchor, aggregate.currentRevision.revisionId, aggregate.currentRevision.snapshot);
+      if ((resolution.status !== "exact" && resolution.status !== "relocated") || resolution.targetNodeId !== input.targetNodeId) {
+        throw new GrantPatchStateError("The originating finding no longer authorizes this target node.");
+      }
+    }
+    const oldText = grantEditableNodeText(aggregate.currentRevision.snapshot, input.targetNodeId);
+    const selection = input.editMode === "replace_selection" ? input.selection : undefined;
+    if (input.editMode === "replace_selection" && (!selection || selection.startOffset >= selection.endOffset
+      || selection.endOffset > oldText.length || oldText.slice(selection.startOffset, selection.endOffset) !== selection.text)) {
+      throw new GrantPatchStateError("The selected text no longer matches the target node.");
+    }
+    validateGrantPatchFactSafety({ oldText: selection?.text ?? oldText, newText: input.candidateText, hasAuthorizedEvidence: input.evidenceBindings.length > 0 });
+    const proposalId = this.createId();
+    if (input.evidenceBindings.length > 0) await this.gateway.validateCurrentEvidence({ documentId: input.documentId, proposalId, bindings: input.evidenceBindings });
+    const timestamp = this.now();
+    const proposal = GrantPatchProposalSchema.parse({
+      proposalId, documentId: input.documentId, baseRevisionId: input.baseRevisionId,
+      findingId: input.findingId, targetNodeIds: [input.targetNodeId], instruction: input.instruction,
+      operations: input.editMode === "insert_after" ? [{
+        type: "insert_after", anchorNodeId: input.targetNodeId, expectedAnchorTextHash: grantTextHash(oldText),
+        anchorText: oldText, newNodeId: this.createId(), newText: input.candidateText,
+      }] : input.editMode === "replace_selection" ? [{
+        type: "replace_selection", nodeId: input.targetNodeId, expectedTextHash: grantTextHash(oldText),
+        startOffset: selection!.startOffset, endOffset: selection!.endOffset, oldText: selection!.text, newText: input.candidateText,
+      }] : [{ type: "replace_text", nodeId: input.targetNodeId, expectedTextHash: grantTextHash(oldText), oldText, newText: input.candidateText }],
+      status: "pending", createdBy: input.actorId, modelProvider: input.candidateProvider,
+      modelId: input.candidateModelId, rationale: input.candidateRationale,
+      evidenceBindings: input.evidenceBindings, createdAt: timestamp, updatedAt: timestamp,
+    });
+    applyGrantPatch(aggregate.currentRevision.snapshot, proposal);
+    const dependencies = [...new Set(proposal.evidenceBindings.map((binding) => binding.sourceId))].map((sourceId) => ({
+      dependencyId: this.createId(), documentId: proposal.documentId, sourceId,
+      dependentKind: "patch_proposal" as const, dependentId: proposal.proposalId,
+      status: "active" as const, createdAt: timestamp, updatedAt: timestamp,
+    }));
+    return this.repository.create(proposal, dependencies);
+  }
+
   async accept(documentId: string, proposalId: string, actorId: string) {
     const proposal = await this.repository.get(documentId, proposalId);
     if (!proposal) throw new GrantPatchNotFoundError("The patch proposal was not found.");

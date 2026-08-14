@@ -15,6 +15,7 @@ export type GrantPatchModelRequest = {
   userInstruction: string;
   editMode: "replace" | "replace_selection" | "insert_after";
   evidence: GrantPatchEvidenceExcerpt[];
+  images?: Array<{ assetRef: string; caption?: string; mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif"; dataUrl: string }>;
 };
 
 export type GrantPatchModelResult = {

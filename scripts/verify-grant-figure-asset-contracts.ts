@@ -37,6 +37,7 @@ assert.equal(asset.anchor.relationshipId, "rId12");
 assert.deepEqual(DEFAULT_GRANT_FIGURE_MODEL_PERMISSIONS, {
   sendImageToModel: false,
   useForSemanticDiagnosis: false,
+  useForAiEditing: false,
 });
 
 assert.throws(() => GrantImportedFigureAssetSchema.parse({

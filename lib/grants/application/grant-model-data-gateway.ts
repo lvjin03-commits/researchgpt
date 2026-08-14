@@ -34,6 +34,11 @@ export type GrantModelPatchResult = GrantPatchModelResult & {
   evidenceBindings: GrantPatchEvidenceBinding[];
 };
 
+export type GrantEditSessionTurnModelResult = GrantPatchModelResult & {
+  evidenceBindings: Array<{ sourceId: string; cardId: string; sourceTitle: string; provenanceType: "published_literature" | "own_unpublished_work" | "project_material"; authorizationRevision: number; sourceContentHash: string; excerptHash: string; uses: ["model", "reasoning"] }>;
+  figureAuthorization?: { authorizationId: string; authorizationRevision: number; sourceRevisionId: string; assetIds: string[] };
+};
+
 export class GrantModelDataGateway {
   private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel>;
   private readonly evidenceAuthorization?: GrantEvidenceAuthorizationService;
@@ -428,6 +433,112 @@ export class GrantModelDataGateway {
         throw new GrantPatchEvidenceMismatchError("修改提案所依赖的资料或授权已经变化，请重新生成。");
       }
     }
+  }
+
+  async validateEditSessionCandidateContext(input: {
+    documentId: string;
+    taskId: string;
+    evidenceBindings: GrantEditSessionTurnModelResult["evidenceBindings"];
+    figureAuthorization?: GrantEditSessionTurnModelResult["figureAuthorization"];
+  }): Promise<boolean> {
+    try {
+      const sourceIds = [...new Set(input.evidenceBindings.map((binding) => binding.sourceId))];
+      if (sourceIds.length > 0) {
+        if (!this.evidenceAuthorization) return false;
+        const resources = await this.evidenceAuthorization.materializeCurrent({ documentId: input.documentId, sourceIds, taskId: input.taskId, use: "reasoning" });
+        const current = new Map(resources.map((resource) => [resource.source.sourceId, resource]));
+        for (const binding of input.evidenceBindings) {
+          const resource = current.get(binding.sourceId);
+          const card = resource?.cards.find((candidate) => candidate.cardId === binding.cardId && candidate.status === "active");
+          if (!resource || resource.authorization.revision !== binding.authorizationRevision
+            || resource.source.contentHash !== binding.sourceContentHash || card?.excerptHash !== binding.excerptHash) return false;
+        }
+      }
+      if (input.figureAuthorization) {
+        if (!this.figureAuthorization) return false;
+        const current = await this.figureAuthorization.materializeCurrentForAiEditing(input.documentId, input.figureAuthorization.assetIds);
+        if (current.authorization.authorizationId !== input.figureAuthorization.authorizationId
+          || current.authorization.authorizationRevision !== input.figureAuthorization.authorizationRevision
+          || current.authorization.sourceRevisionId !== input.figureAuthorization.sourceRevisionId) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async proposeEditSessionTurn(input: {
+    documentId: string;
+    taskId: string;
+    snapshot: CanonicalGrantSnapshot;
+    targetNodeId: string;
+    semanticBaseText: string;
+    userInstruction: string;
+    editMode: "replace" | "replace_selection" | "insert_after";
+    evidenceSourceIds?: string[];
+    figureAssetIds?: string[];
+  }): Promise<GrantEditSessionTurnModelResult> {
+    const node = input.snapshot.nodes.find((candidate) => candidate.nodeId === input.targetNodeId);
+    const section = input.snapshot.sections.find((candidate) => candidate.sectionId === node?.sectionId);
+    const documentLanguage = /[\u3400-\u9fff]/u.test(input.snapshot.title + input.semanticBaseText) ? "zh" : "en";
+    const sourceIds = [...new Set(input.evidenceSourceIds ?? [])];
+    if (sourceIds.length > 0 && !this.evidenceAuthorization) throw new GrantEvidenceProviderPolicyError("Evidence-backed edit sessions are not configured.");
+    const resources = sourceIds.length === 0 ? [] : await this.evidenceAuthorization!.materializeCurrent({
+      documentId: input.documentId, sourceIds, taskId: input.taskId, use: "model",
+    });
+    if (resources.some((resource) => resource.source.sensitivity === "highly_sensitive")) {
+      throw new GrantEvidenceProviderPolicyError("Highly sensitive evidence cannot be sent to an external model provider.");
+    }
+    if (sourceIds.length > 0) await this.evidenceAuthorization!.materializeCurrent({ documentId: input.documentId, sourceIds, taskId: input.taskId, use: "reasoning" });
+    const selected = selectGrantEvidenceCards(resources, [section?.title, input.semanticBaseText, input.userInstruction].filter(Boolean).join("\n"));
+
+    const requestedAssets = [...new Set(input.figureAssetIds ?? [])];
+    let figureAuthorization: GrantEditSessionTurnModelResult["figureAuthorization"];
+    const images: NonNullable<Parameters<GrantPatchModel["generate"]>[0]["images"]> = [];
+    if (requestedAssets.length > 0) {
+      if (!this.figureAuthorization || !this.figureAssetReader) throw new GrantFigureAuthorizationDeniedError("AI editing image access is not configured.");
+      const materialized = await this.figureAuthorization.materializeCurrentForAiEditing(input.documentId, requestedAssets);
+      for (const asset of materialized.assets) {
+        if (!GRANT_DIAGNOSTIC_IMAGE_MEDIA_TYPES.includes(asset.mediaType as GrantDiagnosticImageMediaType)) throw new GrantFigureAuthorizationDeniedError("An image media type is not supported.");
+        const bytes = await this.figureAssetReader.readBytes(asset);
+        if (bytes.byteLength !== asset.byteSize || createHash("sha256").update(bytes).digest("hex") !== asset.contentHash) throw new GrantFigureAuthorizationDeniedError("An authorized image failed integrity validation.");
+        images.push({ assetRef: `I${images.length + 1}`, caption: asset.anchor.caption.text ?? undefined, mediaType: asset.mediaType as "image/png" | "image/jpeg" | "image/webp" | "image/gif", dataUrl: `data:${asset.mediaType};base64,${Buffer.from(bytes).toString("base64")}` });
+      }
+      figureAuthorization = {
+        authorizationId: materialized.authorization.authorizationId,
+        authorizationRevision: materialized.authorization.authorizationRevision,
+        sourceRevisionId: materialized.authorization.sourceRevisionId,
+        assetIds: materialized.assets.map((asset) => asset.assetId),
+      };
+    }
+    const generated = await this.model.generate({
+      documentLanguage,
+      sectionTitle: section?.title ?? "",
+      targetText: input.semanticBaseText,
+      userInstruction: input.userInstruction,
+      editMode: input.editMode,
+      evidence: selected.map(({ resource, card }) => ({ sourceId: resource.source.sourceId, cardId: card.cardId, sourceTitle: resource.source.title, provenanceType: resource.source.provenanceType, excerpt: card.excerpt })),
+      images,
+    });
+    const selectedByCard = new Map(selected.map((item) => [item.card.cardId, item]));
+    for (const cardId of generated.usedEvidenceCardIds) if (!selectedByCard.has(cardId)) throw new GrantPatchEvidenceMismatchError("The model used an Evidence Card that was not admitted for this turn.");
+    if (sourceIds.length > 0) {
+      const current = await this.evidenceAuthorization!.materializeCurrent({ documentId: input.documentId, sourceIds, taskId: input.taskId, use: "reasoning" });
+      const revisions = new Map(current.map((resource) => [resource.source.sourceId, resource.authorization.revision]));
+      if (resources.some((resource) => revisions.get(resource.source.sourceId) !== resource.authorization.revision)) throw new GrantPatchEvidenceMismatchError("Evidence authorization changed during this turn.");
+    }
+    if (figureAuthorization) {
+      const current = await this.figureAuthorization!.materializeCurrentForAiEditing(input.documentId, requestedAssets);
+      if (current.authorization.authorizationId !== figureAuthorization.authorizationId || current.authorization.authorizationRevision !== figureAuthorization.authorizationRevision) throw new GrantFigureAuthorizationDeniedError("Image authorization changed during this turn.");
+    }
+    return {
+      ...generated,
+      evidenceBindings: generated.usedEvidenceCardIds.map((cardId) => {
+        const { resource, card } = selectedByCard.get(cardId)!;
+        return { sourceId: resource.source.sourceId, cardId, sourceTitle: resource.source.title, provenanceType: resource.source.provenanceType, authorizationRevision: resource.authorization.revision, sourceContentHash: resource.source.contentHash, excerptHash: card.excerptHash, uses: ["model", "reasoning"] };
+      }),
+      figureAuthorization,
+    };
   }
 
   async propose(input: {

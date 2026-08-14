@@ -240,7 +240,20 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         },
         {
           role: "user",
-          content: JSON.stringify({
+          content: request.images?.length ? [
+            { type: "text" as const, text: JSON.stringify({
+              sectionTitle: request.sectionTitle,
+              targetText: request.targetText,
+              diagnostic: request.findingMessage
+                ? { message: request.findingMessage, recommendation: request.findingRecommendation ?? "" }
+                : null,
+              userInstruction: request.userInstruction,
+              editMode: request.editMode,
+              evidence: request.evidence,
+              images: request.images.map(({ assetRef, caption }) => ({ assetRef, caption: caption ?? null })),
+            }) },
+            ...request.images.map((image) => ({ type: "image_url" as const, image_url: { url: image.dataUrl, detail: "high" as const } })),
+          ] : JSON.stringify({
             sectionTitle: request.sectionTitle,
             targetText: request.targetText,
             diagnostic: request.findingMessage

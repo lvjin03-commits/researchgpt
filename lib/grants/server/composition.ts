@@ -28,6 +28,10 @@ import { GrantFigureDisplayService } from "../application/figure-display-service
 import { SupabaseGrantFigureAssetReader } from "../infrastructure/supabase/supabase-grant-figure-asset-reader.ts";
 import { GrantFigureModelAuthorizationService } from "../application/figure-model-authorization-service.ts";
 import { SupabaseGrantFigureAuthorizationRepository } from "../infrastructure/supabase/supabase-grant-figure-authorization-repository.ts";
+import { GrantAiEditSessionService } from "../application/grant-ai-edit-session-service.ts";
+import { GrantModelExecutor } from "../application/grant-model-executor.ts";
+import { SupabaseGrantAiEditSessionRepository } from "../infrastructure/supabase/supabase-grant-ai-edit-session-repository.ts";
+import { SupabaseGrantModelCallRepository } from "../infrastructure/supabase/supabase-grant-model-call-repository.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -115,6 +119,26 @@ export function createGrantPatchService(ownerId: string): GrantPatchService {
     new SupabaseGrantPatchRepository(client, ownerId),
     ai.gateway,
   );
+}
+
+export function createGrantAiEditSessionService(ownerId: string): GrantAiEditSessionService {
+  const client = createGrantSupabaseClient();
+  const ai = createGrantModelDataGateway(client, ownerId);
+  const revisions = new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) });
+  const patches = new GrantPatchService(
+    revisions,
+    new SupabaseGrantDiagnosticRepository(client, ownerId),
+    new SupabaseGrantPatchRepository(client, ownerId),
+    ai.gateway,
+  );
+  return new GrantAiEditSessionService({
+    repository: new SupabaseGrantAiEditSessionRepository(client, ownerId),
+    revisionService: revisions,
+    modelGateway: ai.gateway,
+    modelExecutor: new GrantModelExecutor(new SupabaseGrantModelCallRepository(client, ownerId)),
+    patchService: patches,
+    configuredGrantModelId: ai.config.modelId,
+  });
 }
 
 export function createGrantEvidenceService(ownerId: string): GrantEvidenceService {

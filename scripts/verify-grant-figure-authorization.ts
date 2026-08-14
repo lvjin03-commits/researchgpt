@@ -70,14 +70,14 @@ let now = "2026-08-10T12:00:00.000Z";
 const service = new GrantFigureModelAuthorizationService(revisions, repository, () => authorizationId, () => now);
 
 const initial = await service.getCurrent(documentId);
-assert.deepEqual(initial.effectivePermissions, { sendImageToModel: false, useForSemanticDiagnosis: false });
+assert.deepEqual(initial.effectivePermissions, { sendImageToModel: false, useForSemanticDiagnosis: false, useForAiEditing: false });
 assert.deepEqual(initial.eligibleAssetIds, [assetId]);
 
 const authorized = await service.authorize({
   documentId,
   expectedAuthorizationRevision: 0,
   allowedAssetIds: [assetId],
-  permissions: { sendImageToModel: true, useForSemanticDiagnosis: true },
+  permissions: { sendImageToModel: true, useForSemanticDiagnosis: true, useForAiEditing: false },
   actorId,
 });
 assert.equal(authorized.authorization?.authorizationRevision, 1);
@@ -116,7 +116,7 @@ await assert.rejects(() => service.authorize({
   documentId,
   expectedAuthorizationRevision: 1,
   allowedAssetIds: ["13000000-0000-4000-8000-000000000099"],
-  permissions: { sendImageToModel: true, useForSemanticDiagnosis: true },
+  permissions: { sendImageToModel: true, useForSemanticDiagnosis: true, useForAiEditing: false },
   actorId,
 }), GrantFigureAuthorizationDeniedError);
 
@@ -131,7 +131,7 @@ const renewed = await service.authorize({
   documentId,
   expectedAuthorizationRevision: 1,
   allowedAssetIds: [assetId],
-  permissions: { sendImageToModel: true, useForSemanticDiagnosis: true },
+  permissions: { sendImageToModel: true, useForSemanticDiagnosis: true, useForAiEditing: false },
   actorId,
 });
 assert.equal(renewed.authorization?.sourceRevisionId, revision2);

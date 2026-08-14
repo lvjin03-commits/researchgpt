@@ -127,6 +127,27 @@ export class GrantFigureModelAuthorizationService {
     return { authorization, assets: assets.filter((asset) => allowed.has(asset.assetId)) };
   }
 
+  async materializeCurrentForAiEditing(documentId: string, requestedAssetIds: string[]): Promise<{
+    authorization: GrantFigureModelAuthorization;
+    assets: GrantImportedFigureAsset[];
+  }> {
+    const projection = await this.getCurrent(documentId);
+    const authorization = projection.authorization;
+    if (!authorization || !projection.effectivePermissions.sendImageToModel
+      || !projection.effectivePermissions.useForAiEditing) {
+      throw new GrantFigureAuthorizationDeniedError("Current image authorization does not permit AI editing.");
+    }
+    const requested = new Set(requestedAssetIds);
+    const allowed = new Set(authorization.allowedAssetIds);
+    if (requested.size === 0 || [...requested].some((assetId) => !allowed.has(assetId))) {
+      throw new GrantFigureAuthorizationDeniedError("One or more requested images are not currently authorized for AI editing.");
+    }
+    const assets = await this.revisions.listImportedFigureAssets(documentId);
+    const selected = assets.filter((asset) => requested.has(asset.assetId));
+    if (selected.length !== requested.size) throw new GrantFigureAuthorizationDeniedError("A requested image is no longer in the current revision.");
+    return { authorization, assets: selected };
+  }
+
   private async eligibleAssetIds(documentId: string, snapshot: { nodes: Array<{ nodeType: string; content: unknown }> }) {
     const referenced = new Set(snapshot.nodes.flatMap((node) =>
       node.nodeType === "figure" && typeof node.content === "object" && node.content !== null && "assetId" in node.content

@@ -6,6 +6,7 @@ import {
 import {
   GrantAuthenticationRequiredError,
   GrantAiPatchDisabledError,
+  GrantAiEditSessionDisabledError,
   GrantEvidencePatchDisabledError,
   GrantLocalEvidenceDisabledError,
   GrantWorkspaceDisabledError,
@@ -29,6 +30,7 @@ import {
   GrantFigureAuthorizationConflictError,
   GrantFigureAuthorizationDeniedError,
 } from "@/lib/grants/application/figure-model-authorization-service";
+import { GrantAiEditSessionError } from "@/lib/grants/application/grant-ai-edit-session-service";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -39,6 +41,13 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantAiPatchDisabledError) {
     return Response.json({ error: "AI 局部修改功能尚未开放。", code: "grant_ai_patch_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantAiEditSessionDisabledError) {
+    return Response.json({ error: "AI 多轮修改功能尚未开放。", code: "grant_ai_edit_session_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantAiEditSessionError) {
+    const status = error.code.endsWith("_not_found") ? 404 : error.code.includes("stale") || error.code.includes("not_active") || error.code.includes("not_safe") || error.code.includes("needs_repair") ? 409 : 400;
+    return Response.json({ error: error.message, code: error.code }, { status });
   }
   if (error instanceof GrantLocalEvidenceDisabledError) {
     return Response.json({ error: "项目资料功能尚未开放。", code: "grant_local_evidence_disabled" }, { status: 404 });

@@ -10,6 +10,7 @@ import type { GrantFigureDisplayAsset } from "@/lib/grants/application/figure-di
 import { GrantDiagnosticsPanel } from "./grant-diagnostics-panel";
 import { GrantDocumentCanvas } from "./grant-document-canvas";
 import { GrantAiPatchPanel } from "./grant-ai-patch-panel";
+import { GrantAiEditSessionPanel } from "./grant-ai-edit-session-panel";
 import { GrantDocumentOutline } from "./grant-document-outline";
 import { GrantResizableWorkspace } from "./grant-resizable-workspace";
 import {
@@ -59,7 +60,7 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -195,6 +196,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
     ? estimateGrantLength(snapshot, payload.aggregate.templateSnapshot.rules)
     : null, [payload, snapshot]);
   const selectedSection = snapshot?.sections.find((section) => section.sectionId === selectedSectionId);
+  const selectedAiNode = snapshot?.nodes.find((node) => node.nodeId === selectedAiNodeId);
   const findingsByNode = useMemo(() => indexGrantFindingsByNode(diagnostics.findings), [diagnostics.findings]);
   const findingsBySection = useMemo(() => {
     const index = new Map<string, number>();
@@ -433,17 +435,23 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, evidenceEnab
                 <button type="button" className="text-xs text-slate-500 hover:text-slate-900" onClick={() => setSelectedAiNodeId(null)}>关闭</button>
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-500">仅修改当前选中的一个内容块。AI 只会生成提案，确认后才会保存为新版本。</p>
-              <GrantAiPatchPanel
+              {aiEditSessionEnabled && selectedAiNode && (selectedAiNode.nodeType === "paragraph" || selectedAiNode.nodeType === "heading") ? <GrantAiEditSessionPanel
                 documentId={documentId}
                 currentRevisionId={payload.aggregate.currentRevision.revisionId}
                 targetNodeId={selectedAiNodeId}
+                targetText={selectedAiNode.content.text}
                 selection={selectedAiText}
-                enabled={aiPatchEnabled}
-                evidencePatchEnabled={evidencePatchEnabled && evidenceEnabled}
+                evidenceEnabled={evidenceEnabled && evidencePatchEnabled}
+                figures={payload.figureAssets}
                 canGenerate={saveStatus === "saved"}
-                mode="free"
                 onAccepted={loadLatest}
-              />
+                onClose={() => setSelectedAiNodeId(null)}
+              /> : <GrantAiPatchPanel
+                documentId={documentId} currentRevisionId={payload.aggregate.currentRevision.revisionId}
+                targetNodeId={selectedAiNodeId} selection={selectedAiText} enabled={aiPatchEnabled}
+                evidencePatchEnabled={evidencePatchEnabled && evidenceEnabled} canGenerate={saveStatus === "saved"}
+                mode="free" onAccepted={loadLatest}
+              />}
             </>
           ) : null}
           onSectionTitleChange={(sectionId, title) => {

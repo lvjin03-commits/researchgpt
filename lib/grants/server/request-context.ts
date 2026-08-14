@@ -8,11 +8,13 @@ import { createGrantPatchService } from "./composition.ts";
 import { createGrantEvidenceService } from "./composition.ts";
 import { createGrantExportService } from "./composition.ts";
 import { createGrantFigureModelAuthorizationService } from "./composition.ts";
-import { isGrantAiPatchEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "./config.ts";
+import { createGrantAiEditSessionService } from "./composition.ts";
+import { isGrantAiEditSessionEnabled, isGrantAiPatchEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "./config.ts";
 
 export class GrantWorkspaceDisabledError extends Error {}
 export class GrantAuthenticationRequiredError extends Error {}
 export class GrantAiPatchDisabledError extends Error {}
+export class GrantAiEditSessionDisabledError extends Error {}
 export class GrantLocalEvidenceDisabledError extends Error {}
 export class GrantEvidencePatchDisabledError extends Error {}
 export class GrantRecheckDisabledError extends Error {}
@@ -37,6 +39,12 @@ export async function requireGrantAiPatchRequestContext() {
   if (!isGrantAiPatchEnabled()) throw new GrantAiPatchDisabledError();
   const context = await requireGrantRequestContext();
   return { ...context, patches: createGrantPatchService(context.user.id) };
+}
+
+export async function requireGrantAiEditSessionRequestContext() {
+  if (!isGrantAiEditSessionEnabled()) throw new GrantAiEditSessionDisabledError();
+  const context = await requireGrantRequestContext();
+  return { ...context, editSessions: createGrantAiEditSessionService(context.user.id) };
 }
 
 export async function requireGrantEvidenceRequestContext() {

@@ -100,6 +100,7 @@ const resizableWorkspaceSource = await readFile(new URL("../components/grants/gr
 const globalStylesSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const evidenceSource = await readFile(new URL("../components/grants/grant-evidence-panel.tsx", import.meta.url), "utf8");
 const aiPatchSource = await readFile(new URL("../components/grants/grant-ai-patch-panel.tsx", import.meta.url), "utf8");
+const aiEditSessionSource = await readFile(new URL("../components/grants/grant-ai-edit-session-panel.tsx", import.meta.url), "utf8");
 const diagnosticsRouteSource = await readFile(new URL("../app/api/grants/documents/[id]/diagnostics/route.ts", import.meta.url), "utf8");
 assert.match(panelSource, /建议默认收起/);
 assert.match(panelSource, /isExpanded\s*&&/);
@@ -126,6 +127,9 @@ assert.match(panelSource, /whitespace-nowrap rounded-lg bg-\[#155eef\].*text-sm/
 assert.match(outlineSource, /cursor-pointer text-sm font-semibold text-slate-700/);
 assert.doesNotMatch(evidenceSource, /text-\[(10|11)px\]/);
 assert.doesNotMatch(aiPatchSource, /text-\[(10|11)px\]/);
+for (const token of ["AI 多轮修改", "AI 修改对话", "应用到正文", "添加资料或图片", "figure-authorization", "sessionStorage", "/edit-sessions/"]) {
+  assert.ok(aiEditSessionSource.includes(token), `Edit Session panel missing ${token}`);
+}
 assert.match(canvasSource, /min-h-\[1123px\]/);
 assert.match(canvasSource, /连续编辑视图/);
 assert.match(canvasSource, /projectGrantSectionSubtree/);
