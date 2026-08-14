@@ -32,6 +32,9 @@ import { GrantAiEditSessionService } from "../application/grant-ai-edit-session-
 import { GrantModelExecutor } from "../application/grant-model-executor.ts";
 import { SupabaseGrantAiEditSessionRepository } from "../infrastructure/supabase/supabase-grant-ai-edit-session-repository.ts";
 import { SupabaseGrantModelCallRepository } from "../infrastructure/supabase/supabase-grant-model-call-repository.ts";
+import { GrantWebSourceService } from "../application/grant-web-source-service.ts";
+import { SupabaseGrantWebSourceRepository } from "../infrastructure/supabase/supabase-grant-web-source-repository.ts";
+import { OpenAlexGrantWebSearchProvider, PublicWebSnapshotFetcher } from "../infrastructure/web/openalex-grant-web-source.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -149,6 +152,17 @@ export function createGrantEvidenceService(ownerId: string): GrantEvidenceServic
     new SupabaseGrantEvidenceStorage(client),
     new SharedGrantEvidenceParser(),
   );
+}
+
+export function createGrantWebSourceService(ownerId: string): GrantWebSourceService {
+  const client = createGrantSupabaseClient();
+  return new GrantWebSourceService({
+    revisionService: new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
+    evidenceService: new GrantEvidenceService(new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }), new SupabaseGrantEvidenceRepository(client, ownerId), new SupabaseGrantEvidenceStorage(client), new SharedGrantEvidenceParser()),
+    repository: new SupabaseGrantWebSourceRepository(client, ownerId),
+    searchProvider: new OpenAlexGrantWebSearchProvider(),
+    fetcher: new PublicWebSnapshotFetcher(),
+  });
 }
 
 export function createGrantExportService(ownerId: string): GrantExportService {

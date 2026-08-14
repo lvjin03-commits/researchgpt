@@ -31,6 +31,7 @@ import {
   GrantFigureAuthorizationDeniedError,
 } from "@/lib/grants/application/figure-model-authorization-service";
 import { GrantAiEditSessionError } from "@/lib/grants/application/grant-ai-edit-session-service";
+import { GrantWebSourceError } from "@/lib/grants/application/grant-web-source-service";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -47,6 +48,10 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantAiEditSessionError) {
     const status = error.code.endsWith("_not_found") ? 404 : error.code.includes("stale") || error.code.includes("not_active") || error.code.includes("not_safe") || error.code.includes("needs_repair") ? 409 : 400;
+    return Response.json({ error: error.message, code: error.code }, { status });
+  }
+  if (error instanceof GrantWebSourceError) {
+    const status = error.code.endsWith("_not_found") ? 404 : error.code.includes("expired") || error.code.includes("closed") ? 409 : 400;
     return Response.json({ error: error.message, code: error.code }, { status });
   }
   if (error instanceof GrantLocalEvidenceDisabledError) {

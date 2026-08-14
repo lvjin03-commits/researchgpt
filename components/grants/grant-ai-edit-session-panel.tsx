@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GrantAiEditCandidate, GrantAiEditSession, GrantAiEditTurn } from "@/lib/grants/edit-session/contracts";
 import type { GrantEvidenceResource } from "@/lib/grants/evidence/contracts";
 import type { GrantFigureDisplayAsset } from "@/lib/grants/application/figure-display-service";
@@ -19,6 +19,7 @@ async function textHash(text: string) {
 }
 
 export function GrantAiEditSessionPanel(props: Props) {
+  const localFileInput = useRef<HTMLInputElement>(null);
   const [session, setSession] = useState<GrantAiEditSession | null>(null);
   const [turns, setTurns] = useState<GrantAiEditTurn[]>([]);
   const [candidates, setCandidates] = useState<GrantAiEditCandidate[]>([]);
@@ -28,6 +29,11 @@ export function GrantAiEditSessionPanel(props: Props) {
   const [evidence, setEvidence] = useState<GrantEvidenceResource[]>([]);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [selectedFigures, setSelectedFigures] = useState<string[]>([]);
+  const [sourceMode, setSourceMode] = useState<"none" | "web">("none");
+  const [webQuery, setWebQuery] = useState("");
+  const [webSessionId, setWebSessionId] = useState("");
+  const [webResults, setWebResults] = useState<Array<{ resultId: string; title: string; url: string; snippet: string; provider: string }>>([]);
+  const [selectedWebResults, setSelectedWebResults] = useState<string[]>([]);
   const storageKey = `grant-ai-edit-session:${props.documentId}:${props.targetNodeId}:${props.currentRevisionId}`;
 
   useEffect(() => {
@@ -59,6 +65,54 @@ export function GrantAiEditSessionPanel(props: Props) {
     const candidate = candidates.find((item) => item.producedByTurnId === turn.turnId);
     return [{ kind: "user" as const, id: turn.turnId, text: turn.instruction }, ...(candidate ? [{ kind: "assistant" as const, id: candidate.candidateId, candidate }] : [])];
   }), [turns, candidates]);
+
+  async function refreshEvidence(selectIds: string[] = []) {
+    const response = await fetch(`/api/grants/documents/${props.documentId}/evidence`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "无法读取项目资料。");
+    setEvidence(data as GrantEvidenceResource[]);
+    if (selectIds.length > 0) setSelectedSources((ids) => [...new Set([...ids, ...selectIds])]);
+  }
+
+  async function uploadLocalFile(file: File) {
+    setBusy(true); setError("");
+    try {
+      const form = new FormData();
+      form.set("file", file); form.set("provenanceType", "project_material"); form.set("sensitivity", "project_confidential");
+      const response = await fetch(`/api/grants/documents/${props.documentId}/evidence`, { method: "POST", body: form });
+      const resource = await response.json() as GrantEvidenceResource & { error?: string };
+      if (!response.ok) throw new Error(resource.error ?? "本地文件上传失败。");
+      const authorizationResponse = await fetch(`/api/grants/documents/${props.documentId}/evidence/${resource.source.sourceId}/authorization`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expectedRevision: resource.authorization.revision, permissions: { read: true, index: true, sendRelevantExcerptToModel: true, useForReasoning: true, useForCitation: false } }),
+      });
+      const authorizationData = await authorizationResponse.json();
+      if (!authorizationResponse.ok) throw new Error(authorizationData.error ?? "文件已上传，但授权 AI 使用失败。");
+      await refreshEvidence([resource.source.sourceId]);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "本地文件上传失败。"); }
+    finally { setBusy(false); if (localFileInput.current) localFileInput.current.value = ""; }
+  }
+
+  async function searchWeb() {
+    if (webQuery.trim().length < 2 || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/grants/documents/${props.documentId}/web-sources/search`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: webQuery.trim() }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "联网搜索失败。");
+      setWebSessionId(data.searchSessionId); setWebResults(data.results ?? []); setSelectedWebResults([]);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "联网搜索失败。"); }
+    finally { setBusy(false); }
+  }
+
+  async function confirmWebSources() {
+    if (!webSessionId || selectedWebResults.length === 0 || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/grants/documents/${props.documentId}/web-sources/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ searchSessionId: webSessionId, resultIds: selectedWebResults }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "无法绑定所选联网来源。");
+      await refreshEvidence(data.evidenceSourceIds ?? []); setWebResults([]); setSelectedWebResults([]); setSourceMode("none");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "无法绑定所选联网来源。"); }
+    finally { setBusy(false); }
+  }
 
   async function ensureSession() {
     if (session) return session;
@@ -133,6 +187,16 @@ export function GrantAiEditSessionPanel(props: Props) {
         : <div key={message.id} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white p-3"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{message.candidate.text}</p><div className="mt-3 flex items-center justify-between gap-2"><span className={`text-xs ${message.candidate.safetyState === "passed" ? "text-emerald-700" : message.candidate.safetyState === "needs_confirmation" ? "text-amber-700" : "text-red-700"}`}>{message.candidate.safetyState === "passed" ? "安全检查通过" : message.candidate.safetyState === "needs_confirmation" ? "有新增事实需要依据" : "此版本不可应用"}</span>{message.candidate.candidateId === session?.activeCandidateId && <button type="button" disabled={message.candidate.safetyState !== "passed" || busy} onClick={() => void apply(message.candidate)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">应用到正文</button>}</div></div>)}
     </div>
     <div className="border-t border-slate-200 pt-3">
+      <input ref={localFileInput} type="file" accept=".pdf,.docx,.txt,.md" className="hidden" onChange={(event) => event.target.files?.[0] && void uploadLocalFile(event.target.files[0])} />
+      <div className="mb-2 flex flex-wrap gap-2">
+        <button type="button" disabled={!props.evidenceEnabled || busy} onClick={() => localFileInput.current?.click()} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">上传/绑定本地文件</button>
+        <button type="button" disabled={!props.evidenceEnabled || busy} onClick={() => setSourceMode((mode) => mode === "web" ? "none" : "web")} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${sourceMode === "web" ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 bg-white text-slate-700"} disabled:opacity-40`}>联网搜索</button>
+      </div>
+      {sourceMode === "web" && <div className="mb-2 rounded-xl border border-blue-200 bg-blue-50 p-2">
+        <div className="flex gap-2"><input aria-label="联网搜索关键词" value={webQuery} onChange={(event) => setWebQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchWeb(); } }} placeholder="搜索论文、方法或研究结论" className="min-w-0 flex-1 rounded-lg border border-blue-200 bg-white px-2 py-1.5 text-xs outline-none"/><button type="button" disabled={busy || webQuery.trim().length < 2} onClick={() => void searchWeb()} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">搜索</button></div>
+        {webResults.length > 0 && <div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{webResults.map((result) => <label key={result.resultId} className="flex gap-2 rounded-lg bg-white p-2 text-xs"><input type="checkbox" checked={selectedWebResults.includes(result.resultId)} onChange={() => setSelectedWebResults((ids) => ids.includes(result.resultId) ? ids.filter((id) => id !== result.resultId) : [...ids, result.resultId])}/><span className="min-w-0"><span className="block font-semibold text-slate-800">{result.title}</span><span className="mt-1 block line-clamp-2 text-slate-500">{result.snippet}</span><span className="mt-1 block text-blue-600">{result.provider}</span></span></label>)}<button type="button" disabled={busy || selectedWebResults.length === 0} onClick={() => void confirmWebSources()} className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">确认并绑定所选来源</button></div>}
+        <p className="mt-2 text-[11px] leading-4 text-slate-500">搜索结果不会直接进入 AI；只有你确认的来源才会保存为固定证据快照。</p>
+      </div>}
       {(availableEvidence.length > 0 || readyFigures.length > 0) && <details className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs"><summary className="cursor-pointer font-medium text-slate-700">添加资料或图片</summary><div className="mt-2 space-y-2">{availableEvidence.map((item) => <label key={item.source.sourceId} className="flex gap-2"><input type="checkbox" checked={selectedSources.includes(item.source.sourceId)} onChange={() => setSelectedSources((ids) => ids.includes(item.source.sourceId) ? ids.filter((id) => id !== item.source.sourceId) : [...ids, item.source.sourceId])}/><span>{item.source.title}</span></label>)}{readyFigures.map((item, index) => <label key={item.assetId} className="flex gap-2"><input type="checkbox" checked={selectedFigures.includes(item.assetId)} onChange={() => setSelectedFigures((ids) => ids.includes(item.assetId) ? ids.filter((id) => id !== item.assetId) : [...ids, item.assetId])}/><span>正文图片 {index + 1}（勾选即授权用于本次 AI 修改）</span></label>)}</div></details>}
       <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 focus-within:border-blue-500"><textarea aria-label="向 AI 发送修改要求" value={instruction} onChange={(event) => setInstruction(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder={session ? "继续修改，例如：保留结构，但让论证更紧凑" : "例如：增强逻辑衔接，不要增加新数据"} className="min-h-16 flex-1 resize-none border-0 px-2 py-1 text-sm outline-none"/><button type="button" disabled={!instruction.trim() || busy || !props.canGenerate} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{busy ? "处理中…" : "发送"}</button></div>
       {!props.canGenerate && <p className="mt-2 text-xs text-amber-700">请先保存当前正文，再开始 AI 修改。</p>}

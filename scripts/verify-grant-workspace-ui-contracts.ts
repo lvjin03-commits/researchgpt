@@ -172,6 +172,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const freeAiEditorSource = fs.readFileSync(path.join(root, "components/grants/grant-structured-editor.tsx"), "utf8");
 const freeAiCanvasSource = fs.readFileSync(path.join(root, "components/grants/grant-document-canvas.tsx"), "utf8");
 const freeAiPatchPanelSource = fs.readFileSync(path.join(root, "components/grants/grant-ai-patch-panel.tsx"), "utf8");
+const editSessionPanelSource = fs.readFileSync(path.join(root, "components/grants/grant-ai-edit-session-panel.tsx"), "utf8");
 assert.match(panelSource, /xl:min-h-0 xl:flex-1 xl:max-h-none xl:overscroll-contain/);
 assert.match(resizableWorkspaceSource, /xl:h-full xl:min-h-0 xl:flex-1 xl:overflow-hidden/);
 assert.match(globalStylesSource, /grid-template-rows: minmax\(0, 1fr\)/);
@@ -192,3 +193,6 @@ assert.match(freeAiPatchPanelSource, /findingId\?: string/);
 assert.match(freeAiPatchPanelSource, /findingId: props\.findingId/);
 assert.match(freeAiPatchPanelSource, /在后面补充一段/);
 assert.match(freeAiPatchPanelSource, /editMode/);
+for (const token of ["上传/绑定本地文件", "联网搜索", "确认并绑定所选来源", "/web-sources/search", "/web-sources/confirm"]) {
+  assert.ok(editSessionPanelSource.includes(token), `Edit Session source control missing ${token}`);
+}

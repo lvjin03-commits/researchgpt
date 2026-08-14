@@ -9,6 +9,7 @@ import { createGrantEvidenceService } from "./composition.ts";
 import { createGrantExportService } from "./composition.ts";
 import { createGrantFigureModelAuthorizationService } from "./composition.ts";
 import { createGrantAiEditSessionService } from "./composition.ts";
+import { createGrantWebSourceService } from "./composition.ts";
 import { isGrantAiEditSessionEnabled, isGrantAiPatchEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "./config.ts";
 
 export class GrantWorkspaceDisabledError extends Error {}
@@ -51,6 +52,12 @@ export async function requireGrantEvidenceRequestContext() {
   if (!isGrantLocalEvidenceEnabled()) throw new GrantLocalEvidenceDisabledError();
   const context = await requireGrantRequestContext();
   return { ...context, evidence: createGrantEvidenceService(context.user.id) };
+}
+
+export async function requireGrantWebSourceRequestContext() {
+  if (!isGrantAiEditSessionEnabled() || !isGrantLocalEvidenceEnabled()) throw new GrantAiEditSessionDisabledError();
+  const context = await requireGrantRequestContext();
+  return { ...context, webSources: createGrantWebSourceService(context.user.id) };
 }
 
 export function requireGrantEvidencePatchEnabled(): void {

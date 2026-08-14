@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { GrantWebSourceService, GrantWebSourceError } from "../lib/grants/application/grant-web-source-service.ts";
 import { InMemoryGrantWebSourceRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-web-source-repository.ts";
@@ -33,15 +34,19 @@ const service = new GrantWebSourceService({
 const search = await service.search({ documentId, query: "electrolyte interface", actorId });
 assert.equal(search.results.length, 1);
 assert.equal(fetchCount, 0, "search results must not be fetched or sent as evidence before user selection");
-const confirmed = await service.confirmSources({ searchSessionId: search.searchSessionId, resultIds: [search.results[0]!.resultId], ownerId: actorId, actorId });
+const confirmed = await service.confirmSources({ documentId, searchSessionId: search.searchSessionId, resultIds: [search.results[0]!.resultId], ownerId: actorId, actorId });
 assert.equal(fetchCount, 1);
 assert.equal(uploadCount, 1);
 assert.equal(permissionUpdates.length, 1);
 assert.equal(confirmed.snapshots.length, 1);
 assert.equal(confirmed.evidenceSourceIds.length, 1);
 await assert.rejects(
-  service.confirmSources({ searchSessionId: search.searchSessionId, resultIds: [search.results[0]!.resultId], ownerId: actorId, actorId }),
+  service.confirmSources({ documentId, searchSessionId: search.searchSessionId, resultIds: [search.results[0]!.resultId], ownerId: actorId, actorId }),
   (error: unknown) => error instanceof GrantWebSourceError && error.code === "web_search_closed",
 );
 console.log("Grant web-source confirmation contracts verified.");
 
+const providerSource = readFileSync(new URL("../lib/grants/infrastructure/web/openalex-grant-web-source.ts", import.meta.url), "utf8");
+for (const token of ["api.openalex.org", "lookup", "redirect: \"manual\"", "Private network sources are not allowed", "AbortSignal.timeout"]) {
+  assert.ok(providerSource.includes(token), `Production web provider missing ${token}`);
+}

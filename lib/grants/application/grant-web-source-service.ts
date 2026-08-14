@@ -61,7 +61,12 @@ export class GrantWebSourceService {
     await this.dependencies.revisionService.getDocument(input.documentId);
     const query = input.query.trim();
     if (query.length < 2 || query.length > 500) throw new GrantWebSourceError("web_query_invalid", "Search query length is invalid.");
-    const raw = await this.dependencies.searchProvider.search({ query, maximumResults: 10 });
+    let raw: Awaited<ReturnType<GrantWebSearchProvider["search"]>>;
+    try {
+      raw = await this.dependencies.searchProvider.search({ query, maximumResults: 10 });
+    } catch {
+      throw new GrantWebSourceError("web_search_provider_unavailable", "联网学术搜索暂时不可用，请稍后重试。");
+    }
     const seen = new Set<string>();
     const results = raw.flatMap((result) => {
       try {
@@ -81,9 +86,10 @@ export class GrantWebSourceService {
     return session;
   }
 
-  async confirmSources(input: { searchSessionId: string; resultIds: string[]; ownerId: string; actorId: string }) {
+  async confirmSources(input: { documentId: string; searchSessionId: string; resultIds: string[]; ownerId: string; actorId: string }) {
     const session = await this.dependencies.repository.getSearchSession(input.searchSessionId);
     if (!session) throw new GrantWebSourceError("web_search_not_found", "The search session does not exist.");
+    if (session.documentId !== input.documentId) throw new GrantWebSourceError("web_search_document_mismatch", "The search session does not belong to this document.");
     if (session.status !== "awaiting_selection" && session.status !== "partially_confirmed") throw new GrantWebSourceError("web_search_closed", "The search session is closed.");
     if (Date.parse(session.expiresAt) <= Date.parse(this.now())) throw new GrantWebSourceError("web_search_expired", "The search result selection has expired.");
     const selectedIds = [...new Set(input.resultIds)];
