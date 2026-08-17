@@ -430,11 +430,6 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
           selectedAiNodeId={selectedAiNodeId}
           aiEditPanel={selectedAiNodeId ? (
             <>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-900">自由 AI 修改</p>
-                <button type="button" className="text-xs text-slate-500 hover:text-slate-900" onClick={() => setSelectedAiNodeId(null)}>关闭</button>
-              </div>
-              <p className="mt-1 text-xs leading-5 text-slate-500">仅修改当前选中的一个内容块。AI 只会生成提案，确认后才会保存为新版本。</p>
               {aiEditSessionEnabled && selectedAiNode && (selectedAiNode.nodeType === "paragraph" || selectedAiNode.nodeType === "heading") ? <GrantAiEditSessionPanel
                 documentId={documentId}
                 currentRevisionId={payload.aggregate.currentRevision.revisionId}

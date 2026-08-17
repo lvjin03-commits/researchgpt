@@ -127,7 +127,7 @@ assert.match(panelSource, /whitespace-nowrap rounded-lg bg-\[#155eef\].*text-sm/
 assert.match(outlineSource, /cursor-pointer text-sm font-semibold text-slate-700/);
 assert.doesNotMatch(evidenceSource, /text-\[(10|11)px\]/);
 assert.doesNotMatch(aiPatchSource, /text-\[(10|11)px\]/);
-for (const token of ["AI 多轮修改", "AI 修改对话", "应用到正文", "添加资料或图片", "figure-authorization", "sessionStorage", "/edit-sessions/"]) {
+for (const token of ["AI 多轮修改", "关闭 AI 修改", "应用到正文", "添加资料或图片", "figure-authorization", "sessionStorage", "/edit-sessions/"]) {
   assert.ok(aiEditSessionSource.includes(token), `Edit Session panel missing ${token}`);
 }
 assert.match(canvasSource, /min-h-\[1123px\]/);
@@ -183,7 +183,7 @@ assert.match(freeAiCanvasSource, /onMouseDown=\{\(event\) => event\.preventDefau
 assert.match(freeAiCanvasSource, /aiEditPanel: ReactNode/);
 assert.match(freeAiCanvasSource, /xl:left-\[calc\(100%\+1rem\)\]/);
 assert.match(freeAiCanvasSource, />AI 修改<\/button>/);
-assert.match(freeAiEditorSource, /自由 AI 修改/);
+assert.doesNotMatch(freeAiEditorSource, /自由 AI 修改/);
 assert.match(freeAiEditorSource, /mode="free"/);
 assert.match(freeAiEditorSource, /aiEditPanel=\{selectedAiNodeId/);
 assert.match(freeAiEditorSource, /right=\{<GrantDiagnosticsPanel/);

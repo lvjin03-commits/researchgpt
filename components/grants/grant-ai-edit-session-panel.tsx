@@ -175,11 +175,8 @@ export function GrantAiEditSessionPanel(props: Props) {
     finally { setBusy(false); }
   }
 
-  return <section aria-label="AI 多轮修改" className="flex max-h-[72vh] min-h-[520px] flex-col overflow-hidden">
-    <header className="flex items-start justify-between border-b border-slate-200 pb-3">
-      <div><h3 className="text-sm font-semibold text-slate-900">AI 修改对话</h3><p className="mt-1 text-xs text-slate-500">基于上一版继续调整，满意后再应用到正文。</p></div>
-      <button type="button" className="text-xs text-slate-500" onClick={props.onClose}>关闭</button>
-    </header>
+  return <section aria-label="AI 多轮修改" className="relative flex max-h-[72vh] min-h-[520px] flex-col overflow-hidden">
+    <button type="button" aria-label="关闭 AI 修改" title="关闭" className="absolute right-0 top-0 z-10 flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700" onClick={props.onClose}>×</button>
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-3">
       {conversation.length === 0 && <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">告诉 AI 你希望如何修改。它不会直接覆盖正文，你可以继续追问和调整。</div>}
       {conversation.map((message) => message.kind === "user"
