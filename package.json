@@ -67,6 +67,7 @@
     "test:grant-evidence": "node --experimental-strip-types scripts/verify-grant-evidence-contracts.ts",
     "test:grant-evidence-patches": "node --experimental-strip-types scripts/verify-grant-evidence-patch-contracts.ts",
     "test:grant-pr8": "node --experimental-strip-types scripts/verify-grant-pr8-contracts.ts",
+    "test:grant:ci": "npm run check:grant-architecture && npm run test:grant-foundation && npm run test:grant-editor && npm run test:grant-diagnostics && npm run test:grant-semantic-review-v6-input && npm run test:grant-workspace-ui && npm run test:grant-docx-import && npm run test:grant-figure-assets && npm run test:grant-figure-workspace && npm run test:grant-ai-patches && npm run test:grant-model-execution && npm run test:grant-ai-edit-sessions && npm run test:grant-web-sources && npm run test:grant-ai-edit-integration && npm run test:grant-evidence && npm run test:grant-evidence-patches && npm run test:grant-pr8",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "test:chat-export-format-policy": "node --experimental-strip-types scripts/verify-chat-export-format-policy.ts",
     "test:word-visuals": "node scripts/verify-word-visuals.cjs",

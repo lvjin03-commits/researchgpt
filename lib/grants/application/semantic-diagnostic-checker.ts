@@ -29,6 +29,48 @@ import {
 
 export const GRANT_SEMANTIC_DIAGNOSTIC_CHECKER_ID = "grant-semantic-argument-diagnostic";
 
+type GrantSemanticDiagnosticVersion = "v2" | "v3" | "hierarchical" | "v6";
+
+const GRANT_SEMANTIC_RUNTIME_METADATA: Record<
+  GrantSemanticDiagnosticVersion,
+  {
+    checkerVersion: string;
+    contractVersion: string;
+    promptVersion: string;
+    policyVersion: string;
+    schemaVersion: string;
+  }
+> = {
+  v2: {
+    checkerVersion: "2.0.0",
+    contractVersion: GRANT_DIAGNOSTIC_SCHEMA_VERSION,
+    promptVersion: GRANT_DIAGNOSTIC_PROMPT_VERSION,
+    policyVersion: GRANT_DIAGNOSTIC_POLICY_VERSION,
+    schemaVersion: GRANT_DIAGNOSTIC_SCHEMA_VERSION,
+  },
+  v3: {
+    checkerVersion: "4.0.0",
+    contractVersion: GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION,
+    promptVersion: GRANT_DIAGNOSTIC_V3_PROMPT_VERSION,
+    policyVersion: GRANT_DIAGNOSTIC_V3_POLICY_VERSION,
+    schemaVersion: GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION,
+  },
+  hierarchical: {
+    checkerVersion: GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.checkerVersion,
+    contractVersion: GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.providerContractVersion,
+    promptVersion: GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.promptVersion,
+    policyVersion: GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.policyVersion,
+    schemaVersion: GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.durableFindingSchemaVersion,
+  },
+  v6: {
+    checkerVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.checkerVersion,
+    contractVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerContractVersion,
+    promptVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.promptVersion,
+    policyVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.policyVersion,
+    schemaVersion: GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerSchemaVersion,
+  },
+};
+
 export class GrantHierarchicalSemanticCheckerError extends Error {
   readonly modelError: GrantHierarchicalDiagnosticModelError;
   readonly checkpoint?: GrantArgumentMapCheckpointV1;
@@ -63,45 +105,26 @@ export class GrantSemanticDiagnosticChecker implements GrantChecker {
   private readonly gateway: GrantModelDataGateway;
   private readonly repository?: GrantDiagnosticRepository;
 
-  private readonly version: "v2" | "v3" | "hierarchical" | "v6";
+  private readonly version: GrantSemanticDiagnosticVersion;
 
   constructor(
     gateway: GrantModelDataGateway,
     modelId: string,
-    version: "v2" | "v3" | "hierarchical" | "v6" = "v2",
+    version: GrantSemanticDiagnosticVersion = "v2",
     repository?: GrantDiagnosticRepository,
   ) {
     this.gateway = gateway;
     this.version = version;
     this.repository = repository;
-    this.checkerVersion = version === "v6"
-      ? GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.checkerVersion
-      : version === "hierarchical"
-      ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.checkerVersion
-      : version === "v3" ? "4.0.0" : "2.0.0";
-    this.contractVersion = version === "v6"
-      ? GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerContractVersion
-      : version === "hierarchical"
-      ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.providerContractVersion
-      : version === "v3" ? GRANT_DIAGNOSTIC_V3_CONTRACT_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION;
+    const metadata = GRANT_SEMANTIC_RUNTIME_METADATA[version];
+    this.checkerVersion = metadata.checkerVersion;
+    this.contractVersion = metadata.contractVersion;
     this.configurationFingerprint = sha256Canonical({
       provider: "openai",
       modelId,
-      promptVersion: version === "v6"
-        ? GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.promptVersion
-        : version === "hierarchical"
-        ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.promptVersion
-        : version === "v3" ? GRANT_DIAGNOSTIC_V3_PROMPT_VERSION : GRANT_DIAGNOSTIC_PROMPT_VERSION,
-      policyVersion: version === "v6"
-        ? GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.policyVersion
-        : version === "hierarchical"
-        ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.policyVersion
-        : version === "v3" ? GRANT_DIAGNOSTIC_V3_POLICY_VERSION : GRANT_DIAGNOSTIC_POLICY_VERSION,
-      schemaVersion: version === "v6"
-        ? GRANT_SEMANTIC_REVIEW_V6_TARGET_VERSIONS.providerSchemaVersion
-        : version === "hierarchical"
-        ? GRANT_HIERARCHICAL_DIAGNOSTIC_TARGET_VERSIONS.durableFindingSchemaVersion
-        : version === "v3" ? GRANT_DIAGNOSTIC_V3_SCHEMA_VERSION : GRANT_DIAGNOSTIC_SCHEMA_VERSION,
+      promptVersion: metadata.promptVersion,
+      policyVersion: metadata.policyVersion,
+      schemaVersion: metadata.schemaVersion,
     });
   }
 

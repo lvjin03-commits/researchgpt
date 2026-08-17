@@ -128,30 +128,6 @@ export class GrantModelDataGateway {
     return { generated, prepared };
   }
 
-  async diagnoseHierarchical(input: {
-    documentId: string;
-    taskId: string;
-    snapshot: CanonicalGrantSnapshot;
-    inputMode: "full_document" | "section_bundle" | "focused_excerpt";
-    inputSectionIds: string[];
-    inputNodeIds: string[];
-    fundingCategory: string;
-    priorFindings: GrantSemanticDiagnosticV3PriorFinding[];
-    sourceRevisionId: string;
-    argumentMapCheckpoint?: GrantArgumentMapV1;
-  }) {
-    if (!this.model.diagnoseHierarchical) {
-      throw new GrantEvidenceProviderPolicyError("Grant hierarchical semantic diagnosis is not configured.");
-    }
-    const prepared = await this.prepareDiagnosticHierarchicalInput(input);
-    const generated = await this.model.diagnoseHierarchical(
-      prepared,
-      input.argumentMapCheckpoint,
-      this.createDiagnosticImageAdmission(input.documentId, prepared),
-    );
-    return { generated, prepared };
-  }
-
   async prepareDiagnosticHierarchicalInput(input: {
     documentId: string;
     taskId: string;

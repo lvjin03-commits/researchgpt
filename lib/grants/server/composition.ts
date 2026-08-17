@@ -156,9 +156,12 @@ export function createGrantEvidenceService(ownerId: string): GrantEvidenceServic
 
 export function createGrantWebSourceService(ownerId: string): GrantWebSourceService {
   const client = createGrantSupabaseClient();
+  const revisionService = new GrantRevisionService({
+    repository: new SupabaseGrantRevisionRepository(client, ownerId),
+  });
   return new GrantWebSourceService({
-    revisionService: new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
-    evidenceService: new GrantEvidenceService(new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }), new SupabaseGrantEvidenceRepository(client, ownerId), new SupabaseGrantEvidenceStorage(client), new SharedGrantEvidenceParser()),
+    revisionService,
+    evidenceService: new GrantEvidenceService(revisionService, new SupabaseGrantEvidenceRepository(client, ownerId), new SupabaseGrantEvidenceStorage(client), new SharedGrantEvidenceParser()),
     repository: new SupabaseGrantWebSourceRepository(client, ownerId),
     searchProvider: new OpenAlexGrantWebSearchProvider(),
     fetcher: new PublicWebSnapshotFetcher(),

@@ -5,7 +5,7 @@ Git and closed issues.
 
 | ID | Problem | Temporary containment | Permanent resolution | Owner | Expiry/removal condition | Status |
 |---|---|---|---|---|---|---|
-| None | No grant implementation debt is accepted at baseline | N/A | N/A | N/A | N/A | Closed |
+| GRANT-DEBT-001 | Semantic diagnostics V2, V3, hierarchical, and V6 remain selectable production implementations. Their parallel execution paths increase maintenance cost and concentrate version-specific branching in the checker, model gateway, and diagnostic service. | Keep one server-owned runtime selector, explicit rollout and schema gates, and no runtime failure fallback between generations. All generations continue through the same route and diagnostic service authority. | Complete the measured V6 canary and acceptance review, retain only the historical readers required for stored results, then remove the V2, V3, and hierarchical execution paths and their rollout flags. | Grant Platform maintainers | Review by 2026-09-30; remove after V6 meets the documented quality, cost, and reliability thresholds and the agreed rollback window closes. | Active |
 
 ## Rules
 
