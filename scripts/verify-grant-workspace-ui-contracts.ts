@@ -11,12 +11,43 @@ import { GrantFeedbackService } from "../lib/grants/application/feedback-service
 import type { GrantFinding } from "../lib/grants/diagnostics/contracts.ts";
 import { normalizeGrantFindingV2 } from "../lib/grants/diagnostics/normalized-finding.ts";
 import { InMemoryGrantFeedbackRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-feedback-repository.ts";
+import { GrantAssistantDocumentSelectionContextSchema } from "../lib/grants/assistant/contracts.ts";
+import {
+  reduceGrantAssistantComposerScope,
+  resolveGrantAssistantOperation,
+} from "../lib/grants/assistant/composer-scope.ts";
 
 const documentId = "81000000-0000-4000-8000-000000000001";
 const findingId = "81000000-0000-4000-8000-000000000002";
 const nodeId = "81000000-0000-4000-8000-000000000003";
 const revisionId = "81000000-0000-4000-8000-000000000004";
 const actorId = "81000000-0000-4000-8000-000000000005";
+
+const assistantContextFixture = {
+  kind: "document_selection" as const,
+  contextCardId: "81000000-0000-4000-8000-000000000009",
+  documentId,
+  sourceRevisionId: revisionId,
+  sectionId: "81000000-0000-4000-8000-000000000007",
+  nodeId,
+  nodeTextHash: "c".repeat(64),
+  startOffset: 2,
+  endOffset: 6,
+  text: "选中文字",
+  textHash: "d".repeat(64),
+  targetLabel: "研究背景",
+  createdAt: "2026-08-17T00:00:00.000Z",
+};
+assert.equal(GrantAssistantDocumentSelectionContextSchema.parse(assistantContextFixture).sourceRevisionId, revisionId);
+assert.equal(GrantAssistantDocumentSelectionContextSchema.safeParse({ ...assistantContextFixture, endOffset: 7 }).success, false);
+
+const initialComposerScope = { kind: "chat" as const };
+assert.deepEqual(reduceGrantAssistantComposerScope(initialComposerScope, { type: "reference_selection" }), initialComposerScope);
+const editComposerScope = reduceGrantAssistantComposerScope(initialComposerScope, { type: "select_edit_target", targetNodeId: nodeId, targetLabel: "研究背景" });
+assert.deepEqual(resolveGrantAssistantOperation(editComposerScope), { status: "blocked", reason: "edit_session_not_ready" });
+const resolvedComposerScope = reduceGrantAssistantComposerScope(editComposerScope, { type: "resolve_edit_session", targetNodeId: nodeId, editSessionId: "81000000-0000-4000-8000-000000000010" });
+assert.deepEqual(resolveGrantAssistantOperation(resolvedComposerScope), { status: "ready", operation: "grant.edit_session.turn", editSessionId: "81000000-0000-4000-8000-000000000010" });
+assert.deepEqual(resolveGrantAssistantOperation(reduceGrantAssistantComposerScope(resolvedComposerScope, { type: "exit_edit" })), { status: "ready", operation: "grant.assistant.chat" });
 
 const finding: GrantFinding = {
   findingId,
@@ -101,6 +132,8 @@ const globalStylesSource = await readFile(new URL("../app/globals.css", import.m
 const evidenceSource = await readFile(new URL("../components/grants/grant-evidence-panel.tsx", import.meta.url), "utf8");
 const aiPatchSource = await readFile(new URL("../components/grants/grant-ai-patch-panel.tsx", import.meta.url), "utf8");
 const aiEditSessionSource = await readFile(new URL("../components/grants/grant-ai-edit-session-panel.tsx", import.meta.url), "utf8");
+const assistantContextCardSource = await readFile(new URL("../components/grants/grant-assistant-context-cards.tsx", import.meta.url), "utf8");
+const assistantContractSource = await readFile(new URL("../lib/grants/assistant/contracts.ts", import.meta.url), "utf8");
 const diagnosticsRouteSource = await readFile(new URL("../app/api/grants/documents/[id]/diagnostics/route.ts", import.meta.url), "utf8");
 assert.match(panelSource, /建议默认收起/);
 assert.match(panelSource, /isExpanded\s*&&/);
@@ -111,6 +144,12 @@ assert.match(resizableWorkspaceSource, /aria-valuenow=\{Math\.round\(value\)\}/)
 assert.match(resizableWorkspaceSource, /setPointerCapture/);
 assert.match(resizableWorkspaceSource, /ArrowRight/);
 assert.match(resizableWorkspaceSource, /--grant-panel-font-scale/);
+assert.match(resizableWorkspaceSource, /Grant AI 助手/);
+assert.match(resizableWorkspaceSource, /展开 Grant AI 助手/);
+assert.match(resizableWorkspaceSource, /折叠 Grant AI 助手/);
+assert.match(resizableWorkspaceSource, /side="assistant"/);
+assert.match(resizableWorkspaceSource, /ASSISTANT_LIMITS/);
+assert.match(resizableWorkspaceSource, /assistantCollapsed/);
 assert.match(resizableWorkspaceSource, /xl:flex-1 xl:overflow-hidden/);
 assert.match(resizableWorkspaceSource, /xl:overflow-y-auto/);
 assert.match(outlineSource, /xl:h-full xl:min-h-0 xl:overflow-hidden/);
@@ -118,6 +157,7 @@ assert.match(panelSource, /xl:h-full xl:min-h-0 xl:w-full xl:flex-col xl:overflo
 assert.match(wordToolbarSource, /xl:top-0/);
 assert.match(editorSource, /xl:flex xl:h-dvh xl:flex-col xl:overflow-hidden/);
 assert.match(globalStylesSource, /grid-template-columns:[\s\S]*--grant-left-panel-width[\s\S]*--grant-right-panel-width/);
+assert.match(globalStylesSource, /--grant-assistant-panel-width/);
 assert.match(globalStylesSource, /\.grant-resizable-panel \.text-sm/);
 assert.match(editorSource, />\s*\{saveStatus === "saving" \? "保存中…" : saveStatus === "offline" \? "重新保存" : "保存"\}\s*</);
 assert.match(editorSource, /method: "PATCH"/);
@@ -178,14 +218,28 @@ assert.match(resizableWorkspaceSource, /xl:h-full xl:min-h-0 xl:flex-1 xl:overfl
 assert.match(globalStylesSource, /grid-template-rows: minmax\(0, 1fr\)/);
 assert.match(freeAiCanvasSource, /onNodeAiEdit/);
 assert.match(freeAiCanvasSource, /textareaSelectionAnchor/);
-assert.match(freeAiCanvasSource, /aria-label="用 AI 修改选中文字"/);
+assert.match(freeAiCanvasSource, /引用到对话/);
+assert.match(freeAiCanvasSource, /修改这段/);
+assert.match(freeAiCanvasSource, /canReferenceSelection/);
 assert.match(freeAiCanvasSource, /onMouseDown=\{\(event\) => event\.preventDefault\(\)\}/);
-assert.match(freeAiCanvasSource, /aiEditPanel: ReactNode/);
-assert.match(freeAiCanvasSource, /xl:left-\[calc\(100%\+1rem\)\]/);
-assert.match(freeAiCanvasSource, />AI 修改<\/button>/);
+assert.doesNotMatch(freeAiCanvasSource, /aiEditPanel: ReactNode/);
+assert.doesNotMatch(freeAiCanvasSource, /xl:left-\[calc\(100%\+1rem\)\]/);
+assert.doesNotMatch(freeAiCanvasSource, />AI 修改<\/button>/);
 assert.doesNotMatch(freeAiEditorSource, /自由 AI 修改/);
 assert.match(freeAiEditorSource, /mode="free"/);
-assert.match(freeAiEditorSource, /aiEditPanel=\{selectedAiNodeId/);
+assert.match(freeAiEditorSource, /assistant=\{\(aiEditSessionEnabled \|\| aiPatchEnabled \|\| assistantChatEnabled\)/);
+assert.match(freeAiEditorSource, /GrantAssistantChatPanel/);
+assert.match(freeAiEditorSource, /GrantAssistantContextCards/);
+assert.match(freeAiEditorSource, /当前作用范围/);
+assert.match(freeAiEditorSource, /退出修改/);
+assert.match(freeAiEditorSource, /reduceGrantAssistantComposerScope/);
+assert.match(freeAiEditorSource, /sourceRevisionId: revisionIdRef\.current/);
+assert.match(freeAiEditorSource, /saveStatus !== "saved"/);
+assert.match(assistantContextCardSource, /已引用的正文/);
+assert.match(assistantContextCardSource, /移除引用/);
+assert.match(assistantContractSource, /GrantAssistantDocumentSelectionContextSchema/);
+assert.match(assistantContractSource, /nodeTextHash/);
+assert.match(assistantContractSource, /textHash/);
 assert.match(freeAiEditorSource, /right=\{<GrantDiagnosticsPanel/);
 assert.match(freeAiEditorSource, /canGenerate=\{saveStatus === "saved"\}/);
 assert.match(freeAiEditorSource, /evidencePatchEnabled=\{evidencePatchEnabled && evidenceEnabled\}/);

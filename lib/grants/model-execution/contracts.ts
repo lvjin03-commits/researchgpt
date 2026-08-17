@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { GRANT_EDIT_SESSION_TURN_OPERATION, GRANT_EDIT_SESSION_TURN_POLICY_VERSION } from "./operation-registry.ts";
+import {
+  GRANT_ASSISTANT_CHAT_OPERATION,
+  GRANT_ASSISTANT_CHAT_POLICY_VERSION,
+  GRANT_EDIT_SESSION_TURN_OPERATION,
+  GRANT_EDIT_SESSION_TURN_POLICY_VERSION,
+} from "./operation-registry.ts";
 
 const UuidSchema = z.string().uuid();
 const HashSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -10,8 +15,8 @@ export const GrantModelCallAttemptSchema = z.object({
   documentId: UuidSchema,
   sessionId: UuidSchema.optional(),
   turnId: UuidSchema.optional(),
-  operation: z.literal(GRANT_EDIT_SESSION_TURN_OPERATION),
-  policyVersion: z.literal(GRANT_EDIT_SESSION_TURN_POLICY_VERSION),
+  operation: z.enum([GRANT_EDIT_SESSION_TURN_OPERATION, GRANT_ASSISTANT_CHAT_OPERATION]),
+  policyVersion: z.enum([GRANT_EDIT_SESSION_TURN_POLICY_VERSION, GRANT_ASSISTANT_CHAT_POLICY_VERSION]),
   provider: z.literal("openai"),
   modelId: z.string().trim().min(1),
   attemptNumber: z.number().int().min(1).max(2),
@@ -26,7 +31,17 @@ export const GrantModelCallAttemptSchema = z.object({
   reasoningTokens: z.number().int().nonnegative().default(0),
   startedAt: z.string().datetime({ offset: true }),
   completedAt: z.string().datetime({ offset: true }).optional(),
-}).strict();
+}).strict().superRefine((attempt, context) => {
+  const expectedPolicy = attempt.operation === GRANT_ASSISTANT_CHAT_OPERATION
+    ? GRANT_ASSISTANT_CHAT_POLICY_VERSION
+    : GRANT_EDIT_SESSION_TURN_POLICY_VERSION;
+  if (attempt.policyVersion !== expectedPolicy) {
+    context.addIssue({
+      code: "custom",
+      path: ["policyVersion"],
+      message: `Policy ${attempt.policyVersion} does not own operation ${attempt.operation}.`,
+    });
+  }
+});
 
 export type GrantModelCallAttempt = z.infer<typeof GrantModelCallAttemptSchema>;
-

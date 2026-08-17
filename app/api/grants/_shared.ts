@@ -7,6 +7,7 @@ import {
   GrantAuthenticationRequiredError,
   GrantAiPatchDisabledError,
   GrantAiEditSessionDisabledError,
+  GrantAssistantChatDisabledError,
   GrantEvidencePatchDisabledError,
   GrantLocalEvidenceDisabledError,
   GrantWorkspaceDisabledError,
@@ -32,6 +33,7 @@ import {
 } from "@/lib/grants/application/figure-model-authorization-service";
 import { GrantAiEditSessionError } from "@/lib/grants/application/grant-ai-edit-session-service";
 import { GrantWebSourceError } from "@/lib/grants/application/grant-web-source-service";
+import { GrantAssistantChatError } from "@/lib/grants/application/grant-assistant-chat-service";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -45,6 +47,12 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantAiEditSessionDisabledError) {
     return Response.json({ error: "AI 多轮修改功能尚未开放。", code: "grant_ai_edit_session_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantAssistantChatDisabledError) {
+    return Response.json({ error: "Grant AI 普通对话功能尚未开放。", code: "grant_assistant_chat_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantAssistantChatError) {
+    return Response.json({ error: error.message, code: error.code }, { status: error.code === "grant_assistant_duplicate_turn" ? 409 : 400 });
   }
   if (error instanceof GrantAiEditSessionError) {
     const status = error.code.endsWith("_not_found") ? 404 : error.code.includes("stale") || error.code.includes("not_active") || error.code.includes("not_safe") || error.code.includes("needs_repair") ? 409 : 400;

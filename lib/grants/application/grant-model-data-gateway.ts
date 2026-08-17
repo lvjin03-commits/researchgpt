@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
+import { sha256Canonical } from "../domain/canonical-json.ts";
 import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantFinding } from "../diagnostics/contracts.ts";
 import type { GrantPatchModel, GrantPatchModelResult } from "../ports/grant-patch-model.ts";
+import type { GrantAssistantAdmittedContext, GrantAssistantChatModelRequest, GrantAssistantModel } from "../ports/grant-assistant-model.ts";
+import type { GrantAssistantDocumentSelectionContext } from "../assistant/contracts.ts";
 import type { GrantDiagnosticModel, GrantDiagnosticModelResult, GrantSemanticDiagnosticV3ModelResult } from "../ports/grant-diagnostic-model.ts";
 import { grantEditableNodeText } from "../patching/patch-policy.ts";
 import type { GrantPatchEvidenceBinding } from "../patching/contracts.ts";
@@ -40,13 +43,13 @@ export type GrantEditSessionTurnModelResult = GrantPatchModelResult & {
 };
 
 export class GrantModelDataGateway {
-  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel>;
+  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>;
   private readonly evidenceAuthorization?: GrantEvidenceAuthorizationService;
   private readonly figureAuthorization?: GrantFigureModelAuthorizationService;
   private readonly figureAssetReader?: GrantFigureAssetReader;
 
   constructor(
-    model: GrantPatchModel & Partial<GrantDiagnosticModel>,
+    model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>,
     evidenceAuthorization?: GrantEvidenceAuthorizationService,
     figureAuthorization?: GrantFigureModelAuthorizationService,
     figureAssetReader?: GrantFigureAssetReader,
@@ -55,6 +58,66 @@ export class GrantModelDataGateway {
     this.evidenceAuthorization = evidenceAuthorization;
     this.figureAuthorization = figureAuthorization;
     this.figureAssetReader = figureAssetReader;
+  }
+
+  async answerAssistantChat(input: {
+    documentId: string;
+    sourceRevisionId: string;
+    snapshot: CanonicalGrantSnapshot;
+    messages: GrantAssistantChatModelRequest["messages"];
+    contextCards: GrantAssistantDocumentSelectionContext[];
+    evidenceSourceIds: string[];
+    taskId: string;
+    attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
+  }) {
+    if (!this.model.answerChat) throw new GrantEvidenceProviderPolicyError("Grant assistant chat is not configured.");
+    const admittedContext: GrantAssistantAdmittedContext[] = input.contextCards.map((card, index) => {
+      const node = input.snapshot.nodes.find((candidate) => candidate.nodeId === card.nodeId);
+      const text = node && (node.nodeType === "paragraph" || node.nodeType === "heading") ? node.content.text : null;
+      if (
+        card.documentId !== input.documentId
+        || card.sourceRevisionId !== input.sourceRevisionId
+        || !node
+        || node.sectionId !== card.sectionId
+        || text === null
+        || sha256Canonical(text) !== card.nodeTextHash
+        || text.slice(card.startOffset, card.endOffset) !== card.text
+        || sha256Canonical(card.text) !== card.textHash
+      ) throw new GrantPatchEvidenceMismatchError("引用的正文已经变化，请移除后重新选择。");
+      return { sourceAlias: `D${index + 1}`, sourceType: "document_selection" as const, label: card.targetLabel, excerpt: card.text };
+    });
+    const sourceIds = [...new Set(input.evidenceSourceIds)];
+    if (sourceIds.length > 0 && !this.evidenceAuthorization) throw new GrantEvidenceProviderPolicyError("Evidence-backed assistant chat is not configured.");
+    const resources = sourceIds.length === 0 ? [] : await this.evidenceAuthorization!.materializeCurrent({
+      documentId: input.documentId, sourceIds, taskId: input.taskId, use: "model",
+    });
+    if (resources.some((resource) => resource.source.sensitivity === "highly_sensitive")) {
+      throw new GrantEvidenceProviderPolicyError("Highly sensitive evidence cannot be sent to an external model provider.");
+    }
+    if (sourceIds.length > 0) await this.evidenceAuthorization!.materializeCurrent({ documentId: input.documentId, sourceIds, taskId: input.taskId, use: "reasoning" });
+    const query = input.messages.at(-1)!.content;
+    const selectedEvidence = selectGrantEvidenceCards(resources, query);
+    selectedEvidence.forEach(({ resource, card }, index) => admittedContext.push({
+      sourceAlias: `E${index + 1}`,
+      sourceType: resource.source.provenanceType === "published_literature" ? "academic_source" : "evidence",
+      label: resource.source.title,
+      excerpt: card.excerpt,
+    }));
+    const documentLanguage = /[\u3400-\u9fff]/u.test(input.snapshot.title + input.messages.at(-1)!.content) ? "zh" : "en";
+    const generated = await this.model.answerChat({
+      documentLanguage,
+      messages: input.messages,
+      admittedContext,
+      attemptPurpose: input.attemptPurpose,
+    });
+    if (sourceIds.length > 0) {
+      const current = await this.evidenceAuthorization!.materializeCurrent({ documentId: input.documentId, sourceIds, taskId: input.taskId, use: "reasoning" });
+      const currentRevision = new Map(current.map((resource) => [resource.source.sourceId, resource.authorization.revision]));
+      if (resources.some((resource) => currentRevision.get(resource.source.sourceId) !== resource.authorization.revision)) {
+        throw new GrantPatchEvidenceMismatchError("资料授权在本轮对话期间发生变化，请重新发送。");
+      }
+    }
+    return { ...generated, admittedContext };
   }
 
   async prepareDiagnosticV3Input(input: {

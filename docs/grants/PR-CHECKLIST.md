@@ -45,6 +45,34 @@ Copy the relevant sections into every grant-platform PR.
 - [ ] Revocation, expiry or source-revision change invalidates queued and cached
       multimodal context before dispatch.
 
+## Persistent Assistant
+
+- [ ] Visible Composer Scope, not user wording or model output, selects chat or
+      one explicit Edit Session operation.
+- [ ] Referencing a document selection keeps chat scope; editing requires an
+      explicit target transition.
+- [ ] Every edit-candidate message references both its Edit Session and
+      candidate; the assistant does not become a second candidate owner.
+- [ ] Grant Model Data Gateway derives grounding from the effective admitted
+      context rather than user phrasing or a model declaration.
+- [ ] Grounded claim aliases resolve only to frozen, currently authorized
+      sources; unknown, revoked or fabricated aliases cannot render as grounded.
+- [ ] Document-selection context is revalidated against the current Revision,
+      node text, offsets and hashes before every assistant model dispatch.
+- [ ] `grant.assistant.chat` uses the operation registry, unified executor,
+      idempotency, telemetry and bounded repair budget without chat-route
+      fallback.
+- [ ] Academic search remains the confirmed OpenAlex snapshot path; no general
+      web-search semantics are implied.
+- [ ] The client submits only the new assistant message; the server selects the
+      bounded stored conversation context.
+- [ ] Assistant rollout requires schema marker 056, follows the canary runbook,
+      and rolls back by flag without deleting audit or Revision data.
+- [ ] Retention distinguishes disposable general reasoning, grounded audit
+      metadata and Revision-linked records.
+- [ ] Image generation and derivative-image authorization remain outside Phase
+      A unless a separate impact analysis and ADR are approved.
+
 ## Diagnostics
 
 - [ ] Findings identify checker/version/input hash and source locations.

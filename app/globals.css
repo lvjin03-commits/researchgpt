@@ -150,6 +150,8 @@ a {
       var(--grant-left-panel-width, 300px)
       8px
       minmax(560px, 1fr)
+      var(--grant-assistant-handle-width, 8px)
+      var(--grant-assistant-panel-width, 0px)
       8px
       var(--grant-right-panel-width, 400px);
   }

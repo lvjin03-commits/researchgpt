@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { GrantStructuredEditor } from "@/components/grants/grant-structured-editor";
-import { isGrantAiEditSessionEnabled, isGrantAiPatchEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "@/lib/grants/server/config";
+import { isGrantAiEditSessionEnabled, isGrantAiPatchEnabled, isGrantAssistantChatEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "@/lib/grants/server/config";
 
 export default async function GrantEditorPage({ params }: { params: Promise<{ id: string }> }) {
   if (!isGrantWorkspaceEnabled()) notFound();
@@ -9,6 +9,7 @@ export default async function GrantEditorPage({ params }: { params: Promise<{ id
     documentId={id}
     aiPatchEnabled={isGrantAiPatchEnabled()}
     aiEditSessionEnabled={isGrantAiEditSessionEnabled()}
+    assistantChatEnabled={isGrantAssistantChatEnabled()}
     evidenceEnabled={isGrantLocalEvidenceEnabled()}
     evidencePatchEnabled={isGrantEvidencePatchEnabled()}
     recheckEnabled={isGrantRecheckEnabled()}

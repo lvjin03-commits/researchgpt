@@ -16,6 +16,11 @@ export function isGrantAiEditSessionEnabled(): boolean {
     && process.env.GRANT_AI_EDIT_SESSION_DATABASE_SCHEMA?.trim() === "053";
 }
 
+export function isGrantAssistantChatEnabled(): boolean {
+  return process.env.GRANT_ASSISTANT_CHAT_ENABLED?.trim().toLowerCase() === "true"
+    && process.env.GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA?.trim() === "056";
+}
+
 export function isGrantLocalEvidenceEnabled(): boolean {
   return process.env.GRANT_LOCAL_EVIDENCE_ENABLED?.trim().toLowerCase() === "true";
 }

@@ -13,6 +13,14 @@ import { GrantAiPatchPanel } from "./grant-ai-patch-panel";
 import { GrantAiEditSessionPanel } from "./grant-ai-edit-session-panel";
 import { GrantDocumentOutline } from "./grant-document-outline";
 import { GrantResizableWorkspace } from "./grant-resizable-workspace";
+import { GrantAssistantContextCards } from "./grant-assistant-context-cards";
+import { GrantAssistantChatPanel } from "./grant-assistant-chat-panel";
+import type { GrantAssistantDocumentSelectionContext } from "@/lib/grants/assistant/contracts";
+import {
+  reduceGrantAssistantComposerScope,
+  type GrantAssistantComposerScope,
+  type GrantAssistantTextSelection,
+} from "@/lib/grants/assistant/composer-scope";
 import {
   grantFindingTarget,
   indexGrantFindingsByNode,
@@ -60,13 +68,13 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, assistantChatEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; assistantChatEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
-  const [selectedAiNodeId, setSelectedAiNodeId] = useState<string | null>(null);
-  const [selectedAiText, setSelectedAiText] = useState<{ startOffset: number; endOffset: number; text: string } | undefined>();
+  const [composerScope, setComposerScope] = useState<GrantAssistantComposerScope>({ kind: "chat" });
+  const [assistantContextCards, setAssistantContextCards] = useState<GrantAssistantDocumentSelectionContext[]>([]);
   const [diagnostics, setDiagnostics] = useState<GrantDiagnosticsPayload>(emptyDiagnostics);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(true);
   const [diagnosticsRunning, setDiagnosticsRunning] = useState(false);
@@ -196,6 +204,8 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
     ? estimateGrantLength(snapshot, payload.aggregate.templateSnapshot.rules)
     : null, [payload, snapshot]);
   const selectedSection = snapshot?.sections.find((section) => section.sectionId === selectedSectionId);
+  const selectedAiNodeId = composerScope.kind === "edit" ? composerScope.targetNodeId : null;
+  const selectedAiText = composerScope.kind === "edit" ? composerScope.selection : undefined;
   const selectedAiNode = snapshot?.nodes.find((node) => node.nodeId === selectedAiNodeId);
   const findingsByNode = useMemo(() => indexGrantFindingsByNode(diagnostics.findings), [diagnostics.findings]);
   const findingsBySection = useMemo(() => {
@@ -339,6 +349,67 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
     document.getElementById(`grant-finding-${findingId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
+  async function sha256JsonText(text: string) {
+    const bytes = new TextEncoder().encode(JSON.stringify(text));
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function referenceSelection(nodeId: string, selection: { startOffset: number; endOffset: number; text: string }) {
+    if (saveStatus !== "saved") {
+      setMessage("请先保存当前正文，再将选中文字引用到 AI 对话。");
+      return;
+    }
+    const node = snapshotRef.current?.nodes.find((item) => item.nodeId === nodeId);
+    if (!node || (node.nodeType !== "paragraph" && node.nodeType !== "heading")) return;
+    const sourceText = node.content.text;
+    if (sourceText.slice(selection.startOffset, selection.endOffset) !== selection.text) {
+      setMessage("选中文字已经变化，请重新选择后再引用。");
+      return;
+    }
+    const section = snapshotRef.current?.sections.find((item) => item.sectionId === node.sectionId);
+    const card: GrantAssistantDocumentSelectionContext = {
+      kind: "document_selection",
+      contextCardId: crypto.randomUUID(),
+      documentId,
+      sourceRevisionId: revisionIdRef.current,
+      sectionId: node.sectionId,
+      nodeId,
+      nodeTextHash: await sha256JsonText(sourceText),
+      startOffset: selection.startOffset,
+      endOffset: selection.endOffset,
+      text: selection.text,
+      textHash: await sha256JsonText(selection.text),
+      targetLabel: section?.title ?? "未命名章节",
+      createdAt: new Date().toISOString(),
+    };
+    setAssistantContextCards((items) => {
+      const duplicate = items.some((item) => item.sourceRevisionId === card.sourceRevisionId && item.nodeId === card.nodeId && item.startOffset === card.startOffset && item.endOffset === card.endOffset && item.textHash === card.textHash);
+      return duplicate ? items : [...items.slice(-7), card];
+    });
+    setComposerScope((scope) => reduceGrantAssistantComposerScope(scope, { type: "reference_selection" }));
+  }
+
+  function selectEditTarget(nodeId: string, selection?: GrantAssistantTextSelection) {
+    const node = snapshotRef.current?.nodes.find((item) => item.nodeId === nodeId);
+    const section = node ? snapshotRef.current?.sections.find((item) => item.sectionId === node.sectionId) : null;
+    setComposerScope((scope) => reduceGrantAssistantComposerScope(scope, {
+      type: "select_edit_target",
+      targetNodeId: nodeId,
+      targetLabel: section?.title ?? "未命名章节",
+      selection,
+    }));
+  }
+
+  function resolveAndLinkEditSession(targetNodeId: string, editSessionId: string) {
+    setComposerScope((scope) => reduceGrantAssistantComposerScope(scope, { type: "resolve_edit_session", targetNodeId, editSessionId }));
+    void fetch(`/api/grants/documents/${documentId}/assistant/edit-sessions`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ editSessionId }),
+    }).then(async (response) => {
+      if (!response.ok) { const data = await response.json(); throw new Error(data.error ?? "无法关联 AI 修改会话。"); }
+    }).catch((cause) => setMessage(cause instanceof Error ? cause.message : "无法关联 AI 修改会话。"));
+  }
+
   function updateFeedback(next: GrantFindingFeedback) {
     setDiagnostics((current) => ({
       ...current,
@@ -428,9 +499,32 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
           selectedFindingId={selectedFindingId}
           findingsByNode={findingsByNode}
           selectedAiNodeId={selectedAiNodeId}
-          aiEditPanel={selectedAiNodeId ? (
-            <>
-              {aiEditSessionEnabled && selectedAiNode && (selectedAiNode.nodeType === "paragraph" || selectedAiNode.nodeType === "heading") ? <GrantAiEditSessionPanel
+          onSectionTitleChange={(sectionId, title) => {
+            mutate((current) => ({
+              ...current,
+              sections: current.sections.map((section) => section.sectionId === sectionId ? { ...section, title } : section),
+            }));
+          }}
+          onNodeContentChange={changeNodeContent}
+          onNodeFindingSelect={navigateFromNode}
+          onNodeAiEdit={selectEditTarget}
+          onSelectionReference={(nodeId, selection) => { void referenceSelection(nodeId, selection); }}
+          canReferenceSelection={saveStatus === "saved"}
+          onAddParagraph={addParagraph}
+          onRemoveNode={removeNode}
+        />}
+        assistant={(aiEditSessionEnabled || aiPatchEnabled || assistantChatEnabled) ? (
+          <div className="flex h-full min-h-[420px] flex-col overflow-hidden">
+            <div className="mb-3 flex shrink-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-700">当前作用范围</p>
+                <p className="mt-0.5 truncate text-xs text-slate-500">{composerScope.kind === "chat" ? "普通对话" : `正在修改：${composerScope.targetLabel}`}</p>
+              </div>
+              {composerScope.kind === "edit" && <button type="button" onClick={() => setComposerScope((scope) => reduceGrantAssistantComposerScope(scope, { type: "exit_edit" }))} className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900">退出修改</button>}
+            </div>
+            <GrantAssistantContextCards items={assistantContextCards} onRemove={(contextCardId) => setAssistantContextCards((items) => items.filter((item) => item.contextCardId !== contextCardId))} />
+            {composerScope.kind === "edit" && selectedAiNodeId ? (
+              aiEditSessionEnabled && selectedAiNode && (selectedAiNode.nodeType === "paragraph" || selectedAiNode.nodeType === "heading") ? <GrantAiEditSessionPanel
                 documentId={documentId}
                 currentRevisionId={payload.aggregate.currentRevision.revisionId}
                 targetNodeId={selectedAiNodeId}
@@ -440,27 +534,25 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
                 figures={payload.figureAssets}
                 canGenerate={saveStatus === "saved"}
                 onAccepted={loadLatest}
-                onClose={() => setSelectedAiNodeId(null)}
+                onClose={() => setComposerScope((scope) => reduceGrantAssistantComposerScope(scope, { type: "exit_edit" }))}
+                onSessionResolved={(editSessionId) => resolveAndLinkEditSession(selectedAiNodeId, editSessionId)}
               /> : <GrantAiPatchPanel
                 documentId={documentId} currentRevisionId={payload.aggregate.currentRevision.revisionId}
                 targetNodeId={selectedAiNodeId} selection={selectedAiText} enabled={aiPatchEnabled}
                 evidencePatchEnabled={evidencePatchEnabled && evidenceEnabled} canGenerate={saveStatus === "saved"}
                 mode="free" onAccepted={loadLatest}
-              />}
-            </>
-          ) : null}
-          onSectionTitleChange={(sectionId, title) => {
-            mutate((current) => ({
-              ...current,
-              sections: current.sections.map((section) => section.sectionId === sectionId ? { ...section, title } : section),
-            }));
-          }}
-          onNodeContentChange={changeNodeContent}
-          onNodeFindingSelect={navigateFromNode}
-          onNodeAiEdit={(nodeId, selection) => { setSelectedAiNodeId(nodeId); setSelectedAiText(selection); }}
-          onAddParagraph={addParagraph}
-          onRemoveNode={removeNode}
-        />}
+              />
+            ) : assistantChatEnabled ? (
+              <GrantAssistantChatPanel documentId={documentId} currentRevisionId={payload.aggregate.currentRevision.revisionId} canGenerate={saveStatus === "saved"} contextCards={assistantContextCards} evidenceEnabled={evidenceEnabled && evidencePatchEnabled} />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-sm font-bold text-[#155eef]">AI</div>
+                <p className="text-sm font-semibold text-slate-800">选择正文开始</p>
+                <p className="mt-2 text-xs leading-5 text-slate-500">选中文字后可引用到对话，或明确选择“修改这段”。普通对话将在后续步骤接入。</p>
+              </div>
+            )}
+          </div>
+        ) : undefined}
         right={<GrantDiagnosticsPanel
           documentId={documentId}
           currentRevisionId={payload.aggregate.currentRevision.revisionId}

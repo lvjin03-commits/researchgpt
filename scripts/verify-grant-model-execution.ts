@@ -3,13 +3,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { GrantModelExecutionError, GrantModelExecutor } from "../lib/grants/application/grant-model-executor.ts";
 import { InMemoryGrantModelCallRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-model-call-repository.ts";
-import { GRANT_EDIT_SESSION_TURN_OPERATION, resolveGrantModelOperationPolicy } from "../lib/grants/model-execution/operation-registry.ts";
+import { GRANT_ASSISTANT_CHAT_OPERATION, GRANT_EDIT_SESSION_TURN_OPERATION, resolveGrantModelOperationPolicy } from "../lib/grants/model-execution/operation-registry.ts";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const documentId = randomUUID();
 const policy = resolveGrantModelOperationPolicy({ operation: GRANT_EDIT_SESSION_TURN_OPERATION, configuredGrantModelId: "gpt-5.5" });
 assert.equal(policy.provider, "openai");
 assert.equal(policy.maximumAttempts, 2);
+const assistantChatPolicy = resolveGrantModelOperationPolicy({ operation: GRANT_ASSISTANT_CHAT_OPERATION, configuredGrantModelId: "gpt-5.5" });
+assert.equal(assistantChatPolicy.operation, "grant.assistant.chat");
+assert.equal(assistantChatPolicy.policyVersion, "grant-assistant-chat-v1");
+assert.equal(assistantChatPolicy.maximumAttempts, 2);
 
 const repository = new InMemoryGrantModelCallRepository();
 const executor = new GrantModelExecutor(repository);

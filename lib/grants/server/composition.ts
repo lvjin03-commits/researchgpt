@@ -29,9 +29,11 @@ import { SupabaseGrantFigureAssetReader } from "../infrastructure/supabase/supab
 import { GrantFigureModelAuthorizationService } from "../application/figure-model-authorization-service.ts";
 import { SupabaseGrantFigureAuthorizationRepository } from "../infrastructure/supabase/supabase-grant-figure-authorization-repository.ts";
 import { GrantAiEditSessionService } from "../application/grant-ai-edit-session-service.ts";
+import { GrantAssistantChatService } from "../application/grant-assistant-chat-service.ts";
 import { GrantModelExecutor } from "../application/grant-model-executor.ts";
 import { SupabaseGrantAiEditSessionRepository } from "../infrastructure/supabase/supabase-grant-ai-edit-session-repository.ts";
 import { SupabaseGrantModelCallRepository } from "../infrastructure/supabase/supabase-grant-model-call-repository.ts";
+import { SupabaseGrantAssistantSessionRepository } from "../infrastructure/supabase/supabase-grant-assistant-session-repository.ts";
 import { GrantWebSourceService } from "../application/grant-web-source-service.ts";
 import { SupabaseGrantWebSourceRepository } from "../infrastructure/supabase/supabase-grant-web-source-repository.ts";
 import { OpenAlexGrantWebSearchProvider, PublicWebSnapshotFetcher } from "../infrastructure/web/openalex-grant-web-source.ts";
@@ -141,6 +143,20 @@ export function createGrantAiEditSessionService(ownerId: string): GrantAiEditSes
     modelExecutor: new GrantModelExecutor(new SupabaseGrantModelCallRepository(client, ownerId)),
     patchService: patches,
     configuredGrantModelId: ai.config.modelId,
+  });
+}
+
+export function createGrantAssistantChatService(ownerId: string): GrantAssistantChatService {
+  const client = createGrantSupabaseClient();
+  const ai = createGrantModelDataGateway(client, ownerId);
+  const modelCalls = new SupabaseGrantModelCallRepository(client, ownerId);
+  return new GrantAssistantChatService({
+    revisionService: new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
+    modelGateway: ai.gateway,
+    modelExecutor: new GrantModelExecutor(modelCalls),
+    modelCalls,
+    configuredGrantModelId: ai.config.modelId,
+    sessions: new SupabaseGrantAssistantSessionRepository(client, ownerId),
   });
 }
 

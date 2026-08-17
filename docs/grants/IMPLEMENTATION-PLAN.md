@@ -466,3 +466,148 @@ when no image was actually supplied. The adapter performs one paid attempt with
 a caller-supplied completion budget and no private retry. Production selection,
 persistence, migration and UI remain unchanged. Aggregate budgeting,
 persistence and rollout are later steps.
+
+## Persistent Grant Assistant Step 1 Status
+
+Impact Analysis 0037 and Decision 0037 freeze the Phase A authority and safety
+contract without enabling product traffic. The future persistent assistant may
+aggregate ordinary discussion and multiple existing Edit Sessions in one
+timeline, but visible Composer Scope alone selects `grant.assistant.chat` or
+`grant.edit_session.turn`. Grant Model Data Gateway owns grounding from the
+effective admitted context; a program validator owns grounded claim/source
+validity; Patch Commit Service and Revision Service remain the only canonical
+AI-write path.
+
+Phase A is limited to text discussion, explicit text reference/edit actions,
+existing evidence, and confirmed OpenAlex academic snapshots. Image generation,
+image editing, general web search, persistence migrations, routes, UI exposure
+and production flags are not implemented in this step.
+
+## Persistent Grant Assistant Step 2 Status
+
+The existing workspace presentation now reserves a fourth, persistent Grant AI
+assistant column between the canonical document and diagnostics. The column is
+resizable, collapsible without unmounting its current Edit Session child, and
+defaults to a compact state on constrained desktop widths. Existing AI edit
+entry actions select a target and render the existing Edit Session or AI Patch
+panel in that column; no target shows an explicit later-step placeholder.
+
+The previous paragraph-adjacent floating panel is removed. This step adds no
+assistant persistence, message model, `grant.assistant.chat` operation, model
+call, route, authorization path or canonical writer. Existing Edit Session,
+Patch Commit and Revision behavior is reused unchanged. Step 3 adds the two
+explicit document-selection actions and revision-bound context-card contract.
+
+## Persistent Grant Assistant Step 3 Status
+
+Paragraph text selection now exposes two explicit actions. `引用到对话`
+creates a removable, revision-bound context card containing program-owned
+document, revision, node, offset and text-hash metadata while preserving chat
+scope. `修改这段` continues through the existing Edit Session or AI Patch entry
+path. Whole-node hover actions are labeled `修改这段` and cannot be confused
+with ordinary reference.
+
+Context creation requires the current saved Revision and exact selected text;
+unsaved or drifted selections fail closed. Duplicate cards are suppressed and
+the page-local list is bounded. Cards are not persisted and are not supplied to
+a model in this step. Step 4 introduces the explicit Composer Scope state
+machine and operation-routing contract in implementation.
+
+## Persistent Grant Assistant Step 4 Status
+
+The workspace now stores one explicit Composer Scope instead of inferring
+purpose from a selected node. `chat` displays ordinary-conversation scope;
+`修改这段` selects an `edit` target and exposes its section label; `退出修改`
+returns to chat. Referencing text is a no-op transition and cannot switch the
+operation. The current target remains highlighted only while edit scope is
+active.
+
+The server-owned operation registry now reserves `grant.assistant.chat` with a
+distinct policy version and retains `grant.edit_session.turn`. A pure resolver
+maps chat scope to the former and a resolved Edit Session to the latter. A
+newly selected edit target has no fabricated Session ID and resolves to
+`edit_session_not_ready` until the existing panel creates or restores its
+matching Session. No chat route, provider call or assistant persistence is
+implemented in this step. Step 5 implements the ordinary chat execution path.
+
+## Persistent Grant Assistant Step 5 Status
+
+The ordinary-chat path is now implemented behind the default-off
+`GRANT_ASSISTANT_CHAT_ENABLED` rollout flag. The Grant-only POST route accepts
+an expected Revision, a client-generated turn ID and a bounded page-local
+message window. It dispatches only `grant.assistant.chat` through the operation
+registry, Grant Model Data Gateway and unified Model Executor. It never calls
+the general chat route and owns no canonical-document write capability.
+
+The turn ID is both trace and idempotency identity. A completed or attempted
+turn cannot be replayed; every attempt is recorded in `grant_model_calls` before
+provider dispatch. A turn receives one initial call plus at most one controlled
+schema, capacity or transient repair under the registered policy. Migration 055
+extends the existing telemetry constraint to admit the chat operation/policy
+pair without creating a second log path.
+
+This step deliberately supports ungrounded ordinary discussion only. Selection
+cards, Evidence Cards, figures and academic-search snapshots are not sent to the
+model yet; the UI states that boundary. Messages are page-local and disappear
+on refresh. Later steps add admitted-context grounding and durable session
+persistence without changing the operation or write authority.
+
+## Persistent Grant Assistant Step 6 Status
+
+Revision-bound document-selection cards now participate in ordinary chat as
+admitted context. Their visible presence is not authority: before every model
+dispatch the Grant Model Data Gateway re-resolves the current Revision and
+checks document, section, node, offsets, selected text, node-text hash and
+selection hash. Any mismatch fails closed and asks the user to select again.
+
+The Gateway assigns execution-local source aliases (`D1`, `D2`, ...), and
+therefore grounding is derived from effective admitted context rather than
+user wording. The provider returns structured claims and citations. A program
+validator rejects unknown aliases, duplicate citations and claims without a
+valid citation; the UI renders the answer as grounded only after that verdict.
+Without admitted context, claims and citations must both be empty and the
+answer remains `general_reasoning`.
+
+This step does not silently admit every uploaded file or search result. The
+assistant exposes explicit local-file and academic-search controls. Local
+Evidence Cards require current model/reasoning authorization, and academic
+results require user confirmation into fixed snapshots before either source
+type is sent to this operation.
+
+## Persistent Grant Assistant Step 7 Status
+
+Assistant chat is now durable in the Grant bounded context. Migration 056 adds
+one current assistant session per document, ordered user/assistant messages and
+a link table to existing Edit Sessions. It does not add assistant-owned
+candidate, Patch or Revision records. Message-pair append is atomic and unique
+per session, turn and role; refresh restores the current session through the
+Grant-only assistant route.
+
+Session access is owner-checked through service-role RPCs. Passive lifecycle
+policy expires a current session after 90 days of inactivity; seven days is the
+frozen stale threshold for maintenance and UI policy. Pure general-reasoning
+content with no downstream relationship is eligible for complete deletion
+after 90 days, while grounded and Revision-linked audit metadata follows the
+longer authority-specific retention contract. Automated cleanup scheduling is
+a deployment concern and must call the same retention owner rather than delete
+rows from UI code.
+
+Rollout now fails closed unless both `GRANT_ASSISTANT_CHAT_ENABLED=true` and
+`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=056` are present. Disabling the flag hides
+the surface without deleting sessions, messages, Edit Session links or model
+call telemetry.
+
+## Persistent Grant Assistant Step 8 Status
+
+Phase A is integration-complete and has a fail-closed rollout runbook. The chat
+request now contains only the new user message plus explicit source selections;
+the server, not the browser, restores and bounds provider history to the opening
+message, recent turns and the new message. Client-supplied transcript content
+is no longer accepted as authoritative context.
+
+Migration 056 includes the single maintenance authority for lifecycle changes:
+seven-day inactive sessions become stale, 90-day inactive sessions expire, and
+only unlinked general-reasoning turns are eligible for content deletion.
+Grounded and Edit Session-linked records are preserved. The canary and rollback
+sequence is frozen in `ROLLOUT-PERSISTENT-ASSISTANT.md`; image generation remains
+outside Phase A and still requires its separate impact analysis and ADR.

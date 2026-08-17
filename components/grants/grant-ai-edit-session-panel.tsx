@@ -9,7 +9,7 @@ type Props = {
   documentId: string; currentRevisionId: string; targetNodeId: string; targetText: string;
   findingId?: string; selection?: { startOffset: number; endOffset: number; text: string };
   evidenceEnabled: boolean; figures: GrantFigureDisplayAsset[]; canGenerate: boolean;
-  onAccepted: () => Promise<void>; onClose: () => void;
+  onAccepted: () => Promise<void>; onClose: () => void; onSessionResolved?: (sessionId: string) => void;
 };
 
 async function textHash(text: string) {
@@ -43,7 +43,7 @@ export function GrantAiEditSessionPanel(props: Props) {
     let active = true;
     void fetch(`/api/grants/documents/${props.documentId}/edit-sessions/${savedSessionId}`, { cache: "no-store" }).then(async (response) => {
       const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "无法恢复 AI 修改会话。");
-      if (active) { setSession(data.session); setTurns(data.turns); setCandidates(data.candidates); }
+      if (active) { setSession(data.session); setTurns(data.turns); setCandidates(data.candidates); props.onSessionResolved?.(data.session.sessionId); }
     }).catch(() => window.sessionStorage.removeItem(storageKey));
     return () => { active = false; };
   }, [storageKey, props.documentId, props.selection?.startOffset, props.selection?.endOffset]);
@@ -125,7 +125,7 @@ export function GrantAiEditSessionPanel(props: Props) {
       }),
     });
     const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "无法创建 AI 修改会话。");
-    setSession(data as GrantAiEditSession); window.sessionStorage.setItem(storageKey, data.sessionId); return data as GrantAiEditSession;
+    setSession(data as GrantAiEditSession); window.sessionStorage.setItem(storageKey, data.sessionId); props.onSessionResolved?.(data.sessionId); return data as GrantAiEditSession;
   }
 
   async function authorizeSelectedFigures() {

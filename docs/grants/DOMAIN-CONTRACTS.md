@@ -212,6 +212,111 @@ Before commit, the program recomputes and verifies:
 AI never writes canonical content directly. User acceptance authorizes a commit
 attempt; it does not override deterministic checks or revision conflicts.
 
+## Persistent Assistant Target Contract
+
+The persistent Grant assistant is one presentation surface over two independent
+model operations. It is not a new canonical writer and it does not replace an
+Edit Session:
+
+```ts
+type GrantAssistantComposerScope =
+  | { kind: "chat" }
+  | {
+      kind: "edit";
+      editSessionId: string | null;
+      targetNodeId: string;
+      targetLabel: string;
+    };
+
+type GrantAssistantResult =
+  | { kind: "answer"; grounding: "general_reasoning" | "evidence_grounded" }
+  | { kind: "edit_candidate"; editSessionId: string; candidateId: string }
+  | { kind: "refused"; reason: string };
+```
+
+Composer Scope is the sole operation-routing authority. `chat` invokes
+`grant.assistant.chat`; `edit` invokes `grant.edit_session.turn` for the named
+Edit Session. User wording, attached context and model output cannot switch the
+scope. Referencing a selection keeps chat scope; `Edit this text`, candidate
+continuation or an explicit target switch selects edit scope. Stale targets
+fail closed before dispatch.
+
+An edit target may be visible before its existing Edit Session is created or
+restored. In that state `editSessionId` is null and operation resolution returns
+`edit_session_not_ready`; no model dispatch is allowed. Session creation or
+restoration resolves the ID only when it matches the current target node.
+
+One assistant session may link to multiple Edit Sessions. The assistant owns
+their presentation order only. Each Edit Session continues to own its target,
+candidate chain, expected hashes and lifecycle. Patch Commit Service and
+Revision Service retain acceptance and canonical-write authority.
+
+Grant Model Data Gateway derives grounding from effective admitted context. If
+the call contains a canonical selection, authorized Evidence Card, confirmed
+academic-source snapshot or authorized figure, the answer is
+`evidence_grounded` regardless of user wording. Grounded responses declare
+lightweight claim-to-source aliases. Programs resolve those aliases against the
+frozen context and current authorization; models cannot mint source IDs or
+declare their own answer valid.
+
+Phase A search means academic metadata search through the existing OpenAlex,
+confirmation and fixed-snapshot path. It does not provide general web search.
+`grant.assistant.chat` uses the existing Model Executor, model-call telemetry,
+idempotency and one-initial-plus-one-controlled-repair ceiling. It has no
+fallback to the ordinary chat route.
+
+The Phase A ordinary-chat execution request is revision-bound and uses a
+client-generated UUID `turnId` as both trace and at-most-once identity. Any
+existing model-call attempt for that document and turn rejects a replay before
+provider dispatch. `grant_model_calls` admits only the registered
+operation/policy pairs; `grant.assistant.chat` must carry
+`grant-assistant-chat-v1`. The feature is default-off under
+`GRANT_ASSISTANT_CHAT_ENABLED` and fails closed unless
+`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=056` confirms persistence readiness.
+
+Until admitted-context grounding is implemented, this operation receives only
+the bounded page-local conversation window. Selection cards, Evidence Cards,
+figures and academic-search snapshots remain visible UI state but are excluded
+from model context. The assistant response is discussion content only and
+cannot invoke Patch Commit Service or Revision Service.
+
+Assistant retention is risk-based. Unreferenced general-reasoning content with
+no source, candidate, Patch or downstream dependency may expire completely.
+Grounded content may shed message bodies while retaining non-reconstructive
+source and execution audit metadata. Candidate-, Patch- and Revision-linked
+records follow canonical AI-edit audit retention. Provider context is always a
+bounded program-built projection, never the entire client message history.
+
+Generated images and image editing are not part of this contract. Imported-
+figure analysis authorization does not authorize derivative generation.
+
+Document-selection context is an explicit, revision-bound assistant input:
+
+```ts
+type GrantAssistantDocumentSelectionContext = {
+  kind: "document_selection";
+  contextCardId: string;
+  documentId: string;
+  sourceRevisionId: string;
+  sectionId: string;
+  nodeId: string;
+  nodeTextHash: string;
+  startOffset: number;
+  endOffset: number;
+  text: string;
+  textHash: string;
+  targetLabel: string;
+  createdAt: string;
+};
+```
+
+`Reference in conversation` creates this context card and keeps Composer Scope
+in `chat`; it never creates an Edit Session or Patch. `Edit this text` selects
+the existing Edit Session path. Context cards can be created only from the
+current saved Revision. Unsaved draft text, offset/hash drift or a missing node
+fails closed. Cards are presentation state in Step 3 and do not enter a model
+context until the later Gateway-admission step.
+
 ## Untrusted Input
 
 Uploaded applications, literature, local files, extracted text, and model
