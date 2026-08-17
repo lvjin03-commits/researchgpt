@@ -170,7 +170,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
     try {
       response = await this.client.chat.completions.create({
         model: this.modelId,
-        response_format: { type: "json_object" },
+        response_format: zodResponseFormat(AssistantChatResultSchema, "grant_assistant_chat"),
         reasoning_effort: "low",
         max_completion_tokens: 2400,
         messages: [
@@ -206,7 +206,10 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
       if (!raw) throw new GrantAssistantModelError("provider_refusal", "Grant assistant returned no answer.");
       let parsed: unknown;
       try { parsed = JSON.parse(raw); } catch { throw new GrantAssistantModelError("structured_output_invalid", "Grant assistant returned invalid JSON."); }
-      const result = AssistantChatResultSchema.safeParse(parsed);
+        const normalized = request.admittedContext.length === 0 && parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? { ...parsed, claims: (parsed as { claims?: unknown }).claims ?? [], citations: (parsed as { citations?: unknown }).citations ?? [] }
+          : parsed;
+        const result = AssistantChatResultSchema.safeParse(normalized);
       if (!result.success) throw new GrantAssistantModelError("structured_output_invalid", "Grant assistant returned an invalid answer contract.");
       return {
         ...result.data,

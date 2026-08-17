@@ -88,6 +88,7 @@ assert.throws(() => validateGrantAssistantGroundedAnswer({
 const routeSource = await readFile(new URL("../app/api/grants/documents/[id]/assistant/chat/route.ts", import.meta.url), "utf8");
 const panelSource = await readFile(new URL("../components/grants/grant-assistant-chat-panel.tsx", import.meta.url), "utf8");
 const gatewaySource = await readFile(new URL("../lib/grants/application/grant-model-data-gateway.ts", import.meta.url), "utf8");
+const providerSource = await readFile(new URL("../lib/grants/infrastructure/model/openai-grant-ai-model.ts", import.meta.url), "utf8");
 const modelCallContractSource = await readFile(new URL("../lib/grants/model-execution/contracts.ts", import.meta.url), "utf8");
 const migrationSource = await readFile(new URL("../supabase/migrations/055_grant_assistant_chat_model_calls.sql", import.meta.url), "utf8");
 const sessionMigrationSource = await readFile(new URL("../supabase/migrations/056_grant_assistant_sessions.sql", import.meta.url), "utf8");
@@ -104,6 +105,8 @@ assert.match(panelSource, /GrantAssistantSourceControls/);
 assert.match(panelSource, /crypto\.randomUUID/);
 assert.match(panelSource, /contextCards/);
 assert.match(gatewaySource, /answerAssistantChat/);
+assert.match(providerSource, /zodResponseFormat\(AssistantChatResultSchema, "grant_assistant_chat"\)/);
+assert.match(providerSource, /request\.admittedContext\.length === 0/);
 assert.match(modelCallContractSource, /GRANT_ASSISTANT_CHAT_OPERATION/);
 assert.match(modelCallContractSource, /expectedPolicy/);
 assert.match(migrationSource, /operation IN \('grant\.edit_session\.turn', 'grant\.assistant\.chat'\)/);
