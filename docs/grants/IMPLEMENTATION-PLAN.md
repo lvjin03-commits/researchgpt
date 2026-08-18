@@ -611,3 +611,94 @@ only unlinked general-reasoning turns are eligible for content deletion.
 Grounded and Edit Session-linked records are preserved. The canary and rollback
 sequence is frozen in `ROLLOUT-PERSISTENT-ASSISTANT.md`; image generation remains
 outside Phase A and still requires its separate impact analysis and ADR.
+
+## Candidate Conversation Intelligence Step 1 Status
+
+Impact Analysis 0038 and Decision 0038 freeze Phase B intelligence ownership
+without enabling product behavior. Free text remains chat-only unless preceded
+by an explicit user action. Suggested Actions have no execution authority and
+must revalidate bound hashes when clicked. Ambiguity cannot be resolved from
+later prose, and Candidate-local routing preferences can be enabled only by an
+explicit visible user setting.
+
+The future collapsed summary and expanded Candidate explanation are now one
+projection of one `CandidateExplanation`. Explain execution, deterministic
+cache identity, authorization fingerprinting and non-droppable context-budget
+inputs are frozen, but no Diff implementation, Operation registration, model
+call, cache table, migration or UI control is added in this step. Step 2 builds
+and validates the versioned Chinese Diff authority.
+
+## Candidate Conversation Intelligence Step 2 Status
+
+The pure `grant-candidate-diff-v1` authority is implemented without registering
+an explanation Operation or changing the UI. It normalizes line endings,
+publishes UTF-16 ranges, distinguishes unique paragraph moves from insertion or
+deletion, and provides Unicode-aware inline spans for Chinese replacements.
+Ambiguous duplicate paragraphs fail conservatively to insertion/deletion.
+
+Contract verification covers Chinese wording replacement, paragraph movement,
+paragraph insertion, split and merge behavior, duplicate text, CRLF/LF
+equivalence, surrogate-pair coordinates and deterministic invalidation hashes.
+Step 3 may consume this Diff to implement the no-write Candidate explanation
+Operation; it must not introduce another Diff or summary authority.
+
+## Candidate Conversation Intelligence Step 3 Status
+
+The no-write `grant.edit_candidate.explain` Operation and policy are registered.
+The service reconstructs the correct semantic base, consumes only
+`grant-candidate-diff-v1`, converts fact-check failures into program-owned
+blocking issues, and inspects current Evidence authorization before dispatch.
+The model may explain only the supplied Diff indexes; missing, duplicate or
+invented indexes fail as `structured_reference_invalid`.
+
+Execution uses the shared Model Executor, `grant_model_calls`, and the existing
+one-initial-plus-one-controlled-repair budget. Migration 057 only admits the new
+operation/policy pair to that existing log authority. No API route or UI button
+is enabled in this step.
+
+## Candidate Conversation Intelligence Step 4 Status
+
+Migration 058 and one repository authority implement deterministic explanation
+caching and single-flight execution. The cache key includes Candidate content,
+semantic base, Diff/version, safety state, fact-check fingerprint, current
+authorization fingerprint and explanation policy. A completed hit returns the
+same stored `CandidateExplanation` before Model Executor and therefore creates
+no provider call or `grant_model_calls` attempt.
+
+Atomic claims return acquired, in-progress or completed. A concurrent caller
+cannot dispatch while another valid lease owns the key; failed or abandoned
+leases are recoverable. Runtime remains fail-closed behind
+`GRANT_CANDIDATE_EXPLANATION_ENABLED=true` and exact schema marker `058`, which
+means migrations 057 and 058 have both been applied. No API or UI exposure is
+added in this step.
+
+## Candidate Conversation Intelligence Step 5 Status
+
+One authenticated, owner-scoped Candidate explanation route exposes GET for
+the deterministic Diff and POST for the explicit explanation action. Both are
+no-store and validate document, Edit Session and Candidate identity. The GET
+path cannot enter Model Executor; the POST path is reachable only through the
+visible Candidate-card button and the fail-closed request context.
+
+Candidate cards now provide separate `查看差异` and `解释修改` controls. Blocking
+issues are rendered before the single stored summary, expanded change prose is
+indexed against the same program Diff, and revoked/expired/changed source state
+is visible. Runtime remains hidden until migrations 057–058 are applied and
+the exact 058 capability flag is enabled. This step adds no free-text routing,
+Patch, Revision write or automatic model action.
+
+## Candidate Conversation Intelligence Step 6 Status
+
+The Candidate explanation context now has a deterministic server-owned budget.
+The full program Diff and every blocking issue are non-droppable; source
+descriptions trim first in stable order. Required-context overflow returns
+`context_budget_exceeded` before cache claim, model-call logging or provider
+dispatch.
+
+The rollout and rollback sequence is frozen in
+`ROLLOUT-CANDIDATE-INTELLIGENCE.md`, including zero-call Diff verification,
+cache-hit and concurrent single-flight probes, authorization invalidation and a
+negative routing check proving ordinary free text remains
+`grant.assistant.chat`. The implementation is integration-complete but remains
+unavailable until production migrations, capability configuration and signed-in
+canary verification are separately authorized.

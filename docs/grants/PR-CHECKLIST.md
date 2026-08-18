@@ -72,6 +72,41 @@ Copy the relevant sections into every grant-platform PR.
       metadata and Revision-linked records.
 - [ ] Image generation and derivative-image authorization remain outside Phase
       A unless a separate impact analysis and ADR are approved.
+- [ ] Free text without a preceding explicit action can invoke only
+      `grant.assistant.chat`; semantic intent never selects an Operation.
+- [ ] Suggested Actions bind source Revision and target hashes, have no
+      execution authority, and fail closed when clicked after drift.
+- [ ] Ignored ambiguity followed by new prose executes with `focus: none`.
+- [ ] Candidate-local routing preferences change only through a visible,
+      reversible user setting and are never learned from behavior.
+- [ ] Candidate card summary and expanded explanation project the same stored
+      `CandidateExplanation`; no parallel summary path exists.
+- [ ] Explanation cache identity includes Diff, safety, fact-check,
+      authorization and policy fingerprints; a hit performs no model call.
+- [ ] Context budgeting never removes current Candidate, Diff, blocking issues,
+      Focus identity, current question or safety policy.
+- [ ] Candidate comparisons use `grant-candidate-diff-v1`; no UI, model adapter
+      or explanation service computes a parallel semantic Diff.
+- [ ] Diff coordinates are normalized UTF-16 code-unit offsets and duplicate
+      paragraph text is not assigned a guessed move identity.
+- [ ] Candidate explanation reconstructs the frozen semantic base and requires
+      exact, ordered coverage of every program Diff index.
+- [ ] Explanation displays program-owned blocking issues first and labels each
+      generation-time source using a current authorization inspection.
+- [ ] Candidate explanation runs only through `grant.edit_candidate.explain`,
+      the shared executor and the exact database readiness marker.
+- [ ] Explanation cache claim is atomic; completed hits create zero provider and
+      model-call attempts, while a valid in-progress lease fails before dispatch.
+- [ ] Cache identity changes when Candidate/base/Diff/safety/fact-check/current
+      authorization/policy changes, and abandoned leases are bounded.
+- [ ] `查看差异` is a no-model GET and `解释修改` is an explicit POST; neither is
+      reachable from free-text or model-selected routing.
+- [ ] Candidate UI renders blocking issues before the one shared summary and
+      visibly distinguishes current, revoked, expired and changed sources.
+- [ ] Context capacity preserves the complete Diff and every blocking issue;
+      overflow fails before cache claim or model dispatch.
+- [ ] Rollout evidence includes a negative free-text routing probe and rollback
+      disables exposure without deleting explanation audit/cache records.
 
 ## Diagnostics
 

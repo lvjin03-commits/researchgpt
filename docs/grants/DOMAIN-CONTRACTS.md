@@ -241,6 +241,19 @@ scope. Referencing a selection keeps chat scope; `Edit this text`, candidate
 continuation or an explicit target switch selects edit scope. Stale targets
 fail closed before dispatch.
 
+Free-text submission without a preceding explicit user action is permanently
+restricted to `grant.assistant.chat`. Edit-like wording, active Focus,
+selection, Candidate, Suggested Action, model classification and learned user
+behavior cannot select another operation. A Suggested Action is a visible,
+non-authoritative proposal; only the user's click may request execution, and
+the target Revision/node/Candidate hashes are revalidated at click time.
+
+Focus affects reference resolution and answer form only. An ambiguous Focus is
+resolved only by clicking one displayed choice. If the user ignores the choices
+and submits new prose, that turn uses `focus: none`; neither program nor model
+may infer a choice. `ChatAnswerMode` may be selected semantically because it has
+no Candidate, Patch or Revision effect.
+
 An edit target may be visible before its existing Edit Session is created or
 restored. In that state `editSessionId` is null and operation resolution returns
 `edit_session_not_ready`; no model dispatch is allowed. Session creation or
@@ -274,11 +287,11 @@ operation/policy pairs; `grant.assistant.chat` must carry
 `GRANT_ASSISTANT_CHAT_ENABLED` and fails closed unless
 `GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=056` confirms persistence readiness.
 
-Until admitted-context grounding is implemented, this operation receives only
-the bounded page-local conversation window. Selection cards, Evidence Cards,
-figures and academic-search snapshots remain visible UI state but are excluded
-from model context. The assistant response is discussion content only and
-cannot invoke Patch Commit Service or Revision Service.
+Admitted-context grounding is program-owned. Valid selection cards, explicitly
+selected current Evidence Cards and user-confirmed academic snapshots may enter
+the bounded server-built model context. Visible but unselected, stale, revoked
+or unconfirmed sources are excluded. The assistant response remains discussion
+content only and cannot invoke Patch Commit Service or Revision Service.
 
 Assistant retention is risk-based. Unreferenced general-reasoning content with
 no source, candidate, Patch or downstream dependency may expire completely.
@@ -289,6 +302,78 @@ bounded program-built projection, never the entire client message history.
 
 Generated images and image editing are not part of this contract. Imported-
 figure analysis authorization does not authorize derivative generation.
+
+## Candidate Conversation Intelligence Target Contract
+
+`grant.edit_candidate.explain` is an explanation-only operation. It uses
+a program-computed, versioned Diff and cannot create a Candidate or write the
+document. Its one-initial-plus-one-controlled-repair budget, telemetry and
+failure classification are owned by the existing Model Executor.
+
+The operation rebuilds the semantic base from the frozen source Revision or
+the Candidate named by `semanticBaseCandidateId`. Before every call, Evidence
+Authorization Service reports each generation-time source as current, revoked
+or expired; binding/version drift becomes changed. The model receives these
+program-owned states and cannot present an invalid source as current. Model
+change references must cover the program Diff indexes exactly or the attempt is
+`structured_reference_invalid`.
+
+`grant-candidate-diff-v1` is the sole Candidate Diff authority. It normalizes
+CRLF to LF, uses UTF-16 code-unit offsets (matching browser selection
+coordinates), recognizes unique exact paragraph reordering as `move`, and uses
+Unicode-aware Chinese/Latin/number/punctuation tokens for inline replacement
+spans. Duplicate paragraph text is never assigned an inferred move identity.
+The result contains old/new text hashes, a contract version and a deterministic
+Diff hash. V1 compares against the frozen original target text; later versions
+compare against the Candidate named by `semanticBaseCandidateId`. Diff
+calculation is pure program logic and has no model, storage or write authority.
+
+One stored `CandidateExplanation` owns both the collapsed Candidate summary and
+expanded explanation. No parallel automatic-summary generator is permitted.
+Program blocking issues render first and cannot be removed or downgraded by a
+model. Before an explanation exists, the UI may show deterministic Diff counts
+but no semantic assertion about quality or new facts.
+
+Explanation cache identity includes Candidate and semantic-base hashes, Diff
+hash/version, Candidate safety state, fact-check fingerprint, current evidence
+authorization fingerprint and explanation policy version. Cache hits do not
+call a provider or create a model-call attempt; concurrent misses require one
+execution owner.
+
+The explanation cache is a read-only projection keyed by that complete
+identity. An atomic claim returns exactly one of `acquired`, `in_progress` or
+`completed`. Only `acquired` may enter Model Executor. `completed` returns the
+stored `CandidateExplanation` with zero new attempts; `in_progress` fails
+without dispatch. A bounded lease permits recovery from an abandoned worker,
+and failed executions can be reclaimed. Cache state cannot create a Candidate,
+Patch or Revision.
+
+Candidate cards expose two explicit actions. `View Diff` performs a no-model
+read of the program Diff. `Explain changes` alone invokes
+`grant.edit_candidate.explain`. Neither action can be selected by composer text
+or model intent. Program blocking issues render before the shared summary; the
+collapsed summary and expanded per-change prose both project the same stored
+`CandidateExplanation`. Source status is visible and invalid sources cannot be
+styled as current.
+
+Candidate-local input behavior defaults to `ask`. Only an explicit visible user
+setting may select `continue_edit`; inferred or learned preferences are
+prohibited. The preference is reversible and cannot affect the global chat
+composer.
+
+Server context assembly preserves, in order, policy, current Focus identity,
+the user question, Candidate and Diff, and blocking/fact-check state before
+selection, Evidence and conversation history. Trimming occurs from lowest
+priority upward. Policy, current question, Focus identity, Candidate, Diff and
+blocking issues are non-droppable; inability to fit them returns
+`context_budget_exceeded` before dispatch.
+
+Candidate explanation enforces this rule before cache claim or Model Executor.
+Its required projection is the complete program Diff plus all blocking issues.
+Source descriptions are lower priority and are admitted in stable order only
+while the fixed server budget permits. If the required projection alone cannot
+fit, the request returns `context_budget_exceeded`; it cannot truncate the Diff
+or hide a blocking issue to obtain an answer.
 
 Document-selection context is an explicit, revision-bound assistant input:
 

@@ -68,7 +68,7 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, assistantChatEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; assistantChatEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, assistantChatEnabled, candidateExplanationEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; assistantChatEnabled: boolean; candidateExplanationEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -531,6 +531,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
                 targetText={selectedAiNode.content.text}
                 selection={selectedAiText}
                 evidenceEnabled={evidenceEnabled && evidencePatchEnabled}
+                candidateExplanationEnabled={candidateExplanationEnabled}
                 figures={payload.figureAssets}
                 canGenerate={saveStatus === "saved"}
                 onAccepted={loadLatest}

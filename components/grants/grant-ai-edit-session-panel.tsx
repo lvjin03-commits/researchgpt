@@ -4,11 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GrantAiEditCandidate, GrantAiEditSession, GrantAiEditTurn } from "@/lib/grants/edit-session/contracts";
 import type { GrantEvidenceResource } from "@/lib/grants/evidence/contracts";
 import type { GrantFigureDisplayAsset } from "@/lib/grants/application/figure-display-service";
+import type { GrantCandidateDiff } from "@/lib/grants/edit-session/candidate-diff";
+import type { GrantCandidateExplanation } from "@/lib/grants/edit-session/candidate-explanation";
 
 type Props = {
   documentId: string; currentRevisionId: string; targetNodeId: string; targetText: string;
   findingId?: string; selection?: { startOffset: number; endOffset: number; text: string };
   evidenceEnabled: boolean; figures: GrantFigureDisplayAsset[]; canGenerate: boolean;
+  candidateExplanationEnabled: boolean;
   onAccepted: () => Promise<void>; onClose: () => void; onSessionResolved?: (sessionId: string) => void;
 };
 
@@ -26,6 +29,9 @@ export function GrantAiEditSessionPanel(props: Props) {
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [candidateInsights, setCandidateInsights] = useState<Record<string, { diff?: GrantCandidateDiff; explanation?: GrantCandidateExplanation; error?: string }>>({});
+  const [insightBusyId, setInsightBusyId] = useState("");
+  const [expandedCandidateId, setExpandedCandidateId] = useState("");
   const [evidence, setEvidence] = useState<GrantEvidenceResource[]>([]);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [selectedFigures, setSelectedFigures] = useState<string[]>([]);
@@ -37,7 +43,7 @@ export function GrantAiEditSessionPanel(props: Props) {
   const storageKey = `grant-ai-edit-session:${props.documentId}:${props.targetNodeId}:${props.currentRevisionId}`;
 
   useEffect(() => {
-    setSession(null); setTurns([]); setCandidates([]); setInstruction(""); setError(""); setSelectedSources([]); setSelectedFigures([]);
+    setSession(null); setTurns([]); setCandidates([]); setInstruction(""); setError(""); setCandidateInsights({}); setExpandedCandidateId(""); setSelectedSources([]); setSelectedFigures([]);
     const savedSessionId = window.sessionStorage.getItem(storageKey);
     if (!savedSessionId) return;
     let active = true;
@@ -175,13 +181,76 @@ export function GrantAiEditSessionPanel(props: Props) {
     finally { setBusy(false); }
   }
 
+  function explanationUrl(candidateId: string) {
+    return `/api/grants/documents/${props.documentId}/edit-sessions/${session!.sessionId}/candidates/${candidateId}/explanation`;
+  }
+
+  async function viewDiff(candidate: GrantAiEditCandidate) {
+    if (!session || insightBusyId) return;
+    if (candidateInsights[candidate.candidateId]?.diff) {
+      setExpandedCandidateId((current) => current === candidate.candidateId ? "" : candidate.candidateId);
+      return;
+    }
+    setInsightBusyId(candidate.candidateId);
+    try {
+      const response = await fetch(explanationUrl(candidate.candidateId), { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "无法计算候选稿差异。");
+      setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { ...items[candidate.candidateId], diff: data.diff, error: undefined } }));
+      setExpandedCandidateId(candidate.candidateId);
+    } catch (cause) {
+      setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { ...items[candidate.candidateId], error: cause instanceof Error ? cause.message : "无法计算候选稿差异。" } }));
+    } finally { setInsightBusyId(""); }
+  }
+
+  async function explainCandidate(candidate: GrantAiEditCandidate) {
+    if (!session || insightBusyId) return;
+    setInsightBusyId(candidate.candidateId);
+    try {
+      const response = await fetch(explanationUrl(candidate.candidateId), { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "无法解释本次修改。");
+      setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { diff: data.diff, explanation: data.explanation, error: undefined } }));
+      setExpandedCandidateId(candidate.candidateId);
+    } catch (cause) {
+      setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { ...items[candidate.candidateId], error: cause instanceof Error ? cause.message : "无法解释本次修改。" } }));
+    } finally { setInsightBusyId(""); }
+  }
+
+  function renderCandidate(candidate: GrantAiEditCandidate) {
+    const insight = candidateInsights[candidate.candidateId];
+    const expanded = expandedCandidateId === candidate.candidateId;
+    const blockingIssues = insight?.explanation?.blockingIssues ?? [];
+    return <div key={candidate.candidateId} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white p-3">
+      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{candidate.text}</p>
+      {blockingIssues.length > 0 && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2" role="alert"><p className="text-xs font-semibold text-red-800">此版本当前不能应用</p>{blockingIssues.map((issue) => <p key={issue.code} className="mt-1 text-xs leading-5 text-red-700">{issue.message}</p>)}</div>}
+      {insight?.explanation && <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900">{insight.explanation.summary}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className={`mr-auto text-xs ${candidate.safetyState === "passed" ? "text-emerald-700" : candidate.safetyState === "needs_confirmation" ? "text-amber-700" : "text-red-700"}`}>{candidate.safetyState === "passed" ? "安全检查通过" : candidate.safetyState === "needs_confirmation" ? "有新增事实需要依据" : "此版本不可应用"}</span>
+        {props.candidateExplanationEnabled && <button type="button" disabled={insightBusyId === candidate.candidateId} onClick={() => void viewDiff(candidate)} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">{expanded && insight?.diff ? "收起差异" : "查看差异"}</button>}
+        {props.candidateExplanationEnabled && <button type="button" disabled={Boolean(insightBusyId)} onClick={() => void explainCandidate(candidate)} className="rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-40">{insightBusyId === candidate.candidateId ? "解释中…" : insight?.explanation ? "重新查看解释" : "解释修改"}</button>}
+        {candidate.candidateId === session?.activeCandidateId && <button type="button" disabled={candidate.safetyState !== "passed" || busy} onClick={() => void apply(candidate)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">应用到正文</button>}
+      </div>
+      {insight?.error && <p className="mt-2 text-xs text-red-700">{insight.error}</p>}
+      {expanded && insight?.diff && <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+        <p className="text-xs font-semibold text-slate-700">程序差异：替换 {insight.diff.counts.replacements} · 新增 {insight.diff.counts.insertions} · 删除 {insight.diff.counts.deletions} · 移动 {insight.diff.counts.moves}</p>
+        {insight.diff.changes.map((change, index) => <div key={`${change.kind}-${index}`} className="rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-700">
+          <p className="mb-1 font-semibold text-slate-600">{change.kind === "replace" ? "替换" : change.kind === "insert" ? "新增" : change.kind === "delete" ? "删除" : "移动"}</p>
+          {change.kind === "replace" ? <p>{change.spans.map((span, spanIndex) => <span key={spanIndex} className={span.kind === "insert" ? "bg-emerald-100 text-emerald-900" : span.kind === "delete" ? "bg-red-100 text-red-800 line-through" : ""}>{span.text}</span>)}</p> : <p className="whitespace-pre-wrap">{change.kind === "insert" ? change.newText : change.kind === "delete" ? change.oldText : change.text}</p>}
+          {insight.explanation?.changes.find((item) => item.changeIndex === index) && <p className="mt-1 border-t border-slate-200 pt-1 text-blue-800">{insight.explanation.changes.find((item) => item.changeIndex === index)!.explanation}</p>}
+        </div>)}
+        {insight.explanation?.sources.map((source) => <p key={source.sourceId} className={`text-[11px] ${source.currentlyAuthorized ? "text-slate-500" : "font-medium text-amber-700"}`}>{source.sourceTitle}：{source.status === "current" ? "当前有效" : source.status === "expired" ? "已过期" : source.status === "changed" ? "内容或授权已变化" : "已撤权"}</p>)}
+      </div>}
+    </div>;
+  }
+
   return <section aria-label="AI 多轮修改" className="relative flex max-h-[72vh] min-h-[520px] flex-col overflow-hidden">
     <button type="button" aria-label="关闭 AI 修改" title="关闭" className="absolute right-0 top-0 z-10 flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700" onClick={props.onClose}>×</button>
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-3">
       {conversation.length === 0 && <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">告诉 AI 你希望如何修改。它不会直接覆盖正文，你可以继续追问和调整。</div>}
       {conversation.map((message) => message.kind === "user"
         ? <div key={message.id} className="ml-8 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-sm text-white">{message.text}</div>
-        : <div key={message.id} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white p-3"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{message.candidate.text}</p><div className="mt-3 flex items-center justify-between gap-2"><span className={`text-xs ${message.candidate.safetyState === "passed" ? "text-emerald-700" : message.candidate.safetyState === "needs_confirmation" ? "text-amber-700" : "text-red-700"}`}>{message.candidate.safetyState === "passed" ? "安全检查通过" : message.candidate.safetyState === "needs_confirmation" ? "有新增事实需要依据" : "此版本不可应用"}</span>{message.candidate.candidateId === session?.activeCandidateId && <button type="button" disabled={message.candidate.safetyState !== "passed" || busy} onClick={() => void apply(message.candidate)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">应用到正文</button>}</div></div>)}
+        : renderCandidate(message.candidate))}
     </div>
     <div className="border-t border-slate-200 pt-3">
       <input ref={localFileInput} type="file" accept=".pdf,.docx,.txt,.md" className="hidden" onChange={(event) => event.target.files?.[0] && void uploadLocalFile(event.target.files[0])} />

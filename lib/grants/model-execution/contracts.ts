@@ -4,6 +4,8 @@ import {
   GRANT_ASSISTANT_CHAT_POLICY_VERSION,
   GRANT_EDIT_SESSION_TURN_OPERATION,
   GRANT_EDIT_SESSION_TURN_POLICY_VERSION,
+  GRANT_EDIT_CANDIDATE_EXPLAIN_OPERATION,
+  GRANT_EDIT_CANDIDATE_EXPLAIN_POLICY_VERSION,
 } from "./operation-registry.ts";
 
 const UuidSchema = z.string().uuid();
@@ -15,8 +17,8 @@ export const GrantModelCallAttemptSchema = z.object({
   documentId: UuidSchema,
   sessionId: UuidSchema.optional(),
   turnId: UuidSchema.optional(),
-  operation: z.enum([GRANT_EDIT_SESSION_TURN_OPERATION, GRANT_ASSISTANT_CHAT_OPERATION]),
-  policyVersion: z.enum([GRANT_EDIT_SESSION_TURN_POLICY_VERSION, GRANT_ASSISTANT_CHAT_POLICY_VERSION]),
+  operation: z.enum([GRANT_EDIT_SESSION_TURN_OPERATION, GRANT_ASSISTANT_CHAT_OPERATION, GRANT_EDIT_CANDIDATE_EXPLAIN_OPERATION]),
+  policyVersion: z.enum([GRANT_EDIT_SESSION_TURN_POLICY_VERSION, GRANT_ASSISTANT_CHAT_POLICY_VERSION, GRANT_EDIT_CANDIDATE_EXPLAIN_POLICY_VERSION]),
   provider: z.literal("openai"),
   modelId: z.string().trim().min(1),
   attemptNumber: z.number().int().min(1).max(2),
@@ -34,7 +36,9 @@ export const GrantModelCallAttemptSchema = z.object({
 }).strict().superRefine((attempt, context) => {
   const expectedPolicy = attempt.operation === GRANT_ASSISTANT_CHAT_OPERATION
     ? GRANT_ASSISTANT_CHAT_POLICY_VERSION
-    : GRANT_EDIT_SESSION_TURN_POLICY_VERSION;
+    : attempt.operation === GRANT_EDIT_CANDIDATE_EXPLAIN_OPERATION
+      ? GRANT_EDIT_CANDIDATE_EXPLAIN_POLICY_VERSION
+      : GRANT_EDIT_SESSION_TURN_POLICY_VERSION;
   if (attempt.policyVersion !== expectedPolicy) {
     context.addIssue({
       code: "custom",

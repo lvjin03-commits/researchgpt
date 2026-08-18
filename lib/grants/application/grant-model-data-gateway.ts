@@ -4,6 +4,7 @@ import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantFinding } from "../diagnostics/contracts.ts";
 import type { GrantPatchModel, GrantPatchModelResult } from "../ports/grant-patch-model.ts";
 import type { GrantAssistantAdmittedContext, GrantAssistantChatModelRequest, GrantAssistantModel } from "../ports/grant-assistant-model.ts";
+import type { GrantCandidateExplanationModel, GrantCandidateExplanationModelRequest } from "../ports/grant-candidate-explanation-model.ts";
 import type { GrantAssistantDocumentSelectionContext } from "../assistant/contracts.ts";
 import type { GrantDiagnosticModel, GrantDiagnosticModelResult, GrantSemanticDiagnosticV3ModelResult } from "../ports/grant-diagnostic-model.ts";
 import { grantEditableNodeText } from "../patching/patch-policy.ts";
@@ -43,13 +44,13 @@ export type GrantEditSessionTurnModelResult = GrantPatchModelResult & {
 };
 
 export class GrantModelDataGateway {
-  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>;
+  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel> & Partial<GrantCandidateExplanationModel>;
   private readonly evidenceAuthorization?: GrantEvidenceAuthorizationService;
   private readonly figureAuthorization?: GrantFigureModelAuthorizationService;
   private readonly figureAssetReader?: GrantFigureAssetReader;
 
   constructor(
-    model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>,
+    model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel> & Partial<GrantCandidateExplanationModel>,
     evidenceAuthorization?: GrantEvidenceAuthorizationService,
     figureAuthorization?: GrantFigureModelAuthorizationService,
     figureAssetReader?: GrantFigureAssetReader,
@@ -58,6 +59,37 @@ export class GrantModelDataGateway {
     this.evidenceAuthorization = evidenceAuthorization;
     this.figureAuthorization = figureAuthorization;
     this.figureAssetReader = figureAssetReader;
+  }
+
+  async inspectCandidateExplanationSources(input: {
+    documentId: string;
+    taskId: string;
+    evidenceBindings: GrantEditSessionTurnModelResult["evidenceBindings"];
+  }) {
+    if (input.evidenceBindings.length === 0) return [];
+    if (!this.evidenceAuthorization) throw new GrantEvidenceProviderPolicyError("Candidate evidence inspection is not configured.");
+    return Promise.all(input.evidenceBindings.map(async (binding) => {
+      const inspected = await this.evidenceAuthorization!.inspectCurrent({
+        documentId: input.documentId, sourceId: binding.sourceId, taskId: input.taskId, uses: ["model", "reasoning"],
+      });
+      const card = inspected.resource?.cards.find((item) => item.cardId === binding.cardId && item.status === "active");
+      const unchanged = inspected.status === "current"
+        && inspected.resource?.authorization.revision === binding.authorizationRevision
+        && inspected.resource.source.contentHash === binding.sourceContentHash
+        && card?.excerptHash === binding.excerptHash;
+      return {
+        sourceId: binding.sourceId,
+        sourceTitle: binding.sourceTitle,
+        usedWhenGenerated: true as const,
+        currentlyAuthorized: unchanged,
+        status: unchanged ? "current" as const : inspected.status === "current" ? "changed" as const : inspected.status,
+      };
+    }));
+  }
+
+  async explainEditCandidate(request: GrantCandidateExplanationModelRequest) {
+    if (!this.model.explainCandidate) throw new GrantEvidenceProviderPolicyError("Candidate explanation is not configured.");
+    return this.model.explainCandidate(request);
   }
 
   async answerAssistantChat(input: {

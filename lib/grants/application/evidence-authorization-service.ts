@@ -105,6 +105,31 @@ export class GrantEvidenceAuthorizationService {
     return resources;
   }
 
+  async inspectCurrent(input: {
+    documentId: string;
+    sourceId: string;
+    taskId?: string;
+    uses: GrantEvidenceUse[];
+  }): Promise<{ resource: GrantEvidenceResource | null; status: "current" | "revoked" | "expired" }> {
+    const resource = await this.repository.getResource(input.documentId, input.sourceId);
+    if (!resource) return { resource: null, status: "revoked" };
+    const authorization = resource.authorization;
+    if (authorization.expiresAt && Date.parse(authorization.expiresAt) <= Date.parse(this.now())) {
+      return { resource, status: "expired" };
+    }
+    const permissions = input.uses.every((use) => use === "model"
+      ? authorization.permissions.sendRelevantExcerptToModel
+      : use === "reasoning"
+        ? authorization.permissions.useForReasoning
+        : authorization.permissions.useForCitation);
+    const taskAllowed = !authorization.allowedTaskIds
+      || (!!input.taskId && authorization.allowedTaskIds.includes(input.taskId));
+    if (resource.source.status !== "active" || authorization.revokedAt || !permissions || !taskAllowed) {
+      return { resource, status: "revoked" };
+    }
+    return { resource, status: "current" };
+  }
+
   async listCurrentForModelReasoning(input: {
     documentId: string;
     taskId?: string;
