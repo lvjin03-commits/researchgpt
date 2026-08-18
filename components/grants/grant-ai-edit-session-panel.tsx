@@ -5,14 +5,13 @@ import type { GrantAiEditCandidate, GrantAiEditSession, GrantAiEditTurn } from "
 import type { GrantEvidenceResource } from "@/lib/grants/evidence/contracts";
 import type { GrantFigureDisplayAsset } from "@/lib/grants/application/figure-display-service";
 import type { GrantCandidateDiff } from "@/lib/grants/edit-session/candidate-diff";
-import type { GrantCandidateExplanation } from "@/lib/grants/edit-session/candidate-explanation";
 
 type Props = {
   documentId: string; currentRevisionId: string; targetNodeId: string; targetText: string;
   findingId?: string; selection?: { startOffset: number; endOffset: number; text: string };
   evidenceEnabled: boolean; figures: GrantFigureDisplayAsset[]; canGenerate: boolean;
-  candidateExplanationEnabled: boolean;
   onAccepted: () => Promise<void>; onClose: () => void; onSessionResolved?: (sessionId: string) => void;
+  onDiscussCandidate: (input: { editSessionId: string; candidate: GrantAiEditCandidate; prompt: string }) => void;
 };
 
 async function textHash(text: string) {
@@ -29,7 +28,7 @@ export function GrantAiEditSessionPanel(props: Props) {
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [candidateInsights, setCandidateInsights] = useState<Record<string, { diff?: GrantCandidateDiff; explanation?: GrantCandidateExplanation; error?: string }>>({});
+  const [candidateInsights, setCandidateInsights] = useState<Record<string, { diff?: GrantCandidateDiff; blockingIssues?: Array<{ code: string; message: string }>; error?: string }>>({});
   const [insightBusyId, setInsightBusyId] = useState("");
   const [expandedCandidateId, setExpandedCandidateId] = useState("");
   const [evidence, setEvidence] = useState<GrantEvidenceResource[]>([]);
@@ -181,8 +180,8 @@ export function GrantAiEditSessionPanel(props: Props) {
     finally { setBusy(false); }
   }
 
-  function explanationUrl(candidateId: string) {
-    return `/api/grants/documents/${props.documentId}/edit-sessions/${session!.sessionId}/candidates/${candidateId}/explanation`;
+  function diffUrl(candidateId: string) {
+    return `/api/grants/documents/${props.documentId}/edit-sessions/${session!.sessionId}/candidates/${candidateId}/diff`;
   }
 
   async function viewDiff(candidate: GrantAiEditCandidate) {
@@ -193,42 +192,27 @@ export function GrantAiEditSessionPanel(props: Props) {
     }
     setInsightBusyId(candidate.candidateId);
     try {
-      const response = await fetch(explanationUrl(candidate.candidateId), { cache: "no-store" });
+      const response = await fetch(diffUrl(candidate.candidateId), { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "无法计算候选稿差异。");
-      setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { ...items[candidate.candidateId], diff: data.diff, error: undefined } }));
+      setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { ...items[candidate.candidateId], diff: data.diff, blockingIssues: data.blockingIssues, error: undefined } }));
       setExpandedCandidateId(candidate.candidateId);
     } catch (cause) {
       setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { ...items[candidate.candidateId], error: cause instanceof Error ? cause.message : "无法计算候选稿差异。" } }));
     } finally { setInsightBusyId(""); }
   }
 
-  async function explainCandidate(candidate: GrantAiEditCandidate) {
-    if (!session || insightBusyId) return;
-    setInsightBusyId(candidate.candidateId);
-    try {
-      const response = await fetch(explanationUrl(candidate.candidateId), { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "无法解释本次修改。");
-      setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { diff: data.diff, explanation: data.explanation, error: undefined } }));
-      setExpandedCandidateId(candidate.candidateId);
-    } catch (cause) {
-      setCandidateInsights((items) => ({ ...items, [candidate.candidateId]: { ...items[candidate.candidateId], error: cause instanceof Error ? cause.message : "无法解释本次修改。" } }));
-    } finally { setInsightBusyId(""); }
-  }
-
   function renderCandidate(candidate: GrantAiEditCandidate) {
     const insight = candidateInsights[candidate.candidateId];
     const expanded = expandedCandidateId === candidate.candidateId;
-    const blockingIssues = insight?.explanation?.blockingIssues ?? [];
+    const blockingIssues = insight?.blockingIssues ?? [];
     return <div key={candidate.candidateId} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white p-3">
       <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{candidate.text}</p>
       {blockingIssues.length > 0 && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2" role="alert"><p className="text-xs font-semibold text-red-800">此版本当前不能应用</p>{blockingIssues.map((issue) => <p key={issue.code} className="mt-1 text-xs leading-5 text-red-700">{issue.message}</p>)}</div>}
-      {insight?.explanation && <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900">{insight.explanation.summary}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className={`mr-auto text-xs ${candidate.safetyState === "passed" ? "text-emerald-700" : candidate.safetyState === "needs_confirmation" ? "text-amber-700" : "text-red-700"}`}>{candidate.safetyState === "passed" ? "安全检查通过" : candidate.safetyState === "needs_confirmation" ? "有新增事实需要依据" : "此版本不可应用"}</span>
-        {props.candidateExplanationEnabled && <button type="button" disabled={insightBusyId === candidate.candidateId} onClick={() => void viewDiff(candidate)} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">{expanded && insight?.diff ? "收起差异" : "查看差异"}</button>}
-        {props.candidateExplanationEnabled && <button type="button" disabled={Boolean(insightBusyId)} onClick={() => void explainCandidate(candidate)} className="rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-40">{insightBusyId === candidate.candidateId ? "解释中…" : insight?.explanation ? "重新查看解释" : "解释修改"}</button>}
+        <button type="button" disabled={insightBusyId === candidate.candidateId} onClick={() => void viewDiff(candidate)} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40">{expanded && insight?.diff ? "收起差异" : "查看差异"}</button>
+        {session && <button type="button" onClick={() => props.onDiscussCandidate({ editSessionId: session.sessionId, candidate, prompt: "为什么这样修改？" })} className="rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700">在对话中讨论</button>}
         {candidate.candidateId === session?.activeCandidateId && <button type="button" disabled={candidate.safetyState !== "passed" || busy} onClick={() => void apply(candidate)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">应用到正文</button>}
       </div>
       {insight?.error && <p className="mt-2 text-xs text-red-700">{insight.error}</p>}
@@ -237,9 +221,7 @@ export function GrantAiEditSessionPanel(props: Props) {
         {insight.diff.changes.map((change, index) => <div key={`${change.kind}-${index}`} className="rounded-lg bg-slate-50 p-2 text-xs leading-5 text-slate-700">
           <p className="mb-1 font-semibold text-slate-600">{change.kind === "replace" ? "替换" : change.kind === "insert" ? "新增" : change.kind === "delete" ? "删除" : "移动"}</p>
           {change.kind === "replace" ? <p>{change.spans.map((span, spanIndex) => <span key={spanIndex} className={span.kind === "insert" ? "bg-emerald-100 text-emerald-900" : span.kind === "delete" ? "bg-red-100 text-red-800 line-through" : ""}>{span.text}</span>)}</p> : <p className="whitespace-pre-wrap">{change.kind === "insert" ? change.newText : change.kind === "delete" ? change.oldText : change.text}</p>}
-          {insight.explanation?.changes.find((item) => item.changeIndex === index) && <p className="mt-1 border-t border-slate-200 pt-1 text-blue-800">{insight.explanation.changes.find((item) => item.changeIndex === index)!.explanation}</p>}
         </div>)}
-        {insight.explanation?.sources.map((source) => <p key={source.sourceId} className={`text-[11px] ${source.currentlyAuthorized ? "text-slate-500" : "font-medium text-amber-700"}`}>{source.sourceTitle}：{source.status === "current" ? "当前有效" : source.status === "expired" ? "已过期" : source.status === "changed" ? "内容或授权已变化" : "已撤权"}</p>)}
       </div>}
     </div>;
   }

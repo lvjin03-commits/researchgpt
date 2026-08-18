@@ -4,7 +4,6 @@ import type { CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantFinding } from "../diagnostics/contracts.ts";
 import type { GrantPatchModel, GrantPatchModelResult } from "../ports/grant-patch-model.ts";
 import type { GrantAssistantAdmittedContext, GrantAssistantChatModelRequest, GrantAssistantModel } from "../ports/grant-assistant-model.ts";
-import type { GrantCandidateExplanationModel, GrantCandidateExplanationModelRequest } from "../ports/grant-candidate-explanation-model.ts";
 import type { GrantAssistantDocumentSelectionContext } from "../assistant/contracts.ts";
 import type { GrantDiagnosticModel, GrantDiagnosticModelResult, GrantSemanticDiagnosticV3ModelResult } from "../ports/grant-diagnostic-model.ts";
 import { grantEditableNodeText } from "../patching/patch-policy.ts";
@@ -44,13 +43,13 @@ export type GrantEditSessionTurnModelResult = GrantPatchModelResult & {
 };
 
 export class GrantModelDataGateway {
-  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel> & Partial<GrantCandidateExplanationModel>;
+  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>;
   private readonly evidenceAuthorization?: GrantEvidenceAuthorizationService;
   private readonly figureAuthorization?: GrantFigureModelAuthorizationService;
   private readonly figureAssetReader?: GrantFigureAssetReader;
 
   constructor(
-    model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel> & Partial<GrantCandidateExplanationModel>,
+    model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>,
     evidenceAuthorization?: GrantEvidenceAuthorizationService,
     figureAuthorization?: GrantFigureModelAuthorizationService,
     figureAssetReader?: GrantFigureAssetReader,
@@ -61,49 +60,13 @@ export class GrantModelDataGateway {
     this.figureAssetReader = figureAssetReader;
   }
 
-  async inspectCandidateExplanationSources(input: {
-    documentId: string;
-    taskId: string;
-    evidenceBindings: GrantEditSessionTurnModelResult["evidenceBindings"];
-  }) {
-    if (input.evidenceBindings.length === 0) return [];
-    if (!this.evidenceAuthorization) throw new GrantEvidenceProviderPolicyError("Candidate evidence inspection is not configured.");
-    return Promise.all(input.evidenceBindings.map(async (binding) => {
-      const inspected = await this.evidenceAuthorization!.inspectCurrent({
-        documentId: input.documentId, sourceId: binding.sourceId, taskId: input.taskId, uses: ["model", "reasoning"],
-      });
-      const card = inspected.resource?.cards.find((item) => item.cardId === binding.cardId && item.status === "active");
-      const unchanged = inspected.status === "current"
-        && inspected.resource?.authorization.revision === binding.authorizationRevision
-        && inspected.resource.source.contentHash === binding.sourceContentHash
-        && card?.excerptHash === binding.excerptHash;
-      return {
-        sourceId: binding.sourceId,
-        sourceTitle: binding.sourceTitle,
-        usedWhenGenerated: true as const,
-        currentlyAuthorized: unchanged,
-        status: unchanged ? "current" as const : inspected.status === "current" ? "changed" as const : inspected.status,
-      };
-    }));
-  }
-
-  async explainEditCandidate(request: GrantCandidateExplanationModelRequest) {
-    if (!this.model.explainCandidate) throw new GrantEvidenceProviderPolicyError("Candidate explanation is not configured.");
-    return this.model.explainCandidate(request);
-  }
-
-  async answerAssistantChat(input: {
+  validateAssistantDocumentSelections(input: {
     documentId: string;
     sourceRevisionId: string;
     snapshot: CanonicalGrantSnapshot;
-    messages: GrantAssistantChatModelRequest["messages"];
     contextCards: GrantAssistantDocumentSelectionContext[];
-    evidenceSourceIds: string[];
-    taskId: string;
-    attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
-  }) {
-    if (!this.model.answerChat) throw new GrantEvidenceProviderPolicyError("Grant assistant chat is not configured.");
-    const admittedContext: GrantAssistantAdmittedContext[] = input.contextCards.map((card, index) => {
+  }): GrantAssistantAdmittedContext[] {
+    return input.contextCards.map((card, index) => {
       const node = input.snapshot.nodes.find((candidate) => candidate.nodeId === card.nodeId);
       const text = node && (node.nodeType === "paragraph" || node.nodeType === "heading") ? node.content.text : null;
       if (
@@ -118,6 +81,42 @@ export class GrantModelDataGateway {
       ) throw new GrantPatchEvidenceMismatchError("引用的正文已经变化，请移除后重新选择。");
       return { sourceAlias: `D${index + 1}`, sourceType: "document_selection" as const, label: card.targetLabel, excerpt: card.text };
     });
+  }
+
+  async answerAssistantChat(input: {
+    documentId: string;
+    sourceRevisionId: string;
+    snapshot: CanonicalGrantSnapshot;
+    messages: GrantAssistantChatModelRequest["messages"];
+    contextCards: GrantAssistantDocumentSelectionContext[];
+    candidateContext: {
+      candidateId: string;
+      targetLabel: string;
+      candidateText: string;
+      safetyState: string;
+      diff: unknown;
+      blockingIssues: Array<{ code: string; message: string }>;
+    } | null;
+    evidenceSourceIds: string[];
+    taskId: string;
+    attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
+  }) {
+    if (!this.model.answerChat) throw new GrantEvidenceProviderPolicyError("Grant assistant chat is not configured.");
+    const admittedContext = this.validateAssistantDocumentSelections(input);
+    if (input.candidateContext) {
+      admittedContext.push({
+        sourceAlias: "CANDIDATE1",
+        sourceType: "edit_candidate",
+        label: input.candidateContext.targetLabel,
+        excerpt: JSON.stringify({
+          candidateId: input.candidateContext.candidateId,
+          candidateText: input.candidateContext.candidateText,
+          safetyState: input.candidateContext.safetyState,
+          programDiff: input.candidateContext.diff,
+          blockingIssues: input.candidateContext.blockingIssues,
+        }),
+      });
+    }
     const sourceIds = [...new Set(input.evidenceSourceIds)];
     if (sourceIds.length > 0 && !this.evidenceAuthorization) throw new GrantEvidenceProviderPolicyError("Evidence-backed assistant chat is not configured.");
     const resources = sourceIds.length === 0 ? [] : await this.evidenceAuthorization!.materializeCurrent({

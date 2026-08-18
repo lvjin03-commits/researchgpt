@@ -15,7 +15,7 @@ import { GrantDocumentOutline } from "./grant-document-outline";
 import { GrantResizableWorkspace } from "./grant-resizable-workspace";
 import { GrantAssistantContextCards } from "./grant-assistant-context-cards";
 import { GrantAssistantChatPanel } from "./grant-assistant-chat-panel";
-import type { GrantAssistantDocumentSelectionContext } from "@/lib/grants/assistant/contracts";
+import type { GrantAssistantCandidateContext, GrantAssistantDocumentSelectionContext } from "@/lib/grants/assistant/contracts";
 import {
   reduceGrantAssistantComposerScope,
   type GrantAssistantComposerScope,
@@ -68,13 +68,15 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, assistantChatEnabled, candidateExplanationEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; assistantChatEnabled: boolean; candidateExplanationEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, assistantChatEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; assistantChatEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [composerScope, setComposerScope] = useState<GrantAssistantComposerScope>({ kind: "chat" });
   const [assistantContextCards, setAssistantContextCards] = useState<GrantAssistantDocumentSelectionContext[]>([]);
+  const [assistantCandidateContext, setAssistantCandidateContext] = useState<GrantAssistantCandidateContext | null>(null);
+  const [assistantInitialPrompt, setAssistantInitialPrompt] = useState("");
   const [diagnostics, setDiagnostics] = useState<GrantDiagnosticsPayload>(emptyDiagnostics);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(true);
   const [diagnosticsRunning, setDiagnosticsRunning] = useState(false);
@@ -531,12 +533,22 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
                 targetText={selectedAiNode.content.text}
                 selection={selectedAiText}
                 evidenceEnabled={evidenceEnabled && evidencePatchEnabled}
-                candidateExplanationEnabled={candidateExplanationEnabled}
                 figures={payload.figureAssets}
                 canGenerate={saveStatus === "saved"}
                 onAccepted={loadLatest}
                 onClose={() => setComposerScope((scope) => reduceGrantAssistantComposerScope(scope, { type: "exit_edit" }))}
                 onSessionResolved={(editSessionId) => resolveAndLinkEditSession(selectedAiNodeId, editSessionId)}
+                onDiscussCandidate={({ editSessionId, candidate, prompt }) => {
+                  setAssistantCandidateContext({
+                    kind: "edit_candidate",
+                    editSessionId,
+                    candidateId: candidate.candidateId,
+                    expectedCandidateHash: candidate.textHash,
+                    targetLabel: composerScope.targetLabel,
+                  });
+                  setAssistantInitialPrompt(prompt);
+                  setComposerScope({ kind: "chat" });
+                }}
               /> : <GrantAiPatchPanel
                 documentId={documentId} currentRevisionId={payload.aggregate.currentRevision.revisionId}
                 targetNodeId={selectedAiNodeId} selection={selectedAiText} enabled={aiPatchEnabled}
@@ -544,7 +556,16 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
                 mode="free" onAccepted={loadLatest}
               />
             ) : assistantChatEnabled ? (
-              <GrantAssistantChatPanel documentId={documentId} currentRevisionId={payload.aggregate.currentRevision.revisionId} canGenerate={saveStatus === "saved"} contextCards={assistantContextCards} evidenceEnabled={evidenceEnabled && evidencePatchEnabled} />
+              <GrantAssistantChatPanel
+                documentId={documentId}
+                currentRevisionId={payload.aggregate.currentRevision.revisionId}
+                canGenerate={saveStatus === "saved"}
+                contextCards={assistantContextCards}
+                candidateContext={assistantCandidateContext}
+                initialPrompt={assistantInitialPrompt}
+                onCandidateContextClear={() => { setAssistantCandidateContext(null); setAssistantInitialPrompt(""); }}
+                evidenceEnabled={evidenceEnabled && evidencePatchEnabled}
+              />
             ) : (
               <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
                 <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-sm font-bold text-[#155eef]">AI</div>

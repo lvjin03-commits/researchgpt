@@ -57,6 +57,9 @@ Copy the relevant sections into every grant-platform PR.
       context rather than user phrasing or a model declaration.
 - [ ] Grounded claim aliases resolve only to frozen, currently authorized
       sources; unknown, revoked or fabricated aliases cannot render as grounded.
+- [ ] The assistant answer is a discriminated union selected from effective
+      admitted context; grounded `unsupportedClaims` and `warnings` are
+      required arrays rather than optional model declarations.
 - [ ] Document-selection context is revalidated against the current Revision,
       node text, offsets and hashes before every assistant model dispatch.
 - [ ] `grant.assistant.chat` uses the operation registry, unified executor,
@@ -77,36 +80,30 @@ Copy the relevant sections into every grant-platform PR.
 - [ ] Suggested Actions bind source Revision and target hashes, have no
       execution authority, and fail closed when clicked after drift.
 - [ ] Ignored ambiguity followed by new prose executes with `focus: none`.
+- [ ] Ambiguity is derived by the program Focus state machine and is rechecked
+      server-side before any model-call attempt; the model never self-reports
+      whether a reference is ambiguous.
 - [ ] Candidate-local routing preferences change only through a visible,
       reversible user setting and are never learned from behavior.
-- [ ] Candidate card summary and expanded explanation project the same stored
-      `CandidateExplanation`; no parallel summary path exists.
-- [ ] Explanation cache identity includes Diff, safety, fact-check,
-      authorization and policy fingerprints; a hit performs no model call.
 - [ ] Context budgeting never removes current Candidate, Diff, blocking issues,
       Focus identity, current question or safety policy.
 - [ ] Candidate comparisons use `grant-candidate-diff-v1`; no UI, model adapter
       or explanation service computes a parallel semantic Diff.
+- [ ] Candidate chat submits only Session/Candidate identity and an expected
+      Candidate hash; the server rebuilds Candidate, semantic base, Diff and
+      blocking issues before model dispatch.
 - [ ] Diff coordinates are normalized UTF-16 code-unit offsets and duplicate
       paragraph text is not assigned a guessed move identity.
-- [ ] Candidate explanation reconstructs the frozen semantic base and requires
-      exact, ordered coverage of every program Diff index.
-- [ ] Explanation displays program-owned blocking issues first and labels each
-      generation-time source using a current authorization inspection.
-- [ ] Candidate explanation runs only through `grant.edit_candidate.explain`,
-      the shared executor and the exact database readiness marker.
-- [ ] Explanation cache claim is atomic; completed hits create zero provider and
-      model-call attempts, while a valid in-progress lease fails before dispatch.
-- [ ] Cache identity changes when Candidate/base/Diff/safety/fact-check/current
-      authorization/policy changes, and abandoned leases are bounded.
-- [ ] `查看差异` is a no-model GET and `解释修改` is an explicit POST; neither is
-      reachable from free-text or model-selected routing.
-- [ ] Candidate UI renders blocking issues before the one shared summary and
-      visibly distinguishes current, revoked, expired and changed sources.
+- [ ] `查看差异` is a GET-only, no-model Candidate Diff route; Candidate
+      discussion uses only `grant.assistant.chat`.
+- [ ] The executable registry, provider adapter, request context and UI contain
+      no `grant.edit_candidate.explain` path; legacy log values remain parseable
+      only for historical audit.
+- [ ] Candidate UI renders program-owned blocking issues before Diff detail.
 - [ ] Context capacity preserves the complete Diff and every blocking issue;
       overflow fails before cache claim or model dispatch.
-- [ ] Rollout evidence includes a negative free-text routing probe and rollback
-      disables exposure without deleting explanation audit/cache records.
+- [ ] Retirement preserves historical explanation audit/cache records without
+      leaving an executable route, policy or provider method.
 
 ## Diagnostics
 
@@ -211,6 +208,24 @@ Copy the relevant sections into every grant-platform PR.
       normalized projection; UI does not reconstruct continuity or root grouping.
 
 ## Verification
+
+- [ ] `grant.assistant.chat` depends on Revision reads and chat-only gateway
+      methods; it cannot compile against Patch, apply or Revision-commit APIs.
+- [ ] Free text, cache hits and recommended-question clicks remain no-write;
+      recommendations only fill the composer.
+- [ ] Unknown and retired Operation values fail closed in the registry rather
+      than falling through to another model policy.
+- [ ] Edit Session creation/continuation and `应用到正文` remain explicit user
+      actions outside the ordinary chat route.
+- [ ] Repeating an unchanged focused question returns the stored answer with
+      zero provider calls and zero new `grant_model_calls` attempts.
+- [ ] Chat cache identity includes normalized question, Revision, model policy,
+      focus identity and focus content hash; Candidate reuse also binds Diff
+      and safety state.
+- [ ] Unfocused chat and Evidence-attached turns do not use the lightweight
+      cache without a current Evidence-authorization fingerprint.
+- [ ] Recommended questions are deterministic templates, make no model call,
+      and only fill the ordinary chat composer without selecting an Operation.
 
 - [ ] End-to-end and PostgreSQL tests obtain checker, contract, schema, prompt,
       and policy versions from production authorities; fixtures do not inject

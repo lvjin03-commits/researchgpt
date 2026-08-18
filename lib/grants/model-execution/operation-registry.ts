@@ -2,11 +2,9 @@ export const GRANT_EDIT_SESSION_TURN_OPERATION = "grant.edit_session.turn" as co
 export const GRANT_EDIT_SESSION_TURN_POLICY_VERSION = "grant-edit-session-turn-v1" as const;
 export const GRANT_ASSISTANT_CHAT_OPERATION = "grant.assistant.chat" as const;
 export const GRANT_ASSISTANT_CHAT_POLICY_VERSION = "grant-assistant-chat-v1" as const;
-export const GRANT_EDIT_CANDIDATE_EXPLAIN_OPERATION = "grant.edit_candidate.explain" as const;
-export const GRANT_EDIT_CANDIDATE_EXPLAIN_POLICY_VERSION = "grant-edit-candidate-explain-v1" as const;
 
-export type GrantModelOperation = typeof GRANT_EDIT_SESSION_TURN_OPERATION | typeof GRANT_ASSISTANT_CHAT_OPERATION | typeof GRANT_EDIT_CANDIDATE_EXPLAIN_OPERATION;
-export type GrantModelOperationPolicyVersion = typeof GRANT_EDIT_SESSION_TURN_POLICY_VERSION | typeof GRANT_ASSISTANT_CHAT_POLICY_VERSION | typeof GRANT_EDIT_CANDIDATE_EXPLAIN_POLICY_VERSION;
+export type GrantModelOperation = typeof GRANT_EDIT_SESSION_TURN_OPERATION | typeof GRANT_ASSISTANT_CHAT_OPERATION;
+export type GrantModelOperationPolicyVersion = typeof GRANT_EDIT_SESSION_TURN_POLICY_VERSION | typeof GRANT_ASSISTANT_CHAT_POLICY_VERSION;
 
 export type GrantModelFailureCategory =
   | "structured_output_invalid"
@@ -39,13 +37,14 @@ export function resolveGrantModelOperationPolicy(input: {
 }): GrantModelOperationPolicy {
   const modelId = input.configuredGrantModelId.trim();
   if (!modelId) throw new Error("Grant AI model configuration is empty.");
+  if (input.operation !== GRANT_ASSISTANT_CHAT_OPERATION && input.operation !== GRANT_EDIT_SESSION_TURN_OPERATION) {
+    throw new Error(`Grant model operation is not registered: ${String(input.operation)}`);
+  }
   return Object.freeze({
     operation: input.operation,
     policyVersion: input.operation === GRANT_ASSISTANT_CHAT_OPERATION
       ? GRANT_ASSISTANT_CHAT_POLICY_VERSION
-      : input.operation === GRANT_EDIT_CANDIDATE_EXPLAIN_OPERATION
-        ? GRANT_EDIT_CANDIDATE_EXPLAIN_POLICY_VERSION
-        : GRANT_EDIT_SESSION_TURN_POLICY_VERSION,
+      : GRANT_EDIT_SESSION_TURN_POLICY_VERSION,
     provider: "openai",
     modelId,
     maximumAttempts: 2,

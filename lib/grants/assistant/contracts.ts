@@ -23,3 +23,13 @@ export const GrantAssistantDocumentSelectionContextSchema = z.object({
 });
 
 export type GrantAssistantDocumentSelectionContext = z.infer<typeof GrantAssistantDocumentSelectionContextSchema>;
+
+export const GrantAssistantCandidateContextSchema = z.object({
+  kind: z.literal("edit_candidate"),
+  editSessionId: UuidSchema,
+  candidateId: UuidSchema,
+  expectedCandidateHash: Sha256Schema,
+  targetLabel: z.string().trim().min(1).max(240),
+}).strict();
+
+export type GrantAssistantCandidateContext = z.infer<typeof GrantAssistantCandidateContextSchema>;

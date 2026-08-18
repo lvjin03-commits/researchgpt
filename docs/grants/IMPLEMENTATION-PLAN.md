@@ -702,3 +702,95 @@ negative routing check proving ordinary free text remains
 `grant.assistant.chat`. The implementation is integration-complete but remains
 unavailable until production migrations, capability configuration and signed-in
 canary verification are separately authorized.
+
+## Unified Grant Assistant Answer Step 1 Status
+
+The one free-text assistant entry now has one explicit discriminated answer
+contract. Grant Model Data Gateway continues to derive grounding exclusively
+from the context it actually admits. General reasoning carries no source
+claims; evidence-grounded answers always expose resolved references plus
+required `unsupportedClaims` and program-owned `warnings` arrays. The model
+cannot select or downgrade grounding, and invalid source bindings continue
+through the existing bounded repair/failure path.
+
+This step changes no Composer routing, Suggested Action execution, Candidate,
+Patch, Revision, database schema, feature flag or user-facing control. Focus
+resolution, generic chat caching and Explain-path retirement remain later
+steps.
+
+## Unified Grant Assistant Focus Step 2 Status
+
+A pure `AssistantFocus` state machine now returns only `none`, `resolved` or
+`ambiguous`. Multiple active context objects combined with an implicit
+reference are blocked before provider dispatch until the user clicks one
+displayed choice. The server repeats the same deterministic resolution, so a
+client cannot bypass disambiguation. A new message entered instead of choosing
+uses `focus: none` and excludes the unresolved objects from that turn.
+
+Focus changes only answer context. It cannot select an Operation, create an
+Edit Session or write a Revision. Current UI integration covers existing
+revision-bound document-selection cards; the same contract reserves an
+Edit-Candidate focus for the later unified Candidate-chat step.
+
+## Unified Grant Assistant Conversation Step 3 Status
+
+Candidate explanation, comparison and review questions now enter the existing
+`grant.assistant.chat` operation instead of a dedicated Candidate-card model
+action. The Candidate card exposes `在对话中讨论`, which selects a visible
+Candidate focus and prefills “为什么这样修改？” as an editable question. It
+is a shortcut, not a fixed capability; the same composer accepts arbitrary
+follow-up questions.
+
+The client submits only Edit Session ID, Candidate ID and expected Candidate
+hash. The server rebuilds the Candidate, semantic base, safety state, blocking
+issues and the sole `grant-candidate-diff-v1` result before Model Executor.
+Candidate text and Diff from the browser are never trusted. This step stops UI
+traffic to the old explanation POST but retains its deployed backend and data
+until the separately staged retirement step.
+
+## Unified Grant Assistant Intelligence Step 4 Status
+
+Focused chat now has one generic deterministic response cache. Its identity is
+the normalized question plus source Revision, model/policy, focus identity and
+focus content hash. Candidate focus additionally binds the sole program Diff,
+safety state and blocking-issue fingerprint. A hit appends the repeated turn to
+the durable conversation but performs zero provider calls and creates no
+`grant_model_calls` attempt.
+
+Caching is deliberately disabled when Evidence sources are attached until the
+key can include a current authorization fingerprint. It is also disabled for
+unfocused prose because ordinary conversation history can change its meaning.
+This prevents cache convenience from becoming a second Evidence authorization
+or dialogue-context authority.
+
+Candidate follow-up questions are generated from deterministic templates over
+Diff counts and program safety state. They merely fill the ordinary composer;
+they neither call a model nor select an Operation. The user may edit or ignore
+them and ask any other question through `grant.assistant.chat`.
+
+## Unified Grant Assistant Retirement Step 5 Status
+
+The superseded `grant.edit_candidate.explain` runtime path is removed. Its POST
+route, executable Operation/Policy registration, feature gate, composition,
+service, provider method and cache repositories no longer exist. Candidate
+questions now have one model path: `grant.assistant.chat`.
+
+`查看差异` remains available through a replacement GET-only `/diff` route backed
+by shared server-side Candidate analysis and the sole
+`grant-candidate-diff-v1` authority. Historical migrations and model-call values
+remain for audit; the call parser accepts them as explicitly legacy, but the
+Operation Registry cannot select them for new execution.
+
+## Unified Grant Assistant Boundary Step 6 Status
+
+The unified assistant is compile-time restricted to Revision reads and the two
+chat-specific Model Data Gateway methods. Free text, cache hits and deterministic
+recommended questions cannot reach Edit Session creation, Patch or Revision
+commit. The answer contract exposes no executable action, and recommendation
+clicks only populate the chat composer.
+
+Runtime operation resolution now rejects every unregistered value instead of
+falling through to another policy. A dedicated CI check proves that chat routes
+and UI contain no write endpoints, the retired explanation operation cannot be
+resolved, and Candidate application remains bound to the visible
+`应用到正文` click inside the Edit Session surface.

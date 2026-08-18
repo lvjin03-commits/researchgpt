@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { grantApiError } from "@/app/api/grants/_shared";
 import { requireGrantAssistantChatRequestContext } from "@/lib/grants/server/request-context";
-import { GrantAssistantDocumentSelectionContextSchema } from "@/lib/grants/assistant/contracts";
+import { GrantAssistantCandidateContextSchema, GrantAssistantDocumentSelectionContextSchema } from "@/lib/grants/assistant/contracts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +13,9 @@ const RequestSchema = z.object({
   message: z.string().trim().min(1).max(12000),
   contextCards: z.array(GrantAssistantDocumentSelectionContextSchema).max(8).default([]),
   evidenceSourceIds: z.array(z.string().uuid()).max(8).default([]),
+  focusId: z.string().uuid().nullable().optional(),
+  ignoreAmbiguousFocus: z.boolean().optional(),
+  candidateContext: GrantAssistantCandidateContextSchema.nullable().optional(),
 }).strict();
 
 export async function GET(_request: Request, context: Context) {

@@ -21,11 +21,6 @@ export function isGrantAssistantChatEnabled(): boolean {
     && process.env.GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA?.trim() === "056";
 }
 
-export function isGrantCandidateExplanationEnabled(): boolean {
-  return process.env.GRANT_CANDIDATE_EXPLANATION_ENABLED?.trim().toLowerCase() === "true"
-    && process.env.GRANT_CANDIDATE_EXPLANATION_DATABASE_SCHEMA?.trim() === "058";
-}
-
 export function isGrantLocalEvidenceEnabled(): boolean {
   return process.env.GRANT_LOCAL_EVIDENCE_ENABLED?.trim().toLowerCase() === "true";
 }

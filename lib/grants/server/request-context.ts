@@ -11,15 +11,14 @@ import { createGrantFigureModelAuthorizationService } from "./composition.ts";
 import { createGrantAiEditSessionService } from "./composition.ts";
 import { createGrantWebSourceService } from "./composition.ts";
 import { createGrantAssistantChatService } from "./composition.ts";
-import { createGrantCandidateExplanationService } from "./composition.ts";
-import { isGrantAiEditSessionEnabled, isGrantAiPatchEnabled, isGrantAssistantChatEnabled, isGrantCandidateExplanationEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "./config.ts";
+import { createGrantCandidateDiffService } from "./composition.ts";
+import { isGrantAiEditSessionEnabled, isGrantAiPatchEnabled, isGrantAssistantChatEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "./config.ts";
 
 export class GrantWorkspaceDisabledError extends Error {}
 export class GrantAuthenticationRequiredError extends Error {}
 export class GrantAiPatchDisabledError extends Error {}
 export class GrantAiEditSessionDisabledError extends Error {}
 export class GrantAssistantChatDisabledError extends Error {}
-export class GrantCandidateExplanationDisabledError extends Error {}
 export class GrantLocalEvidenceDisabledError extends Error {}
 export class GrantEvidencePatchDisabledError extends Error {}
 export class GrantRecheckDisabledError extends Error {}
@@ -58,10 +57,10 @@ export async function requireGrantAssistantChatRequestContext() {
   return { ...context, assistantChat: createGrantAssistantChatService(context.user.id) };
 }
 
-export async function requireGrantCandidateExplanationRequestContext() {
-  if (!isGrantCandidateExplanationEnabled()) throw new GrantCandidateExplanationDisabledError();
+export async function requireGrantCandidateDiffRequestContext() {
+  if (!isGrantAiEditSessionEnabled()) throw new GrantAiEditSessionDisabledError();
   const context = await requireGrantRequestContext();
-  return { ...context, candidateExplanation: createGrantCandidateExplanationService(context.user.id) };
+  return { ...context, candidateDiff: createGrantCandidateDiffService(context.user.id) };
 }
 
 export async function requireGrantEvidenceRequestContext() {

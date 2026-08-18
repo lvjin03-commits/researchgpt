@@ -2,7 +2,7 @@ export type GrantAssistantChatMessage = { role: "user" | "assistant"; content: s
 
 export type GrantAssistantAdmittedContext = {
   sourceAlias: string;
-  sourceType: "document_selection" | "evidence" | "academic_source";
+  sourceType: "document_selection" | "edit_candidate" | "evidence" | "academic_source";
   label: string;
   excerpt: string;
 };

@@ -234,6 +234,22 @@ type GrantAssistantResult =
   | { kind: "refused"; reason: string };
 ```
 
+The answer payload is a discriminated union even though every question uses
+the same free-text composer. `general_reasoning` has no admitted source and
+must contain empty claims, citations and referenced objects.
+`evidence_grounded` is mandatory whenever the Gateway admitted a canonical
+selection, currently authorized Evidence Card, confirmed academic snapshot or
+authorized figure. It must contain resolved citations, explicit
+`unsupportedClaims` and program-owned `warnings` arrays, even when both arrays
+are empty. Optional citation or warning fields are forbidden because the
+program must always know whether the grounded-answer checks ran.
+
+The Gateway's effective admitted-context set is the sole grounding authority.
+The model cannot request `general_reasoning`, omit grounded validation or
+declare its own answer safe. Unknown, duplicate or unbound source aliases fail
+the controlled structured-output attempt rather than silently downgrading the
+answer.
+
 Composer Scope is the sole operation-routing authority. `chat` invokes
 `grant.assistant.chat`; `edit` invokes `grant.edit_session.turn` for the named
 Edit Session. User wording, attached context and model output cannot switch the
@@ -253,6 +269,13 @@ resolved only by clicking one displayed choice. If the user ignores the choices
 and submits new prose, that turn uses `focus: none`; neither program nor model
 may infer a choice. `ChatAnswerMode` may be selected semantically because it has
 no Candidate, Patch or Revision effect.
+
+`AssistantFocus` resolution is a pure program state machine with exactly three
+results: `none`, `resolved` or `ambiguous`. More than one active object plus an
+implicit reference such as “这段”, “刚才那版” or “previous” produces
+`ambiguous` unless a visible UI action supplied one exact focus ID. The server
+repeats this check before Model Executor; client-side disambiguation alone is
+not authoritative. An unresolved ambiguous turn creates no model-call attempt.
 
 An edit target may be visible before its existing Edit Session is created or
 restored. In that state `editSessionId` is null and operation resolution returns
@@ -303,7 +326,11 @@ bounded program-built projection, never the entire client message history.
 Generated images and image editing are not part of this contract. Imported-
 figure analysis authorization does not authorize derivative generation.
 
-## Candidate Conversation Intelligence Target Contract
+## Candidate Conversation Intelligence Historical Contract (Retired)
+
+The explanation-specific paragraphs below describe the retired 058-era
+implementation and are retained only to interpret historical audit records.
+They are not executable current policy.
 
 `grant.edit_candidate.explain` is an explanation-only operation. It uses
 a program-computed, versioned Diff and cannot create a Candidate or write the
@@ -355,6 +382,35 @@ or model intent. Program blocking issues render before the shared summary; the
 collapsed summary and expanded per-change prose both project the same stored
 `CandidateExplanation`. Source status is visible and invalid sources cannot be
 styled as current.
+
+During the unified-assistant migration, Candidate discussion is admitted to
+`grant.assistant.chat` through a server-rebuilt `edit_candidate` context. The
+browser supplies only Edit Session ID, Candidate ID and expected Candidate
+hash. The server re-resolves ownership, reconstructs the semantic base and
+uses `grant-candidate-diff-v1`; browser-supplied Candidate text or Diff is never
+authoritative. “为什么这样修改” is only a prefilled chat question, and the
+same composer accepts comparison, evidence, logic, wording or any other
+follow-up. This discussion context has no Candidate, Patch or Revision write
+authority.
+
+## Current Candidate Conversation Contract
+
+Candidate cards expose a GET-only, no-model `View Diff` action and a `Discuss
+in chat` shortcut. Candidate questions use only `grant.assistant.chat`; there
+is no Candidate-explanation POST, executable explanation Operation, provider
+method or explanation cache authority. The server rebuilds Candidate, semantic
+base, Diff, safety state and blocking issues before chat dispatch. Historical
+explanation call/cache rows remain audit-readable but cannot be selected by the
+runtime Operation Registry.
+
+Free text, cached answers and recommended-question templates are permanently
+no-write. Their only executable Operation is `grant.assistant.chat`, whose
+application dependency exposes Revision reads and assistant model methods only.
+No model response may contain an executable action: `suggestedActions` remains
+an empty tuple until a separately approved, program-constructed and
+user-confirmed action contract exists. Creating/continuing an Edit Session and
+applying a Candidate remain explicit UI actions; semantic interpretation of
+composer text can never invoke them.
 
 Candidate-local input behavior defaults to `ask`. Only an explicit visible user
 setting may select `continue_edit`; inferred or learned preferences are
@@ -986,6 +1042,24 @@ never authoritative.
 Revocation invalidates queued model work, cached contexts, and unaccepted
 patches that depend on the source. Accepted revisions retain audit provenance,
 but revoked content must not be sent in future model calls.
+
+## Assistant Response Reuse and Follow-up Templates
+
+Assistant response reuse is permitted only for an explicit document-selection
+or Edit-Candidate focus whose current content hash is part of the cache key.
+The key also binds normalized question text, source Revision and the effective
+model policy. Candidate keys bind Diff and program safety state. Unfocused chat
+and turns with attached Evidence are not reusable; Evidence reuse remains
+prohibited until current authorization is represented in the key.
+
+A cache hit is a conversation-level reuse, not a model execution. It may append
+the repeated user/assistant turn for visible continuity, but it must create no
+provider request and no model-call attempt.
+
+Recommended follow-up questions are deterministic UI templates derived from
+program-owned focus state, Candidate Diff and safety state. They never require
+a model call and have no routing or write authority. Clicking one only fills
+the ordinary chat composer; submitting it remains `grant.assistant.chat`.
 
 ## Model Data Policy
 

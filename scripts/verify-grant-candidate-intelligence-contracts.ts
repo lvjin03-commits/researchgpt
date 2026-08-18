@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 
 async function read(relativePath: string) {
   return readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
@@ -14,12 +15,14 @@ const [decision, impactAnalysis, domainContracts, implementationPlan, prChecklis
     read("docs/grants/PR-CHECKLIST.md"),
   ]);
 
-for (const source of [decision, impactAnalysis, domainContracts]) {
+for (const source of [decision, impactAnalysis]) {
   assert.match(source, /grant\.assistant\.chat/);
   assert.match(source, /explicit user action|user click/i);
   assert.match(source, /no parallel (automatic-)?summary|no second summary/i);
   assert.match(source, /CandidateExplanation/);
 }
+assert.match(domainContracts, /Historical Contract \(Retired\)/);
+assert.match(domainContracts, /Candidate questions use only `grant\.assistant\.chat`/);
 
 assert.match(impactAnalysis, /suggested_action_stale/);
 assert.match(impactAnalysis, /focus: none/);
@@ -43,10 +46,24 @@ assert.match(implementationPlan, /Candidate Conversation Intelligence Step 3 Sta
 assert.match(implementationPlan, /Candidate Conversation Intelligence Step 4 Status/);
 assert.match(implementationPlan, /Candidate Conversation Intelligence Step 5 Status/);
 assert.match(implementationPlan, /Candidate Conversation Intelligence Step 6 Status/);
-assert.match(implementationPlan, /GRANT_CANDIDATE_EXPLANATION_ENABLED=true/);
-assert.match(implementationPlan, /exact schema marker `058`/);
+assert.match(implementationPlan, /Unified Grant Assistant Retirement Step 5 Status/);
+assert.match(implementationPlan, /runtime path is removed/);
 assert.match(implementationPlan, /no Diff implementation, Operation registration, model\s+call, cache table, migration or UI control is added/i);
 assert.match(prChecklist, /semantic intent never selects an Operation/);
-assert.match(prChecklist, /Candidate card summary and expanded explanation project the same stored/);
+assert.match(prChecklist, /legacy log values remain parseable/);
+assert.equal(existsSync(new URL("../lib/grants/application/grant-candidate-explanation-service.ts", import.meta.url)), false);
+assert.equal(existsSync(new URL("../app/api/grants/documents/[id]/edit-sessions/[sessionId]/candidates/[candidateId]/explanation/route.ts", import.meta.url)), false);
+const [diffRoute, registry, provider, panel] = await Promise.all([
+  read("app/api/grants/documents/[id]/edit-sessions/[sessionId]/candidates/[candidateId]/diff/route.ts"),
+  read("lib/grants/model-execution/operation-registry.ts"),
+  read("lib/grants/infrastructure/model/openai-grant-ai-model.ts"),
+  read("components/grants/grant-ai-edit-session-panel.tsx"),
+]);
+assert.match(diffRoute, /export async function GET/);
+assert.doesNotMatch(diffRoute, /export async function POST/);
+assert.doesNotMatch(registry, /grant\.edit_candidate\.explain/);
+assert.doesNotMatch(provider, /explainCandidate|grant_candidate_explanation/);
+assert.match(panel, /\/diff/);
+assert.doesNotMatch(panel, /\/explanation/);
 
 console.log("Grant candidate intelligence contract verification passed.");

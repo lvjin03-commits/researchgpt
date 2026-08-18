@@ -3,21 +3,30 @@ import type {
   GrantAssistantGroundedCitation,
   GrantAssistantGroundedClaim,
 } from "../ports/grant-assistant-model.ts";
+import type { GrantAssistantAnswer } from "./answer-contract.ts";
 
 export class GrantAssistantGroundingError extends Error {
   readonly code = "grant_assistant_grounding_invalid";
 }
 
 export function validateGrantAssistantGroundedAnswer(input: {
+  content: string;
   admittedContext: GrantAssistantAdmittedContext[];
   claims: GrantAssistantGroundedClaim[];
   citations: GrantAssistantGroundedCitation[];
-}) {
+}): GrantAssistantAnswer {
   if (input.admittedContext.length === 0) {
     if (input.claims.length > 0 || input.citations.length > 0) {
       throw new GrantAssistantGroundingError("An ungrounded answer cannot declare source-backed claims.");
     }
-    return { grounding: "general_reasoning" as const, claims: [], citations: [] };
+    return {
+      content: input.content,
+      grounding: "general_reasoning",
+      claims: [],
+      citations: [],
+      referencedObjects: [],
+      suggestedActions: [],
+    };
   }
   if (input.claims.length === 0 || input.citations.length === 0) {
     throw new GrantAssistantGroundingError("A grounded answer must bind its substantive response to admitted context.");
@@ -36,12 +45,21 @@ export function validateGrantAssistantGroundedAnswer(input: {
     }
   }
   return {
-    grounding: "evidence_grounded" as const,
+    content: input.content,
+    grounding: "evidence_grounded",
     claims: input.claims,
     citations: input.citations.map((citation) => ({
       ...citation,
       sourceType: admitted.get(citation.sourceAlias)!.sourceType,
       label: admitted.get(citation.sourceAlias)!.label,
     })),
+    referencedObjects: input.admittedContext.map(({ sourceAlias, sourceType, label }) => ({
+      sourceAlias,
+      sourceType,
+      label,
+    })),
+    unsupportedClaims: [],
+    warnings: [],
+    suggestedActions: [],
   };
 }
