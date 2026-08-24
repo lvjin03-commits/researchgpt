@@ -356,7 +356,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
     });
     const content = response.choices[0]?.message?.content;
     if (!content) throw new Error("Grant patch model returned no content.");
-    return { ...PatchResultSchema.parse(JSON.parse(content)), provider: "openai" as const, modelId: this.modelId };
+    return {
+      ...PatchResultSchema.parse(JSON.parse(content)),
+      provider: "openai" as const,
+      modelId: this.modelId,
+      usage: {
+        inputTokens: response.usage?.prompt_tokens ?? 0,
+        outputTokens: response.usage?.completion_tokens ?? 0,
+        reasoningTokens: response.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+      },
+    };
   }
 
   async diagnoseV3(prepared: GrantSemanticDiagnosticV3PreparedInput): Promise<GrantSemanticDiagnosticV3ModelResult> {

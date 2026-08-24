@@ -24,6 +24,7 @@ export type GrantPatchModelResult = {
   provider: "openai";
   modelId: string;
   usedEvidenceCardIds: string[];
+  usage?: { inputTokens: number; outputTokens: number; reasoningTokens: number };
 };
 
 export interface GrantPatchModel {

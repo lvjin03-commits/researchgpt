@@ -22,19 +22,33 @@ export type GrantModelAttemptResult<T> = {
   usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
 };
 
+export type GrantModelUsageObserver = (event: {
+  usageEventId: string;
+  billingOperationId: string;
+  operation: GrantModelOperationPolicy["operation"];
+  provider: GrantModelOperationPolicy["provider"];
+  modelId: string;
+  attemptNumber: number;
+  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  occurredAt: string;
+}) => Promise<void>;
+
 export class GrantModelExecutor {
   private readonly repository: GrantModelCallRepository;
   private readonly createId: () => string;
   private readonly now: () => string;
+  private readonly onUsage?: GrantModelUsageObserver;
 
   constructor(
     repository: GrantModelCallRepository,
     createId: () => string = randomUUID,
     now: () => string = () => new Date().toISOString(),
+    onUsage?: GrantModelUsageObserver,
   ) {
     this.repository = repository;
     this.createId = createId;
     this.now = now;
+    this.onUsage = onUsage;
   }
 
   async execute<T>(input: {
@@ -75,11 +89,26 @@ export class GrantModelExecutor {
         purpose = grantModelRetryPurpose(lastCategory);
         continue;
       }
+      const completedAt = this.now();
       await this.repository.finish({
         callId, expectedStatus: "started", status: "succeeded", outputHash: result.outputHash,
         providerRequestId: result.providerRequestId,
         inputTokens: result.usage?.inputTokens ?? 0, outputTokens: result.usage?.outputTokens ?? 0,
-        reasoningTokens: result.usage?.reasoningTokens ?? 0, completedAt: this.now(),
+        reasoningTokens: result.usage?.reasoningTokens ?? 0, completedAt,
+      });
+      await this.onUsage?.({
+        usageEventId: callId,
+        billingOperationId: input.turnId ?? callId,
+        operation: input.policy.operation,
+        provider: input.policy.provider,
+        modelId: input.policy.modelId,
+        attemptNumber,
+        usage: {
+          inputTokens: result.usage?.inputTokens ?? 0,
+          outputTokens: result.usage?.outputTokens ?? 0,
+          reasoningTokens: result.usage?.reasoningTokens ?? 0,
+        },
+        occurredAt: completedAt,
       });
       return { value: result.value, traceId, attempts: attemptNumber };
     }

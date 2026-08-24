@@ -124,6 +124,8 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Recheck scope | Impact Analyzer | Derived from actual committed operations |
 | Diagnostic default ordering | Canonical Grant Document order | UI may filter/group, but must not infer severity or priority from actionability |
 | DOCX typography and pagination | Export Renderer | Formats approved content only |
+| Grant AI usage facts | Grant Model Executor and model-call repository | Reports factual usage and terminal state; never calculates or deducts points |
+| Grant AI price, reservation and point settlement | Site-wide Point Billing Service | Grant routes, services and UI cannot own a private wallet or reinterpret billing policy |
 
 When Patch Commit Service and Revision Service disagree, Revision Service owns
 the final write decision. Patch validation success never overrides a stale base

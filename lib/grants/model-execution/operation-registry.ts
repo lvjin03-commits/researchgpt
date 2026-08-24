@@ -1,9 +1,12 @@
-export const GRANT_EDIT_SESSION_TURN_OPERATION = "grant.edit_session.turn" as const;
+import { AI_OPERATIONS, type GrantAiOperation } from "../../ai/operation-registry.ts";
+
+export const GRANT_EDIT_SESSION_TURN_OPERATION = AI_OPERATIONS.grant.editSessionTurn;
 export const GRANT_EDIT_SESSION_TURN_POLICY_VERSION = "grant-edit-session-turn-v1" as const;
-export const GRANT_ASSISTANT_CHAT_OPERATION = "grant.assistant.chat" as const;
+export const GRANT_ASSISTANT_CHAT_OPERATION = AI_OPERATIONS.grant.assistantChat;
 export const GRANT_ASSISTANT_CHAT_POLICY_VERSION = "grant-assistant-chat-v1" as const;
 
-export type GrantModelOperation = typeof GRANT_EDIT_SESSION_TURN_OPERATION | typeof GRANT_ASSISTANT_CHAT_OPERATION;
+export type GrantModelOperation = Extract<GrantAiOperation,
+  typeof GRANT_EDIT_SESSION_TURN_OPERATION | typeof GRANT_ASSISTANT_CHAT_OPERATION>;
 export type GrantModelOperationPolicyVersion = typeof GRANT_EDIT_SESSION_TURN_POLICY_VERSION | typeof GRANT_ASSISTANT_CHAT_POLICY_VERSION;
 
 export type GrantModelFailureCategory =

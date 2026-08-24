@@ -38,12 +38,39 @@ import { SupabaseGrantAssistantSessionRepository } from "../infrastructure/supab
 import { GrantWebSourceService } from "../application/grant-web-source-service.ts";
 import { SupabaseGrantWebSourceRepository } from "../infrastructure/supabase/supabase-grant-web-source-repository.ts";
 import { OpenAlexGrantWebSearchProvider, PublicWebSnapshotFetcher } from "../infrastructure/web/openalex-grant-web-source.ts";
+import { AiUsageIntegration } from "../../billing/application/ai-usage-integration.ts";
+import { SupabaseAiUsageEventSink } from "../../billing/infrastructure/supabase/supabase-ai-usage-event-sink.ts";
+import { tokenUsage } from "../../ai/billable-usage.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !serviceRoleKey) throw new Error("Grant workspace database configuration is incomplete.");
   return createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+}
+
+function createGrantModelExecutor(
+  client: ReturnType<typeof createGrantSupabaseClient>,
+  ownerId: string,
+  repository = new SupabaseGrantModelCallRepository(client, ownerId),
+) {
+  const usage = new AiUsageIntegration(new SupabaseAiUsageEventSink(client, {
+    feature: "grant",
+    taskKind: "grant_model_call",
+  }));
+  return new GrantModelExecutor(repository, undefined, undefined, async (event) => {
+    await usage.record(ownerId, {
+      usageEventId: event.usageEventId,
+      billingOperationId: event.billingOperationId,
+      operation: event.operation,
+      provider: event.provider,
+      modelId: event.modelId,
+      attemptNumber: event.attemptNumber,
+      cacheHit: false,
+      usage: [tokenUsage(event.usage)],
+      occurredAt: event.occurredAt,
+    });
+  });
 }
 
 function createGrantModelDataGateway(client: ReturnType<typeof createGrantSupabaseClient>, ownerId: string) {
@@ -141,7 +168,7 @@ export function createGrantAiEditSessionService(ownerId: string): GrantAiEditSes
     repository: new SupabaseGrantAiEditSessionRepository(client, ownerId),
     revisionService: revisions,
     modelGateway: ai.gateway,
-    modelExecutor: new GrantModelExecutor(new SupabaseGrantModelCallRepository(client, ownerId)),
+    modelExecutor: createGrantModelExecutor(client, ownerId),
     patchService: patches,
     configuredGrantModelId: ai.config.modelId,
   });
@@ -154,7 +181,7 @@ export function createGrantAssistantChatService(ownerId: string): GrantAssistant
   return new GrantAssistantChatService({
     revisionService: new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
     modelGateway: ai.gateway,
-    modelExecutor: new GrantModelExecutor(modelCalls),
+    modelExecutor: createGrantModelExecutor(client, ownerId, modelCalls),
     modelCalls,
     configuredGrantModelId: ai.config.modelId,
     sessions: new SupabaseGrantAssistantSessionRepository(client, ownerId),

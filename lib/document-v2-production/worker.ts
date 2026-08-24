@@ -29,6 +29,10 @@ import { createDocumentFinalizer } from "./document-finalizer";
 import { createFigureAssetMaterializer } from "./figure-materializer";
 import { prepareIntake } from "./stages/intake";
 import { prepareOptionalDocumentResearch } from "./research-preparation";
+import { AiUsageIntegration } from "@/lib/billing/application/ai-usage-integration";
+import { SupabaseAiUsageEventSink } from "@/lib/billing/infrastructure/supabase/supabase-ai-usage-event-sink";
+import { tokenUsage } from "@/lib/ai/billable-usage";
+import { assertRegisteredAiOperation } from "@/lib/ai/operation-registry";
 
 function adminClient(): SupabaseClient {
   const config = requireDocumentV2WorkerConfig();
@@ -144,6 +148,12 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
   if (!executionBudget) {
     throw new Error("document_execution_budget_snapshot_missing");
   }
+  const usageIntegration = new AiUsageIntegration(
+    new SupabaseAiUsageEventSink(supabase, {
+      feature: "document_v2",
+      taskKind: "document_model_call",
+    }),
+  );
   const recordUsage = async (usage: DocumentModelUsage) => {
     const currentJob = await repository.get(claimedJob.jobId);
     await repository.appendEvent({
@@ -178,6 +188,17 @@ export async function executeOneDocumentV2Tick(jobId?: string) {
         calculatedCostUsd: usage.calculatedCostUsd,
       },
       createdAt: new Date().toISOString(),
+    });
+    await usageIntegration.record(claimedJob.ownerId, {
+      usageEventId: randomUUID(),
+      billingOperationId: claimedJob.jobId,
+      operation: assertRegisteredAiOperation(usage.operation),
+      provider: usage.provider,
+      modelId: usage.actualModelId,
+      attemptNumber: usage.attemptNumber,
+      cacheHit: false,
+      usage: [tokenUsage(usage)],
+      occurredAt: new Date().toISOString(),
     });
   };
   const textExecutor = new ProviderDocumentTextExecutor(

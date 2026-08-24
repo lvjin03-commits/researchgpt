@@ -28,6 +28,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:encoding
+      - run: npm run test:point-ledger
+      - run: npm run test:ai-operation-contracts
+      - run: npm run test:point-billing-engine
+      - run: npm run test:ai-billing-integration
+      - run: npm run test:point-payment-contracts
+      - run: npm run test:payment-risk-controls
+      - run: npm run test:billing-canary
       - run: npm run check:document-architecture
       - run: npm run test:document-contracts
       - run: npm run test:document-v2-templates

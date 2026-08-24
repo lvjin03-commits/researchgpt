@@ -116,7 +116,7 @@ export class GrantAiEditSessionService {
             evidenceSourceIds: input.evidenceSourceIds,
             figureAssetIds: input.figureAssetIds,
           });
-          return { value, outputHash: sha256Canonical(value) };
+          return { value, outputHash: sha256Canonical(value), usage: value.usage };
         },
       });
       const factCheck = evaluateGrantAiEditFactSafety({

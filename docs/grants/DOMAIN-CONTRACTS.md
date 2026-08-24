@@ -287,6 +287,15 @@ their presentation order only. Each Edit Session continues to own its target,
 candidate chain, expected hashes and lifecycle. Patch Commit Service and
 Revision Service retain acceptance and canonical-write authority.
 
+Future site-wide point billing treats each explicit Edit Turn as one bounded
+Bundle. The existing `turnId` is also its at-most-once billing operation ID;
+the open-ended Edit Session is never one reservation because its future turn
+count is unknown. Session creation and reads, Candidate listing and Diff reads,
+Candidate application and session discard are non-billable. Grant code reports
+the registered Operation, usage and terminal state only; the site-wide Point
+Billing Service remains the sole future estimate, reservation and settlement
+authority.
+
 Grant Model Data Gateway derives grounding from effective admitted context. If
 the call contains a canonical selection, authorized Evidence Card, confirmed
 academic-source snapshot or authorized figure, the answer is

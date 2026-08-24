@@ -11,6 +11,7 @@ import type {
   StructuredOperationRecoveryPolicy,
 } from "./text-executor";
 import type { StructuredResponseCandidateNormalization } from "./structured-response-parser";
+import { AI_OPERATIONS } from "@/lib/ai/operation-registry";
 
 const PLANNING_RECOVERY_POLICY = Object.freeze({
   onNoJsonObject: "regenerate_once",
@@ -66,7 +67,7 @@ export function createRequestUnderstandOperationContract<T>(input: {
   schema: ZodType<T>;
 }) {
   return planningContract({
-    operation: "request.understand",
+    operation: AI_OPERATIONS.document.requestUnderstand,
     budgetKey: "request.understand",
     schemaName: "document_request_v1",
     schema: input.schema,
@@ -77,7 +78,7 @@ export function createTemplateMatchOperationContract<T>(input: {
   schema: ZodType<T>;
 }) {
   return planningContract({
-    operation: "template.match",
+    operation: AI_OPERATIONS.document.templateMatch,
     budgetKey: "template.match",
     schemaName: "template_match_v1",
     schema: input.schema,
@@ -86,7 +87,7 @@ export function createTemplateMatchOperationContract<T>(input: {
 
 export function createThesisOperationContract() {
   return planningContract({
-    operation: "outline.thesis",
+    operation: AI_OPERATIONS.document.outlineThesis,
     budgetKey: "outline.thesis",
     componentKey: "document-thesis",
     schemaName: "document_thesis_v1",
@@ -103,7 +104,7 @@ export function createSectionIndexOperationContract(input: {
   maximumSections: number;
 }) {
   return planningContract({
-    operation: "outline.section_index",
+    operation: AI_OPERATIONS.document.outlineSectionIndex,
     budgetKey: "outline.section_index" as const,
     componentKey: "document-section-index",
     schemaName: "document_section_index_v1",
@@ -120,7 +121,7 @@ export function createSectionIndexOperationContract(input: {
 
 export function createFigureIntentsOperationContract() {
   return planningContract({
-    operation: "outline.figure_intents",
+    operation: AI_OPERATIONS.document.outlineFigureIntents,
     budgetKey: "outline.figure_intents",
     componentKey: "document-figure-intents",
     schemaName: "document_figure_intents_v1",
@@ -135,7 +136,7 @@ export function createSectionPlanOperationContract(input: {
 }) {
   const available = new Set(input.availableEvidenceIds);
   return planningContract({
-    operation: "outline.section_plan",
+    operation: AI_OPERATIONS.document.outlineSectionPlan,
     budgetKey: "outline.section_plan",
     componentKey: input.componentKey,
     schemaName: "document_section_plan_v1",

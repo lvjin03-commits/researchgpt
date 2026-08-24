@@ -3,6 +3,11 @@ import { AIProviderError } from "@/lib/ai/errors";
 import type { ChatModelTier } from "@/lib/ai/chat-models";
 import type { ChatTaskKind } from "@/lib/chat/task-router";
 import type { ChatStreamEvent } from "@/lib/chat/stream-protocol";
+import { randomUUID } from "node:crypto";
+import { operationForChatTaskKind } from "@/lib/ai/operation-registry";
+import { tokenUsage, type AiUsageEnvelope } from "@/lib/ai/billable-usage";
+import { AiUsageIntegration, resolveAiBillingIntegrationMode } from "@/lib/billing/application/ai-usage-integration";
+import { SupabaseAiUsageEventSink } from "@/lib/billing/infrastructure/supabase/supabase-ai-usage-event-sink";
 
 type UsageEvent = Extract<ChatStreamEvent, { type: "usage" }>;
 
@@ -53,9 +58,43 @@ export async function recordAiUsage(
     taskKind: ChatTaskKind;
     projectName: string;
     modelTier: ChatModelTier;
+    provider: string;
+    billingOperationId: string;
     usage: UsageEvent;
   },
 ): Promise<void> {
+  const mode = resolveAiBillingIntegrationMode();
+  if (mode === "meter_only") {
+    const envelope: AiUsageEnvelope = {
+      usageEventId: randomUUID(),
+      billingOperationId: params.billingOperationId,
+      operation: operationForChatTaskKind(params.taskKind),
+      provider: params.provider,
+      modelId: params.usage.model,
+      attemptNumber: 1,
+      cacheHit: false,
+      usage: [
+        tokenUsage(params.usage),
+        ...(params.usage.webSearchCalls > 0
+          ? [{ kind: "tool_call" as const, tool: "web_search", count: params.usage.webSearchCalls }]
+          : []),
+        ...(params.usage.codeInterpreterCalls > 0
+          ? [{ kind: "tool_call" as const, tool: "code_interpreter", count: params.usage.codeInterpreterCalls }]
+          : []),
+      ],
+      occurredAt: new Date().toISOString(),
+    };
+    await new AiUsageIntegration(
+      new SupabaseAiUsageEventSink(supabase, {
+        feature: params.feature,
+        taskKind: params.taskKind,
+        projectName: params.projectName,
+        modelTier: params.modelTier,
+      }),
+      mode,
+    ).record(params.userId, envelope);
+    return;
+  }
   const { error } = await supabase.from("ai_usage_events").insert({
     user_id: params.userId,
     feature: params.feature,

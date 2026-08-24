@@ -1,6 +1,6 @@
 import { validateChatMessages } from "@/lib/ai/provider";
 import { openResponsesChatStream } from "@/lib/ai/openai";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ChatMessage } from "@/lib/ai/types";
 import { getTextFromMessageContent } from "@/lib/ai/types";
 import {
@@ -1189,6 +1189,7 @@ function formatCompactPlanDisclosure(
 export async function POST(request: Request) {
   try {
     const user = await requireChatUser();
+    const chatBillingOperationId = randomUUID();
     const supabase = await createClient();
     await assertDailyAiBudgetAvailable(supabase, user.id);
     const body = (await request.json()) as ChatRequestBody;
@@ -1618,6 +1619,8 @@ export async function POST(request: Request) {
                   taskKind: taskRoute.kind,
                   projectName: effectiveProjectName,
                   modelTier: tier,
+                  provider: option.provider,
+                  billingOperationId: chatBillingOperationId,
                   usage: event,
                 });
               }
@@ -1687,6 +1690,8 @@ export async function POST(request: Request) {
                   taskKind: taskRoute.kind,
                   projectName: effectiveProjectName,
                   modelTier: tier,
+                  provider: option.provider,
+                  billingOperationId: chatBillingOperationId,
                   usage: event,
                 });
                 controller.enqueue(encodeChatStreamEvent(event));
@@ -1786,6 +1791,8 @@ export async function POST(request: Request) {
                   taskKind: taskRoute.kind,
                   projectName: effectiveProjectName,
                   modelTier: tier,
+                  provider: option.provider,
+                  billingOperationId: chatBillingOperationId,
                   usage: event,
                 });
                 controller.enqueue(encodeChatStreamEvent(event));
