@@ -87,7 +87,6 @@ import type {
   LiteratureFolder,
   LiteraturePaper,
 } from "@/lib/literature/types";
-import { createClient } from "@/lib/supabase/client";
 import { getAttachmentKind } from "@/lib/uploads/constants";
 
 const CHAT_LIBRARY_FILTERS = {
@@ -369,7 +368,6 @@ export function ChatShell({
     null,
   );
   const [isStreaming, setIsStreaming] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activity, setActivity] = useState<string | null>(null);
   const [usage, setUsage] = useState({
@@ -1063,20 +1061,6 @@ export function ChatShell({
     },
     [activeToolFolderId, isUploadingToFolder, reloadLibrary],
   );
-
-  const handleLogout = useCallback(async () => {
-    abortActiveStream();
-    setIsLoggingOut(true);
-    try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      router.push("/auth");
-      router.refresh();
-    } catch {
-      setError("退出登录失败，请重试。");
-      setIsLoggingOut(false);
-    }
-  }, [abortActiveStream, router]);
 
   const submitMessage = useCallback(
     async (
@@ -1775,9 +1759,7 @@ export function ChatShell({
         onContinueProject={handleContinueProject}
         onRenameProject={handleRenameProject}
         onDeleteProject={handleDeleteProject}
-        onLogout={handleLogout}
         onDesktopCollapse={toggleLeft}
-        isLoggingOut={isLoggingOut}
         syncError={syncError}
         />
       </div>

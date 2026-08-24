@@ -8,9 +8,13 @@ import {
   CreditCard,
   LayoutDashboard,
   ListChecks,
+  LogOut,
   ShieldCheck,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import type { AccountSectionId } from "@/lib/account/domain/contracts";
+import { createClient } from "@/lib/supabase/client";
 
 const ITEMS: ReadonlyArray<{
   id: AccountSectionId;
@@ -28,6 +32,19 @@ const ITEMS: ReadonlyArray<{
 
 export function AccountNavigation() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  async function logout() {
+    setIsLoggingOut(true);
+    const { error } = await createClient().auth.signOut();
+    if (error) {
+      setIsLoggingOut(false);
+      return;
+    }
+    router.replace("/auth");
+    router.refresh();
+  }
 
   return (
     <nav aria-label="账号中心" className="space-y-1">
@@ -53,6 +70,16 @@ export function AccountNavigation() {
           </Link>
         );
       })}
+      <div className="my-2 border-t border-[#e4ebee]" />
+      <button
+        type="button"
+        onClick={logout}
+        disabled={isLoggingOut}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-[#687980] transition-colors hover:bg-[#f3f6f7] hover:text-[#172126] disabled:opacity-50"
+      >
+        <LogOut className="h-4 w-4" />
+        {isLoggingOut ? "正在退出…" : "退出登录"}
+      </button>
     </nav>
   );
 }

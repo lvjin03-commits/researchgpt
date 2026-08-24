@@ -6,10 +6,10 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
+  CircleUserRound,
   Folder,
   FolderOpen,
   Languages,
-  LogOut,
   MessageSquare,
   Microscope,
   NotebookPen,
@@ -56,9 +56,7 @@ type SidebarProps = {
   onContinueProject: (project: ResearchProject) => void;
   onRenameProject: (project: ResearchProject) => void;
   onDeleteProject: (project: ResearchProject) => void;
-  onLogout: () => void;
   onDesktopCollapse?: () => void;
-  isLoggingOut?: boolean;
   syncError?: string | null;
 };
 
@@ -92,9 +90,7 @@ export function Sidebar({
   onContinueProject,
   onRenameProject,
   onDeleteProject,
-  onLogout,
   onDesktopCollapse,
-  isLoggingOut = false,
   syncError = null,
 }: SidebarProps) {
   const [folderSearch, setFolderSearch] = useState("");
@@ -583,15 +579,13 @@ export function Sidebar({
             <CircleDollarSign className="h-4 w-4" />
             AI 用量与成本
           </a>
-          <button
-            type="button"
-            onClick={onLogout}
-            disabled={isLoggingOut}
-            className="flex w-full items-center gap-2 px-2 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50"
+          <a
+            href="/account"
+            className="flex w-full items-center gap-2 px-2 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-900"
           >
-            <LogOut className="h-4 w-4" />
-            {isLoggingOut ? "正在退出…" : "退出登录"}
-          </button>
+            <CircleUserRound className="h-4 w-4" />
+            账号中心
+          </a>
         </div>
       </aside>
     </>
