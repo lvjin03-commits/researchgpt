@@ -4,12 +4,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-type AuthMode = "login" | "signup";
+type AuthMode = "login" | "signup" | "recovery";
 
 export function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [mode, setMode] = useState<AuthMode>(searchParams.get("mode") === "recovery" ? "recovery" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +27,12 @@ export function AuthForm() {
     const supabase = createClient();
 
     try {
+      if (mode === "recovery") {
+        const { error: updateError } = await supabase.auth.updateUser({ password });
+        if (updateError) { setError(updateError.message); return; }
+        setMessage("密码已更新，现在可以继续使用当前账号。");
+        return;
+      }
       if (mode === "login") {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -76,13 +82,11 @@ export function AuthForm() {
             ResearchGPT
           </h1>
           <p className="mt-2 text-sm text-gray-500">
-            {mode === "login"
-              ? "登录以继续你的研究"
-              : "创建账号以开始使用"}
+            {mode === "recovery" ? "设置新的登录密码" : mode === "login" ? "登录以继续你的研究" : "创建账号以开始使用"}
           </p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
+        {mode !== "recovery" && <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
           <button
             type="button"
             onClick={() => {
@@ -113,10 +117,10 @@ export function AuthForm() {
           >
             注册
           </button>
-        </div>
+        </div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
+          {mode !== "recovery" && <div>
             <label
               htmlFor="email"
               className="mb-1.5 block text-sm font-medium text-gray-700"
@@ -133,7 +137,7 @@ export function AuthForm() {
               className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-gray-300"
               placeholder="you@example.com"
             />
-          </div>
+          </div>}
 
           <div>
             <label
@@ -176,9 +180,7 @@ export function AuthForm() {
           >
             {isSubmitting
               ? "请稍候…"
-              : mode === "login"
-                ? "登录"
-                : "创建账号"}
+              : mode === "recovery" ? "保存新密码" : mode === "login" ? "登录" : "创建账号"}
           </button>
         </form>
       </div>

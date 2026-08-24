@@ -26,6 +26,12 @@ export const PointPaymentOrderSchema = z.object({
 }).strict();
 export type PointPaymentOrder = z.infer<typeof PointPaymentOrderSchema>;
 
+export const PointPaymentOrderPageSchema = z.object({
+  orders: z.array(PointPaymentOrderSchema),
+  nextCursor: z.string().min(1).nullable(),
+}).strict();
+export type PointPaymentOrderPage = z.infer<typeof PointPaymentOrderPageSchema>;
+
 const VerifiedPaymentEventBaseSchema = z.object({
   providerEventId: z.string().trim().min(1).max(200),
   provider: z.string().trim().min(1).max(50),

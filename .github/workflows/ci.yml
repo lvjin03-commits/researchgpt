@@ -35,6 +35,9 @@ jobs:
       - run: npm run test:point-payment-contracts
       - run: npm run test:payment-risk-controls
       - run: npm run test:billing-canary
+      - run: npm run test:account-statements
+      - run: npm run test:account-orders-resume
+      - run: npm run test:account-security
       - run: npm run check:document-architecture
       - run: npm run test:document-contracts
       - run: npm run test:document-v2-templates

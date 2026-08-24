@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { ChatInput, type ChatSendPayload } from "@/components/chat-input";
 import { ChatMessages } from "@/components/chat-messages";
+import { AccountMenu } from "@/components/account/account-menu";
 import { DesktopConnectionStatus } from "@/components/desktop-connection-status";
 import { MenuIcon } from "@/components/icons";
 import { ProjectTranslationDialog } from "@/components/project-translation-dialog";
@@ -1832,6 +1833,7 @@ export function ChatShell({
           <div className="ml-auto">
             <DesktopConnectionStatus compact />
           </div>
+          <AccountMenu compact />
           {!toolPanelOpen && (
             <button
               type="button"

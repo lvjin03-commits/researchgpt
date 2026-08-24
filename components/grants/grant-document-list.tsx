@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { AccountMenu } from "@/components/account/account-menu";
 import type { GrantDocument } from "@/lib/grants/domain/contracts";
 import type { GrantDocxImportPreview } from "@/lib/grants/imports/contracts";
 
@@ -115,10 +116,13 @@ export function GrantDocumentList() {
   return (
     <main className="research-canvas min-h-screen px-6 py-10">
       <div className="mx-auto max-w-5xl space-y-8">
-        <header>
-          <p className="research-eyebrow">ResearchGPT · Grant Workspace</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">国自然申请书协作工作台</h1>
-          <p className="mt-2 text-sm text-slate-600">结构化编辑、用户确认保存与可恢复版本。AI诊断和修改建议将在后续阶段接入。</p>
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <p className="research-eyebrow">ResearchGPT · Grant Workspace</p>
+            <h1 className="mt-2 text-3xl font-semibold text-slate-900">国自然申请书协作工作台</h1>
+            <p className="mt-2 text-sm text-slate-600">结构化编辑、用户确认保存与可恢复版本。AI诊断和修改建议将在后续阶段接入。</p>
+          </div>
+          <AccountMenu />
         </header>
 
         <div className="grid gap-5 lg:grid-cols-2">

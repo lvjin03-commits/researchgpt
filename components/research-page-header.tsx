@@ -13,6 +13,7 @@ import {
   Microscope,
   Search,
 } from "lucide-react";
+import { AccountMenu } from "@/components/account/account-menu";
 
 type ResearchPageHeaderProps = {
   title: string;
@@ -91,6 +92,7 @@ export function ResearchPageHeader({
               );
             })}
           </nav>
+          <AccountMenu compact />
         </div>
       </div>
 

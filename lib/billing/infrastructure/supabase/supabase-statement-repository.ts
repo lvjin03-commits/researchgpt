@@ -6,10 +6,10 @@ export class SupabasePointStatementRepository implements PointStatementRepositor
   private readonly client: SupabaseClient;
   constructor(client: SupabaseClient) { this.client = client; }
   async getStatement(input: Parameters<PointStatementRepository["getStatement"]>[0]) {
-    const { data, error } = await this.client.rpc("point_statement_for_owner", {
-      p_owner_id: input.ownerId, p_cursor: input.cursor, p_limit: input.limit,
+    const { data, error } = await this.client.rpc("point_statement_for_owner_v2", {
+      p_owner_id: input.ownerId, p_cursor: input.cursor, p_limit: input.limit, p_kind: input.kind,
     });
-    if (error) throw new Error(`point_statement_for_owner failed: ${error.message}`);
+    if (error) throw new Error(`point_statement_for_owner_v2 failed: ${error.message}`);
     return PointStatementSchema.parse(data);
   }
 }

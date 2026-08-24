@@ -17,6 +17,8 @@ export const config = {
     "/translate",
     "/translate/:path*",
     "/usage",
+    "/account",
+    "/account/:path*",
     "/literature",
     "/literature/:path*",
   ],

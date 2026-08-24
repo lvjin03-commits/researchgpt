@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AccountMenu } from "@/components/account/account-menu";
 import { estimateGrantLength } from "@/lib/grants/application/length-estimator";
 import type { CanonicalGrantSnapshot, GrantLengthEstimate, GrantRevisionSummary } from "@/lib/grants/domain/contracts";
 import type { GrantFindingFeedback } from "@/lib/grants/feedback/contracts";
@@ -471,6 +472,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
               导出 Word
             </a>
           )}
+          <AccountMenu compact />
         </div>
       </header>
 

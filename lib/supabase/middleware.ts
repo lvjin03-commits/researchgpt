@@ -36,6 +36,7 @@ export async function updateSession(request: NextRequest) {
   if (
     !user &&
     (pathname.startsWith("/chat") ||
+      pathname.startsWith("/account") ||
       pathname.startsWith("/translate") ||
       pathname.startsWith("/literature"))
   ) {

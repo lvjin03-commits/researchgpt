@@ -3,7 +3,7 @@ import { PointAccountSchema, PointLotSchema, type PointAccountSnapshot } from ".
 import { PointPaymentOrderSchema, type PointPaymentOrder } from "../../domain/payment-contracts.ts";
 import type { PaymentRepository } from "../../ports/payment-repository.ts";
 
-function orderFromJson(value: Record<string, unknown>): PointPaymentOrder {
+export function orderFromJson(value: Record<string, unknown>): PointPaymentOrder {
   return PointPaymentOrderSchema.parse({
     orderId: value.orderId ?? value.order_id,
     ownerId: value.ownerId ?? value.owner_id,

@@ -24,3 +24,12 @@ export const PointStatementSchema = z.object({
   nextCursor: z.string().min(1).nullable(),
 }).strict();
 export type PointStatement = z.infer<typeof PointStatementSchema>;
+
+export const PointStatementFilterSchema = z.enum([
+  "grant",
+  "reserve",
+  "settle",
+  "release",
+  "reversal",
+]);
+export type PointStatementFilter = z.infer<typeof PointStatementFilterSchema>;
