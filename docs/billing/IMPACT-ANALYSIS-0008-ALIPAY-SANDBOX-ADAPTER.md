@@ -41,8 +41,10 @@ gateway allowlisted by server configuration. Required configuration is:
 - `ALIPAY_PUBLIC_KEY`
 - `ALIPAY_SELLER_ID`
 - `ALIPAY_GATEWAY_URL`
-- `ALIPAY_NOTIFY_URL`
-- `ALIPAY_RETURN_URL`
+- `ALIPAY_NOTIFY_URL` and `ALIPAY_RETURN_URL` are optional explicit overrides.
+  On Vercel Preview, the adapter derives them from the system-owned
+  `VERCEL_URL` and `VERCEL_AUTOMATION_BYPASS_SECRET` values so the bypass
+  secret is not duplicated in project configuration.
 
 Secrets are never returned to the browser, written to the repository, copied
 from production, or logged. Missing configuration leaves checkout disabled.

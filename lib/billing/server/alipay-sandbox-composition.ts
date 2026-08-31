@@ -11,6 +11,18 @@ function requiredEnvironment(name: string) {
   return value;
 }
 
+function alipayCallbackUrl(pathname: string, setBypassCookie = false) {
+  const explicitName = setBypassCookie ? "ALIPAY_RETURN_URL" : "ALIPAY_NOTIFY_URL";
+  const explicit = process.env[explicitName]?.trim();
+  if (explicit) return explicit;
+  const deploymentHost = requiredEnvironment("VERCEL_URL");
+  const bypassSecret = requiredEnvironment("VERCEL_AUTOMATION_BYPASS_SECRET");
+  const url = new URL(`https://${deploymentHost}${pathname}`);
+  url.searchParams.set("x-vercel-protection-bypass", bypassSecret);
+  if (setBypassCookie) url.searchParams.set("x-vercel-set-bypass-cookie", "true");
+  return url.toString();
+}
+
 export function createAlipaySandboxPaymentProvider() {
   if (process.env.ALIPAY_PAYMENT_MODE !== "sandbox") {
     throw new Error("Alipay sandbox checkout is disabled.");
@@ -21,8 +33,8 @@ export function createAlipaySandboxPaymentProvider() {
     alipayPublicKey: requiredEnvironment("ALIPAY_PUBLIC_KEY"),
     sellerId: requiredEnvironment("ALIPAY_SELLER_ID"),
     gateway: requiredEnvironment("ALIPAY_GATEWAY_URL"),
-    notifyUrl: requiredEnvironment("ALIPAY_NOTIFY_URL"),
-    returnUrl: requiredEnvironment("ALIPAY_RETURN_URL"),
+    notifyUrl: alipayCallbackUrl("/api/payments/alipay/notify"),
+    returnUrl: alipayCallbackUrl("/account/points/payment-return", true),
   });
 }
 
