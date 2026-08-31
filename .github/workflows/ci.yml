@@ -33,6 +33,7 @@ jobs:
       - run: npm run test:point-billing-engine
       - run: npm run test:ai-billing-integration
       - run: npm run test:point-payment-contracts
+      - run: npm run test:alipay-sandbox
       - run: npm run test:payment-risk-controls
       - run: npm run test:billing-canary
       - run: npm run test:account-statements

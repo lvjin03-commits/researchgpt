@@ -1,11 +1,17 @@
 import type { PointPaymentOrder, VerifiedPaymentEvent } from "../domain/payment-contracts.ts";
 
-export type PaymentCheckout = {
+type PaymentCheckoutBase = {
   providerOrderId: string;
-  checkoutKind: "qr_code" | "redirect";
-  checkoutUrl: string;
   expiresAt: string;
 };
+
+export type PaymentCheckout = PaymentCheckoutBase & ({
+  checkoutKind: "qr_code" | "redirect";
+  checkoutUrl: string;
+} | {
+  checkoutKind: "html_form";
+  checkoutHtml: string;
+});
 
 export interface PaymentProvider {
   readonly providerId: string;
