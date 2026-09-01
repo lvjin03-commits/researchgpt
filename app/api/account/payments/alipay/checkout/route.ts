@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAccountAdminClient } from "@/lib/account/server/admin-client";
 import { createAlipaySandboxPaymentService } from "@/lib/billing/server/alipay-sandbox-composition";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const requestedPoints = Number(form.get("requestedPoints"));
     const returnContextValue = String(form.get("returnContextId") ?? "").trim();
-    const result = await createAlipaySandboxPaymentService(supabase).createCheckout({
+    const result = await createAlipaySandboxPaymentService(createAccountAdminClient()).createCheckout({
       ownerId: user.id,
       requestedPoints,
       returnContextId: returnContextValue || undefined,
