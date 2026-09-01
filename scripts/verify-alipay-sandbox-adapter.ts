@@ -78,6 +78,8 @@ assert.equal(checkout.checkoutKind, "html_form");
 assert.equal(checkout.providerOrderId, orderId);
 assert.match(checkout.checkoutHtml, /openapi-sandbox\.dl\.alipaydev\.com/);
 assert.match(checkout.checkoutHtml, /FAST_INSTANT_TRADE_PAY/);
+assert.match(checkout.checkoutHtml, /^<!doctype html>/);
+assert.match(checkout.checkoutHtml, /进入支付宝沙箱收银台/);
 
 const notification: Record<string, string> = {
   notify_time: "2026-08-31 20:01:02",
