@@ -58,4 +58,8 @@ export class SignedTestPaymentProvider implements PaymentProvider {
       audit: { testEvent: true },
     });
   }
+
+  async querySuccessfulPayment() {
+    return null;
+  }
 }

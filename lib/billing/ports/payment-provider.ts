@@ -18,4 +18,5 @@ export interface PaymentProvider {
   readonly merchantAccountId: string;
   createCheckout(order: PointPaymentOrder): Promise<PaymentCheckout>;
   verifyWebhook(input: { rawBody: Uint8Array; headers: Headers }): Promise<VerifiedPaymentEvent>;
+  querySuccessfulPayment(order: PointPaymentOrder): Promise<VerifiedPaymentEvent | null>;
 }

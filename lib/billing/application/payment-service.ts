@@ -55,6 +55,21 @@ export class PointPaymentService {
 
   async confirmWebhook(input: { rawBody: Uint8Array; headers: Headers }) {
     const event = VerifiedPaymentEventSchema.parse(await this.provider.verifyWebhook(input));
+    return this.applyVerifiedEvent(event);
+  }
+
+  async reconcileOrder(input: { orderId: string; ownerId: string }) {
+    const order = await this.repository.getOrderForOwner(input.orderId, input.ownerId);
+    if (!order) throw new Error("Payment order was not found for this account.");
+    if (order.status === "paid") return { status: "paid" as const, order };
+    if (order.status !== "pending") return { status: order.status, order };
+    const queried = await this.provider.querySuccessfulPayment(order);
+    if (!queried) return { status: "pending" as const, order };
+    const settled = await this.applyVerifiedEvent(VerifiedPaymentEventSchema.parse(queried));
+    return { status: "paid" as const, order: settled.order, account: settled.account };
+  }
+
+  private async applyVerifiedEvent(event: ReturnType<typeof VerifiedPaymentEventSchema.parse>) {
     if (event.provider !== this.provider.providerId || event.merchantAccountId !== this.provider.merchantAccountId) {
       throw new Error("Verified payment event does not match the configured provider and merchant.");
     }

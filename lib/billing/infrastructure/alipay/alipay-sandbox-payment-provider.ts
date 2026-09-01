@@ -5,7 +5,7 @@ import type { PaymentCheckout, PaymentProvider } from "../../ports/payment-provi
 const ALIPAY_SANDBOX_GATEWAY = "https://openapi-sandbox.dl.alipaydev.com/gateway.do";
 const PAID_STATUSES = new Set(["TRADE_SUCCESS", "TRADE_FINISHED"]);
 
-export type AlipaySdkPort = Pick<AlipaySdk, "pageExec" | "checkNotifySignV2">;
+export type AlipaySdkPort = Pick<AlipaySdk, "pageExec" | "checkNotifySignV2" | "exec">;
 
 export type AlipaySandboxPaymentConfig = {
   appId: string;
@@ -132,6 +132,44 @@ export class AlipaySandboxPaymentProvider implements PaymentProvider {
         sellerId: this.merchantAccountId,
         tradeNo,
         tradeStatus: payload.trade_status,
+      },
+    });
+  }
+
+  async querySuccessfulPayment(order: PointPaymentOrder) {
+    if (order.provider !== this.providerId || order.merchantAccountId !== this.merchantAccountId) {
+      throw new Error("Payment order does not belong to the configured Alipay merchant.");
+    }
+    const result = await this.sdk.exec("alipay.trade.query", {
+      bizContent: { out_trade_no: order.orderId },
+    }, { validateSign: true });
+    if (result.code !== "10000") {
+      if (result.sub_code === "ACQ.TRADE_NOT_EXIST") return null;
+      throw new Error(`Alipay trade query failed: ${result.sub_code ?? result.code}.`);
+    }
+    if (!PAID_STATUSES.has(String(result.trade_status ?? ""))) return null;
+    if (String(result.out_trade_no ?? "") !== order.orderId) throw new Error("Alipay trade query order mismatch.");
+    if (String(result.seller_id ?? "") !== this.merchantAccountId) throw new Error("Alipay trade query seller mismatch.");
+    const tradeNo = requireValue(String(result.trade_no ?? ""), "trade number");
+    const occurredAt = result.send_pay_date
+      ? alipayTimeToIso(String(result.send_pay_date))
+      : new Date().toISOString();
+    return VerifiedPaymentEventSchema.parse({
+      providerEventId: `alipay-query:${tradeNo}`,
+      provider: this.providerId,
+      eventKind: "payment_succeeded",
+      merchantAccountId: this.merchantAccountId,
+      providerOrderId: order.orderId,
+      orderId: order.orderId,
+      amountMinorUnits: yuanToMinorUnits(requireValue(String(result.total_amount ?? ""), "amount")),
+      currency: "CNY",
+      occurredAt,
+      audit: {
+        appId: this.appId,
+        sellerId: this.merchantAccountId,
+        tradeNo,
+        tradeStatus: String(result.trade_status),
+        confirmationSource: "alipay.trade.query",
       },
     });
   }

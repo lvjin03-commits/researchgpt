@@ -99,6 +99,29 @@ assert.equal(event.amountMinorUnits, 316);
 assert.equal(event.providerEventId, "notify-sandbox-1");
 assert.equal(event.audit.tradeNo, notification.trade_no);
 
+const queriedProvider = new AlipaySandboxPaymentProvider({
+  appId, sellerId, privateKey: applicationKeys.privateKey, alipayPublicKey: alipayKeys.publicKey,
+  gateway: ALIPAY_SANDBOX_GATEWAY, notifyUrl: "https://preview.example.test/notify", returnUrl: "https://preview.example.test/return",
+}, {
+  pageExec: sdk.pageExec.bind(sdk),
+  checkNotifySignV2: sdk.checkNotifySignV2.bind(sdk),
+  exec: async () => ({
+    code: "10000", msg: "Success", out_trade_no: orderId,
+    trade_no: notification.trade_no, seller_id: sellerId,
+    trade_status: "TRADE_SUCCESS", total_amount: "3.16",
+    send_pay_date: "2026-08-31 20:01:02",
+  }),
+});
+const queriedEvent = await queriedProvider.querySuccessfulPayment({
+  orderId, ownerId: randomUUID(), provider: provider.providerId, merchantAccountId: sellerId,
+  providerOrderId: orderId, status: "pending", purchasedPoints: 316, bonusPoints: 41,
+  amountMinorUnits: 316, currency: "CNY", purchasePolicyVersion: "point-purchase-v1",
+  bonusCampaignVersion: "launch-bonus-v1", returnContextId: null,
+  createdAt: "2026-08-31T12:00:00.000Z", paidAt: null,
+});
+assert.equal(queriedEvent?.providerEventId, `alipay-query:${notification.trade_no}`);
+assert.equal(queriedEvent?.amountMinorUnits, 316);
+
 const tampered = new URLSearchParams(notification);
 tampered.set("total_amount", "3.17");
 await assert.rejects(() => provider.verifyWebhook({ rawBody: new TextEncoder().encode(tampered.toString()), headers: new Headers() }), /signature/);
