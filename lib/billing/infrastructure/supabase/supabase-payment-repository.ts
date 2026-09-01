@@ -25,6 +25,7 @@ export function orderFromJson(value: Record<string, unknown>): PointPaymentOrder
 
 function accountFromJson(value: unknown): PointAccountSnapshot {
   const source = value as { account: Record<string, unknown>; lots: Array<Record<string, unknown>> };
+  const toUtcIso = (timestamp: unknown) => new Date(String(timestamp)).toISOString();
   return {
     account: PointAccountSchema.parse({
       ...source.account,
@@ -32,11 +33,15 @@ function accountFromJson(value: unknown): PointAccountSnapshot {
       reservedPoints: Number(source.account.reservedPoints),
       lifetimeSpentPoints: Number(source.account.lifetimeSpentPoints),
       version: Number(source.account.version),
+      createdAt: toUtcIso(source.account.createdAt),
+      updatedAt: toUtcIso(source.account.updatedAt),
     }),
     lots: source.lots.map((lot) => PointLotSchema.parse({
       ...lot,
       pointsGranted: Number(lot.pointsGranted),
       pointsRemaining: Number(lot.pointsRemaining),
+      expiresAt: lot.expiresAt ? toUtcIso(lot.expiresAt) : null,
+      createdAt: toUtcIso(lot.createdAt),
     })),
   };
 }
