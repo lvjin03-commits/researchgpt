@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
       requestedPoints,
       returnContextId: returnContextValue || undefined,
     });
-    if (result.checkout.checkoutKind !== "html_form") throw new Error("Unexpected checkout kind.");
-    return htmlResponse(result.checkout.checkoutHtml);
+    if (result.checkout.checkoutKind !== "redirect") throw new Error("Unexpected checkout kind.");
+    return Response.redirect(result.checkout.checkoutUrl, 303);
   } catch (error) {
     console.error("[alipay-sandbox-checkout] checkout rejected", error instanceof Error ? error.message : "unknown");
     return htmlResponse("<p>支付宝沙箱订单创建失败，请返回智点账户后重试。</p>", 400);

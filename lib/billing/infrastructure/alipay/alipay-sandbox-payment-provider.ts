@@ -50,18 +50,6 @@ function parseFormBody(rawBody: Uint8Array) {
   return values;
 }
 
-function checkoutPage(sdkFormHtml: string) {
-  const visibleFormHtml = sdkFormHtml.replace(
-    "</form>",
-    `<main style="font-family:system-ui,sans-serif;max-width:560px;margin:64px auto;padding:24px;text-align:center">
-      <h1 style="font-size:22px;margin:0 0 12px">正在进入支付宝沙箱收银台</h1>
-      <p style="color:#52616b;margin:0 0 24px">如果页面没有自动跳转，请点击下面的按钮。请勿重复创建订单。</p>
-      <button type="submit" style="border:0;border-radius:10px;background:#1677ff;color:#fff;padding:12px 22px;font-size:16px;cursor:pointer">进入支付宝沙箱收银台</button>
-    </main></form>`,
-  );
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>前往支付宝沙箱</title></head><body>${visibleFormHtml}</body></html>`;
-}
-
 export class AlipaySandboxPaymentProvider implements PaymentProvider {
   readonly providerId = "alipay_sandbox";
   readonly merchantAccountId: string;
@@ -95,7 +83,7 @@ export class AlipaySandboxPaymentProvider implements PaymentProvider {
   }
 
   async createCheckout(order: PointPaymentOrder): Promise<PaymentCheckout> {
-    const checkoutHtml = this.sdk.pageExec("alipay.trade.page.pay", "POST", {
+    const checkoutUrl = this.sdk.pageExec("alipay.trade.page.pay", "GET", {
       return_url: this.returnUrl,
       notify_url: this.notifyUrl,
       bizContent: {
@@ -105,13 +93,13 @@ export class AlipaySandboxPaymentProvider implements PaymentProvider {
         product_code: "FAST_INSTANT_TRADE_PAY",
       },
     });
-    if (!checkoutHtml.includes("<form") || !checkoutHtml.includes(this.gateway)) {
-      throw new Error("Alipay SDK did not produce the expected sandbox checkout form.");
+    if (!checkoutUrl.startsWith(`${this.gateway}?`)) {
+      throw new Error("Alipay SDK did not produce the expected sandbox checkout URL.");
     }
     return {
       providerOrderId: order.orderId,
-      checkoutKind: "html_form",
-      checkoutHtml: checkoutPage(checkoutHtml),
+      checkoutKind: "redirect",
+      checkoutUrl,
       expiresAt: new Date(Date.parse(order.createdAt) + 15 * 60_000).toISOString(),
     };
   }
@@ -149,4 +137,4 @@ export class AlipaySandboxPaymentProvider implements PaymentProvider {
   }
 }
 
-export { ALIPAY_SANDBOX_GATEWAY, checkoutPage, minorUnitsToYuan, yuanToMinorUnits };
+export { ALIPAY_SANDBOX_GATEWAY, minorUnitsToYuan, yuanToMinorUnits };

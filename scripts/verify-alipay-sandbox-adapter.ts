@@ -74,12 +74,10 @@ const checkout = await provider.createCheckout({
   createdAt: "2026-08-31T12:00:00.000Z",
   paidAt: null,
 });
-assert.equal(checkout.checkoutKind, "html_form");
+assert.equal(checkout.checkoutKind, "redirect");
 assert.equal(checkout.providerOrderId, orderId);
-assert.match(checkout.checkoutHtml, /openapi-sandbox\.dl\.alipaydev\.com/);
-assert.match(checkout.checkoutHtml, /FAST_INSTANT_TRADE_PAY/);
-assert.match(checkout.checkoutHtml, /^<!doctype html>/);
-assert.match(checkout.checkoutHtml, /进入支付宝沙箱收银台/);
+assert.match(checkout.checkoutUrl, /^https:\/\/openapi-sandbox\.dl\.alipaydev\.com\/gateway\.do\?/);
+assert.match(checkout.checkoutUrl, /FAST_INSTANT_TRADE_PAY/);
 
 const notification: Record<string, string> = {
   notify_time: "2026-08-31 20:01:02",
@@ -109,4 +107,4 @@ const pending: Record<string, string> = { ...notification, trade_status: "WAIT_B
 pending.sign = sign("RSA-SHA256", Buffer.from(signatureContent(pending), "utf8"), alipayKeys.privateKey).toString("base64");
 await assert.rejects(() => provider.verifyWebhook({ rawBody: new TextEncoder().encode(new URLSearchParams(pending).toString()), headers: new Headers() }), /not a paid event/);
 
-console.log("Alipay sandbox form, RSA2 notification and rejection contracts passed.");
+console.log("Alipay sandbox redirect, RSA2 notification and rejection contracts passed.");
