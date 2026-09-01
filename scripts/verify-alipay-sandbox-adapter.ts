@@ -107,7 +107,7 @@ const queriedProvider = new AlipaySandboxPaymentProvider({
   checkNotifySignV2: sdk.checkNotifySignV2.bind(sdk),
   exec: async () => ({
     code: "10000", msg: "Success", out_trade_no: orderId,
-    trade_no: notification.trade_no, seller_id: sellerId,
+    trade_no: notification.trade_no,
     trade_status: "TRADE_SUCCESS", total_amount: "3.16",
     send_pay_date: "2026-08-31 20:01:02",
   }),

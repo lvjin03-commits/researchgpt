@@ -149,7 +149,9 @@ export class AlipaySandboxPaymentProvider implements PaymentProvider {
     }
     if (!PAID_STATUSES.has(String(result.trade_status ?? ""))) return null;
     if (String(result.out_trade_no ?? "") !== order.orderId) throw new Error("Alipay trade query order mismatch.");
-    if (String(result.seller_id ?? "") !== this.merchantAccountId) throw new Error("Alipay trade query seller mismatch.");
+    if (result.seller_id && String(result.seller_id) !== this.merchantAccountId) {
+      throw new Error("Alipay trade query seller mismatch.");
+    }
     const tradeNo = requireValue(String(result.trade_no ?? ""), "trade number");
     const occurredAt = result.send_pay_date
       ? alipayTimeToIso(String(result.send_pay_date))
