@@ -1,5 +1,5 @@
 import { createAccountAdminClient } from "@/lib/account/server/admin-client";
-import { createAlipaySandboxPaymentService } from "@/lib/billing/server/alipay-sandbox-composition";
+import { createAlipayPaymentService } from "@/lib/billing/server/alipay-composition";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,13 +14,13 @@ function notificationResponse(value: "success" | "fail") {
 export async function POST(request: Request) {
   try {
     const rawBody = new Uint8Array(await request.arrayBuffer());
-    await createAlipaySandboxPaymentService(createAccountAdminClient()).confirmWebhook({
+    await createAlipayPaymentService(createAccountAdminClient()).confirmWebhook({
       rawBody,
       headers: request.headers,
     });
     return notificationResponse("success");
   } catch (error) {
-    console.error("[alipay-sandbox-notify] notification rejected", error instanceof Error ? error.message : "unknown");
+    console.error("[alipay-notify] notification rejected", error instanceof Error ? error.message : "unknown");
     return notificationResponse("fail");
   }
 }

@@ -6,6 +6,7 @@ import { AlipaySdk } from "alipay-sdk";
 process.env.ALIPAY_PAYMENT_MODE = "sandbox";
 
 const { AlipaySandboxPaymentProvider, ALIPAY_SANDBOX_GATEWAY, minorUnitsToYuan, yuanToMinorUnits } = await import("../lib/billing/infrastructure/alipay/alipay-sandbox-payment-provider.ts");
+const { AlipayPaymentProvider, ALIPAY_PRODUCTION_GATEWAY } = await import("../lib/billing/infrastructure/alipay/alipay-payment-provider.ts");
 
 function keyPair() {
   const pair = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -55,6 +56,29 @@ assert.throws(() => new AlipaySandboxPaymentProvider({
   gateway: "https://openapi.alipay.com/gateway.do",
   notifyUrl: "https://preview.example.test/notify", returnUrl: "https://preview.example.test/return",
 }, sdk));
+assert.throws(() => new AlipayPaymentProvider({
+  mode: "production", appId, sellerId, privateKey: applicationKeys.privateKey,
+  alipayPublicKey: alipayKeys.publicKey, gateway: ALIPAY_SANDBOX_GATEWAY,
+  notifyUrl: "https://researchgpt.example/notify", returnUrl: "https://researchgpt.example/return",
+}, sdk), /production adapter refuses/);
+assert.throws(() => new AlipayPaymentProvider({
+  mode: "sandbox", appId, sellerId, privateKey: applicationKeys.privateKey,
+  alipayPublicKey: alipayKeys.publicKey, gateway: ALIPAY_PRODUCTION_GATEWAY,
+  notifyUrl: "https://researchgpt.example/notify", returnUrl: "https://researchgpt.example/return",
+}, sdk), /sandbox adapter refuses/);
+
+const productionSdk = new AlipaySdk({
+  appId, privateKey: applicationKeys.privateKey, alipayPublicKey: alipayKeys.publicKey,
+  gateway: ALIPAY_PRODUCTION_GATEWAY, signType: "RSA2", keyType: "PKCS1", camelcase: false,
+});
+const productionProvider = new AlipayPaymentProvider({
+  mode: "production", appId, sellerId, privateKey: applicationKeys.privateKey,
+  alipayPublicKey: alipayKeys.publicKey, gateway: ALIPAY_PRODUCTION_GATEWAY,
+  notifyUrl: "https://researchgpt.example/api/payments/alipay/notify",
+  returnUrl: "https://researchgpt.example/account/points/payment-return",
+}, productionSdk);
+assert.equal(productionProvider.providerId, "alipay");
+assert.equal(productionProvider.gateway, ALIPAY_PRODUCTION_GATEWAY);
 
 const orderId = randomUUID();
 const checkout = await provider.createCheckout({
@@ -78,6 +102,27 @@ assert.equal(checkout.checkoutKind, "redirect");
 assert.equal(checkout.providerOrderId, orderId);
 assert.match(checkout.checkoutUrl, /^https:\/\/openapi-sandbox\.dl\.alipaydev\.com\/gateway\.do\?/);
 assert.match(checkout.checkoutUrl, /FAST_INSTANT_TRADE_PAY/);
+
+const productionCheckout = await productionProvider.createCheckout({
+  orderId,
+  ownerId: randomUUID(),
+  provider: productionProvider.providerId,
+  merchantAccountId: sellerId,
+  providerOrderId: null,
+  status: "pending",
+  purchasedPoints: 316,
+  bonusPoints: 41,
+  amountMinorUnits: 316,
+  currency: "CNY",
+  purchasePolicyVersion: "point-purchase-v1",
+  bonusCampaignVersion: "launch-bonus-v1",
+  returnContextId: null,
+  createdAt: "2026-08-31T12:00:00.000Z",
+  paidAt: null,
+});
+assert.equal(productionCheckout.checkoutKind, "redirect");
+if (productionCheckout.checkoutKind !== "redirect") throw new Error("Expected production redirect checkout.");
+assert.match(productionCheckout.checkoutUrl, /^https:\/\/openapi\.alipay\.com\/gateway\.do\?/);
 
 const notification: Record<string, string> = {
   notify_time: "2026-08-31 20:01:02",
@@ -130,4 +175,4 @@ const pending: Record<string, string> = { ...notification, trade_status: "WAIT_B
 pending.sign = sign("RSA-SHA256", Buffer.from(signatureContent(pending), "utf8"), alipayKeys.privateKey).toString("base64");
 await assert.rejects(() => provider.verifyWebhook({ rawBody: new TextEncoder().encode(new URLSearchParams(pending).toString()), headers: new Headers() }), /not a paid event/);
 
-console.log("Alipay sandbox redirect, RSA2 notification and rejection contracts passed.");
+console.log("Alipay sandbox and production gateway isolation, redirect, RSA2 notification and rejection contracts passed.");
