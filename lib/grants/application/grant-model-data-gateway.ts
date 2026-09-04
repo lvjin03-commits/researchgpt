@@ -21,6 +21,7 @@ import { buildGrantSemanticReviewV6PreparedInputV1 } from "../diagnostics/semant
 import type { GrantSemanticReviewV6PortableCheckpoint } from "../diagnostics/semantic-review-v6-persistence.ts";
 import type { GrantArgumentMapV1 } from "../diagnostics/hierarchical-semantic-contracts.ts";
 import { GrantFigureAuthorizationDeniedError, GrantFigureModelAuthorizationService } from "./figure-model-authorization-service.ts";
+import type { GrantDocumentSearchResult } from "./grant-document-retriever.ts";
 import type { GrantFigureAssetReader } from "../ports/grant-figure-asset-reader.ts";
 import {
   GRANT_DIAGNOSTIC_IMAGE_MEDIA_TYPES,
@@ -89,6 +90,7 @@ export class GrantModelDataGateway {
     snapshot: CanonicalGrantSnapshot;
     messages: GrantAssistantChatModelRequest["messages"];
     contextCards: GrantAssistantDocumentSelectionContext[];
+    retrievedDocumentBlocks?: GrantDocumentSearchResult[];
     candidateContext: {
       candidateId: string;
       targetLabel: string;
@@ -103,6 +105,14 @@ export class GrantModelDataGateway {
   }) {
     if (!this.model.answerChat) throw new GrantEvidenceProviderPolicyError("Grant assistant chat is not configured.");
     const admittedContext = this.validateAssistantDocumentSelections(input);
+    for (const [index, block] of (input.retrievedDocumentBlocks ?? []).entries()) {
+      admittedContext.push({
+        sourceAlias: `R${index + 1}`,
+        sourceType: "document_selection",
+        label: block.title,
+        excerpt: block.text,
+      });
+    }
     if (input.candidateContext) {
       admittedContext.push({
         sourceAlias: "CANDIDATE1",

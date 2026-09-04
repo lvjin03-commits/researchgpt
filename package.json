@@ -62,6 +62,7 @@
     "test:grant-ai-patches": "node --experimental-strip-types scripts/verify-grant-ai-patch-contracts.ts",
     "test:grant-model-execution": "node --experimental-strip-types scripts/verify-grant-model-execution.ts",
     "test:grant-assistant-chat": "node --experimental-strip-types scripts/verify-grant-assistant-chat.ts",
+    "test:grant-document-retriever": "node --experimental-strip-types scripts/verify-grant-document-retriever.ts",
     "test:grant-assistant-write-boundary": "node --experimental-strip-types scripts/verify-grant-assistant-write-boundary.ts",
     "test:grant-candidate-intelligence": "node --experimental-strip-types scripts/verify-grant-candidate-intelligence-contracts.ts",
     "test:grant-candidate-diff": "node --experimental-strip-types scripts/verify-grant-candidate-diff.ts",

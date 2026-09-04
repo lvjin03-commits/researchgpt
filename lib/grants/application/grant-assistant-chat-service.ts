@@ -14,6 +14,7 @@ import { candidateContextFocus, documentSelectionFocuses, resolveGrantAssistantF
 import type { GrantAiEditSessionRepository } from "../ports/grant-ai-edit-session-repository.ts";
 import { prepareGrantCandidateAnalysis } from "../edit-session/candidate-analysis.ts";
 import { grantAssistantCacheKey, grantCandidateRecommendedQuestions } from "../assistant/chat-intelligence.ts";
+import { retrieveGrantDocumentBlocks } from "./grant-document-retriever.ts";
 
 export class GrantAssistantChatError extends Error {
   readonly code: "grant_assistant_duplicate_turn" | "grant_assistant_history_invalid" | "grant_assistant_focus_ambiguous";
@@ -87,11 +88,20 @@ export class GrantAssistantChatService {
     if (focusResolution.kind === "ambiguous") {
       throw new GrantAssistantChatError("grant_assistant_focus_ambiguous", "请先确认这句话指的是哪一处内容。", focusResolution.choices);
     }
-    const effectiveContextCards = input.ignoreAmbiguousFocus
+    // Ordinary chat is grounded by server-side retrieval. Only an explicitly
+    // resolved document focus may carry a browser selection into validation;
+    // stale cards from an older page/session must never block a normal turn.
+    const effectiveContextCards = input.ignoreAmbiguousFocus || focusResolution.kind !== "resolved"
       ? []
-      : focusResolution.kind === "resolved"
+      : focusResolution.focus.kind === "document_selection"
         ? input.contextCards.filter((card) => card.contextCardId === focusResolution.focus.focusId)
-        : input.contextCards;
+        : [];
+    const retrievedDocumentBlocks = retrieveGrantDocumentBlocks({
+      snapshot: aggregate.currentRevision.snapshot,
+      sourceRevisionId: input.expectedRevisionId,
+      query: question,
+      limit: 6,
+    });
     const candidateIsEffective = Boolean(input.candidateContext)
       && !input.ignoreAmbiguousFocus
       && (focusResolution.kind !== "resolved" || focusResolution.focus.kind === "edit_candidate");
@@ -185,6 +195,7 @@ export class GrantAssistantChatService {
           snapshot: aggregate.currentRevision.snapshot,
           messages,
           contextCards: effectiveContextCards,
+          retrievedDocumentBlocks,
           candidateContext: candidateAnalysis ? {
             candidateId: candidateAnalysis.candidate.candidateId,
             targetLabel: input.candidateContext!.targetLabel,

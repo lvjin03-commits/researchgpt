@@ -57,6 +57,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
     const submittedContextCards = focusResolution.kind === "resolved"
       ? currentContextCards.filter((card) => card.contextCardId === focusResolution.focus.focusId)
       : [];
+    const submittedFocusId = focusResolution.kind === "resolved" ? focusResolution.focus.focusId : null;
     setBusy(true); setError("");
     try {
       const response = await fetch(`/api/grants/documents/${documentId}/assistant/chat`, {
@@ -68,7 +69,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           message: question,
           contextCards: submittedContextCards,
           evidenceSourceIds: selectedSourceIds,
-          focusId: explicitFocusId ?? candidateContext?.candidateId ?? null,
+          focusId: submittedFocusId,
           ignoreAmbiguousFocus: ignoreAmbiguousFocusOnce,
           candidateContext,
         }),
@@ -88,7 +89,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
 
   return <section aria-label="Grant AI 普通对话" className="flex min-h-0 flex-1 flex-col overflow-hidden">
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-2">
-      {messages.length === 0 && <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">可以讨论基金写作、研究思路和术语。上方引用的正文会作为本轮依据；没有引用时按普通讨论回答。对话不能修改正文。</div>}
+      {messages.length === 0 && <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">可以讨论基金写作、研究思路和术语。提问时会自动查找申请书相关原文；点选正文后也可以限定讨论范围。对话不能修改正文。</div>}
       {messages.map((message) => message.role === "user"
         ? <div key={message.messageId} className="ml-8 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-sm text-white">{message.content}</div>
         : <div key={message.messageId} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
