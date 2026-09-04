@@ -21,7 +21,7 @@ const RequestSchema = z.object({
 function normalizeRequestPayload(payload: unknown): unknown {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
   const value = { ...(payload as Record<string, unknown>) };
-  if (value.focusId === "") value.focusId = null;
+  if (typeof value.focusId !== "string" || !z.string().uuid().safeParse(value.focusId).success) value.focusId = null;
   // A normal chat turn must not be blocked by browser selections left over
   // from an earlier revision. Explicit focus keeps the strict contract.
   if (value.focusId == null) value.contextCards = [];
