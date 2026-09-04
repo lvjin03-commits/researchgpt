@@ -93,12 +93,9 @@ const focusCard = (label: string) => ({
 const focusCards = [focusCard("研究意义"), focusCard("研究方案")];
 const ambiguousFocus = resolveGrantAssistantFocus({ message: "这段为什么这样写？", available: documentSelectionFocuses(focusCards) });
 assert.equal(ambiguousFocus.kind, "ambiguous");
-const beforeAmbiguousProviderCalls = providerCalls;
-await assert.rejects(
-  service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(), message: "这段为什么这样写？", contextCards: focusCards, evidenceSourceIds: [] }),
-  (error) => error instanceof GrantAssistantChatError && error.code === "grant_assistant_focus_ambiguous" && error.focusChoices?.length === 2,
-);
-assert.equal(providerCalls, beforeAmbiguousProviderCalls, "ambiguous focus must fail before provider dispatch");
+const beforeOrdinaryProviderCalls = providerCalls;
+await service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(), message: "这段为什么这样写？", contextCards: focusCards, evidenceSourceIds: [] });
+assert.ok(providerCalls > beforeOrdinaryProviderCalls, "without explicit focus, stale cards must not block ordinary chat");
 
 await service.answer({
   documentId, expectedRevisionId: revisionId, turnId: randomUUID(), message: "这段为什么这样写？",
@@ -197,7 +194,7 @@ assert.doesNotMatch(routeSource, /messages: z\.array/);
 assert.match(routeSource, /contextCards: z\.array\(GrantAssistantDocumentSelectionContextSchema\)/);
 assert.match(panelSource, /对话已安全保存/);
 assert.match(panelSource, /method: "GET"|assistant\/chat/);
-assert.match(panelSource, /上方引用的正文会作为本轮依据/);
+assert.match(panelSource, /自动查找申请书相关原文/);
 assert.match(panelSource, /GrantAssistantSourceControls/);
 assert.match(panelSource, /crypto\.randomUUID/);
 assert.match(panelSource, /contextCards/);

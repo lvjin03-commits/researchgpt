@@ -12,6 +12,15 @@ export const GrantAssistantSessionSchema = z.object({
   lastActiveAt: TimestampSchema,
 }).strict();
 
+// Runtime/provider metadata belongs to the model-call record, not the
+// reusable answer contract. Strip it when reading legacy cached turns so a
+// previous provider result cannot invalidate the next chat request.
+const CachedAnswerSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const { provider: _provider, modelId: _modelId, ...answer } = value as Record<string, unknown>;
+  return answer;
+}, GrantAssistantAnswerSchema);
+
 export const GrantAssistantMessageSchema = z.object({
   messageId: UuidSchema,
   sessionId: UuidSchema,
@@ -22,7 +31,7 @@ export const GrantAssistantMessageSchema = z.object({
   grounding: z.enum(["general_reasoning", "evidence_grounded"]).optional(),
   citations: z.array(z.object({ citationId: z.string(), sourceType: z.enum(["document_selection", "edit_candidate", "evidence", "academic_source"]), label: z.string() }).strict()).max(24).default([]),
   cacheKey: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-  cachedAnswer: GrantAssistantAnswerSchema.optional(),
+  cachedAnswer: CachedAnswerSchema.optional(),
   recommendedQuestions: z.array(z.string().min(1).max(160)).max(6).optional(),
   createdAt: TimestampSchema,
 }).strict();
