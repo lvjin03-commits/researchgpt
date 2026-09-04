@@ -54,6 +54,9 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       return;
     }
     const turnId = crypto.randomUUID();
+    const submittedContextCards = focusResolution.kind === "resolved"
+      ? currentContextCards.filter((card) => card.contextCardId === focusResolution.focus.focusId)
+      : [];
     setBusy(true); setError("");
     try {
       const response = await fetch(`/api/grants/documents/${documentId}/assistant/chat`, {
@@ -63,7 +66,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           expectedRevisionId: currentRevisionId,
           turnId,
           message: question,
-          contextCards: currentContextCards,
+          contextCards: submittedContextCards,
           evidenceSourceIds: selectedSourceIds,
           focusId: explicitFocusId ?? candidateContext?.candidateId ?? null,
           ignoreAmbiguousFocus: ignoreAmbiguousFocusOnce,
