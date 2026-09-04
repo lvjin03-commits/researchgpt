@@ -42,9 +42,10 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   async function send(explicitFocusId?: string) {
     const question = input.trim();
     if (!question || busy || !canGenerate) return;
+    const currentContextCards = contextCards.filter((card) => card.sourceRevisionId === currentRevisionId);
     const focusResolution = resolveGrantAssistantFocus({
       message: question,
-      available: [...documentSelectionFocuses(contextCards), ...(candidateContext ? [candidateContextFocus(candidateContext)] : [])],
+      available: [...documentSelectionFocuses(currentContextCards), ...(candidateContext ? [candidateContextFocus(candidateContext)] : [])],
       explicitFocusId: explicitFocusId ?? candidateContext?.candidateId,
       ignoreAmbiguousFocus: ignoreAmbiguousFocusOnce,
     });
@@ -62,7 +63,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           expectedRevisionId: currentRevisionId,
           turnId,
           message: question,
-          contextCards,
+          contextCards: currentContextCards,
           evidenceSourceIds: selectedSourceIds,
           focusId: explicitFocusId ?? candidateContext?.candidateId ?? null,
           ignoreAmbiguousFocus: ignoreAmbiguousFocusOnce,

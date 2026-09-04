@@ -107,6 +107,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
     setSnapshot(nextSnapshot);
     snapshotRef.current = nextSnapshot;
     revisionIdRef.current = next.aggregate.currentRevision.revisionId;
+    setAssistantContextCards((items) => items.filter((item) => item.sourceRevisionId === next.aggregate.currentRevision.revisionId));
     savedSerializedRef.current = JSON.stringify(nextSnapshot);
     setSelectedSectionId((current) => current && nextSnapshot.sections.some((section) => section.sectionId === current)
       ? current
