@@ -43,6 +43,11 @@ function reservationFromRow(value: Record<string, unknown>): PointReservation {
 function snapshotFromJson(value: unknown): PointAccountSnapshot | null {
   if (!value) return null;
   const source = value as { account: Record<string, unknown>; lots: Array<Record<string, unknown>> };
+  const datetime = (input: unknown): string => {
+    const parsed = new Date(String(input));
+    if (Number.isNaN(parsed.getTime())) throw new Error(`Invalid point ledger timestamp: ${String(input)}`);
+    return parsed.toISOString();
+  };
   return {
     account: PointAccountSchema.parse({
       ...source.account,
@@ -50,11 +55,15 @@ function snapshotFromJson(value: unknown): PointAccountSnapshot | null {
       reservedPoints: Number(source.account.reservedPoints),
       lifetimeSpentPoints: Number(source.account.lifetimeSpentPoints),
       version: Number(source.account.version),
+      createdAt: datetime(source.account.createdAt),
+      updatedAt: datetime(source.account.updatedAt),
     }),
     lots: source.lots.map((lot) => PointLotSchema.parse({
       ...lot,
       pointsGranted: Number(lot.pointsGranted),
       pointsRemaining: Number(lot.pointsRemaining),
+      createdAt: datetime(lot.createdAt),
+      expiresAt: lot.expiresAt == null ? null : datetime(lot.expiresAt),
     })),
   };
 }
