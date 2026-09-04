@@ -72,8 +72,11 @@ export class GrantAssistantChatService {
     if (aggregate.document.currentRevisionId !== input.expectedRevisionId) throw new GrantRevisionConflictError(aggregate.document.currentRevisionId);
     const question = input.message.trim();
     if (!question || question.length > 12000) throw new GrantAssistantChatError("grant_assistant_history_invalid", "Grant assistant message is invalid.");
+    // Browser selections are one-shot precision focus, never implicit chat
+    // context. Without an explicit focusId, stale cards must not participate
+    // in focus resolution or validation; ordinary turns use retrieval.
     const availableFocuses = [
-      ...documentSelectionFocuses(input.contextCards),
+      ...(input.focusId ? documentSelectionFocuses(input.contextCards) : []),
       ...(input.candidateContext ? [candidateContextFocus(input.candidateContext)] : []),
     ];
     const focusResolution = resolveGrantAssistantFocus({
