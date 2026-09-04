@@ -35,6 +35,7 @@ import { GrantAiEditSessionError } from "@/lib/grants/application/grant-ai-edit-
 import { GrantWebSourceError } from "@/lib/grants/application/grant-web-source-service";
 import { GrantAssistantChatError } from "@/lib/grants/application/grant-assistant-chat-service";
 import { GrantCandidateDiffError } from "@/lib/grants/application/grant-candidate-diff-service";
+import { GrantModelExecutionError } from "@/lib/grants/application/grant-model-executor";
 
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantWorkspaceDisabledError) {
@@ -58,6 +59,14 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantAssistantChatError) {
     return Response.json({ error: error.message, code: error.code, focusChoices: error.focusChoices }, { status: error.code === "grant_assistant_duplicate_turn" ? 409 : 400 });
+  }
+  if (error instanceof GrantModelExecutionError) {
+    const message = error.category === "provider_rate_limited"
+      ? "当前 AI 请求较多，请稍后重试。"
+      : error.category === "provider_contract_error" || error.category === "structured_output_invalid"
+        ? "这次回答格式没有成功生成，请重新发送问题。"
+        : "AI 服务暂时不可用，请稍后重试。";
+    return Response.json({ error: message, code: "grant_model_retryable_error", traceId: error.traceId }, { status: 503 });
   }
   if (error instanceof GrantAiEditSessionError) {
     const status = error.code.endsWith("_not_found") ? 404 : error.code.includes("stale") || error.code.includes("not_active") || error.code.includes("not_safe") || error.code.includes("needs_repair") ? 409 : 400;
