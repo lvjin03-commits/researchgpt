@@ -49,7 +49,7 @@ import {
 
 const PatchResultSchema = z.object({
   replacementText: z.string().trim().min(1),
-  rationale: z.string().trim().max(2000).optional(),
+  rationale: z.string().trim().max(2000).nullable(),
   usedEvidenceCardIds: z.array(z.string().uuid()).max(24).default([]),
 }).strict();
 
@@ -63,7 +63,7 @@ const AssistantChatResultSchema = z.object({
   citations: z.array(z.object({
     citationId: z.string().trim().min(1).max(80),
     sourceAlias: z.string().trim().min(1).max(80),
-    excerpt: z.string().trim().min(1).max(2000).optional(),
+    excerpt: z.string().trim().min(1).max(2000).nullable(),
   }).strict()).max(24).default([]),
 }).strict();
 
@@ -214,6 +214,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
       if (!result.success) throw new GrantAssistantModelError("structured_output_invalid", "Grant assistant returned an invalid answer contract.");
       return {
         ...result.data,
+        citations: result.data.citations.map((citation) => ({ ...citation, excerpt: citation.excerpt ?? undefined })),
         provider: "openai" as const,
         modelId: this.modelId,
         providerRequestId: response.id,
@@ -358,6 +359,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
     if (!content) throw new Error("Grant patch model returned no content.");
     return {
       ...PatchResultSchema.parse(JSON.parse(content)),
+      rationale: PatchResultSchema.parse(JSON.parse(content)).rationale ?? undefined,
       provider: "openai" as const,
       modelId: this.modelId,
       usage: {
