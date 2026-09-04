@@ -50,6 +50,11 @@ export async function POST(request: Request, context: Context) {
     const { assistantChat } = await requireGrantAssistantChatRequestContext();
     return Response.json(await assistantChat.answer({ documentId, ...body }), { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error("[grant-api] assistant chat request validation failed", {
+        issues: error.issues.map((issue) => ({ path: issue.path, code: issue.code, message: issue.message })),
+      });
+    }
     return grantApiError(error, "grant_assistant_chat");
   }
 }

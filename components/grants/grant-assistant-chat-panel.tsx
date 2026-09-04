@@ -75,7 +75,12 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Grant AI 对话失败。");
+      if (!response.ok) {
+        const detail = Array.isArray(data.issues)
+          ? data.issues.map((issue: { path?: unknown[]; message?: string }) => `${issue.path?.join(".") || "请求"}: ${issue.message ?? "格式错误"}`).join("；")
+          : "";
+        throw new Error(detail ? `${data.error ?? "请求失败"}（${detail}）` : (data.error ?? "Grant AI 对话失败。"));
+      }
       setMessages((items) => [...items, { messageId: `${turnId}:user`, role: "user", content: question }, { messageId: `${turnId}:assistant`, role: "assistant", content: data.content, grounding: data.grounding, citations: data.citations, recommendedQuestions: data.recommendedQuestions }]);
       setInput("");
       setAmbiguity(null);
@@ -119,7 +124,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       </section>}
       <GrantAssistantSourceControls documentId={documentId} enabled={evidenceEnabled} selectedSourceIds={selectedSourceIds} onSelectionChange={setSelectedSourceIds} onError={setError} />
       <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 focus-within:border-blue-500">
-        <textarea aria-label="向 Grant AI 提问" value={input} onChange={(event) => { const next = event.target.value; setInput(next); if (ambiguity && next.trim() !== ambiguity.question) { setAmbiguity(null); setIgnoreAmbiguousFocusOnce(true); } }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="询问基金写作、研究思路或术语" className="min-h-16 flex-1 resize-none border-0 px-2 py-1 text-sm outline-none" />
+        <textarea aria-label="向 Grant AI 提问" value={input} onChange={(event) => { const next = event.target.value; setInput(next); setError(""); if (ambiguity && next.trim() !== ambiguity.question) { setAmbiguity(null); setIgnoreAmbiguousFocusOnce(true); } }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="询问基金写作、研究思路或术语" className="min-h-16 flex-1 resize-none border-0 px-2 py-1 text-sm outline-none" />
         <button type="button" disabled={!input.trim() || busy || !canGenerate} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{busy ? "处理中…" : "发送"}</button>
       </div>
       {!canGenerate && <p className="mt-2 text-xs text-amber-700">请先保存当前正文，再开始普通对话。</p>}
