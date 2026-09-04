@@ -18,6 +18,19 @@ const RequestSchema = z.object({
   candidateContext: GrantAssistantCandidateContextSchema.nullable().optional(),
 }).strict();
 
+function normalizeRequestPayload(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const value = { ...(payload as Record<string, unknown>) };
+  if (value.focusId === "") value.focusId = null;
+  // A normal chat turn must not be blocked by browser selections left over
+  // from an earlier revision. Explicit focus keeps the strict contract.
+  if (value.focusId == null) value.contextCards = [];
+  if (Array.isArray(value.evidenceSourceIds)) {
+    value.evidenceSourceIds = value.evidenceSourceIds.filter((id) => typeof id === "string" && z.string().uuid().safeParse(id).success);
+  }
+  return value;
+}
+
 export async function GET(_request: Request, context: Context) {
   try {
     const { id } = await context.params;
@@ -33,7 +46,7 @@ export async function POST(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const documentId = z.string().uuid().parse(id);
-    const body = RequestSchema.parse(await request.json());
+    const body = RequestSchema.parse(normalizeRequestPayload(await request.json()));
     const { assistantChat } = await requireGrantAssistantChatRequestContext();
     return Response.json(await assistantChat.answer({ documentId, ...body }), { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
