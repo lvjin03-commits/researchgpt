@@ -21,6 +21,12 @@ export function isGrantAssistantChatEnabled(): boolean {
     && process.env.GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA?.trim() === "056";
 }
 
+export function isGrantWebGroundingEnabled(): boolean {
+  return process.env.GRANT_WEB_GROUNDING_ENABLED?.trim().toLowerCase() === "true"
+    && process.env.GRANT_WEB_GROUNDING_DATABASE_SCHEMA?.trim() === "067"
+    && process.env.GRANT_WEB_GROUNDING_PRICE_CATALOG_VERSION?.trim() === "001";
+}
+
 export function isGrantLocalEvidenceEnabled(): boolean {
   return process.env.GRANT_LOCAL_EVIDENCE_ENABLED?.trim().toLowerCase() === "true";
 }

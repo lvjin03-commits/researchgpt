@@ -19,6 +19,10 @@ export const AI_OPERATIONS = Object.freeze({
   }),
   grant: Object.freeze({
     assistantChat: "grant.assistant.chat",
+    webQueryRewrite: "grant.web_query.rewrite",
+    webSearchQuery: "grant.web_search.query",
+    webSourceAssess: "grant.web_source.assess",
+    webAnswerSynthesize: "grant.web_answer.synthesize",
     editSessionTurn: "grant.edit_session.turn",
     diagnosticSemantic: "diagnostic.semantic",
     diagnosticArgumentMapping: "diagnostic.argument_mapping",

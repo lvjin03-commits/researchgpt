@@ -4,10 +4,19 @@ export const GRANT_EDIT_SESSION_TURN_OPERATION = AI_OPERATIONS.grant.editSession
 export const GRANT_EDIT_SESSION_TURN_POLICY_VERSION = "grant-edit-session-turn-v1" as const;
 export const GRANT_ASSISTANT_CHAT_OPERATION = AI_OPERATIONS.grant.assistantChat;
 export const GRANT_ASSISTANT_CHAT_POLICY_VERSION = "grant-assistant-chat-v1" as const;
+export const GRANT_WEB_QUERY_REWRITE_OPERATION = AI_OPERATIONS.grant.webQueryRewrite;
+export const GRANT_WEB_QUERY_REWRITE_POLICY_VERSION = "grant-web-query-rewrite-v1" as const;
+export const GRANT_WEB_SOURCE_ASSESS_OPERATION = AI_OPERATIONS.grant.webSourceAssess;
+export const GRANT_WEB_SOURCE_ASSESS_POLICY_VERSION = "grant-web-source-assess-v1" as const;
+export const GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION = AI_OPERATIONS.grant.webAnswerSynthesize;
+export const GRANT_WEB_ANSWER_SYNTHESIZE_POLICY_VERSION = "grant-web-answer-synthesize-v1" as const;
 
 export type GrantModelOperation = Extract<GrantAiOperation,
-  typeof GRANT_EDIT_SESSION_TURN_OPERATION | typeof GRANT_ASSISTANT_CHAT_OPERATION>;
-export type GrantModelOperationPolicyVersion = typeof GRANT_EDIT_SESSION_TURN_POLICY_VERSION | typeof GRANT_ASSISTANT_CHAT_POLICY_VERSION;
+  typeof GRANT_EDIT_SESSION_TURN_OPERATION | typeof GRANT_ASSISTANT_CHAT_OPERATION |
+  typeof GRANT_WEB_QUERY_REWRITE_OPERATION | typeof GRANT_WEB_SOURCE_ASSESS_OPERATION | typeof GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION>;
+export type GrantModelOperationPolicyVersion = typeof GRANT_EDIT_SESSION_TURN_POLICY_VERSION |
+  typeof GRANT_ASSISTANT_CHAT_POLICY_VERSION | typeof GRANT_WEB_SOURCE_ASSESS_POLICY_VERSION |
+  typeof GRANT_WEB_ANSWER_SYNTHESIZE_POLICY_VERSION | typeof GRANT_WEB_QUERY_REWRITE_POLICY_VERSION;
 
 export type GrantModelFailureCategory =
   | "structured_output_invalid"
@@ -40,13 +49,16 @@ export function resolveGrantModelOperationPolicy(input: {
 }): GrantModelOperationPolicy {
   const modelId = input.configuredGrantModelId.trim();
   if (!modelId) throw new Error("Grant AI model configuration is empty.");
-  if (input.operation !== GRANT_ASSISTANT_CHAT_OPERATION && input.operation !== GRANT_EDIT_SESSION_TURN_OPERATION) {
+  if (input.operation !== GRANT_ASSISTANT_CHAT_OPERATION && input.operation !== GRANT_EDIT_SESSION_TURN_OPERATION &&
+    input.operation !== GRANT_WEB_QUERY_REWRITE_OPERATION && input.operation !== GRANT_WEB_SOURCE_ASSESS_OPERATION && input.operation !== GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION) {
     throw new Error(`Grant model operation is not registered: ${String(input.operation)}`);
   }
   return Object.freeze({
     operation: input.operation,
-    policyVersion: input.operation === GRANT_ASSISTANT_CHAT_OPERATION
-      ? GRANT_ASSISTANT_CHAT_POLICY_VERSION
+    policyVersion: input.operation === GRANT_ASSISTANT_CHAT_OPERATION ? GRANT_ASSISTANT_CHAT_POLICY_VERSION
+      : input.operation === GRANT_WEB_QUERY_REWRITE_OPERATION ? GRANT_WEB_QUERY_REWRITE_POLICY_VERSION
+      : input.operation === GRANT_WEB_SOURCE_ASSESS_OPERATION ? GRANT_WEB_SOURCE_ASSESS_POLICY_VERSION
+      : input.operation === GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION ? GRANT_WEB_ANSWER_SYNTHESIZE_POLICY_VERSION
       : GRANT_EDIT_SESSION_TURN_POLICY_VERSION,
     provider: "openai",
     modelId,

@@ -16,6 +16,7 @@ const RequestSchema = z.object({
   focusId: z.string().uuid().nullable().optional(),
   ignoreAmbiguousFocus: z.boolean().optional(),
   candidateContext: GrantAssistantCandidateContextSchema.nullable().optional(),
+  webSearch: z.boolean().optional(),
 }).strict();
 
 function normalizeRequestPayload(payload: unknown): unknown {

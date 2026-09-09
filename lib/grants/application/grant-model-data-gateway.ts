@@ -43,6 +43,15 @@ export type GrantEditSessionTurnModelResult = GrantPatchModelResult & {
   figureAuthorization?: { authorizationId: string; authorizationRevision: number; sourceRevisionId: string; assetIds: string[] };
 };
 
+export type GrantWebGroundingAdmittedContext = {
+  schemaVersion: 1;
+  documentId: string;
+  sourceRevisionId: string;
+  documentLanguage: "zh" | "en";
+  applicationContext: string;
+  contextHash: string;
+};
+
 export class GrantModelDataGateway {
   private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>;
   private readonly evidenceAuthorization?: GrantEvidenceAuthorizationService;
@@ -59,6 +68,35 @@ export class GrantModelDataGateway {
     this.evidenceAuthorization = evidenceAuthorization;
     this.figureAuthorization = figureAuthorization;
     this.figureAssetReader = figureAssetReader;
+  }
+
+  prepareWebGroundingContext(input: {
+    documentId: string;
+    sourceRevisionId: string;
+    snapshot: CanonicalGrantSnapshot;
+    retrievedDocumentBlocks: GrantDocumentSearchResult[];
+  }): GrantWebGroundingAdmittedContext {
+    const unique = new Set<string>();
+    const blocks = input.retrievedDocumentBlocks.slice(0, 6).map((block) => {
+      const node = block.nodeId ? input.snapshot.nodes.find((candidate) => candidate.nodeId === block.nodeId) : null;
+      if (block.sourceRevisionId !== input.sourceRevisionId || !node || node.sectionId !== block.sectionId || unique.has(block.blockId)) {
+        throw new GrantPatchEvidenceMismatchError("用于联网分析的申请书上下文已经变化，请重新检索。");
+      }
+      const currentText = grantNodeText(node).trim();
+      if (currentText !== block.text.trim()) throw new GrantPatchEvidenceMismatchError("用于联网分析的申请书上下文已经变化，请重新检索。");
+      unique.add(block.blockId);
+      return `${block.title}\n${block.text}`;
+    });
+    const applicationContext = blocks.join("\n\n").slice(0, 12_000);
+    const documentLanguage = /[\u3400-\u9fff]/u.test(input.snapshot.title + applicationContext) ? "zh" : "en";
+    return Object.freeze({
+      schemaVersion: 1 as const,
+      documentId: input.documentId,
+      sourceRevisionId: input.sourceRevisionId,
+      documentLanguage,
+      applicationContext,
+      contextHash: sha256Canonical({ documentId: input.documentId, sourceRevisionId: input.sourceRevisionId, applicationContext }),
+    });
   }
 
   validateAssistantDocumentSelections(input: {

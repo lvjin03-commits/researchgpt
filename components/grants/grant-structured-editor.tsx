@@ -69,7 +69,7 @@ function updateNode(
   return { ...snapshot, nodes: snapshot.nodes.map((node) => node.nodeId === nodeId ? updater(node) : node) };
 }
 
-export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, assistantChatEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; assistantChatEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
+export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessionEnabled, assistantChatEnabled, webGroundingEnabled, evidenceEnabled, evidencePatchEnabled, recheckEnabled, docxExportEnabled }: { documentId: string; aiPatchEnabled: boolean; aiEditSessionEnabled: boolean; assistantChatEnabled: boolean; webGroundingEnabled: boolean; evidenceEnabled: boolean; evidencePatchEnabled: boolean; recheckEnabled: boolean; docxExportEnabled: boolean }) {
   const [payload, setPayload] = useState<EditorPayload | null>(null);
   const [snapshot, setSnapshot] = useState<CanonicalGrantSnapshot | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -568,6 +568,7 @@ export function GrantStructuredEditor({ documentId, aiPatchEnabled, aiEditSessio
                 initialPrompt={assistantInitialPrompt}
                 onCandidateContextClear={() => { setAssistantCandidateContext(null); setAssistantInitialPrompt(""); }}
                 evidenceEnabled={evidenceEnabled && evidencePatchEnabled}
+                webGroundingEnabled={webGroundingEnabled}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center">

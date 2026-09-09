@@ -15,6 +15,7 @@ import type { GrantAiEditSessionRepository } from "../ports/grant-ai-edit-sessio
 import { prepareGrantCandidateAnalysis } from "../edit-session/candidate-analysis.ts";
 import { grantAssistantCacheKey, grantCandidateRecommendedQuestions } from "../assistant/chat-intelligence.ts";
 import { retrieveGrantDocumentBlocks } from "./grant-document-retriever.ts";
+import type { GrantWebGroundedChatOrchestrator } from "./grant-web-grounded-chat-orchestrator.ts";
 
 export class GrantAssistantChatError extends Error {
   readonly code: "grant_assistant_duplicate_turn" | "grant_assistant_history_invalid" | "grant_assistant_focus_ambiguous";
@@ -30,12 +31,13 @@ export class GrantAssistantChatError extends Error {
 export class GrantAssistantChatService {
   private readonly dependencies: {
     revisionService: Pick<GrantRevisionService, "getDocument" | "getRevision">;
-    modelGateway: Pick<GrantModelDataGateway, "answerAssistantChat" | "validateAssistantDocumentSelections">;
+    modelGateway: Pick<GrantModelDataGateway, "answerAssistantChat" | "validateAssistantDocumentSelections" | "prepareWebGroundingContext">;
     modelExecutor: GrantModelExecutor;
     modelCalls: GrantModelCallRepository;
     configuredGrantModelId: string;
     sessions: GrantAssistantSessionRepository;
     editSessions: GrantAiEditSessionRepository;
+    webGrounding?: { actorId: string; orchestrator: GrantWebGroundedChatOrchestrator };
   };
 
   constructor(dependencies: GrantAssistantChatService["dependencies"]) {
@@ -67,6 +69,7 @@ export class GrantAssistantChatService {
     focusId?: string | null;
     ignoreAmbiguousFocus?: boolean;
     candidateContext?: GrantAssistantCandidateContext | null;
+    webSearch?: boolean;
   }) {
     const aggregate = await this.dependencies.revisionService.getDocument(input.documentId);
     if (aggregate.document.currentRevisionId !== input.expectedRevisionId) throw new GrantRevisionConflictError(aggregate.document.currentRevisionId);
@@ -131,6 +134,38 @@ export class GrantAssistantChatService {
     const stored = await this.dependencies.sessions.listMessages(session.sessionId);
     if (stored.some((message) => message.turnId === input.turnId)) {
       throw new GrantAssistantChatError("grant_assistant_duplicate_turn", "This assistant turn was already submitted.");
+    }
+    if (input.webSearch && this.dependencies.webGrounding) {
+      const admitted = this.dependencies.modelGateway.prepareWebGroundingContext({
+        documentId: input.documentId,
+        sourceRevisionId: input.expectedRevisionId,
+        snapshot: aggregate.currentRevision.snapshot,
+        retrievedDocumentBlocks,
+      });
+      const web = await this.dependencies.webGrounding.orchestrator.run({
+        documentId: input.documentId,
+        sourceRevision: aggregate.currentRevision.revisionNumber,
+        actorId: this.dependencies.webGrounding.actorId,
+        assistantSessionId: session.sessionId,
+        turnId: input.turnId,
+        question,
+        context: admitted,
+        documentTextForEgressCheck: JSON.stringify(aggregate.currentRevision.snapshot),
+        sensitiveTerms: [aggregate.document.title],
+      });
+      if (web.status === "completed") {
+        const userMessage: GrantAssistantMessage = { messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId,
+          traceId: input.turnId, role: "user", content: question, citations: [], createdAt: now };
+        const assistantMessage: GrantAssistantMessage = { messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId,
+          traceId: input.turnId, role: "assistant", content: web.answer.content, grounding: web.answer.grounding,
+          citations: web.answer.citations.map(({ citationId, sourceType, label }) => ({ citationId, sourceType, label })),
+          cachedAnswer: web.answer, recommendedQuestions: [], createdAt: new Date().toISOString() };
+        await this.dependencies.sessions.appendTurn({ sessionId: session.sessionId, userMessage, assistantMessage, lastActiveAt: assistantMessage.createdAt });
+        return { sessionId: session.sessionId, turnId: input.turnId, traceId: input.turnId,
+          operation: GRANT_ASSISTANT_CHAT_OPERATION, attempts: 1, cached: false, focus: focusResolution,
+          recommendedQuestions: [], webGrounding: { searchedCount: web.searchedCount, recommendedCount: web.recommendedCount,
+            excludedCount: web.excludedCount }, ...web.answer };
+      }
     }
     const policy = resolveGrantModelOperationPolicy({ operation: GRANT_ASSISTANT_CHAT_OPERATION, configuredGrantModelId: this.dependencies.configuredGrantModelId });
     const recommendedQuestions = candidateAnalysis

@@ -46,6 +46,30 @@ contracts.set(AI_OPERATIONS.grant.editSessionTurn, Object.freeze({
   bundleKeys: Object.freeze(["single_edit_turn"]),
   deliverabilityMatrix: DEFAULT_MATRIX,
 }));
+contracts.set(AI_OPERATIONS.grant.webSearchQuery, Object.freeze({
+  operation: AI_OPERATIONS.grant.webSearchQuery,
+  contractVersion: "grant-web-search-deliverability-v1",
+  bundleKeys: Object.freeze(["search_query"]),
+  deliverabilityMatrix: DEFAULT_MATRIX,
+}));
+contracts.set(AI_OPERATIONS.grant.webQueryRewrite, Object.freeze({
+  operation: AI_OPERATIONS.grant.webQueryRewrite,
+  contractVersion: "grant-web-query-rewrite-deliverability-v1",
+  bundleKeys: Object.freeze(["query_rewrite"]),
+  deliverabilityMatrix: DEFAULT_MATRIX,
+}));
+contracts.set(AI_OPERATIONS.grant.webSourceAssess, Object.freeze({
+  operation: AI_OPERATIONS.grant.webSourceAssess,
+  contractVersion: "grant-web-source-assess-deliverability-v1",
+  bundleKeys: Object.freeze(["source_assessment"]),
+  deliverabilityMatrix: DEFAULT_MATRIX,
+}));
+contracts.set(AI_OPERATIONS.grant.webAnswerSynthesize, Object.freeze({
+  operation: AI_OPERATIONS.grant.webAnswerSynthesize,
+  contractVersion: "grant-web-answer-deliverability-v1",
+  bundleKeys: Object.freeze(["grounded_answer"]),
+  deliverabilityMatrix: DEFAULT_MATRIX,
+}));
 contracts.set(AI_OPERATIONS.grant.diagnosticSemantic, Object.freeze({
   operation: AI_OPERATIONS.grant.diagnosticSemantic,
   contractVersion: "grant-diagnostic-deliverability-v1",

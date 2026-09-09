@@ -41,6 +41,13 @@ import { OpenAlexGrantWebSearchProvider, PublicWebSnapshotFetcher } from "../inf
 import { AiUsageIntegration } from "../../billing/application/ai-usage-integration.ts";
 import { SupabaseAiUsageEventSink } from "../../billing/infrastructure/supabase/supabase-ai-usage-event-sink.ts";
 import { tokenUsage } from "../../ai/billable-usage.ts";
+import { isGrantWebGroundingEnabled } from "./config.ts";
+import { OpenAIGrantWebGroundingModel } from "../infrastructure/model/openai-grant-web-grounding-model.ts";
+import { GoogleCustomSearchProvider } from "../infrastructure/web/google-custom-search-provider.ts";
+import { SupabaseGrantWebGroundingRepository } from "../infrastructure/supabase/supabase-grant-web-grounding-repository.ts";
+import { SupabaseGrantWebSearchEgressAuditRepository } from "../infrastructure/supabase/supabase-grant-web-search-egress-audit-repository.ts";
+import { GrantGeneralWebSearchService } from "../application/grant-general-web-search-service.ts";
+import { GrantWebGroundedChatOrchestrator } from "../application/grant-web-grounded-chat-orchestrator.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -178,6 +185,7 @@ export function createGrantAssistantChatService(ownerId: string): GrantAssistant
   const client = createGrantSupabaseClient();
   const ai = createGrantModelDataGateway(client, ownerId);
   const modelCalls = new SupabaseGrantModelCallRepository(client, ownerId);
+  const webRuntime = createGrantWebGroundedChatRuntime(ownerId);
   return new GrantAssistantChatService({
     revisionService: new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) }),
     modelGateway: ai.gateway,
@@ -186,6 +194,33 @@ export function createGrantAssistantChatService(ownerId: string): GrantAssistant
     configuredGrantModelId: ai.config.modelId,
     sessions: new SupabaseGrantAssistantSessionRepository(client, ownerId),
     editSessions: new SupabaseGrantAiEditSessionRepository(client, ownerId),
+    ...(webRuntime ? { webGrounding: { actorId: ownerId, orchestrator: webRuntime.orchestrator } } : {}),
+  });
+}
+
+export function createGrantWebGroundedChatRuntime(ownerId: string) {
+  if (!isGrantWebGroundingEnabled()) return null;
+  const client = createGrantSupabaseClient();
+  const ai = createGrantModelDataGateway(client, ownerId);
+  const googleApiKey = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY?.trim();
+  const googleEngineId = process.env.GOOGLE_CUSTOM_SEARCH_ENGINE_ID?.trim();
+  if (!ai.config.apiKey || !googleApiKey || !googleEngineId) return null;
+  const sourceRepository = new SupabaseGrantWebGroundingRepository(client, ownerId);
+  const provider = new GoogleCustomSearchProvider({ apiKey: googleApiKey, engineId: googleEngineId });
+  const searchService = new GrantGeneralWebSearchService({
+    provider,
+    auditRepository: new SupabaseGrantWebSearchEgressAuditRepository(client, ownerId),
+    sourceRepository,
+  });
+  return Object.freeze({
+    modelGateway: ai.gateway,
+    orchestrator: new GrantWebGroundedChatOrchestrator({
+      model: new OpenAIGrantWebGroundingModel(ai.config.modelId, ai.config.apiKey),
+      modelExecutor: createGrantModelExecutor(client, ownerId),
+      searchService,
+      sourceRepository,
+      configuredGrantModelId: ai.config.modelId,
+    }),
   });
 }
 

@@ -7,7 +7,7 @@ import { candidateContextFocus, documentSelectionFocuses, resolveGrantAssistantF
 
 type Message = { messageId: string; role: "user" | "assistant"; content: string; grounding?: "general_reasoning" | "evidence_grounded"; citations?: Array<{ citationId: string; label: string }>; recommendedQuestions?: string[] };
 
-export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGenerate, contextCards, candidateContext, initialPrompt, onCandidateContextClear, evidenceEnabled }: {
+export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGenerate, contextCards, candidateContext, initialPrompt, onCandidateContextClear, evidenceEnabled, webGroundingEnabled }: {
   documentId: string;
   currentRevisionId: string;
   canGenerate: boolean;
@@ -16,6 +16,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   initialPrompt?: string;
   onCandidateContextClear: () => void;
   evidenceEnabled: boolean;
+  webGroundingEnabled: boolean;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -24,6 +25,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [ambiguity, setAmbiguity] = useState<{ question: string; choices: GrantAssistantFocus[] } | null>(null);
   const [ignoreAmbiguousFocusOnce, setIgnoreAmbiguousFocusOnce] = useState(false);
+  const [webSearch, setWebSearch] = useState(false);
 
   useEffect(() => {
     if (initialPrompt) setInput(initialPrompt);
@@ -72,6 +74,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           focusId: submittedFocusId,
           ignoreAmbiguousFocus: ignoreAmbiguousFocusOnce,
           candidateContext,
+          webSearch,
         }),
       });
       const data = await response.json();
@@ -123,6 +126,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         </div>
       </section>}
       <GrantAssistantSourceControls documentId={documentId} enabled={evidenceEnabled} selectedSourceIds={selectedSourceIds} onSelectionChange={setSelectedSourceIds} onError={setError} />
+      {webGroundingEnabled && <button type="button" aria-pressed={webSearch} onClick={() => setWebSearch((value) => !value)} className={`mb-2 rounded-lg border px-3 py-1.5 text-xs font-semibold ${webSearch ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 bg-white text-slate-700"}`}>{webSearch ? "联网补充：已开启" : "联网补充"}</button>}
       <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 focus-within:border-blue-500">
         <textarea aria-label="向 Grant AI 提问" value={input} onChange={(event) => { const next = event.target.value; setInput(next); setError(""); if (ambiguity && next.trim() !== ambiguity.question) { setAmbiguity(null); setIgnoreAmbiguousFocusOnce(true); } }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="询问基金写作、研究思路或术语" className="min-h-16 flex-1 resize-none border-0 px-2 py-1 text-sm outline-none" />
         <button type="button" disabled={!input.trim() || busy || !canGenerate} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{busy ? "处理中…" : "发送"}</button>

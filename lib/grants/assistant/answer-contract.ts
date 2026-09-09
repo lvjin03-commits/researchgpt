@@ -7,7 +7,7 @@ import type {
 
 const ContextReferenceSchema = z.object({
   sourceAlias: z.string(),
-  sourceType: z.enum(["document_selection", "edit_candidate", "evidence", "academic_source"]),
+  sourceType: z.enum(["document_selection", "edit_candidate", "evidence", "academic_source", "web_source"]),
   label: z.string(),
 }).strict();
 const ClaimSchema = z.object({ claimId: z.string(), statement: z.string(), citationIds: z.array(z.string()) }).strict();
