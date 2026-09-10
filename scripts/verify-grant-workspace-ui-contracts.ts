@@ -134,8 +134,11 @@ const aiPatchSource = await readFile(new URL("../components/grants/grant-ai-patc
 const aiEditSessionSource = await readFile(new URL("../components/grants/grant-ai-edit-session-panel.tsx", import.meta.url), "utf8");
 const assistantContextCardSource = await readFile(new URL("../components/grants/grant-assistant-context-cards.tsx", import.meta.url), "utf8");
 const assistantContractSource = await readFile(new URL("../lib/grants/assistant/contracts.ts", import.meta.url), "utf8");
+const assistantChatPanelSource = await readFile(new URL("../components/grants/grant-assistant-chat-panel.tsx", import.meta.url), "utf8");
 const diagnosticsRouteSource = await readFile(new URL("../app/api/grants/documents/[id]/diagnostics/route.ts", import.meta.url), "utf8");
 assert.match(panelSource, /建议默认收起/);
+assert.match(assistantChatPanelSource, /href=\{citation\.url\}/);
+assert.match(assistantChatPanelSource, /rel="noopener noreferrer"/);
 assert.match(panelSource, /isExpanded\s*&&/);
 assert.doesNotMatch(panelSource, /严重性|高风险|中风险|低风险/);
 assert.match(editorSource, /GrantResizableWorkspace/);

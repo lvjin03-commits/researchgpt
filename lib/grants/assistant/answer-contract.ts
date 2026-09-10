@@ -9,13 +9,14 @@ const ContextReferenceSchema = z.object({
   sourceAlias: z.string(),
   sourceType: z.enum(["document_selection", "edit_candidate", "evidence", "academic_source", "web_source"]),
   label: z.string(),
+  url: z.string().url().optional(),
 }).strict();
 const ClaimSchema = z.object({ claimId: z.string(), statement: z.string(), citationIds: z.array(z.string()) }).strict();
 const CitationSchema = ContextReferenceSchema.extend({ citationId: z.string(), excerpt: z.string().optional() }).strict();
 
 export type GrantAssistantContextReference = Pick<
   GrantAssistantAdmittedContext,
-  "sourceAlias" | "sourceType" | "label"
+  "sourceAlias" | "sourceType" | "label" | "url"
 >;
 
 export type GrantAssistantUnsupportedClaim = {

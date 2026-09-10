@@ -52,11 +52,13 @@ export function validateGrantAssistantGroundedAnswer(input: {
       ...citation,
       sourceType: admitted.get(citation.sourceAlias)!.sourceType,
       label: admitted.get(citation.sourceAlias)!.label,
+      ...(admitted.get(citation.sourceAlias)!.url ? { url: admitted.get(citation.sourceAlias)!.url } : {}),
     })),
-    referencedObjects: input.admittedContext.map(({ sourceAlias, sourceType, label }) => ({
+    referencedObjects: input.admittedContext.map(({ sourceAlias, sourceType, label, url }) => ({
       sourceAlias,
       sourceType,
       label,
+      ...(url ? { url } : {}),
     })),
     unsupportedClaims: [],
     warnings: [],

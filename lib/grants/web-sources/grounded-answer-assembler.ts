@@ -74,7 +74,7 @@ export function assembleGrantWebGroundedAnswer(input: {
   const content = proposal.claims.map((claim) => `${claim.statement} ${claim.sourceIds.map((id) => `[${aliasById.get(id)}]`).join("")}`).join("\n\n");
   const admittedContext = orderedUsedIds.map((id) => ({
     sourceAlias: aliasById.get(id)!, sourceType: "web_source" as const,
-    label: byId.get(id)!.title, excerpt: byId.get(id)!.snippet,
+    label: byId.get(id)!.title, excerpt: byId.get(id)!.snippet, url: byId.get(id)!.canonicalUrl,
   }));
   const answer = validateGrantAssistantGroundedAnswer({
     content,

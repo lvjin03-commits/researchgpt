@@ -158,7 +158,7 @@ export class GrantAssistantChatService {
           traceId: input.turnId, role: "user", content: question, citations: [], createdAt: now };
         const assistantMessage: GrantAssistantMessage = { messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId,
           traceId: input.turnId, role: "assistant", content: web.answer.content, grounding: web.answer.grounding,
-          citations: web.answer.citations.map(({ citationId, sourceType, label }) => ({ citationId, sourceType, label })),
+          citations: web.answer.citations.map(({ citationId, sourceAlias, sourceType, label, url }) => ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
           cachedAnswer: web.answer, recommendedQuestions: [], createdAt: new Date().toISOString() };
         await this.dependencies.sessions.appendTurn({ sessionId: session.sessionId, userMessage, assistantMessage, lastActiveAt: assistantMessage.createdAt });
         return { sessionId: session.sessionId, turnId: input.turnId, traceId: input.turnId,
@@ -199,7 +199,7 @@ export class GrantAssistantChatService {
       const assistantMessage: GrantAssistantMessage = {
         messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId, traceId: input.turnId, role: "assistant",
         content: cachedAssistant.cachedAnswer.content, grounding: cachedAssistant.cachedAnswer.grounding,
-        citations: cachedAssistant.cachedAnswer.citations.map(({ citationId, sourceType, label }) => ({ citationId, sourceType, label })),
+        citations: cachedAssistant.cachedAnswer.citations.map(({ citationId, sourceAlias, sourceType, label, url }) => ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
         cachedAnswer: cachedAssistant.cachedAnswer,
         recommendedQuestions: cachedAssistant.recommendedQuestions ?? recommendedQuestions,
         createdAt: new Date().toISOString(),
@@ -259,7 +259,7 @@ export class GrantAssistantChatService {
     const assistantMessage: GrantAssistantMessage = {
       messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId, traceId: execution.traceId,
       role: "assistant", content: execution.value.content, grounding: execution.value.grounding,
-      citations: execution.value.citations.map(({ citationId, sourceType, label }) => ({ citationId, sourceType, label })),
+      citations: execution.value.citations.map(({ citationId, sourceAlias, sourceType, label, url }) => ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
       cachedAnswer: execution.value, recommendedQuestions, createdAt: new Date().toISOString(),
     };
     await this.dependencies.sessions.appendTurn({ sessionId: session.sessionId, userMessage, assistantMessage, lastActiveAt: assistantMessage.createdAt });

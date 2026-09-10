@@ -5,6 +5,8 @@ export type GrantAssistantAdmittedContext = {
   sourceType: "document_selection" | "edit_candidate" | "evidence" | "academic_source" | "web_source";
   label: string;
   excerpt: string;
+  /** Program-owned public URL. Present only for externally navigable sources. */
+  url?: string;
 };
 
 export type GrantAssistantGroundedClaim = {

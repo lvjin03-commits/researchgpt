@@ -23,6 +23,7 @@ const result = assembleGrantWebGroundedAnswer({ sources: [sourceA, sourceB, sour
 assert.equal(result.answer.grounding, "evidence_grounded");
 assert.equal(result.answer.citations.length, 2);
 assert.ok(result.answer.citations.every((citation) => citation.sourceType === "web_source"));
+assert.deepEqual(result.answer.citations.map((citation) => citation.url), [sourceA.canonicalUrl, sourceB.canonicalUrl]);
 assert.equal(result.searchedCount, 3);
 assert.equal(result.recommendedCount, 2);
 assert.equal(result.excludedCount, 1);
