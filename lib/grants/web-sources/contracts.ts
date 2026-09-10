@@ -4,6 +4,14 @@ const UuidSchema = z.string().uuid();
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const TimestampSchema = z.string().datetime({ offset: true });
 
+// Google is retained only so immutable records created before ADR 0050 remain
+// readable. The active provider port accepts OpenAI web search only.
+export const GrantPersistedWebProviderIdSchema = z.enum([
+  "openalex",
+  "google_custom_search",
+  "openai_web_search",
+]);
+
 export const GrantWebSourceQualityTierSchema = z.enum([
   "academic_database",
   "official_institution",
@@ -15,7 +23,7 @@ export const GrantWebSourceQualityTierSchema = z.enum([
 export const GrantWebSourceRecordSchema = z.object({
   schemaVersion: z.literal(1),
   sourceId: UuidSchema,
-  providerId: z.enum(["openalex", "google_custom_search"]),
+  providerId: GrantPersistedWebProviderIdSchema,
   providerRecordId: z.string().trim().min(1).max(500).nullable(),
   canonicalUrl: z.string().url().max(3000),
   title: z.string().trim().min(1).max(500),

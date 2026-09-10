@@ -5,7 +5,7 @@ import { assembleGrantWebGroundedAnswer, GrantWebGroundingError, hasExcessiveGra
 import { createGrantWebSourceRecord } from "../lib/grants/web-sources/source-record.ts";
 
 const makeSource = (input: { url: string; title: string; snippet: string }) => createGrantWebSourceRecord({
-  sourceId: randomUUID(), providerId: "google_custom_search", url: input.url,
+  sourceId: randomUUID(), providerId: "openai_web_search", url: input.url,
   title: input.title, snippet: input.snippet, retrievedAt: "2026-09-08T12:00:00.000Z",
 });
 const sourceA = makeSource({ url: "https://lab.example.edu/a", title: "Interface review", snippet: "Studies report that solvation structure influences zinc deposition behavior and interfacial stability under several electrolyte conditions." });

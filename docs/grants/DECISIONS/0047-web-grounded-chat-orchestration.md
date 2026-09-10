@@ -1,7 +1,8 @@
 # ADR 0047: Web-grounded chat uses one controlled orchestration
 
 ## Status
-Accepted as step 9 offline foundation. Production composition remains disabled.
+Accepted as the orchestration baseline; its Google Provider selection is
+superseded by ADR 0050.
 
 ## Decision
 Explicit web-enabled Grant Assistant turns use one application orchestrator:

@@ -43,10 +43,10 @@ const calls = new Calls();
 const sources = new Sources();
 const audits: unknown[] = [];
 const searchService = new GrantGeneralWebSearchService({
-  provider: { providerId: "google_custom_search", async search() { return [
-    { providerId: "google_custom_search", providerRecordId: "one", title: "University review",
+  provider: { providerId: "openai_web_search", async search() { return [
+    { providerId: "openai_web_search", providerRecordId: "one", title: "University review",
       url: "https://lab.example.edu/review", snippet: "A review connects electrolyte solvation with zinc interface stability and deposition behavior.", publishedAt: null },
-    { providerId: "google_custom_search", providerRecordId: "two", title: "Commercial blog",
+    { providerId: "openai_web_search", providerRecordId: "two", title: "Commercial blog",
       url: "https://blog.example/post", snippet: "A generic consumer battery article.", publishedAt: null },
   ]; } },
   auditRepository: { async append(audit) { audits.push(audit); } }, sourceRepository: sources,

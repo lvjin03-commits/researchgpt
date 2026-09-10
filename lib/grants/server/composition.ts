@@ -43,7 +43,7 @@ import { SupabaseAiUsageEventSink } from "../../billing/infrastructure/supabase/
 import { tokenUsage } from "../../ai/billable-usage.ts";
 import { isGrantWebGroundingEnabled } from "./config.ts";
 import { OpenAIGrantWebGroundingModel } from "../infrastructure/model/openai-grant-web-grounding-model.ts";
-import { GoogleCustomSearchProvider } from "../infrastructure/web/google-custom-search-provider.ts";
+import { OpenAIWebSearchProvider } from "../infrastructure/model/openai-web-search-provider.ts";
 import { SupabaseGrantWebGroundingRepository } from "../infrastructure/supabase/supabase-grant-web-grounding-repository.ts";
 import { SupabaseGrantWebSearchEgressAuditRepository } from "../infrastructure/supabase/supabase-grant-web-search-egress-audit-repository.ts";
 import { GrantGeneralWebSearchService } from "../application/grant-general-web-search-service.ts";
@@ -202,11 +202,9 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
   if (!isGrantWebGroundingEnabled()) return null;
   const client = createGrantSupabaseClient();
   const ai = createGrantModelDataGateway(client, ownerId);
-  const googleApiKey = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY?.trim();
-  const googleEngineId = process.env.GOOGLE_CUSTOM_SEARCH_ENGINE_ID?.trim();
-  if (!ai.config.apiKey || !googleApiKey || !googleEngineId) return null;
+  if (!ai.config.apiKey) return null;
   const sourceRepository = new SupabaseGrantWebGroundingRepository(client, ownerId);
-  const provider = new GoogleCustomSearchProvider({ apiKey: googleApiKey, engineId: googleEngineId });
+  const provider = new OpenAIWebSearchProvider({ apiKey: ai.config.apiKey, modelId: ai.config.modelId });
   const searchService = new GrantGeneralWebSearchService({
     provider,
     auditRepository: new SupabaseGrantWebSearchEgressAuditRepository(client, ownerId),

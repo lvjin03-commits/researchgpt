@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GrantPersistedWebProviderIdSchema } from "./contracts.ts";
 import { GrantWebSearchEgressIssueSchema } from "./query-egress-policy.ts";
 
 const UuidSchema = z.string().uuid();
@@ -9,7 +10,7 @@ export const GrantWebSearchEgressAuditSchema = z.object({
   documentId: UuidSchema,
   sourceRevision: z.number().int().positive(),
   actorId: UuidSchema,
-  providerId: z.enum(["openalex", "google_custom_search"]),
+  providerId: GrantPersistedWebProviderIdSchema,
   policyVersion: z.string().trim().min(1).max(100),
   decision: z.enum(["allowed", "blocked"]),
   candidateHash: z.string().regex(/^[a-f0-9]{64}$/u),

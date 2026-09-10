@@ -7,7 +7,7 @@ const sourceId = randomUUID();
 const otherSourceId = randomUUID();
 const record = createGrantWebSourceRecord({
   sourceId,
-  providerId: "google_custom_search",
+  providerId: "openai_web_search",
   providerRecordId: "google-result-1",
   url: "https://lab.example.edu/paper#abstract",
   title: "  Interface study  ",
@@ -20,7 +20,7 @@ assert.equal(record.classification.registryVersion, "1");
 assert.match(record.contentFingerprint, /^[a-f0-9]{64}$/u);
 
 const repeated = createGrantWebSourceRecord({
-  sourceId: otherSourceId, providerId: "google_custom_search", providerRecordId: "another-id",
+  sourceId: otherSourceId, providerId: "openai_web_search", providerRecordId: "another-id",
   url: "https://lab.example.edu/paper", title: "A different display title", snippet: "A bounded search snippet.",
   retrievedAt: "2026-09-08T13:00:00.000Z",
 });

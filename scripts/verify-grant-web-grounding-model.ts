@@ -4,7 +4,7 @@ import { OpenAIGrantWebGroundingModel } from "../lib/grants/infrastructure/model
 import { GrantWebModelError } from "../lib/grants/ports/grant-web-grounding-model.ts";
 import { createGrantWebSourceRecord } from "../lib/grants/web-sources/source-record.ts";
 
-const source = createGrantWebSourceRecord({ sourceId: randomUUID(), providerId: "google_custom_search",
+const source = createGrantWebSourceRecord({ sourceId: randomUUID(), providerId: "openai_web_search",
   url: "https://lab.example.edu/review", title: "Interface review",
   snippet: "Electrolyte solvation is associated with zinc deposition and interface stability.",
   retrievedAt: "2026-09-08T12:00:00.000Z" });

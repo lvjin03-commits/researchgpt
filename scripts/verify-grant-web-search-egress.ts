@@ -34,7 +34,7 @@ for (const [query, expected] of blockedCases) {
 
 const auditBase = {
   auditId: randomUUID(), documentId: randomUUID(), sourceRevision: 3, actorId: randomUUID(),
-  providerId: "google_custom_search" as const, policyVersion: safe.policyVersion,
+  providerId: "openai_web_search" as const, policyVersion: safe.policyVersion,
   candidateHash: safe.candidateHash, createdAt: "2026-09-08T12:00:00.000Z",
 };
 GrantWebSearchEgressAuditSchema.parse({ ...auditBase, decision: "allowed", outgoingQuery: safe.outgoingQuery, issues: [] });

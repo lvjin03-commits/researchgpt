@@ -1,7 +1,8 @@
 # ADR 0048: Web grounding provider composition is server-only and fail-closed
 
 ## Status
-Accepted as step 10 implementation foundation. Runtime activation remains off.
+Superseded by ADR 0050 for the general-web Provider. The model adapter and
+server-only composition rules remain active.
 
 ## Decision
 The web-grounded Grant Assistant uses a dedicated OpenAI adapter implementing

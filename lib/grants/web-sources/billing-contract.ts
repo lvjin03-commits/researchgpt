@@ -47,7 +47,7 @@ export const GRANT_WEB_NON_BILLABLE_OUTCOMES = Object.freeze({
 
 export const GRANT_WEB_BILLABLE_USAGE = Object.freeze({
   queryRewrite: Object.freeze({ kind: "tokens" }),
-  search: Object.freeze({ kind: "tool_call", tool: "google_custom_search_query" }),
+  search: Object.freeze({ kind: "tool_call", tool: "openai_web_search" }),
   assessment: Object.freeze({ kind: "tokens" }),
   answer: Object.freeze({ kind: "tokens" }),
 } as const);

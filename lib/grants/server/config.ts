@@ -23,7 +23,7 @@ export function isGrantAssistantChatEnabled(): boolean {
 
 export function isGrantWebGroundingEnabled(): boolean {
   return process.env.GRANT_WEB_GROUNDING_ENABLED?.trim().toLowerCase() === "true"
-    && process.env.GRANT_WEB_GROUNDING_DATABASE_SCHEMA?.trim() === "067"
+    && process.env.GRANT_WEB_GROUNDING_DATABASE_SCHEMA?.trim() === "068"
     && process.env.GRANT_WEB_GROUNDING_PRICE_CATALOG_VERSION?.trim() === "001";
 }
 

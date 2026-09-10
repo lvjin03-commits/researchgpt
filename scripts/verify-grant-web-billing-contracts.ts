@@ -14,7 +14,7 @@ assert.deepEqual(getBillingOperationContract(AI_OPERATIONS.grant.webSourceAssess
 assert.deepEqual(getBillingOperationContract(AI_OPERATIONS.grant.webAnswerSynthesize).bundleKeys, ["grounded_answer"]);
 assert.equal(resolveBillingDecision({ operation: AI_OPERATIONS.grant.webSearchQuery, terminalState: GRANT_WEB_NON_BILLABLE_OUTCOMES.no_results }).decision, "release");
 assert.equal(resolveBillingDecision({ operation: AI_OPERATIONS.grant.webAnswerSynthesize, terminalState: "delivered" }).decision, "charge_delivered_usage");
-assert.deepEqual(GRANT_WEB_BILLABLE_USAGE.search, { kind: "tool_call", tool: "google_custom_search_query" });
+assert.deepEqual(GRANT_WEB_BILLABLE_USAGE.search, { kind: "tool_call", tool: "openai_web_search" });
 
 assert.equal(resolveGrantModelOperationPolicy({ operation: GRANT_WEB_SOURCE_ASSESS_OPERATION, configuredGrantModelId: "test-model" }).policyVersion, "grant-web-source-assess-v1");
 assert.equal(resolveGrantModelOperationPolicy({ operation: GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION, configuredGrantModelId: "test-model" }).policyVersion, "grant-web-answer-synthesize-v1");

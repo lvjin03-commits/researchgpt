@@ -7,14 +7,14 @@ import { SupabaseGrantWebGroundingRepository } from "../lib/grants/infrastructur
 import { SupabaseGrantWebSearchEgressAuditRepository } from "../lib/grants/infrastructure/supabase/supabase-grant-web-search-egress-audit-repository.ts";
 import { isGrantWebGroundingEnabled } from "../lib/grants/server/config.ts";
 
-const source = createGrantWebSourceRecord({ sourceId: randomUUID(), providerId: "google_custom_search", url: "https://example.edu/a", title: "Public title", snippet: "Bounded public snippet", retrievedAt: "2026-09-08T12:00:00.000Z" });
+const source = createGrantWebSourceRecord({ sourceId: randomUUID(), providerId: "openai_web_search", url: "https://example.edu/a", title: "Public title", snippet: "Bounded public snippet", retrievedAt: "2026-09-08T12:00:00.000Z" });
 GrantWebPublicSourceSnapshotSchema.parse(Object.fromEntries(Object.entries(source).filter(([key]) => key !== "sourceId" && key !== "retrievedAt")));
 const event = GrantWebSourceUsageEventSchema.parse({ usageEventId: randomUUID(), documentId: randomUUID(), assistantSessionId: null, turnId: randomUUID(), searchAuditId: randomUUID(), sourceId: source.sourceId, contentFingerprint: source.contentFingerprint, eventType: "retrieved", createdAt: source.retrievedAt });
 
 const calls: Array<{ operation: string; parameters: Record<string, unknown> }> = [];
 const client = { async rpc(operation: string, parameters: Record<string, unknown>) { calls.push({ operation, parameters }); return { data: operation === "list_grant_web_turn_sources" ? [] : null, error: null }; } };
 const ownerId = randomUUID();
-await new SupabaseGrantWebSearchEgressAuditRepository(client, ownerId).append({ auditId: event.searchAuditId, documentId: event.documentId, sourceRevision: 1, actorId: ownerId, providerId: "google_custom_search", policyVersion: "grant-web-search-egress-v1", decision: "allowed", candidateHash: "a".repeat(64), outgoingQuery: "safe query", issues: [], createdAt: source.retrievedAt });
+await new SupabaseGrantWebSearchEgressAuditRepository(client, ownerId).append({ auditId: event.searchAuditId, documentId: event.documentId, sourceRevision: 1, actorId: ownerId, providerId: "openai_web_search", policyVersion: "grant-web-search-egress-v1", decision: "allowed", candidateHash: "a".repeat(64), outgoingQuery: "safe query", issues: [], createdAt: source.retrievedAt });
 const repository = new SupabaseGrantWebGroundingRepository(client, ownerId);
 await repository.saveSearchResults({ documentId: event.documentId, searchAuditId: event.searchAuditId, sources: [source], usageEvents: [event] });
 await repository.appendUsageEvents({ documentId: event.documentId, events: [{ ...event, usageEventId: randomUUID(), eventType: "cited" }] });
@@ -32,8 +32,9 @@ assert.equal(isGrantWebGroundingEnabled(), false);
 process.env.GRANT_WEB_GROUNDING_ENABLED = "true"; process.env.GRANT_WEB_GROUNDING_DATABASE_SCHEMA = "066";
 assert.equal(isGrantWebGroundingEnabled(), false);
 process.env.GRANT_WEB_GROUNDING_DATABASE_SCHEMA = "067";
-assert.equal(isGrantWebGroundingEnabled(), false);
 process.env.GRANT_WEB_GROUNDING_PRICE_CATALOG_VERSION = "001";
+assert.equal(isGrantWebGroundingEnabled(), false);
+process.env.GRANT_WEB_GROUNDING_DATABASE_SCHEMA = "068";
 assert.equal(isGrantWebGroundingEnabled(), true);
 
 console.log("Grant web grounding persistence, owner isolation and schema gate verified offline.");
