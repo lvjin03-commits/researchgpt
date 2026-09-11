@@ -37,7 +37,7 @@ export class GrantAssistantChatService {
     configuredGrantModelId: string;
     sessions: GrantAssistantSessionRepository;
     editSessions: GrantAiEditSessionRepository;
-    webGrounding?: { actorId: string; orchestrator: Pick<GrantWebGroundedChatOrchestrator, "run"> };
+    webGrounding?: { actorId: string; orchestrator: Pick<GrantWebGroundedChatOrchestrator, "run"> & { getBillingPreview?: () => Promise<unknown> } };
   };
 
   constructor(dependencies: GrantAssistantChatService["dependencies"]) {
@@ -47,9 +47,11 @@ export class GrantAssistantChatService {
   async getCurrent(documentId: string) {
     await this.dependencies.revisionService.getDocument(documentId);
     const existing = await this.dependencies.sessions.getCurrentSession(documentId);
-    if (!existing) return { session: null, messages: [] };
+    if (!existing) return { session: null, messages: [],
+      billing: await this.dependencies.webGrounding?.orchestrator.getBillingPreview?.() ?? null };
     const session = await this.dependencies.sessions.ensureSession({ documentId, sessionId: existing.sessionId, now: new Date().toISOString() });
-    return { session, messages: await this.dependencies.sessions.listMessages(session.sessionId) };
+    return { session, messages: await this.dependencies.sessions.listMessages(session.sessionId),
+      billing: await this.dependencies.webGrounding?.orchestrator.getBillingPreview?.() ?? null };
   }
 
   async linkEditSession(input: { documentId: string; editSessionId: string }) {
@@ -164,7 +166,7 @@ export class GrantAssistantChatService {
         return { sessionId: session.sessionId, turnId: input.turnId, traceId: input.turnId,
           operation: GRANT_ASSISTANT_CHAT_OPERATION, attempts: 1, cached: false, focus: focusResolution,
           recommendedQuestions: [], webGrounding: { searchedCount: web.searchedCount, recommendedCount: web.recommendedCount,
-            excludedCount: web.excludedCount }, ...web.answer };
+            excludedCount: web.excludedCount, charging: web.charging }, ...web.answer };
       }
     }
     const policy = resolveGrantModelOperationPolicy({ operation: GRANT_ASSISTANT_CHAT_OPERATION, configuredGrantModelId: this.dependencies.configuredGrantModelId });

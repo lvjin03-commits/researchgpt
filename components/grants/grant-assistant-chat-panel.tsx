@@ -6,6 +6,7 @@ import { GrantAssistantSourceControls } from "./grant-assistant-source-controls"
 import { candidateContextFocus, documentSelectionFocuses, resolveGrantAssistantFocus, type GrantAssistantFocus } from "@/lib/grants/assistant/focus-state";
 
 type Message = { messageId: string; role: "user" | "assistant"; content: string; grounding?: "general_reasoning" | "evidence_grounded"; citations?: Array<{ citationId: string; sourceAlias?: string; label: string; url?: string }>; recommendedQuestions?: string[] };
+type BillingPreview = { charging: "meter_only" | "canary"; canSubmit: boolean; maximumChargePoints: number; availablePoints: number | null; reason?: "insufficient_points" | "account_on_hold" | "daily_limit" };
 
 export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGenerate, contextCards, candidateContext, initialPrompt, onCandidateContextClear, evidenceEnabled, webGroundingEnabled }: {
   documentId: string;
@@ -26,6 +27,8 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   const [ambiguity, setAmbiguity] = useState<{ question: string; choices: GrantAssistantFocus[] } | null>(null);
   const [ignoreAmbiguousFocusOnce, setIgnoreAmbiguousFocusOnce] = useState(false);
   const [webSearch, setWebSearch] = useState(false);
+  const [billing, setBilling] = useState<BillingPreview | null>(null);
+  const [lastChargedPoints, setLastChargedPoints] = useState<number | null>(null);
 
   useEffect(() => {
     if (initialPrompt) setInput(initialPrompt);
@@ -37,6 +40,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "无法恢复 Grant AI 对话。");
       if (active) setMessages((data.messages ?? []).map((message: Message) => message));
+      if (active) setBilling(data.billing ?? null);
     }).catch((cause) => active && setError(cause instanceof Error ? cause.message : "无法恢复 Grant AI 对话。"));
     return () => { active = false; };
   }, [documentId]);
@@ -86,6 +90,14 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       }
       setMessages((items) => [...items, { messageId: `${turnId}:user`, role: "user", content: question }, { messageId: `${turnId}:assistant`, role: "assistant", content: data.content, grounding: data.grounding, citations: data.citations, recommendedQuestions: data.recommendedQuestions }]);
       setInput("");
+      const charge = data.webGrounding?.charging;
+      if (charge?.mode === "charged") {
+        setLastChargedPoints(charge.chargedPoints);
+        setBilling((current) => current?.availablePoints == null ? current : {
+          ...current, availablePoints: Math.max(0, current.availablePoints - charge.chargedPoints),
+          canSubmit: current.availablePoints - charge.chargedPoints >= current.maximumChargePoints,
+        });
+      }
       setAmbiguity(null);
       setIgnoreAmbiguousFocusOnce(false);
     } catch (cause) {
@@ -126,11 +138,13 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         </div>
       </section>}
       <GrantAssistantSourceControls documentId={documentId} enabled={evidenceEnabled} selectedSourceIds={selectedSourceIds} onSelectionChange={setSelectedSourceIds} onError={setError} />
-      {webGroundingEnabled && <button type="button" aria-pressed={webSearch} onClick={() => setWebSearch((value) => !value)} className={`mb-2 rounded-lg border px-3 py-1.5 text-xs font-semibold ${webSearch ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 bg-white text-slate-700"}`}>{webSearch ? "联网补充：已开启" : "联网补充"}</button>}
+      {webGroundingEnabled && <div className="mb-2 flex items-center gap-2"><button type="button" aria-pressed={webSearch} onClick={() => setWebSearch((value) => !value)} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${webSearch ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 bg-white text-slate-700"}`}>{webSearch ? "联网补充：已开启" : "联网补充"}</button>{webSearch && billing?.charging === "canary" && <span className="text-[11px] text-slate-500">最多 {billing.maximumChargePoints} 智点 · 可用 {billing.availablePoints ?? 0}</span>}</div>}
       <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 focus-within:border-blue-500">
         <textarea aria-label="向 Grant AI 提问" value={input} onChange={(event) => { const next = event.target.value; setInput(next); setError(""); if (ambiguity && next.trim() !== ambiguity.question) { setAmbiguity(null); setIgnoreAmbiguousFocusOnce(true); } }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="询问基金写作、研究思路或术语" className="min-h-16 flex-1 resize-none border-0 px-2 py-1 text-sm outline-none" />
-        <button type="button" disabled={!input.trim() || busy || !canGenerate} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{busy ? "处理中…" : "发送"}</button>
+        <button type="button" disabled={!input.trim() || busy || !canGenerate || Boolean(webSearch && billing?.charging === "canary" && !billing.canSubmit)} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{busy ? "处理中…" : "发送"}</button>
       </div>
+      {webSearch && billing?.charging === "canary" && !billing.canSubmit && <p className="mt-2 text-xs text-amber-700">{billing.reason === "insufficient_points" ? `智点不足：需要预留 ${billing.maximumChargePoints}，当前可用 ${billing.availablePoints ?? 0}。` : billing.reason === "account_on_hold" ? "智点账户暂时不可用。" : "今日联网问答额度已用完。"}</p>}
+      {lastChargedPoints !== null && <p className="mt-2 text-[11px] text-emerald-700">本次联网问答实际消耗 {lastChargedPoints} 智点。</p>}
       {!canGenerate && <p className="mt-2 text-xs text-amber-700">请先保存当前正文，再开始普通对话。</p>}
       {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
       <p className="mt-2 text-[11px] leading-4 text-slate-400">对话已安全保存，可在刷新页面后继续。</p>

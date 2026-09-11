@@ -257,7 +257,7 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
   });
   return Object.freeze({
     modelGateway: ai.gateway,
-    orchestrator: new GrantWebGroundedChargingAdapter({ orchestrator, charging, modelId: ai.config.modelId }),
+    orchestrator: new GrantWebGroundedChargingAdapter({ orchestrator, charging, modelId: ai.config.modelId, ownerId }),
   });
 }
 

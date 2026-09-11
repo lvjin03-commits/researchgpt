@@ -18,12 +18,19 @@ export class GrantWebGroundedChargingAdapter {
     orchestrator: Pick<GrantWebGroundedChatOrchestrator, "run">;
     charging: AtomicDeliveryCanaryChargingCoordinator;
     modelId: string;
+    ownerId: string;
     now?: () => Date;
     createId?: () => string;
   };
 
   constructor(dependencies: GrantWebGroundedChargingAdapter["dependencies"]) {
     this.dependencies = dependencies;
+  }
+
+  getBillingPreview() {
+    return this.dependencies.charging.preview({ ownerId: this.dependencies.ownerId,
+      operation: AI_OPERATIONS.grant.assistantChat, maximumChargePoints: GRANT_WEB_USER_CHARGE_CAP_POINTS,
+      now: new Date().toISOString() });
   }
 
   async run(input: RunInput): Promise<GrantWebGroundedChatResult> {
@@ -72,6 +79,9 @@ export class GrantWebGroundedChargingAdapter {
         };
       },
     });
-    return charged.value;
+    return charged.value.status === "completed" ? { ...charged.value, charging: {
+      mode: charged.charging, chargedPoints: charged.chargedPoints,
+      maximumChargePoints: GRANT_WEB_USER_CHARGE_CAP_POINTS,
+    } } : charged.value;
   }
 }

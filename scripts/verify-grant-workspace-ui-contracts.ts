@@ -139,6 +139,9 @@ const diagnosticsRouteSource = await readFile(new URL("../app/api/grants/documen
 assert.match(panelSource, /建议默认收起/);
 assert.match(assistantChatPanelSource, /href=\{citation\.url\}/);
 assert.match(assistantChatPanelSource, /rel="noopener noreferrer"/);
+for (const token of ["最多 {billing.maximumChargePoints} 智点", "本次联网问答实际消耗", "智点不足：需要预留"]) {
+  assert.ok(assistantChatPanelSource.includes(token), `Grant Assistant billing feedback missing ${token}`);
+}
 assert.match(panelSource, /isExpanded\s*&&/);
 assert.doesNotMatch(panelSource, /严重性|高风险|中风险|低风险/);
 assert.match(editorSource, /GrantResizableWorkspace/);

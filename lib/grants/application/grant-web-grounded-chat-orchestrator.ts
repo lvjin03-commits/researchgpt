@@ -32,7 +32,8 @@ export type GrantWebGroundedChatResult =
       };
       billingOperationIds: {
         queryRewrite: string; search: string; assessment: string; answer: string;
-      } };
+      };
+      charging?: { mode: "meter_only" | "charged" | "released"; chargedPoints: number; maximumChargePoints: number } };
 
 function modelTokenUsage(usage: { inputTokens: number; outputTokens: number; reasoningTokens: number }): StandardizedBillableUsage {
   return { kind: "tokens", inputTokens: usage.inputTokens, cachedInputTokens: 0,
