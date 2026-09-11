@@ -15,7 +15,16 @@ import type { GrantAiEditSessionRepository } from "../ports/grant-ai-edit-sessio
 import { prepareGrantCandidateAnalysis } from "../edit-session/candidate-analysis.ts";
 import { grantAssistantCacheKey, grantCandidateRecommendedQuestions } from "../assistant/chat-intelligence.ts";
 import { retrieveGrantDocumentBlocks } from "./grant-document-retriever.ts";
-import type { GrantWebGroundedChatOrchestrator } from "./grant-web-grounded-chat-orchestrator.ts";
+import type { GrantWebGroundedChatOrchestrator, GrantWebGroundedChatResult } from "./grant-web-grounded-chat-orchestrator.ts";
+
+type GrantAssistantWebRuntime = {
+  getBillingPreview?: () => Promise<unknown>;
+  getPausedBudget?: (documentId: string) => Promise<unknown>;
+  run(input: Parameters<GrantWebGroundedChatOrchestrator["run"]>[0] & { webBudgetPoints?: number }):
+    Promise<GrantWebGroundedChatResult | { status: "awaiting_budget"; budgetId: string; version: number;
+      requiredAdditionalPoints: number; settledPoints: number; authorizedPoints: number;
+      canDeliverExisting: boolean }>;
+};
 
 export class GrantAssistantChatError extends Error {
   readonly code: "grant_assistant_duplicate_turn" | "grant_assistant_history_invalid" | "grant_assistant_focus_ambiguous";
@@ -37,7 +46,7 @@ export class GrantAssistantChatService {
     configuredGrantModelId: string;
     sessions: GrantAssistantSessionRepository;
     editSessions: GrantAiEditSessionRepository;
-    webGrounding?: { actorId: string; orchestrator: Pick<GrantWebGroundedChatOrchestrator, "run"> & { getBillingPreview?: () => Promise<unknown> } };
+    webGrounding?: { actorId: string; orchestrator: GrantAssistantWebRuntime };
   };
 
   constructor(dependencies: GrantAssistantChatService["dependencies"]) {
@@ -48,10 +57,12 @@ export class GrantAssistantChatService {
     await this.dependencies.revisionService.getDocument(documentId);
     const existing = await this.dependencies.sessions.getCurrentSession(documentId);
     if (!existing) return { session: null, messages: [],
-      billing: await this.dependencies.webGrounding?.orchestrator.getBillingPreview?.() ?? null };
+      billing: await this.dependencies.webGrounding?.orchestrator.getBillingPreview?.() ?? null,
+      pausedBudget: await this.dependencies.webGrounding?.orchestrator.getPausedBudget?.(documentId) ?? null };
     const session = await this.dependencies.sessions.ensureSession({ documentId, sessionId: existing.sessionId, now: new Date().toISOString() });
     return { session, messages: await this.dependencies.sessions.listMessages(session.sessionId),
-      billing: await this.dependencies.webGrounding?.orchestrator.getBillingPreview?.() ?? null };
+      billing: await this.dependencies.webGrounding?.orchestrator.getBillingPreview?.() ?? null,
+      pausedBudget: await this.dependencies.webGrounding?.orchestrator.getPausedBudget?.(documentId) ?? null };
   }
 
   async linkEditSession(input: { documentId: string; editSessionId: string }) {
@@ -72,6 +83,7 @@ export class GrantAssistantChatService {
     ignoreAmbiguousFocus?: boolean;
     candidateContext?: GrantAssistantCandidateContext | null;
     webSearch?: boolean;
+    webBudgetPoints?: number;
   }) {
     const aggregate = await this.dependencies.revisionService.getDocument(input.documentId);
     if (aggregate.document.currentRevisionId !== input.expectedRevisionId) throw new GrantRevisionConflictError(aggregate.document.currentRevisionId);
@@ -154,7 +166,15 @@ export class GrantAssistantChatService {
         context: admitted,
         documentTextForEgressCheck: JSON.stringify(aggregate.currentRevision.snapshot),
         sensitiveTerms: [aggregate.document.title],
+        ...(input.webBudgetPoints == null ? {} : { webBudgetPoints: input.webBudgetPoints }),
       });
+      if (web.status === "awaiting_budget") {
+        return { sessionId: session.sessionId, turnId: input.turnId, traceId: input.turnId,
+          operation: GRANT_ASSISTANT_CHAT_OPERATION, attempts: 0, cached: false, focus: focusResolution,
+          content: "联网研究已暂停，继续前需要确认增加智点；也可以直接整理当前结果。",
+          grounding: "general_reasoning" as const, citations: [], claims: [], unsupportedClaims: [], warnings: [],
+          recommendedQuestions: [], webGrounding: web };
+      }
       if (web.status === "completed") {
         const userMessage: GrantAssistantMessage = { messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId,
           traceId: input.turnId, role: "user", content: question, citations: [], createdAt: now };

@@ -299,6 +299,155 @@ installed in the verification runtime.
 
 ## Feature Flags
 
+## User-authorized web budget Step 1 Status
+
+Impact Analysis 0054 and ADR 0054 freeze the target budget, state, settlement,
+pause/expiry and dependency-invalidation contract. The target replaces the
+fixed 50-point/platform-overage behavior with an explicit initial authorization
+and idempotent increases, pre-dispatch admission, a protected final-delivery
+envelope and resumable partial work.
+
+This is documentation only. The deployed fixed-cap Canary remains unchanged;
+no migration, coordinator, Operation Policy, route, UI, production setting or
+paid provider call is added in this step. Step 2 extends the existing Operation
+Policies with hard decision, execution and delivery limits.
+
+## User-authorized web budget Step 2 Status
+
+The shared AI Operation Registry now reserves distinct next-step decision and
+existing-results delivery operations. The Grant model Operation Policy owns
+their one-attempt, zero-tool hard limits and records limits for the established
+rewrite, assessment and synthesis operations. The same versioned web-budget
+policy catalog owns the hosted-search limit of one provider attempt, one tool
+call, ten results and a 45-second timeout. A pure guard rejects a planned call
+whose token, tool, attempt, timeout or result limit exceeds its policy.
+
+These policies are target-only in this step: neither new Operation is routed,
+priced, persisted or dispatched, and current providers do not yet consume the
+new limits. The fixed 50-point production path is unchanged. Step 3 implements
+the pre-dispatch budget state machine that consumes these policies.
+
+## User-authorized web budget Step 3 Status
+
+A pure resumable budget aggregate and one application coordinator now own the
+pre-dispatch decision. The aggregate protects remaining decision capacity and
+the final-delivery hard maximum, admits at most one active phase, pauses with an
+exact additional-point requirement, records idempotent increase authorization,
+prevents phase replay and permits complete or honest partial terminal delivery.
+
+The coordinator sequences admission, reservation and only then provider
+invocation. Offline tests prove an underfunded phase makes zero reservation and
+zero provider calls. The reservation port intentionally remains unbound to
+production: Step 4 must implement one persisted state-plus-ledger transaction
+before this coordinator can replace the fixed 50-point path. No migration,
+route, UI, production setting or paid provider call is included here.
+
+## User-authorized web budget Step 4 Status
+
+Migration `070` adds the owner-scoped durable budget aggregate and immutable
+authorization records. Service-role-only PostgreSQL functions combine
+version-checked phase admission with point reservation, and combine terminal
+phase transitions with point settlement or release, in one database transaction.
+The Supabase adapter implements the Step 3 reservation port without introducing
+a second ledger authority.
+
+This remains target-only. Migration `070` has not been applied to production,
+the adapter is not composed into the Grant Assistant route, and no paid provider
+call or user-path deployment is part of this step. Step 5 adds the application
+orchestrator that binds registered Operation policies to these atomic phases.
+
+## User-authorized web budget Step 5 Status
+
+`GrantWebBudgetedPhaseOrchestrator` is now the target application admission
+boundary for every decision, model and search phase. It resolves the registered
+Operation Policy, rejects mismatched price quotes, validates planned tokens,
+attempts, tools, timeout and result count, and only then enters the Step 3/4
+budget coordinator. Policy or budget rejection therefore makes zero provider
+calls; an admitted phase preserves the authoritative Operation and price-policy
+identity in its atomic reservation.
+
+This target orchestrator is deliberately not yet composed around the existing
+monolithic production web-grounded flow. The fixed 50-point Canary remains the
+production authority until Step 6 splits that flow into resumable checkpoints
+and provides honest existing-results delivery. No migration, paid call, route,
+UI, deployment or production behavior is changed in Step 5.
+
+## User-authorized web budget Step 6 Status
+
+The target web flow now has one strict, revision-bound resumable checkpoint for
+query rewrite, public search results, document-relative assessment and answer.
+Its deterministic planner selects exactly one next Operation. An explicit
+`deliverExisting` decision routes saved sources to the bounded final-delivery
+Operation instead of silently continuing research. On resume, public source
+snapshots remain reusable while assessment and answer are invalidated whenever
+Revision, admitted context or evidence authorization changes. If delivery
+fails, a deterministic manifest reports only which paid artifacts exist.
+
+This remains a target-only split and does not yet replace the production
+monolithic orchestrator. Atomic checkpoint persistence with phase settlement,
+route commands and the budget dialog remain rollout work. No paid call,
+migration application, deployment or production behavior is included here.
+
+## User-authorized web budget Step 7 Status
+
+Successful phase settlement can now atomically persist the full resumable
+checkpoint in migration `070`; checkpoint scope is constrained to the budget's
+document and turn. The target application exposes strict, versioned commands
+for an idempotent budget increase and for declining further research in favor
+of `existing_results_delivery`. The latter changes budget state before returning
+saved sources to the dedicated bounded delivery Operation.
+
+These are application command contracts, not public HTTP routes yet. Migration
+`070` remains unapplied and the production assistant still uses the fixed-cap
+Canary. Route composition, UI dialogs and real-path verification are deferred;
+no paid call, commit, deployment or production mutation occurs in Step 7.
+
+## User-authorized web budget Step 8 Status
+
+Schema-gated authenticated Route Handlers now expose increase and
+deliver-existing commands. Both reload owner-scoped server state and enforce
+the client's expected version; they never trust a client-supplied checkpoint.
+The Grant Assistant UI accepts a 20–500 point initial limit when the resumable
+billing projection is selected and presents a modal-like decision with the
+exact additional amount or honest delivery from existing results.
+
+The new capability defaults off and additionally requires database schema
+`070`. The current production response does not yet select `resumable`, so the
+new controls are unreachable until migration and Step 9 composition. No
+production migration, paid call, commit or deployment occurs in Step 8.
+
+## User-authorized web budget Step 9 Status
+
+Budget commands now support an injected continuation authority. After a stored
+increase it resumes from the saved checkpoint in `continue_research` mode;
+after decline it resumes in `deliver_existing` mode. The continuation loop is
+bounded, selects one deterministic next Operation at a time, stops immediately
+on another budget pause and never restarts completed query/search work.
+
+Production composition intentionally does not inject the continuation yet. Its
+concrete phase executor must be assembled from the existing model gateway,
+search service, pricing and atomic checkpoint settlement before the flag can be
+enabled. The HTTP/UI contract is connected to the command boundary, while
+the fixed-cap production path remains authoritative.
+
+## User-authorized web budget Step 10 Status
+
+The target continuation now has a concrete phase executor that binds the
+authoritative context loader, model executor, OpenAI web-search service, frozen
+price policies and atomic budget/checkpoint settlement. Before every paid phase
+it rebuilds current document and authorization context; changed context retains
+public search artifacts but invalidates document-relative assessment and answer.
+Each phase obtains a worst-case quote (including permitted retries), reserves
+before provider dispatch, prices actual usage against the frozen policy and
+persists the resulting checkpoint with settlement. Existing-results delivery
+uses its dedicated protected delivery envelope and output-token bound.
+
+An offline end-to-end contract test covers reserve-before-model, durable egress
+audit-before-search, all four continuation phases, grounded completion and
+checkpoint settlement. Production composition still does not provide the
+application-specific context loader or enable schema `070`; migration, paid
+provider calls, deployment and production rollout remain explicitly separate.
+
 The product begins disabled. Planned flags are capability gates, not alternative
 business implementations:
 
@@ -702,6 +851,113 @@ negative routing check proving ordinary free text remains
 `grant.assistant.chat`. The implementation is integration-complete but remains
 unavailable until production migrations, capability configuration and signed-in
 canary verification are separately authorized.
+
+## Structured Academic Source Boundary Step 1 Status
+
+Impact analysis 0055 and ADR 0055 establish the target source-acquisition
+boundary before research-task search is expanded. Structured academic Providers
+own paper abstracts and bibliographic facts; OpenAI native web search remains a
+general-web discovery source whose bounded generated text is explicitly
+`citation_context`. One future acquisition service will normalize, deduplicate
+and order results while preserving provenance and deterministic trust tiers.
+
+This is a documentation and contract-boundary step only. It does not change the
+active Provider, source schema, database, route, UI, billing or production
+behavior; it performs no paid search. Step 2 implements the versioned source
+contract and structured academic Provider behind offline fixtures before any
+runtime composition or rollout is considered.
+
+## Structured Academic Source Contract Step 2 Status
+
+A target-only schema-v2 academic source record now distinguishes an OpenAlex
+abstract from `metadata_only` evidence and preserves publication year/date, DOI,
+venue, authors, immutable Provider identity, trust-registry classification and
+content fingerprint. An injectable OpenAlex adapter reconstructs the official
+inverted abstract, normalizes DOI values, preserves explicit missing metadata
+and deterministically excludes retracted or malformed works.
+
+The adapter requires a query already admitted by the existing egress policy and
+is verified exclusively with an offline response fixture. It is not registered
+in the server composition root, persisted by production repositories, exposed
+through routes or UI, billed, deployed or permitted to replace the active
+general-web Provider in this step.
+
+## Research Source Composition Step 3 Status
+
+One target-only composition function now combines schema-v2 OpenAlex records
+with the existing OpenAI general-web records. It derives identity in the fixed
+order DOI, normalized canonical URL and normalized title; rejects ambiguous
+many-group joins; selects a structured abstract ahead of generated citation
+context; and returns deterministic newest-first groups. Every original member,
+fingerprint, Provider identity and evidence kind is retained inside the group.
+
+This step does not invoke either Provider, enrich Crossref metadata, persist the
+groups or change runtime composition. Crossref remains a later optional
+bibliographic enrichment adapter and may not overwrite evidence provenance.
+
+## Research Source Assessment Step 4 Status
+
+A target-only V2 assessment contract now records a proposed mechanism summary,
+bounded quantitative findings, application relation, evidence limitations,
+disposition and reason for every current source group. The program joins DOI,
+publication year and primary source identity from immutable source records; the
+model cannot return or override those fields.
+
+The validator requires each source group exactly once, rejects cross-group
+source IDs and checks every numeric token in a quantitative finding against the
+specific admitted abstract or citation context named by that finding. A missing
+number therefore remains unsupported instead of becoming a source-bound model
+invention. This contract is not yet connected to the production assessment
+Operation or prompt.
+
+## Research Gap Verification Step 5 Status
+
+A target-only comparison contract now reuses the scientific diagnostic
+dispositions `residual_gap_found`, `verified_no_residual_gap` and
+`unable_to_verify`. It resolves execution-local application locations through a
+frozen program map, preserves explicit existing-design evidence tiers and
+derives `latestDevelopment` exclusively from the already validated source
+assessment.
+
+The assembler permits a recommendation only for a verified residual gap. A
+verified no-gap result must contain no gap or recommendation; an unverifiable
+result contains only a bounded reason. This prevents research search from
+inventing a missing design merely to produce advice. No diagnostic Finding,
+canonical Revision or production Assistant path is changed in this step.
+
+## Research Query Planning Step 6 Status
+
+A target-only query-plan assembler now accepts three to five ordered model
+candidates, replaces Q* references with program UUIDs and rejects duplicate
+queries or plans missing recent-review, application-specific and scientific-
+depth coverage. Queries remain candidates only; each must pass the existing
+egress audit before a future Provider call.
+
+A deterministic next-step policy consumes program-computed evidence counts. It
+stops after at least three completed queries when defined source, abstract,
+recency, quantitative and comparison thresholds are satisfied; otherwise it
+selects the next existing plan item. Exhaustion yields explicit limitations.
+The model cannot add an unplanned query, declare evidence sufficient or trigger
+spend. Runtime orchestration and user-budget admission remain later integration
+work.
+
+## Research Budget Integration Step 7 Status
+
+A target-only Grant research budget adapter now binds registered Operation
+limits, site-wide maximum-charge quotes and the resumable budget coordinator in
+that order. Decision planning, hosted search, source assessment and the new
+`grant.web_gap.compare` Operation cannot invoke a provider until policy checks,
+pricing and phase reservation succeed. Structured OpenAlex calls remain
+non-billable but retain egress audit requirements.
+
+When a comparison cannot fit, the adapter returns `awaiting_budget` with zero
+reservation and zero invocation. Declining an increase persists the decision
+waiver and uses the protected `grant.web_existing_results.deliver` envelope;
+the result is terminal `delivered_partial` and charges only its validated actual
+usage. Offline orchestration tests cover phase ordering, exact additional-point
+calculation, refusal to overspend and bounded partial delivery. Production
+route/UI replacement and removal of the fixed 50-point adapter remain a later,
+explicitly authorized rollout step.
 
 ## Unified Grant Assistant Answer Step 1 Status
 

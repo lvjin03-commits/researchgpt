@@ -43,5 +43,6 @@ export interface GrantWebGroundingModel {
     admittedApplicationContext: string;
     sources: readonly GrantWebSourceRecord[];
     attemptPurpose: GrantWebModelAttemptPurpose;
+    maximumOutputTokens?: number;
   }): Promise<GrantWebModelResult<GrantWebAnswerProposal>>;
 }

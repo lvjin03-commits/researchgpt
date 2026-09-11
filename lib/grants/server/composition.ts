@@ -23,7 +23,7 @@ import { SupabaseGrantEvidenceStorage } from "../infrastructure/supabase/supabas
 import { SharedGrantEvidenceParser } from "../infrastructure/documents/shared-grant-evidence-parser.ts";
 import { GrantExportService } from "../application/export-service.ts";
 import { DeterministicGrantDocxRenderer } from "../infrastructure/documents/deterministic-grant-docx-renderer.ts";
-import { isGrantRecheckEnabled, selectGrantSemanticDiagnosticRuntime } from "./config.ts";
+import { isGrantRecheckEnabled, isGrantResumableWebBudgetEnabled, selectGrantSemanticDiagnosticRuntime } from "./config.ts";
 import { resolveGrantAiConfig } from "./grant-ai-config.ts";
 import { GrantFigureDisplayService } from "../application/figure-display-service.ts";
 import { SupabaseGrantFigureAssetReader } from "../infrastructure/supabase/supabase-grant-figure-asset-reader.ts";
@@ -57,6 +57,17 @@ import { PointBillingService } from "../../billing/application/point-billing-ser
 import { AtomicDeliveryChargingCoordinator } from "../../billing/application/atomic-delivery-charging-coordinator.ts";
 import { AtomicDeliveryCanaryChargingCoordinator } from "../../billing/application/atomic-delivery-canary-charging-coordinator.ts";
 import { resolveChargingRolloutPolicy } from "../../billing/domain/charging-rollout.ts";
+import { SupabaseResumableWebAnswerBudgetRepository } from "../../billing/infrastructure/supabase/supabase-resumable-web-answer-budget-repository.ts";
+import { GrantWebBudgetCommandService } from "../application/grant-web-budget-commands.ts";
+import { ResumableWebAnswerBudgetCoordinator } from "../../billing/application/resumable-web-answer-budget-coordinator.ts";
+import { GrantWebBudgetedPhaseOrchestrator } from "../application/grant-web-budgeted-phase-orchestrator.ts";
+import { GrantWebResumablePhaseExecutor } from "../application/grant-web-resumable-flow.ts";
+import { GrantWebConcreteContinuationStepExecutor } from "../application/grant-web-concrete-continuation-executor.ts";
+import { retrieveGrantDocumentBlocks } from "../application/grant-document-retriever.ts";
+import { sha256Canonical } from "../domain/canonical-json.ts";
+import { assembleGrantWebGroundedAnswer } from "../web-sources/grounded-answer-assembler.ts";
+import { OpenAlexStructuredAcademicProvider } from "../infrastructure/web/openalex-structured-academic-provider.ts";
+import { OpenAlexResearchSearchAdapter } from "../infrastructure/web/openalex-research-search-adapter.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -238,6 +249,84 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
       occurredAt: event.occurredAt,
     }),
   });
+  if (isGrantResumableWebBudgetEnabled()) {
+    const researchSearchService = new GrantGeneralWebSearchService({
+      provider: new OpenAlexResearchSearchAdapter(new OpenAlexStructuredAcademicProvider()),
+      auditRepository: new SupabaseGrantWebSearchEgressAuditRepository(client, ownerId), sourceRepository,
+    });
+    const budgetRepository = new SupabaseResumableWebAnswerBudgetRepository(client, ownerId);
+    const assistantSessions = new SupabaseGrantAssistantSessionRepository(client, ownerId);
+    const revisions = new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) });
+    const prices = new SupabasePriceCatalogRepository(client);
+    const phaseExecutor = new GrantWebConcreteContinuationStepExecutor({
+      phases: new GrantWebResumablePhaseExecutor(new GrantWebBudgetedPhaseOrchestrator(
+        new ResumableWebAnswerBudgetCoordinator(budgetRepository),
+      )),
+      contextLoader: { load: async (checkpoint) => {
+        const aggregate = await revisions.getDocument(checkpoint.documentId);
+        const sourceRevisionId = aggregate.document.currentRevisionId;
+        const blocks = retrieveGrantDocumentBlocks({ snapshot: aggregate.currentRevision.snapshot,
+          sourceRevisionId, query: checkpoint.question, limit: 6 });
+        const admitted = ai.gateway.prepareWebGroundingContext({ documentId: checkpoint.documentId,
+          sourceRevisionId, snapshot: aggregate.currentRevision.snapshot, retrievedDocumentBlocks: blocks });
+        return { question: checkpoint.question, applicationContext: admitted.applicationContext,
+          documentTextForEgressCheck: JSON.stringify(aggregate.currentRevision.snapshot),
+          sensitiveTerms: [aggregate.document.title], assistantSessionId: checkpoint.assistantSessionId,
+          sourceRevision: aggregate.currentRevision.revisionNumber, contextHash: admitted.contextHash,
+          authorizationFingerprint: sha256Canonical({ evidenceSourceIds: [] }) };
+      } },
+      model: new OpenAIGrantWebGroundingModel(ai.config.modelId, ai.config.apiKey),
+      modelExecutor: createGrantModelExecutor(client, ownerId), searchService: researchSearchService, sourceRepository,
+      prices, configuredGrantModelId: ai.config.modelId,
+    });
+    const workflow = new GrantWebBudgetCommandService(budgetRepository, undefined, phaseExecutor,
+      async ({ checkpoint, answer }) => {
+        const existing = await assistantSessions.listMessages(checkpoint.assistantSessionId);
+        if (existing.some((message) => message.turnId === checkpoint.turnId)) return;
+        const createdAt = new Date().toISOString();
+        await assistantSessions.appendTurn({ sessionId: checkpoint.assistantSessionId,
+          userMessage: { messageId: randomUUID(), sessionId: checkpoint.assistantSessionId,
+            turnId: checkpoint.turnId, traceId: checkpoint.turnId, role: "user",
+            content: checkpoint.question, citations: [], createdAt },
+          assistantMessage: { messageId: randomUUID(), sessionId: checkpoint.assistantSessionId,
+            turnId: checkpoint.turnId, traceId: checkpoint.turnId, role: "assistant",
+            content: answer.content, grounding: answer.grounding,
+            citations: answer.citations.map(({ citationId, sourceAlias, sourceType, label, url }) =>
+              ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
+            cachedAnswer: answer, recommendedQuestions: [], createdAt },
+          lastActiveAt: createdAt });
+      });
+    return Object.freeze({ modelGateway: ai.gateway, workflow,
+      orchestrator: {
+        getBillingPreview: async () => ({ charging: "resumable" as const, canSubmit: true,
+          maximumChargePoints: await phaseExecutor.getProtectedDeliveryMaximumPoints(), availablePoints: null }),
+        getPausedBudget: (documentId: string) => workflow.getPaused(documentId),
+        run: async (input: Parameters<GrantWebGroundedChatOrchestrator["run"]>[0] & { webBudgetPoints?: number }) => {
+          if (!input.webBudgetPoints) throw new Error("A user-authorized web budget is required.");
+          const result = await workflow.start({ budgetId: randomUUID(), authorizationId: randomUUID(),
+            ownerId, documentId: input.documentId, turnId: input.turnId,
+            assistantSessionId: input.assistantSessionId, question: input.question,
+            authorizedPoints: input.webBudgetPoints, sourceRevision: input.sourceRevision,
+            contextHash: input.context.contextHash,
+            authorizationFingerprint: sha256Canonical({ evidenceSourceIds: [] }) });
+          if (result.status === "awaiting_budget") return { status: "awaiting_budget" as const,
+            budgetId: result.state.budgetId, version: result.state.version,
+            requiredAdditionalPoints: result.requiredAdditionalPoints,
+            settledPoints: result.state.settledPoints, authorizedPoints: result.state.authorizedPoints,
+            canDeliverExisting: Boolean(result.checkpoint.search?.sources.length) };
+          if (result.status !== "completed" || !result.checkpoint.search || !result.checkpoint.assessment
+            || !result.checkpoint.answer) throw new Error("Grant web answer did not reach a valid terminal result.");
+          const assembled = assembleGrantWebGroundedAnswer({ sources: result.checkpoint.search.sources,
+            assessmentProposal: result.checkpoint.assessment, answerProposal: result.checkpoint.answer });
+          return { status: "completed" as const, ...assembled,
+            billingUsage: { queryRewrite: [], search: [], assessment: [], answer: [] },
+            billingOperationIds: { queryRewrite: randomUUID(), search: randomUUID(),
+              assessment: randomUUID(), answer: randomUUID() },
+            charging: { mode: "charged" as const, chargedPoints: result.state.settledPoints,
+              maximumChargePoints: result.state.authorizedPoints } };
+        },
+      } });
+  }
   const orchestrator = new GrantWebGroundedChatOrchestrator({
     model: new OpenAIGrantWebGroundingModel(ai.config.modelId, ai.config.apiKey),
     modelExecutor: createGrantModelExecutor(client, ownerId),
@@ -259,6 +348,12 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
     modelGateway: ai.gateway,
     orchestrator: new GrantWebGroundedChargingAdapter({ orchestrator, charging, modelId: ai.config.modelId, ownerId }),
   });
+}
+
+export function createGrantWebBudgetCommandService(ownerId: string) {
+  const runtime = createGrantWebGroundedChatRuntime(ownerId);
+  if (!runtime || !("workflow" in runtime)) throw new Error("Resumable Grant web answers are not configured.");
+  return runtime.workflow;
 }
 
 export function createGrantCandidateDiffService(ownerId: string): GrantCandidateDiffService {

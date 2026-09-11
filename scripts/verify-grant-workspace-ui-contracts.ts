@@ -142,6 +142,10 @@ assert.match(assistantChatPanelSource, /rel="noopener noreferrer"/);
 for (const token of ["最多 {billing.maximumChargePoints} 智点", "本次联网问答实际消耗", "智点不足：需要预留"]) {
   assert.ok(assistantChatPanelSource.includes(token), `Grant Assistant billing feedback missing ${token}`);
 }
+for (const token of ["aria-modal=\"true\"", "不追加，整理现有结果", "requiredAdditionalPoints} 智点并继续",
+  "canDeliverExisting", "data.pausedBudget", "仅按实际消耗扣除", "正在处理：{pausedBudget.question}"]) {
+  assert.ok(assistantChatPanelSource.includes(token), `Grant Assistant resumable budget UI missing ${token}`);
+}
 assert.match(panelSource, /isExpanded\s*&&/);
 assert.doesNotMatch(panelSource, /严重性|高风险|中风险|低风险/);
 assert.match(editorSource, /GrantResizableWorkspace/);

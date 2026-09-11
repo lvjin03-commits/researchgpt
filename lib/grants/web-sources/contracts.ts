@@ -80,7 +80,7 @@ export const GrantWebSynthesisProposalSchema = z.object({
 }).strict();
 
 export const GrantWebSourceAssessmentProposalSchema = z.object({
-  assessments: z.array(GrantWebSourceAssessmentSchema).max(10),
+  assessments: z.array(GrantWebSourceAssessmentSchema).max(25),
 }).strict();
 
 export const GrantWebAnswerProposalSchema = z.object({

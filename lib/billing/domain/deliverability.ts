@@ -64,6 +64,12 @@ contracts.set(AI_OPERATIONS.grant.webSourceAssess, Object.freeze({
   bundleKeys: Object.freeze(["source_assessment"]),
   deliverabilityMatrix: DEFAULT_MATRIX,
 }));
+contracts.set(AI_OPERATIONS.grant.webGapCompare, Object.freeze({
+  operation: AI_OPERATIONS.grant.webGapCompare,
+  contractVersion: "grant-web-gap-compare-deliverability-v1",
+  bundleKeys: Object.freeze(["gap_comparison"]),
+  deliverabilityMatrix: DEFAULT_MATRIX,
+}));
 contracts.set(AI_OPERATIONS.grant.webAnswerSynthesize, Object.freeze({
   operation: AI_OPERATIONS.grant.webAnswerSynthesize,
   contractVersion: "grant-web-answer-deliverability-v1",

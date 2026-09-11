@@ -126,6 +126,9 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | DOCX typography and pagination | Export Renderer | Formats approved content only |
 | Grant AI usage facts | Grant Model Executor and model-call repository | Reports factual usage and terminal state; never calculates or deducts points |
 | Grant AI price, reservation and point settlement | Site-wide Point Billing Service | Grant routes, services and UI cannot own a private wallet or reinterpret billing policy |
+| Web-grounded turn phase admission and pause/resume | Resumable Web-answer Budget Coordinator | Every paid call requires prior user authorization and atomic budget admission; model and UI cannot authorize spend |
+| Academic paper metadata and abstracts for research-task search | Structured Academic Source Provider | General-web citation context, models and UI cannot manufacture or relabel bibliographic facts |
+| Cross-provider source normalization, provenance-preserving deduplication and ordering | Grant Web Source Acquisition Service | Individual Providers and synthesis models cannot merge or overwrite source provenance |
 
 When Patch Commit Service and Revision Service disagree, Revision Service owns
 the final write decision. Patch validation success never overrides a stale base

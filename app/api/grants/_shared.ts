@@ -13,6 +13,7 @@ import {
   GrantWorkspaceDisabledError,
   GrantRecheckDisabledError,
   GrantDocxExportDisabledError,
+  GrantResumableWebBudgetDisabledError,
 } from "@/lib/grants/server/request-context";
 import { GrantDocxImportError } from "@/lib/grants/imports/docx-importer";
 import { GrantImportStorageError } from "@/lib/grants/ports/grant-import-storage";
@@ -64,6 +65,9 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantWorkspaceDisabledError) {
     return Response.json({ error: "国自然协作工作台尚未开放。", code: "grant_workspace_disabled" }, { status: 404 });
+  }
+  if (error instanceof GrantResumableWebBudgetDisabledError) {
+    return Response.json({ error: "联网预算功能尚未开放。", code: "grant_resumable_web_budget_disabled" }, { status: 404 });
   }
   if (error instanceof GrantAuthenticationRequiredError) {
     return Response.json({ error: "请先登录。", code: "authentication_required" }, { status: 401 });

@@ -33,6 +33,7 @@ export class OpenAIGrantWebGroundingModel implements GrantWebGroundingModel {
   private async structured<T>(input: {
     schema: Parameters<typeof zodResponseFormat>[0]; schemaName: string; system: string; payload: unknown;
     attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
+    maximumOutputTokens?: number;
     parse(value: unknown): T;
   }): Promise<GrantWebModelResult<T>> {
     try {
@@ -40,7 +41,8 @@ export class OpenAIGrantWebGroundingModel implements GrantWebGroundingModel {
         model: this.modelId,
         response_format: zodResponseFormat(input.schema, input.schemaName),
         reasoning_effort: "low",
-        max_completion_tokens: input.schemaName === "grant_web_answer" ? 2400 : 1200,
+        max_completion_tokens: input.maximumOutputTokens
+          ?? (input.schemaName === "grant_web_answer" ? 2400 : input.schemaName === "grant_web_assessment" ? 1600 : 300),
         messages: [
           { role: "system", content: [
             input.system,
@@ -87,17 +89,22 @@ export class OpenAIGrantWebGroundingModel implements GrantWebGroundingModel {
 
   assess(input: Parameters<GrantWebGroundingModel["assess"]>[0]) {
     return this.structured({ schema: GrantWebSourceAssessmentProposalSchema, schemaName: "grant_web_assessment",
-      system: "Assess every supplied source exactly once for relevance to the question and admitted application context. Quality tier is program-owned and cannot be changed. Low-trust sources must be excluded.",
+      system: "Assess every supplied source exactly once. Prefer sources whose abstract contains a concrete mechanism, quantitative result, recent review conclusion, dynamic-interface finding, or application-specific limitation relevant to the admitted application. Explain the specific relation rather than writing a generic literature-review sentence. Quality tier is program-owned and cannot be changed. Low-trust sources must be excluded.",
       payload: { question: input.question, admittedApplicationContext: input.admittedApplicationContext,
-        sources: input.sources.map((source) => ({ sourceId: source.sourceId, title: source.title, snippet: source.snippet, qualityTier: source.classification.qualityTier })) },
+        sources: input.sources.map((source) => ({ sourceId: source.sourceId, title: source.title,
+          publishedAt: source.publishedAt, abstract: source.snippet,
+          qualityTier: source.classification.qualityTier })) },
       attemptPurpose: input.attemptPurpose, parse: (value) => GrantWebSourceAssessmentProposalSchema.parse(value) });
   }
 
   synthesize(input: Parameters<GrantWebGroundingModel["synthesize"]>[0]) {
     return this.structured({ schema: GrantWebAnswerProposalSchema, schemaName: "grant_web_answer",
-      system: "Answer with concise paraphrased claims grounded only in supplied sources. Each claim must cite one or more supplied source IDs. Do not copy long phrases from snippets.",
+      system: "Produce a research-task answer grounded only in the supplied structured abstracts. Compare three things explicitly: what the admitted application already contains, what the recent sources add (mechanism and source-supported quantitative results), and the genuine residual gap or improvement. Recommend only additions that are not already covered. Each substantive claim must cite one or more supplied source IDs. Preserve uncertainty when an abstract lacks details. Do not copy long phrases from abstracts and never turn an unsupported number into a claim.",
       payload: { question: input.question, admittedApplicationContext: input.admittedApplicationContext,
-        sources: input.sources.map((source) => ({ sourceId: source.sourceId, title: source.title, snippet: source.snippet, qualityTier: source.classification.qualityTier })) },
-      attemptPurpose: input.attemptPurpose, parse: (value) => GrantWebAnswerProposalSchema.parse(value) });
+        sources: input.sources.map((source) => ({ sourceId: source.sourceId, title: source.title,
+          publishedAt: source.publishedAt, abstract: source.snippet,
+          qualityTier: source.classification.qualityTier })) },
+      attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.maximumOutputTokens,
+      parse: (value) => GrantWebAnswerProposalSchema.parse(value) });
   }
 }

@@ -12,7 +12,8 @@ import { createGrantAiEditSessionService } from "./composition.ts";
 import { createGrantWebSourceService } from "./composition.ts";
 import { createGrantAssistantChatService } from "./composition.ts";
 import { createGrantCandidateDiffService } from "./composition.ts";
-import { isGrantAiEditSessionEnabled, isGrantAiPatchEnabled, isGrantAssistantChatEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantWorkspaceEnabled } from "./config.ts";
+import { createGrantWebBudgetCommandService } from "./composition.ts";
+import { isGrantAiEditSessionEnabled, isGrantAiPatchEnabled, isGrantAssistantChatEnabled, isGrantDocxExportEnabled, isGrantEvidencePatchEnabled, isGrantLocalEvidenceEnabled, isGrantRecheckEnabled, isGrantResumableWebBudgetEnabled, isGrantWorkspaceEnabled } from "./config.ts";
 
 export class GrantWorkspaceDisabledError extends Error {}
 export class GrantAuthenticationRequiredError extends Error {}
@@ -23,6 +24,7 @@ export class GrantLocalEvidenceDisabledError extends Error {}
 export class GrantEvidencePatchDisabledError extends Error {}
 export class GrantRecheckDisabledError extends Error {}
 export class GrantDocxExportDisabledError extends Error {}
+export class GrantResumableWebBudgetDisabledError extends Error {}
 
 export async function requireGrantRequestContext() {
   if (!isGrantWorkspaceEnabled()) throw new GrantWorkspaceDisabledError();
@@ -55,6 +57,12 @@ export async function requireGrantAssistantChatRequestContext() {
   if (!isGrantAssistantChatEnabled()) throw new GrantAssistantChatDisabledError();
   const context = await requireGrantRequestContext();
   return { ...context, assistantChat: createGrantAssistantChatService(context.user.id) };
+}
+
+export async function requireGrantWebBudgetRequestContext() {
+  if (!isGrantResumableWebBudgetEnabled()) throw new GrantResumableWebBudgetDisabledError();
+  const context = await requireGrantRequestContext();
+  return { ...context, webBudget: createGrantWebBudgetCommandService(context.user.id) };
 }
 
 export async function requireGrantCandidateDiffRequestContext() {

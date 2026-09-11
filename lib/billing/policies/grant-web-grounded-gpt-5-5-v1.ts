@@ -24,6 +24,10 @@ const POLICY_BASE = Object.freeze({
 
 export const GRANT_WEB_GPT_5_5_PRICE_POLICIES: readonly AiPricePolicy[] = Object.freeze([
   AiPricePolicySchema.parse({ ...POLICY_BASE,
+    policyVersion: `${GRANT_WEB_GPT_5_5_PRICE_CATALOG_VERSION}:next-step-decision`,
+    operation: AI_OPERATIONS.grant.webNextStepDecide, unitRates: [],
+  }),
+  AiPricePolicySchema.parse({ ...POLICY_BASE,
     policyVersion: `${GRANT_WEB_GPT_5_5_PRICE_CATALOG_VERSION}:query-rewrite`,
     operation: AI_OPERATIONS.grant.webQueryRewrite, unitRates: [],
   }),
@@ -37,8 +41,16 @@ export const GRANT_WEB_GPT_5_5_PRICE_POLICIES: readonly AiPricePolicy[] = Object
     operation: AI_OPERATIONS.grant.webSourceAssess, unitRates: [],
   }),
   AiPricePolicySchema.parse({ ...POLICY_BASE,
+    policyVersion: `${GRANT_WEB_GPT_5_5_PRICE_CATALOG_VERSION}:gap-comparison`,
+    operation: AI_OPERATIONS.grant.webGapCompare, unitRates: [],
+  }),
+  AiPricePolicySchema.parse({ ...POLICY_BASE,
     policyVersion: `${GRANT_WEB_GPT_5_5_PRICE_CATALOG_VERSION}:answer`,
     operation: AI_OPERATIONS.grant.webAnswerSynthesize, unitRates: [],
+  }),
+  AiPricePolicySchema.parse({ ...POLICY_BASE,
+    policyVersion: `${GRANT_WEB_GPT_5_5_PRICE_CATALOG_VERSION}:existing-results-delivery`,
+    operation: AI_OPERATIONS.grant.webExistingResultsDeliver, unitRates: [],
   }),
 ]);
 
@@ -49,6 +61,7 @@ const tokens = (inputTokens: number, outputTokens: number) => [{
 // `maximum` is the maximum user-billable usage, not a claim that the provider
 // cannot consume more. PointBillingService records overage as platform-absorbed.
 export const GRANT_WEB_GPT_5_5_USAGE_RANGES: Readonly<Record<string, UsageRange>> = Object.freeze({
+  next_step_decision: Object.freeze({ low: tokens(800, 80), high: tokens(2_000, 160), maximum: tokens(4_000, 300) }),
   query_rewrite: Object.freeze({ low: tokens(300, 50), high: tokens(600, 100), maximum: tokens(1_000, 160) }),
   search_query: Object.freeze({
     low: [{ kind: "tool_call" as const, tool: "openai_web_search", count: 1 }, ...tokens(300, 30)],
@@ -56,5 +69,7 @@ export const GRANT_WEB_GPT_5_5_USAGE_RANGES: Readonly<Record<string, UsageRange>
     maximum: [{ kind: "tool_call" as const, tool: "openai_web_search", count: 1 }, ...tokens(1_000, 150)],
   }),
   source_assessment: Object.freeze({ low: tokens(500, 50), high: tokens(900, 100), maximum: tokens(1_500, 170) }),
+  gap_comparison: Object.freeze({ low: tokens(2_000, 300), high: tokens(8_000, 1_000), maximum: tokens(16_000, 2_000) }),
   grounded_answer: Object.freeze({ low: tokens(700, 120), high: tokens(1_200, 250), maximum: tokens(2_000, 410) }),
+  existing_results_delivery: Object.freeze({ low: tokens(2_000, 300), high: tokens(8_000, 800), maximum: tokens(16_000, 1_600) }),
 });

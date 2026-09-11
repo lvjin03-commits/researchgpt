@@ -1,7 +1,7 @@
 import type { GrantWebSearchEgressDecision } from "../web-sources/query-egress-policy.ts";
 
 export interface GrantGeneralWebSearchProviderResult {
-  providerId: "openai_web_search";
+  providerId: "openai_web_search" | "openalex";
   providerRecordId: string | null;
   title: string;
   url: string;
@@ -24,7 +24,7 @@ export interface GrantGeneralWebSearchProviderResponse {
 }
 
 export interface GrantGeneralWebSearchProvider {
-  readonly providerId: "openai_web_search";
+  readonly providerId: "openai_web_search" | "openalex";
   search(input: {
     approvedQuery: Extract<GrantWebSearchEgressDecision, { allowed: true }>;
     maximumResults: number;

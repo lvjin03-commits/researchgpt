@@ -27,6 +27,11 @@ export function isGrantWebGroundingEnabled(): boolean {
     && process.env.GRANT_WEB_GROUNDING_PRICE_CATALOG_VERSION?.trim() === "001";
 }
 
+export function isGrantResumableWebBudgetEnabled(): boolean {
+  return process.env.GRANT_RESUMABLE_WEB_BUDGET_ENABLED?.trim().toLowerCase() === "true"
+    && process.env.GRANT_RESUMABLE_WEB_BUDGET_DATABASE_SCHEMA?.trim() === "070";
+}
+
 export function isGrantLocalEvidenceEnabled(): boolean {
   return process.env.GRANT_LOCAL_EVIDENCE_ENABLED?.trim().toLowerCase() === "true";
 }

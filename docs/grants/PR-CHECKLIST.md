@@ -67,6 +67,15 @@ Copy the relevant sections into every grant-platform PR.
       fallback.
 - [ ] Academic search remains the confirmed OpenAlex snapshot path; no general
       web-search semantics are implied.
+- [ ] Research-task paper abstracts and bibliographic fields come only from an
+      approved structured academic source; generated citation neighborhoods are
+      labeled `citation_context` and never represented as abstracts.
+- [ ] Cross-provider deduplication has one program owner and preserves Provider,
+      provenance, DOI/URL identity and immutable historical audit records.
+- [ ] Missing abstract, publication date, DOI or quantitative evidence remains
+      explicit; neither model nor renderer fills it from inference.
+- [ ] No paper body is fetched or stored without a separate approved impact
+      analysis, ADR, retention policy and rollout.
 - [ ] The client submits only the new assistant message; the server selects the
       bounded stored conversation context.
 - [ ] Assistant rollout requires schema marker 056, follows the canary runbook,
@@ -239,6 +248,24 @@ Copy the relevant sections into every grant-platform PR.
 - [ ] What was not verified is stated explicitly.
 
 ## Rollout
+
+## User-authorized web-answer budgets
+
+- [ ] Every paid decision, model and tool call has explicit user authorization
+      and an atomic pre-dispatch reservation within the aggregate budget.
+- [ ] Decision work cannot spend the protected final-delivery envelope.
+- [ ] `awaiting_budget` dispatches zero provider calls until an idempotent
+      increase or explicit `deliver_existing` transition is committed.
+- [ ] Final delivery has hard input/output, one-attempt and zero-tool limits;
+      failure returns only a deterministic non-semantic artifact manifest.
+- [ ] A declined increase can produce honest partial delivery and charges only
+      valid work actually delivered under policy.
+- [ ] Resume reuses independent search artifacts but invalidates stale
+      document-relative and authorization-dependent artifacts.
+- [ ] The 48-hour pause reserve appears in account projections and is released
+      only by the ledger/reconciliation authority.
+- [ ] Fixed-cap compatibility is removed after migration and Canary verification
+      so there is never a second budget authority.
 
 - [ ] Feature flags default to the intended safe state.
 - [ ] Rollback keeps canonical content readable.
