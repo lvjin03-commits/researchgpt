@@ -71,7 +71,9 @@ export function assembleGrantWebGroundedAnswer(input: {
   const orderedUsedIds = [...new Set(proposal.claims.flatMap((claim) => claim.sourceIds))];
   const aliasById = new Map(orderedUsedIds.map((id, index) => [id, `W${index + 1}`]));
   const citationById = new Map(orderedUsedIds.map((id, index) => [id, `web-citation-${index + 1}`]));
-  const content = proposal.claims.map((claim) => `${claim.statement} ${claim.sourceIds.map((id) => `[${aliasById.get(id)}]`).join("")}`).join("\n\n");
+  const content = proposal.claims.map((claim, index) =>
+    `${index + 1}. ${claim.statement} ${claim.sourceIds.map((id) => `[${aliasById.get(id)}]`).join("")}`,
+  ).join("\n\n");
   const admittedContext = orderedUsedIds.map((id) => ({
     sourceAlias: aliasById.get(id)!, sourceType: "web_source" as const,
     label: byId.get(id)!.title, excerpt: byId.get(id)!.snippet, url: byId.get(id)!.canonicalUrl,

@@ -77,7 +77,7 @@ const resumable = new GrantWebBudgetCommandService({
   async getProtectedDeliveryMaximumPoints() { return 15; },
 }, async ({ checkpoint: savedCheckpoint, answer }) => {
   savedTurn = savedCheckpoint.turnId;
-  assert.equal(answer.content, "A grounded current result. [W1]");
+  assert.equal(answer.content, "1. A grounded current result. [W1]");
 });
 await resumable.increaseStored({ documentId: state.documentId, command: { budgetId: state.budgetId,
   expectedVersion: state.version, authorizationId: randomUUID(), additionalPoints: 10 } });

@@ -28,6 +28,8 @@ assert.equal(result.searchedCount, 3);
 assert.equal(result.recommendedCount, 2);
 assert.equal(result.excludedCount, 1);
 assert.match(result.answer.content, /\[W1\]/u);
+assert.match(result.answer.content, /^1\. /u);
+assert.match(result.answer.content, /\n\n2\. /u);
 GrantAssistantAnswerSchema.parse(result.answer);
 
 assert.throws(() => assembleGrantWebGroundedAnswer({ sources: [sourceA, sourceB, sourceC], assessmentProposal: assessments, answerProposal: { claims: [

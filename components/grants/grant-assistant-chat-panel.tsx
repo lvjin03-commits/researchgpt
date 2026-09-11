@@ -175,7 +175,12 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         ? <div key={message.messageId} className="ml-8 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-sm text-white">{message.content}</div>
         : <div key={message.messageId} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
             {message.content}
-            {message.grounding === "evidence_grounded" && <div className="mt-2 border-t border-slate-100 pt-2 text-[11px] leading-4 text-slate-500">依据：{message.citations?.filter((citation, index, all) => all.findIndex((item) => item.label === citation.label && item.url === citation.url) === index).map((citation, index) => <span key={`${citation.citationId}:${citation.url ?? index}`}>{index > 0 ? "、" : ""}{citation.url ? <a href={citation.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-800">{citation.sourceAlias ? `[${citation.sourceAlias}] ` : ""}{citation.label}</a> : citation.label}</span>)}</div>}
+            {message.grounding === "evidence_grounded" && <div className="mt-3 border-t border-slate-100 pt-2 text-[11px] leading-5 text-slate-500">
+              <div className="mb-1 font-semibold text-slate-600">参考来源</div>
+              <ol className="space-y-1 pl-4">
+                {message.citations?.filter((citation, index, all) => all.findIndex((item) => item.label === citation.label && item.url === citation.url) === index).map((citation) => <li key={`${citation.citationId}:${citation.url ?? citation.label}`} className="list-decimal pl-1">{citation.url ? <a href={citation.url} target="_blank" rel="noopener noreferrer" className="break-words text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-800">{citation.sourceAlias ? `[${citation.sourceAlias}] ` : ""}{citation.label}</a> : citation.label}</li>)}
+              </ol>
+            </div>}
             {message.recommendedQuestions && message.recommendedQuestions.length > 0 && <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
               {message.recommendedQuestions.map((question) => <button key={question} type="button" onClick={() => setInput(question)} className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-left text-xs leading-5 text-blue-700 hover:border-blue-400">{question}</button>)}
             </div>}
