@@ -84,7 +84,7 @@
     "test:grant:ci": "npm run check:grant-architecture && npm run test:grant-foundation && npm run test:grant-editor && npm run test:grant-diagnostics && npm run test:grant-semantic-review-v6-input && npm run test:grant-workspace-ui && npm run test:grant-docx-import && npm run test:grant-figure-assets && npm run test:grant-figure-workspace && npm run test:grant-ai-patches && npm run test:grant-model-execution && npm run test:grant-assistant-chat && npm run test:grant-assistant-write-boundary && npm run test:grant-candidate-intelligence && npm run test:grant-candidate-diff && npm run test:grant-ai-edit-sessions && npm run test:grant-web-sources && npm run test:grant-ai-edit-integration && npm run test:grant-evidence && npm run test:grant-evidence-patches && npm run test:grant-pr8",
     "test:library-commands": "node --experimental-strip-types scripts/verify-library-commands.mjs",
     "test:chat-export-format-policy": "node --experimental-strip-types scripts/verify-chat-export-format-policy.ts",
-    "test:point-ledger": "node --experimental-strip-types scripts/verify-point-ledger-contracts.ts",
+    "test:point-ledger": "node --experimental-strip-types scripts/verify-point-ledger-contracts.ts && node --experimental-strip-types scripts/verify-point-ledger-supabase-timestamps.ts",
     "test:ai-operation-contracts": "node --experimental-strip-types scripts/verify-ai-operation-contracts.ts",
     "test:point-billing-engine": "node --experimental-strip-types scripts/verify-point-billing-engine.ts",
     "test:atomic-delivery-charging": "node --experimental-strip-types scripts/verify-atomic-delivery-charging.ts",

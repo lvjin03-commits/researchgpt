@@ -25,6 +25,14 @@ function assertRpc(error: { message: string } | null): void {
   if (error) throw new Error(`Point ledger RPC failed: ${error.message}`);
 }
 
+// PostgreSQL timestamptz values use offsets (including +00:00). The domain
+// uses UTC ISO strings; normalize at every ledger read boundary, not just balances.
+function datetime(input: unknown): string {
+  const parsed = new Date(String(input));
+  if (input == null || Number.isNaN(parsed.getTime())) throw new Error("Invalid point ledger timestamp.");
+  return parsed.toISOString();
+}
+
 function reservationFromRow(value: Record<string, unknown>): PointReservation {
   return PointReservationSchema.parse({
     reservationId: value.reservation_id ?? value.reservationId,
@@ -36,20 +44,16 @@ function reservationFromRow(value: Record<string, unknown>): PointReservation {
     releasedPoints: Number(value.released_points ?? value.releasedPoints),
     status: value.status,
     pricePolicyVersion: value.price_policy_version ?? value.pricePolicyVersion,
-    expiresAt: value.expires_at ?? value.expiresAt,
-    createdAt: value.created_at ?? value.createdAt,
-    finalizedAt: value.finalized_at ?? value.finalizedAt,
+    expiresAt: datetime(value.expires_at ?? value.expiresAt),
+    createdAt: datetime(value.created_at ?? value.createdAt),
+    finalizedAt: (value.finalized_at ?? value.finalizedAt) == null
+      ? null : datetime(value.finalized_at ?? value.finalizedAt),
   });
 }
 
 function snapshotFromJson(value: unknown): PointAccountSnapshot | null {
   if (!value) return null;
   const source = value as { account: Record<string, unknown>; lots: Array<Record<string, unknown>> };
-  const datetime = (input: unknown): string => {
-    const parsed = new Date(String(input));
-    if (Number.isNaN(parsed.getTime())) throw new Error(`Invalid point ledger timestamp: ${String(input)}`);
-    return parsed.toISOString();
-  };
   return {
     account: PointAccountSchema.parse({
       ...source.account,
@@ -167,6 +171,8 @@ export class SupabasePointLedgerRepository implements PointLedgerRepository {
         reservedPoints: Number(value.account.reservedPoints),
         lifetimeSpentPoints: Number(value.account.lifetimeSpentPoints),
         version: Number(value.account.version),
+        createdAt: datetime(value.account.createdAt),
+        updatedAt: datetime(value.account.updatedAt),
       }),
     };
   }
@@ -182,7 +188,7 @@ export class SupabasePointLedgerRepository implements PointLedgerRepository {
       kind: row.kind, lotId: row.lot_id, reservationId: row.reservation_id,
       availableDelta: Number(row.available_delta), reservedDelta: Number(row.reserved_delta),
       spentDelta: Number(row.spent_delta), reason: row.reason, metadata: row.metadata,
-      createdAt: row.created_at,
+      createdAt: datetime(row.created_at),
     }));
   }
 
@@ -196,7 +202,7 @@ export class SupabasePointLedgerRepository implements PointLedgerRepository {
       shortfallId: row.shortfall_id, accountId: row.account_id, lotId: row.lot_id,
       eventId: row.event_id, expectedPoints: Number(row.expected_points),
       recoveredPoints: Number(row.recovered_points), shortfallPoints: Number(row.shortfall_points),
-      reason: row.reason, status: row.status, createdAt: row.created_at,
+      reason: row.reason, status: row.status, createdAt: datetime(row.created_at),
     }));
   }
 }
