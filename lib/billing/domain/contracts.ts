@@ -185,6 +185,18 @@ export class PointAccountOnHoldError extends Error {
   }
 }
 
+export class BillingChargeLimitExceededError extends Error {
+  readonly code = "billing_charge_limit_exceeded";
+  readonly requestedPoints: number;
+  readonly maximumPoints: number;
+
+  constructor(requestedPoints: number, maximumPoints: number) {
+    super(`Billing charge limit exceeded: ${requestedPoints} requested, ${maximumPoints} allowed.`);
+    this.requestedPoints = requestedPoints;
+    this.maximumPoints = maximumPoints;
+  }
+}
+
 export class PointLedgerConflictError extends Error {
   readonly code = "point_ledger_conflict";
 }

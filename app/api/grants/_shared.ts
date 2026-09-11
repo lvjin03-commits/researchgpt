@@ -36,8 +36,32 @@ import { GrantWebSourceError } from "@/lib/grants/application/grant-web-source-s
 import { GrantAssistantChatError } from "@/lib/grants/application/grant-assistant-chat-service";
 import { GrantCandidateDiffError } from "@/lib/grants/application/grant-candidate-diff-service";
 import { GrantModelExecutionError } from "@/lib/grants/application/grant-model-executor";
+import {
+  BillingChargeLimitExceededError,
+  InsufficientPointsError,
+  PointAccountOnHoldError,
+} from "@/lib/billing/domain/contracts";
 
 export function grantApiError(error: unknown, operation: string): Response {
+  if (error instanceof InsufficientPointsError) {
+    return Response.json({
+      error: `智点不足，本次联网问答需要预留 ${error.requestedPoints} 智点。`,
+      code: error.code,
+      availablePoints: error.availablePoints,
+      requestedPoints: error.requestedPoints,
+    }, { status: 402 });
+  }
+  if (error instanceof PointAccountOnHoldError) {
+    return Response.json({ error: "智点账户暂时不可用，请检查账户状态。", code: error.code }, { status: 409 });
+  }
+  if (error instanceof BillingChargeLimitExceededError) {
+    return Response.json({
+      error: "本次联网问答超过允许的智点上限，未发起模型请求。",
+      code: error.code,
+      requestedPoints: error.requestedPoints,
+      maximumPoints: error.maximumPoints,
+    }, { status: 409 });
+  }
   if (error instanceof GrantWorkspaceDisabledError) {
     return Response.json({ error: "国自然协作工作台尚未开放。", code: "grant_workspace_disabled" }, { status: 404 });
   }

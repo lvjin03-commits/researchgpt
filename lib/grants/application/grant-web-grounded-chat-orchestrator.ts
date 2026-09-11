@@ -68,11 +68,14 @@ export class GrantWebGroundedChatOrchestrator {
     documentId: string; sourceRevision: number; actorId: string; assistantSessionId: string;
     turnId: string; question: string; context: GrantWebGroundingAdmittedContext;
     documentTextForEgressCheck: string; sensitiveTerms: readonly string[]; maximumResults?: number;
+    billingOperationIds?: {
+      queryRewrite: string; search: string; assessment: string; answer: string;
+    };
   }): Promise<GrantWebGroundedChatResult> {
     if (input.context.documentId !== input.documentId) return { status: "fallback_required", reason: "query_rewrite_failed" };
     const createId = this.dependencies.createId ?? randomUUID;
     const now = this.dependencies.now ?? (() => new Date().toISOString());
-    const billingOperationIds = {
+    const billingOperationIds = input.billingOperationIds ?? {
       queryRewrite: createId(), search: createId(), assessment: createId(), answer: createId(),
     };
     const execute = async <T>(operation: typeof GRANT_WEB_QUERY_REWRITE_OPERATION | typeof GRANT_WEB_SOURCE_ASSESS_OPERATION | typeof GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION,

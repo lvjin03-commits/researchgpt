@@ -50,6 +50,13 @@ import { SupabaseGrantWebGroundingRepository } from "../infrastructure/supabase/
 import { SupabaseGrantWebSearchEgressAuditRepository } from "../infrastructure/supabase/supabase-grant-web-search-egress-audit-repository.ts";
 import { GrantGeneralWebSearchService } from "../application/grant-general-web-search-service.ts";
 import { GrantWebGroundedChatOrchestrator } from "../application/grant-web-grounded-chat-orchestrator.ts";
+import { GrantWebGroundedChargingAdapter } from "./grant-web-grounded-charging-adapter.ts";
+import { SupabasePointLedgerRepository } from "../../billing/infrastructure/supabase/supabase-point-ledger-repository.ts";
+import { SupabasePriceCatalogRepository } from "../../billing/infrastructure/supabase/supabase-price-catalog-repository.ts";
+import { PointBillingService } from "../../billing/application/point-billing-service.ts";
+import { AtomicDeliveryChargingCoordinator } from "../../billing/application/atomic-delivery-charging-coordinator.ts";
+import { AtomicDeliveryCanaryChargingCoordinator } from "../../billing/application/atomic-delivery-canary-charging-coordinator.ts";
+import { resolveChargingRolloutPolicy } from "../../billing/domain/charging-rollout.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -231,15 +238,26 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
       occurredAt: event.occurredAt,
     }),
   });
+  const orchestrator = new GrantWebGroundedChatOrchestrator({
+    model: new OpenAIGrantWebGroundingModel(ai.config.modelId, ai.config.apiKey),
+    modelExecutor: createGrantModelExecutor(client, ownerId),
+    searchService,
+    sourceRepository,
+    configuredGrantModelId: ai.config.modelId,
+  });
+  const ledger = new SupabasePointLedgerRepository(client);
+  const billing = new PointBillingService({
+    ledger,
+    prices: new SupabasePriceCatalogRepository(client),
+  });
+  const charging = new AtomicDeliveryCanaryChargingCoordinator({
+    atomic: new AtomicDeliveryChargingCoordinator(billing),
+    ledger,
+    rollout: resolveChargingRolloutPolicy(),
+  });
   return Object.freeze({
     modelGateway: ai.gateway,
-    orchestrator: new GrantWebGroundedChatOrchestrator({
-      model: new OpenAIGrantWebGroundingModel(ai.config.modelId, ai.config.apiKey),
-      modelExecutor: createGrantModelExecutor(client, ownerId),
-      searchService,
-      sourceRepository,
-      configuredGrantModelId: ai.config.modelId,
-    }),
+    orchestrator: new GrantWebGroundedChargingAdapter({ orchestrator, charging, modelId: ai.config.modelId }),
   });
 }
 

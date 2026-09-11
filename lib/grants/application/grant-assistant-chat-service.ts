@@ -37,7 +37,7 @@ export class GrantAssistantChatService {
     configuredGrantModelId: string;
     sessions: GrantAssistantSessionRepository;
     editSessions: GrantAiEditSessionRepository;
-    webGrounding?: { actorId: string; orchestrator: GrantWebGroundedChatOrchestrator };
+    webGrounding?: { actorId: string; orchestrator: Pick<GrantWebGroundedChatOrchestrator, "run"> };
   };
 
   constructor(dependencies: GrantAssistantChatService["dependencies"]) {

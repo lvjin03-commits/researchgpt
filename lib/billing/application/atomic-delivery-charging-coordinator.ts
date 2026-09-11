@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { RegisteredAiOperation } from "../../ai/operation-registry.ts";
 import type { StandardizedBillableUsage } from "../../ai/billable-usage.ts";
 import type { UsageRange } from "../domain/price-catalog.ts";
+import { BillingChargeLimitExceededError } from "../domain/contracts.ts";
 import { PointBillingService } from "./point-billing-service.ts";
 
 export type AtomicDeliveryChargingStage = {
@@ -28,6 +29,7 @@ export class AtomicDeliveryChargingCoordinator {
     parentBillingOperationId: string;
     stages: AtomicDeliveryChargingStage[];
     reservationExpiresAt: string;
+    maximumChargePoints: number;
     now: string;
     execute: () => Promise<{
       value: T;
@@ -49,6 +51,10 @@ export class AtomicDeliveryChargingCoordinator {
         now: input.now,
       });
       quotedStages.push({ stage, quote });
+    }
+    const requestedPoints = quotedStages.reduce((sum, { quote }) => sum + quote.maximumChargePoints, 0);
+    if (requestedPoints > input.maximumChargePoints) {
+      throw new BillingChargeLimitExceededError(requestedPoints, input.maximumChargePoints);
     }
     await this.billing.reserveQuoteSet({
       ownerId: input.ownerId,

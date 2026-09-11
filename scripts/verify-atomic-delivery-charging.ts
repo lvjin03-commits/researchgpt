@@ -55,7 +55,7 @@ const successfulOwner = randomUUID();
 await grantPoints(successfulOwner);
 let reservedDuringExecution = 0;
 const successful = await coordinator.run({ ownerId: successfulOwner, parentBillingOperationId: randomUUID(),
-  stages: makeStages(), reservationExpiresAt: "2026-09-11T13:00:00.000Z", now,
+  stages: makeStages(), maximumChargePoints: 1_000, reservationExpiresAt: "2026-09-11T13:00:00.000Z", now,
   execute: async () => {
     reservedDuringExecution = (await ledger.getAccount(successfulOwner))!.account.reservedPoints;
     return { value: "answer", terminalState: "delivered", actualUsageByBundle: {
@@ -75,7 +75,7 @@ assert.equal((await ledger.getAccount(successfulOwner))!.account.reservedPoints,
 const failedOwner = randomUUID();
 await grantPoints(failedOwner);
 await assert.rejects(() => coordinator.run({ ownerId: failedOwner, parentBillingOperationId: randomUUID(),
-  stages: makeStages(), reservationExpiresAt: "2026-09-11T13:00:00.000Z", now,
+  stages: makeStages(), maximumChargePoints: 1_000, reservationExpiresAt: "2026-09-11T13:00:00.000Z", now,
   execute: async () => { throw new Error("synthesis failed"); } }), /synthesis failed/u);
 assert.equal((await ledger.getAccount(failedOwner))!.account.availablePoints, 1_000, "failed delivery must charge nothing");
 assert.equal((await ledger.getAccount(failedOwner))!.account.reservedPoints, 0, "failed delivery must release every stage");
@@ -84,10 +84,19 @@ assert.equal((await ledger.getAccount(failedOwner))!.account.lifetimeSpentPoints
 const undeliveredOwner = randomUUID();
 await grantPoints(undeliveredOwner);
 const undelivered = await coordinator.run({ ownerId: undeliveredOwner, parentBillingOperationId: randomUUID(),
-  stages: makeStages(), reservationExpiresAt: "2026-09-11T13:00:00.000Z", now,
+  stages: makeStages(), maximumChargePoints: 1_000, reservationExpiresAt: "2026-09-11T13:00:00.000Z", now,
   execute: async () => ({ value: "fallback", terminalState: "succeeded_internal_only", actualUsageByBundle: {} }) });
 assert.equal(undelivered.charging, "released");
 assert.equal(undelivered.chargedPoints, 0);
 assert.equal((await ledger.getAccount(undeliveredOwner))!.account.availablePoints, 1_000);
+
+let capExceededExecutionCount = 0;
+await assert.rejects(() => coordinator.run({ ownerId: successfulOwner, parentBillingOperationId: randomUUID(),
+  stages: makeStages(), maximumChargePoints: 1, reservationExpiresAt: "2026-09-11T13:00:00.000Z", now,
+  execute: async () => {
+    capExceededExecutionCount += 1;
+    return { value: "must-not-run", terminalState: "delivered", actualUsageByBundle: {} };
+  } }), /charge limit exceeded/u);
+assert.equal(capExceededExecutionCount, 0, "charge cap must stop provider dispatch");
 
 console.log("Atomic four-stage delivery billing verified: pre-reserve, delivered actual settlement, failed release and internal-only release.");

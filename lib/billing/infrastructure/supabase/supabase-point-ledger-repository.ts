@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  InsufficientPointsError,
+  PointAccountOnHoldError,
   PointAccountSchema,
   PointLotSchema,
   PointRecoveryShortfallSchema,
@@ -119,6 +121,12 @@ export class SupabasePointLedgerRepository implements PointLedgerRepository {
         now: bundle.now,
       })),
     });
+    if (error?.message.includes("point_account_on_hold")) throw new PointAccountOnHoldError();
+    if (error?.message.includes("insufficient_points")) {
+      const snapshot = await this.getAccount(input.ownerId);
+      const requestedPoints = input.bundles.reduce((sum, bundle) => sum + bundle.points, 0);
+      throw new InsufficientPointsError(snapshot?.account.availablePoints ?? 0, requestedPoints);
+    }
     assertRpc(error);
     if (!Array.isArray(data)) throw new Error("Bundle reservation RPC returned an invalid result.");
     return data.map((row) => reservationFromRow(row as Record<string, unknown>));

@@ -88,6 +88,7 @@
     "test:ai-operation-contracts": "node --experimental-strip-types scripts/verify-ai-operation-contracts.ts",
     "test:point-billing-engine": "node --experimental-strip-types scripts/verify-point-billing-engine.ts",
     "test:atomic-delivery-charging": "node --experimental-strip-types scripts/verify-atomic-delivery-charging.ts",
+    "test:atomic-delivery-canary-charging": "node --experimental-strip-types scripts/verify-atomic-delivery-canary-charging.ts",
     "test:grant-web-price-catalog": "node --experimental-strip-types scripts/verify-grant-web-price-catalog.ts",
     "test:ai-billing-integration": "node --experimental-strip-types scripts/verify-ai-billing-integration.ts",
     "test:point-payment-contracts": "node --experimental-strip-types scripts/verify-point-payment-contracts.ts",
