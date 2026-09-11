@@ -14,6 +14,7 @@ import { assembleGrantWebGroundedAnswer, GrantWebGroundingError } from "../web-s
 import type { GrantWebGroundingAdmittedContext } from "./grant-model-data-gateway.ts";
 import { GrantModelExecutionError, GrantModelExecutor } from "./grant-model-executor.ts";
 import { GrantGeneralWebSearchService } from "./grant-general-web-search-service.ts";
+import type { StandardizedBillableUsage } from "../../ai/billable-usage.ts";
 
 export type GrantWebGroundedChatFallbackReason =
   | "query_rewrite_failed" | "egress_blocked" | "search_failed" | "no_results"
@@ -22,7 +23,21 @@ export type GrantWebGroundedChatFallbackReason =
 export type GrantWebGroundedChatResult =
   | { status: "fallback_required"; reason: GrantWebGroundedChatFallbackReason }
   | { status: "completed"; answer: ReturnType<typeof assembleGrantWebGroundedAnswer>["answer"];
-      searchedCount: number; recommendedCount: number; excludedCount: number; usedSourceIds: string[] };
+      searchedCount: number; recommendedCount: number; excludedCount: number; usedSourceIds: string[];
+      billingUsage: {
+        queryRewrite: StandardizedBillableUsage[];
+        search: StandardizedBillableUsage[];
+        assessment: StandardizedBillableUsage[];
+        answer: StandardizedBillableUsage[];
+      };
+      billingOperationIds: {
+        queryRewrite: string; search: string; assessment: string; answer: string;
+      } };
+
+function modelTokenUsage(usage: { inputTokens: number; outputTokens: number; reasoningTokens: number }): StandardizedBillableUsage {
+  return { kind: "tokens", inputTokens: usage.inputTokens, cachedInputTokens: 0,
+    outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens };
+}
 
 function classifyModelFailure(error: unknown): GrantModelFailureCategory {
   if (error instanceof GrantWebModelError) return error.category;
@@ -57,9 +72,14 @@ export class GrantWebGroundedChatOrchestrator {
     if (input.context.documentId !== input.documentId) return { status: "fallback_required", reason: "query_rewrite_failed" };
     const createId = this.dependencies.createId ?? randomUUID;
     const now = this.dependencies.now ?? (() => new Date().toISOString());
+    const billingOperationIds = {
+      queryRewrite: createId(), search: createId(), assessment: createId(), answer: createId(),
+    };
     const execute = async <T>(operation: typeof GRANT_WEB_QUERY_REWRITE_OPERATION | typeof GRANT_WEB_SOURCE_ASSESS_OPERATION | typeof GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION,
-      invoke: Parameters<GrantModelExecutor["execute"]>[0]["invoke"], inputValue: unknown) => this.dependencies.modelExecutor.execute<T>({
+      invoke: Parameters<GrantModelExecutor["execute"]>[0]["invoke"], inputValue: unknown,
+      billingOperationId: string) => this.dependencies.modelExecutor.execute<T>({
         documentId: input.documentId, sessionId: input.assistantSessionId, turnId: input.turnId,
+        billingOperationId,
         traceId: createId(), inputHash: sha256Canonical(inputValue),
         policy: resolveGrantModelOperationPolicy({ operation, configuredGrantModelId: this.dependencies.configuredGrantModelId }),
         invoke: invoke as never, classifyFailure: classifyModelFailure,
@@ -70,7 +90,7 @@ export class GrantWebGroundedChatOrchestrator {
         const result = await this.dependencies.model.rewriteQuery({ question: input.question,
           admittedApplicationContext: input.context.applicationContext, attemptPurpose });
         return { ...result, value: GrantWebQueryRewriteProposalSchema.parse(result.value) };
-      }, { question: input.question, contextHash: input.context.contextHash });
+      }, { question: input.question, contextHash: input.context.contextHash }, billingOperationIds.queryRewrite);
     } catch (error) {
       if (error instanceof GrantModelExecutionError) return { status: "fallback_required", reason: "query_rewrite_failed" };
       throw error;
@@ -83,6 +103,7 @@ export class GrantWebGroundedChatOrchestrator {
         candidateQuery: (rewritten.value as { query: string }).query,
         documentText: input.documentTextForEgressCheck, sensitiveTerms: input.sensitiveTerms,
         maximumResults: input.maximumResults,
+        billingOperationId: billingOperationIds.search,
       });
     } catch { return { status: "fallback_required", reason: "search_failed" }; }
     if (search.status === "blocked") return { status: "fallback_required", reason: "egress_blocked" };
@@ -95,7 +116,7 @@ export class GrantWebGroundedChatOrchestrator {
         validateGrantWebSourceAssessments({ proposal: result.value, sources: search.sources });
         return result;
       }, { question: input.question, contextHash: input.context.contextHash,
-        sourceFingerprints: search.sources.map((source) => source.contentFingerprint) });
+        sourceFingerprints: search.sources.map((source) => source.contentFingerprint) }, billingOperationIds.assessment);
     } catch (error) {
       if (error instanceof GrantModelExecutionError) return { status: "fallback_required", reason: "assessment_failed" };
       throw error;
@@ -110,6 +131,7 @@ export class GrantWebGroundedChatOrchestrator {
     const recommendedSources = search.sources.filter((source) => assessments.some((item) => item.sourceId === source.sourceId && item.disposition === "recommended"));
     if (recommendedSources.length === 0) return { status: "fallback_required", reason: "no_relevant_sources" };
     let assembled;
+    let synthesizedUsage: { inputTokens: number; outputTokens: number; reasoningTokens: number } | undefined;
     try {
       const synthesized = await execute(GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION, async ({ attemptPurpose }) => {
         const result = await this.dependencies.model.synthesize({ question: input.question,
@@ -117,7 +139,8 @@ export class GrantWebGroundedChatOrchestrator {
         assembleGrantWebGroundedAnswer({ sources: search.sources, assessmentProposal: assessed.value, answerProposal: result.value });
         return result;
       }, { question: input.question, contextHash: input.context.contextHash,
-        recommendedSourceFingerprints: recommendedSources.map((source) => source.contentFingerprint) });
+        recommendedSourceFingerprints: recommendedSources.map((source) => source.contentFingerprint) }, billingOperationIds.answer);
+      synthesizedUsage = synthesized.usage;
       assembled = assembleGrantWebGroundedAnswer({ sources: search.sources, assessmentProposal: assessed.value, answerProposal: synthesized.value });
     } catch (error) {
       if (error instanceof GrantModelExecutionError) return { status: "fallback_required", reason: "synthesis_failed" };
@@ -129,6 +152,17 @@ export class GrantWebGroundedChatOrchestrator {
       contentFingerprint: search.sources.find((source) => source.sourceId === sourceId)!.contentFingerprint,
       eventType: "cited" as const, createdAt: now(),
     })) });
-    return { status: "completed", ...assembled };
+    return { status: "completed", ...assembled, billingUsage: {
+      queryRewrite: [modelTokenUsage(rewritten.usage)],
+      search: [
+        { kind: "tool_call", tool: "openai_web_search", count: search.providerUsage.webSearchCalls },
+        { kind: "tokens", inputTokens: search.providerUsage.inputTokens,
+          cachedInputTokens: search.providerUsage.cachedInputTokens,
+          outputTokens: search.providerUsage.outputTokens,
+          reasoningTokens: search.providerUsage.reasoningTokens },
+      ],
+      assessment: [modelTokenUsage(assessed.usage)],
+      answer: [modelTokenUsage(synthesizedUsage!)],
+    }, billingOperationIds };
   }
 }

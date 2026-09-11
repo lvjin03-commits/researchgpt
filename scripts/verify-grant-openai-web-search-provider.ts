@@ -12,10 +12,13 @@ const provider = new OpenAIWebSearchProvider({ apiKey: "", modelId: "gpt-test", 
   observedInput = input as Record<string, unknown>;
   return {
     id: "resp_test",
-    output: [{ type: "message", content: [{ type: "output_text", text: "University researchers report a relevant electrolyte-interface result.\nA second sentence repeats the same citation.", annotations: [
+    output: [{ type: "web_search_call", id: "ws_1", status: "completed" }, { type: "web_search_call", id: "ws_2", status: "completed" },
+      { type: "message", content: [{ type: "output_text", text: "University researchers report a relevant electrolyte-interface result.\nA second sentence repeats the same citation.", annotations: [
       { type: "url_citation", start_index: 0, end_index: 71, title: "University result", url: "https://lab.example.edu/study#section" },
       { type: "url_citation", start_index: 72, end_index: 116, title: "Duplicate", url: "https://lab.example.edu/study#section" },
     ] }] }],
+    usage: { input_tokens: 8123, input_tokens_details: { cached_tokens: 120 }, output_tokens: 231,
+      output_tokens_details: { reasoning_tokens: 44 } },
   };
 } } } });
 const sourceRepository = { async saveSearchResults(input: unknown) { persistedSearches.push(input); }, async appendUsageEvents() {}, async listTurnSources() { return []; } };
@@ -25,11 +28,16 @@ const result = await service.search({
   documentId: randomUUID(), sourceRevision: 2, actorId: randomUUID(), assistantSessionId: randomUUID(), turnId: randomUUID(),
   candidateQuery: "zinc ion battery electrolyte interface", documentText: "private application body",
   sensitiveTerms: ["Applicant Name"], maximumResults: 5,
+  billingOperationId: randomUUID(),
 });
 assert.equal(result.status, "completed");
 assert.equal(result.sources.length, 1, "duplicate cited URLs must be removed");
 assert.equal(result.sources[0]?.classification.qualityTier, "university_research");
 assert.equal(result.sources[0]?.providerId, "openai_web_search");
+assert.deepEqual(result.providerUsage, {
+  providerRequestId: "resp_test", webSearchCalls: 2, inputTokens: 8123,
+  cachedInputTokens: 120, outputTokens: 231, reasoningTokens: 44,
+});
 assert.equal(requests, 1);
 assert.equal(audits.length, 1, "audit must exist before external dispatch");
 assert.equal(persistedSearches.length, 1);
@@ -41,6 +49,7 @@ assert.equal(((observedInput?.input as Array<{ role: string; content: string }>)
 const blocked = await service.search({
   documentId: randomUUID(), sourceRevision: 1, actorId: randomUUID(), assistantSessionId: null, turnId: randomUUID(), candidateQuery: "Applicant Name project 5260022912",
   documentText: "application", sensitiveTerms: ["Applicant Name"],
+  billingOperationId: randomUUID(),
 });
 assert.equal(blocked.status, "blocked");
 assert.equal(requests, 1, "blocked query must never reach provider");

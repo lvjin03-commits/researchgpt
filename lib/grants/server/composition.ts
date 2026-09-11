@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { GrantEditorService } from "../application/editor-service.ts";
 import { GrantDocxImportService } from "../application/docx-import-service.ts";
@@ -41,6 +42,7 @@ import { OpenAlexGrantWebSearchProvider, PublicWebSnapshotFetcher } from "../inf
 import { AiUsageIntegration } from "../../billing/application/ai-usage-integration.ts";
 import { SupabaseAiUsageEventSink } from "../../billing/infrastructure/supabase/supabase-ai-usage-event-sink.ts";
 import { tokenUsage } from "../../ai/billable-usage.ts";
+import { AI_OPERATIONS } from "../../ai/operation-registry.ts";
 import { isGrantWebGroundingEnabled } from "./config.ts";
 import { OpenAIGrantWebGroundingModel } from "../infrastructure/model/openai-grant-web-grounding-model.ts";
 import { OpenAIWebSearchProvider } from "../infrastructure/model/openai-web-search-provider.ts";
@@ -205,10 +207,29 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
   if (!ai.config.apiKey) return null;
   const sourceRepository = new SupabaseGrantWebGroundingRepository(client, ownerId);
   const provider = new OpenAIWebSearchProvider({ apiKey: ai.config.apiKey, modelId: ai.config.modelId });
+  const searchUsage = new AiUsageIntegration(new SupabaseAiUsageEventSink(client, {
+    feature: "grant",
+    taskKind: "grant_web_search",
+  }));
   const searchService = new GrantGeneralWebSearchService({
     provider,
     auditRepository: new SupabaseGrantWebSearchEgressAuditRepository(client, ownerId),
     sourceRepository,
+    onProviderUsage: async (event) => searchUsage.record(ownerId, {
+      usageEventId: randomUUID(),
+      billingOperationId: event.billingOperationId,
+      operation: AI_OPERATIONS.grant.webSearchQuery,
+      provider: "openai",
+      modelId: ai.config.modelId,
+      attemptNumber: 1,
+      cacheHit: false,
+      usage: [
+        { kind: "tool_call", tool: "openai_web_search", count: event.webSearchCalls },
+        { kind: "tokens", inputTokens: event.inputTokens, cachedInputTokens: event.cachedInputTokens,
+          outputTokens: event.outputTokens, reasoningTokens: event.reasoningTokens },
+      ],
+      occurredAt: event.occurredAt,
+    }),
   });
   return Object.freeze({
     modelGateway: ai.gateway,

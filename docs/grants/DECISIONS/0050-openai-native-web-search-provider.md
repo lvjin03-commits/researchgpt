@@ -2,9 +2,9 @@
 
 ## Status
 
-Accepted for implementation and offline verification. Production activation and
-paid effect-first verification remain disabled pending explicit authorization and
-an effective price policy.
+Accepted and production-verified for web-grounded answers. Observed usage
+metering is implemented; point charging remains disabled pending an effective
+price policy and explicit charging rollout.
 
 ## Context
 

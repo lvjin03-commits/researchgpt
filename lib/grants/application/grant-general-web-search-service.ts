@@ -5,6 +5,7 @@ import type { GrantWebGroundingRepository } from "../ports/grant-web-grounding-r
 import { GrantWebSearchEgressAuditSchema } from "../web-sources/query-audit-contracts.ts";
 import { assessGrantWebSearchEgress } from "../web-sources/query-egress-policy.ts";
 import { createGrantWebSourceRecord } from "../web-sources/source-record.ts";
+import type { GrantGeneralWebSearchProviderUsage } from "../ports/grant-general-web-search-provider.ts";
 
 export class GrantGeneralWebSearchService {
   private readonly dependencies: {
@@ -13,6 +14,9 @@ export class GrantGeneralWebSearchService {
     sourceRepository: GrantWebGroundingRepository;
     createId?: () => string;
     now?: () => string;
+    onProviderUsage?: (event: GrantGeneralWebSearchProviderUsage & {
+      billingOperationId: string; occurredAt: string;
+    }) => Promise<void>;
   };
   constructor(dependencies: {
     provider: GrantGeneralWebSearchProvider;
@@ -20,6 +24,9 @@ export class GrantGeneralWebSearchService {
     sourceRepository: GrantWebGroundingRepository;
     createId?: () => string;
     now?: () => string;
+    onProviderUsage?: (event: GrantGeneralWebSearchProviderUsage & {
+      billingOperationId: string; occurredAt: string;
+    }) => Promise<void>;
   }) { this.dependencies = dependencies; }
 
   async search(input: {
@@ -32,6 +39,7 @@ export class GrantGeneralWebSearchService {
     documentText: string;
     sensitiveTerms: readonly string[];
     maximumResults?: number;
+    billingOperationId: string;
   }) {
     const createId = this.dependencies.createId ?? randomUUID;
     const now = this.dependencies.now ?? (() => new Date().toISOString());
@@ -46,9 +54,11 @@ export class GrantGeneralWebSearchService {
     // Durable audit is required before any external dispatch.
     await this.dependencies.auditRepository.append(audit);
     if (!decision.allowed) return { status: "blocked" as const, decision, sources: [] };
-    const raw = await this.dependencies.provider.search({ approvedQuery: decision, maximumResults: input.maximumResults ?? 10 });
+    const providerResponse = await this.dependencies.provider.search({ approvedQuery: decision, maximumResults: input.maximumResults ?? 10 });
+    await this.dependencies.onProviderUsage?.({ ...providerResponse.usage,
+      billingOperationId: input.billingOperationId, occurredAt: now() });
     const seen = new Set<string>();
-    const sources = raw.flatMap((result) => {
+    const sources = providerResponse.results.flatMap((result) => {
       try {
         const record = createGrantWebSourceRecord({ ...result, sourceId: createId(), retrievedAt: now() });
         if (seen.has(record.contentFingerprint)) return [];
@@ -64,6 +74,7 @@ export class GrantGeneralWebSearchService {
     await this.dependencies.sourceRepository.saveSearchResults({
       documentId: input.documentId, searchAuditId: audit.auditId, sources, usageEvents,
     });
-    return { status: sources.length > 0 ? "completed" as const : "no_results" as const, decision, searchAuditId: audit.auditId, sources };
+    return { status: sources.length > 0 ? "completed" as const : "no_results" as const, decision,
+      searchAuditId: audit.auditId, sources, providerUsage: providerResponse.usage };
   }
 }

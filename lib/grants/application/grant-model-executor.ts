@@ -55,12 +55,15 @@ export class GrantModelExecutor {
     documentId: string;
     sessionId?: string;
     turnId?: string;
+    billingOperationId?: string;
     traceId?: string;
     inputHash: string;
     policy: GrantModelOperationPolicy;
     invoke: (attempt: { attemptNumber: number; attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry"; policy: GrantModelOperationPolicy }) => Promise<GrantModelAttemptResult<T>>;
     classifyFailure: (error: unknown) => GrantModelFailureCategory;
-  }): Promise<{ value: T; traceId: string; attempts: number }> {
+  }): Promise<{ value: T; traceId: string; attempts: number; usage: {
+    inputTokens: number; outputTokens: number; reasoningTokens: number;
+  } }> {
     const traceId = input.traceId ?? this.createId();
     let purpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry" = "initial";
     let lastError: unknown;
@@ -98,7 +101,7 @@ export class GrantModelExecutor {
       });
       await this.onUsage?.({
         usageEventId: callId,
-        billingOperationId: input.turnId ?? callId,
+        billingOperationId: input.billingOperationId ?? input.turnId ?? callId,
         operation: input.policy.operation,
         provider: input.policy.provider,
         modelId: input.policy.modelId,
@@ -110,7 +113,11 @@ export class GrantModelExecutor {
         },
         occurredAt: completedAt,
       });
-      return { value: result.value, traceId, attempts: attemptNumber };
+      return { value: result.value, traceId, attempts: attemptNumber, usage: {
+        inputTokens: result.usage?.inputTokens ?? 0,
+        outputTokens: result.usage?.outputTokens ?? 0,
+        reasoningTokens: result.usage?.reasoningTokens ?? 0,
+      } };
     }
     throw new GrantModelExecutionError(lastCategory, traceId, lastError instanceof Error ? lastError.message : "Grant model execution failed.");
   }

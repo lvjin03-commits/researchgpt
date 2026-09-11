@@ -22,6 +22,19 @@ export type ReserveBillingQuoteInput = {
   now: string;
 };
 
+export type ReserveBillingQuoteSetInput = {
+  ownerId: string;
+  parentBillingOperationId: string;
+  entries: Array<{
+    quote: BillingQuote;
+    bundleKey: string;
+    reservationId: string;
+    billingOperationId: string;
+  }>;
+  expiresAt: string;
+  now: string;
+};
+
 export type FinalizeBillingBundleInput = {
   ownerId: string;
   eventId: string;
@@ -87,6 +100,34 @@ export class PointBillingService {
     });
     return this.dependencies.ledger.reserveBundleSet({
       ownerId: input.ownerId, parentBillingOperationId: input.parentBillingOperationId, bundles,
+    });
+  }
+
+  async reserveQuoteSet(input: ReserveBillingQuoteSetInput) {
+    if (input.entries.length === 0) throw new Error("Billing quote set must not be empty.");
+    const reservationIds = new Set(input.entries.map((entry) => entry.reservationId));
+    const billingOperationIds = new Set(input.entries.map((entry) => entry.billingOperationId));
+    if (reservationIds.size !== input.entries.length || billingOperationIds.size !== input.entries.length) {
+      throw new Error("Billing quote-set identities must be unique.");
+    }
+    const bundles = input.entries.map((entry) => {
+      const quoted = entry.quote.bundles.find((bundle) => bundle.bundleKey === entry.bundleKey);
+      if (!quoted || entry.quote.bundles.length !== 1) {
+        throw new Error("Each quote-set entry must bind exactly one quoted bundle.");
+      }
+      return {
+        reservationId: entry.reservationId,
+        billingOperationId: entry.billingOperationId,
+        points: quoted.maximumChargePoints,
+        pricePolicyVersion: entry.quote.pricePolicyVersion,
+        expiresAt: input.expiresAt,
+        now: input.now,
+      };
+    });
+    return this.dependencies.ledger.reserveBundleSet({
+      ownerId: input.ownerId,
+      parentBillingOperationId: input.parentBillingOperationId,
+      bundles,
     });
   }
 

@@ -42,31 +42,39 @@ const turnId = randomUUID();
 const calls = new Calls();
 const sources = new Sources();
 const audits: unknown[] = [];
+const observedBillingOperationIds: string[] = [];
 const searchService = new GrantGeneralWebSearchService({
-  provider: { providerId: "openai_web_search", async search() { return [
-    { providerId: "openai_web_search", providerRecordId: "one", title: "University review",
-      url: "https://lab.example.edu/review", snippet: "A review connects electrolyte solvation with zinc interface stability and deposition behavior.", publishedAt: null },
-    { providerId: "openai_web_search", providerRecordId: "two", title: "Commercial blog",
-      url: "https://blog.example/post", snippet: "A generic consumer battery article.", publishedAt: null },
-  ]; } },
+  provider: { providerId: "openai_web_search", async search() { return {
+    results: [
+      { providerId: "openai_web_search" as const, providerRecordId: "one", title: "University review",
+        url: "https://lab.example.edu/review", snippet: "A review connects electrolyte solvation with zinc interface stability and deposition behavior.", publishedAt: null },
+      { providerId: "openai_web_search" as const, providerRecordId: "two", title: "Commercial blog",
+        url: "https://blog.example/post", snippet: "A generic consumer battery article.", publishedAt: null },
+    ],
+    usage: { providerRequestId: "resp_search", webSearchCalls: 1, inputTokens: 8000,
+      cachedInputTokens: 0, outputTokens: 120, reasoningTokens: 20 },
+  }; } },
   auditRepository: { async append(audit) { audits.push(audit); } }, sourceRepository: sources,
+  onProviderUsage: async (event) => { observedBillingOperationIds.push(event.billingOperationId); },
   now: () => "2026-09-08T12:00:00.000Z",
 });
 let assessedSourceIds: string[] = [];
 const model = {
-  async rewriteQuery() { const value = { query: "zinc electrolyte solvation interface stability" }; return { value, outputHash: sha256Canonical(value) }; },
+  async rewriteQuery() { const value = { query: "zinc electrolyte solvation interface stability" }; return { value, outputHash: sha256Canonical(value),
+    usage: { inputTokens: 100, outputTokens: 20, reasoningTokens: 5 } }; },
   async assess(input: { sources: readonly GrantWebSourceRecord[] }) {
     assessedSourceIds = input.sources.map((source) => source.sourceId);
     const value = { assessments: input.sources.map((source, index) => ({ sourceId: source.sourceId,
       disposition: index === 0 ? "recommended" as const : "excluded" as const, reason: index === 0 ? "Relevant university source." : "Insufficient relevance." })) };
-    return { value, outputHash: sha256Canonical(value) };
+    return { value, outputHash: sha256Canonical(value), usage: { inputTokens: 200, outputTokens: 40, reasoningTokens: 10 } };
   },
   async synthesize(input: { sources: readonly GrantWebSourceRecord[] }) {
     const value = { claims: [{ claimId: randomUUID(), statement: "外部综述支持从溶剂化环境与界面稳定性的关联来审视该研究方案。", sourceIds: [input.sources[0]!.sourceId] }] };
-    return { value, outputHash: sha256Canonical(value) };
+    return { value, outputHash: sha256Canonical(value), usage: { inputTokens: 300, outputTokens: 60, reasoningTokens: 15 } };
   },
 };
-const orchestrator = new GrantWebGroundedChatOrchestrator({ model, modelExecutor: new GrantModelExecutor(calls),
+const orchestrator = new GrantWebGroundedChatOrchestrator({ model, modelExecutor: new GrantModelExecutor(calls, undefined, undefined,
+  async (event) => { observedBillingOperationIds.push(event.billingOperationId); }),
   searchService, sourceRepository: sources, configuredGrantModelId: "offline-model" });
 const context = { schemaVersion: 1 as const, documentId, sourceRevisionId: randomUUID(), documentLanguage: "zh" as const,
   applicationContext: "申请书讨论锌电池电解液与界面稳定性。", contextHash: sha256Canonical("admitted") };
@@ -79,9 +87,15 @@ assert.deepEqual(calls.attempts.map((attempt) => attempt.operation), [
   "grant.web_query.rewrite", "grant.web_source.assess", "grant.web_answer.synthesize",
 ]);
 assert.equal(new Set(calls.attempts.map((attempt) => attempt.traceId)).size, 3, "each paid model phase needs an independent trace");
+assert.equal(new Set(calls.attempts.map((attempt) => attempt.turnId)).size, 1, "all stages remain attached to one visible turn");
+assert.equal(new Set(observedBillingOperationIds).size, 4, "each metered stage needs an independent billing operation ID");
 assert.ok(calls.attempts.every((attempt) => attempt.status === "succeeded"));
 assert.equal(audits.length, 1);
 assert.equal(assessedSourceIds.length, 2);
+assert.deepEqual(result.billingUsage.search, [
+  { kind: "tool_call", tool: "openai_web_search", count: 1 },
+  { kind: "tokens", inputTokens: 8000, cachedInputTokens: 0, outputTokens: 120, reasoningTokens: 20 },
+]);
 assert.deepEqual(sources.events.map((event) => event.eventType).sort(), ["cited", "excluded", "recommended", "retrieved", "retrieved"].sort());
 assert.ok(sources.events.every((event) => event.documentId === documentId && event.turnId === turnId));
 

@@ -9,10 +9,24 @@ export interface GrantGeneralWebSearchProviderResult {
   publishedAt: string | null;
 }
 
+export interface GrantGeneralWebSearchProviderUsage {
+  providerRequestId: string;
+  webSearchCalls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+}
+
+export interface GrantGeneralWebSearchProviderResponse {
+  results: GrantGeneralWebSearchProviderResult[];
+  usage: GrantGeneralWebSearchProviderUsage;
+}
+
 export interface GrantGeneralWebSearchProvider {
   readonly providerId: "openai_web_search";
   search(input: {
     approvedQuery: Extract<GrantWebSearchEgressDecision, { allowed: true }>;
     maximumResults: number;
-  }): Promise<GrantGeneralWebSearchProviderResult[]>;
+  }): Promise<GrantGeneralWebSearchProviderResponse>;
 }

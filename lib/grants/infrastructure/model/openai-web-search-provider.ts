@@ -1,6 +1,9 @@
 import OpenAI from "openai";
 import { z } from "zod";
-import type { GrantGeneralWebSearchProvider } from "../../ports/grant-general-web-search-provider.ts";
+import type {
+  GrantGeneralWebSearchProvider,
+  GrantGeneralWebSearchProviderResult,
+} from "../../ports/grant-general-web-search-provider.ts";
 import { GRANT_WEB_SEARCH_EGRESS_POLICY_VERSION } from "../../web-sources/query-egress-policy.ts";
 
 const UrlCitationSchema = z.object({
@@ -22,9 +25,25 @@ const MessageOutputSchema = z.object({
   content: z.array(z.unknown()),
 }).passthrough();
 
+const WebSearchCallOutputSchema = z.object({
+  type: z.literal("web_search_call"),
+}).passthrough();
+
+const ResponseUsageSchema = z.object({
+  input_tokens: z.number().int().nonnegative(),
+  input_tokens_details: z.object({
+    cached_tokens: z.number().int().nonnegative().optional(),
+  }).passthrough().optional(),
+  output_tokens: z.number().int().nonnegative(),
+  output_tokens_details: z.object({
+    reasoning_tokens: z.number().int().nonnegative().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
 const OpenAIWebSearchResponseSchema = z.object({
   id: z.string().trim().min(1).max(500),
   output: z.array(z.unknown()),
+  usage: ResponseUsageSchema,
 }).passthrough();
 
 type OpenAIWebSearchClient = {
@@ -109,8 +128,12 @@ export class OpenAIWebSearchProvider implements GrantGeneralWebSearchProvider {
       throw new GrantOpenAIWebSearchError("response_invalid", "OpenAI web search response did not match the expected contract.");
     }
 
+    const webSearchCalls = parsed.data.output.filter((item) => WebSearchCallOutputSchema.safeParse(item).success).length;
+    if (webSearchCalls < 1) {
+      throw new GrantOpenAIWebSearchError("response_invalid", "OpenAI web search response reported no search tool call.");
+    }
     const seen = new Set<string>();
-    const results: Array<Awaited<ReturnType<GrantGeneralWebSearchProvider["search"]>>[number]> = [];
+    const results: GrantGeneralWebSearchProviderResult[] = [];
     for (const rawItem of parsed.data.output) {
       const item = MessageOutputSchema.safeParse(rawItem);
       if (!item.success) continue;
@@ -120,6 +143,7 @@ export class OpenAIWebSearchProvider implements GrantGeneralWebSearchProvider {
         for (const rawAnnotation of content.data.annotations) {
           const annotation = UrlCitationSchema.safeParse(rawAnnotation);
           if (!annotation.success) continue;
+          if (results.length >= input.maximumResults) continue;
           const url = annotation.data.url;
           if (seen.has(url)) continue;
           const snippet = boundedCitationContext(content.data.text, annotation.data.start_index, annotation.data.end_index);
@@ -133,10 +157,19 @@ export class OpenAIWebSearchProvider implements GrantGeneralWebSearchProvider {
             snippet,
             publishedAt: null,
           });
-          if (results.length >= input.maximumResults) return results;
         }
       }
     }
-    return results;
+    return {
+      results,
+      usage: {
+        providerRequestId: parsed.data.id,
+        webSearchCalls,
+        inputTokens: parsed.data.usage.input_tokens,
+        cachedInputTokens: parsed.data.usage.input_tokens_details?.cached_tokens ?? 0,
+        outputTokens: parsed.data.usage.output_tokens,
+        reasoningTokens: parsed.data.usage.output_tokens_details?.reasoning_tokens ?? 0,
+      },
+    };
   }
 }

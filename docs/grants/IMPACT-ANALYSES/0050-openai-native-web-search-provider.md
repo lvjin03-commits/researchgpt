@@ -16,6 +16,9 @@
   consulted URLs are not treated as evidence-bearing snippets.
 - Changes the search billing discriminator to `openai_web_search`. Production
   activation still requires an effective price catalog entry and explicit rollout.
+- Records actual hosted web-search call count and response token usage from the
+  provider response. The metering result crosses the existing orchestration
+  boundary but does not calculate prices or mutate the point ledger.
 
 ## Verification and rollback
 
