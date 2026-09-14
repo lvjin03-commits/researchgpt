@@ -19,6 +19,7 @@ export type GrantFullDocumentContextSection = {
   semanticRole: string;
   title: string;
   nodeAliases: string[];
+  modelText: string;
 };
 
 export type GrantFullDocumentContext = {
@@ -93,21 +94,21 @@ export function buildGrantFullDocumentContext(input: {
       nodes.push({ sourceAlias, nodeId: node.nodeId, sectionAlias, nodeType: node.nodeType,
         order: node.order, text: formatNodeText(node) });
     }
+    const sectionModelText = [`${"#".repeat(Math.min(depth + 1, 6))} [${sectionAlias}] ${section.title}`,
+      ...nodeAliases.map((alias) => {
+        const node = nodes.find((candidate) => candidate.sourceAlias === alias)!;
+        return `[${node.sourceAlias}] (${node.nodeType})\n${node.text}`;
+      })].join("\n\n");
     sections.push({ sectionAlias, sectionId: section.sectionId,
       parentSectionAlias: section.parentSectionId ? sectionAliasById.get(section.parentSectionId)! : null,
-      depth, order: section.order, semanticRole: section.semanticRole, title: section.title, nodeAliases });
+      depth, order: section.order, semanticRole: section.semanticRole, title: section.title, nodeAliases,
+      modelText: sectionModelText });
   }
   if (nodes.length !== snapshot.nodes.length || new Set(nodes.map((node) => node.nodeId)).size !== snapshot.nodes.length) {
     throw new Error("Full-document context did not cover every canonical node exactly once.");
   }
 
-  const modelText = [`申请书标题：${snapshot.title}`, ...sections.flatMap((section) => [
-    `${"#".repeat(Math.min(section.depth + 1, 6))} [${section.sectionAlias}] ${section.title}`,
-    ...section.nodeAliases.map((alias) => {
-      const node = nodes.find((candidate) => candidate.sourceAlias === alias)!;
-      return `[${node.sourceAlias}] (${node.nodeType})\n${node.text}`;
-    }),
-  ])].join("\n\n");
+  const modelText = [`申请书标题：${snapshot.title}`, ...sections.map((section) => section.modelText)].join("\n\n");
   const contextHash = sha256Canonical({ documentId: input.documentId,
     sourceRevisionId: input.sourceRevisionId, title: snapshot.title, sections, nodes });
   const emptySectionCount = sections.filter((section) => section.nodeAliases.length === 0).length;

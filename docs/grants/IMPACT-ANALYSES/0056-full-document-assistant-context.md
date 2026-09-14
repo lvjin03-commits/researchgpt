@@ -14,6 +14,16 @@ execution-local source aliases, formats every supported node type, and reports
 coverage and a content hash. This step does not call a model, change routing,
 persist a second document, or expose the projection to the browser.
 
+## Step 2 scope
+
+Add one deterministic capacity router over the Step 1 projection. It uses a
+token-counter port with an `o200k_base` tiktoken adapter, and a versioned policy
+that reserves output, protocol overhead and safety margin before choosing either
+single-pass or hierarchical processing. Hierarchical routing groups whole
+sections without dropping coverage and flags a section that still needs finer
+subdivision. This step does not dispatch a model or replace the active six-node
+assistant retrieval path.
+
 ## Ownership and invariants
 
 - The Grant Document Repository and Revision Service remain authoritative for
@@ -28,7 +38,9 @@ persist a second document, or expose the projection to the browser.
 
 ## Follow-up and rollback
 
-Step 2 will add explicit capacity routing over this projection. Until that is
-implemented and verified, existing assistant retrieval behavior remains active.
-Rollback removes the unused projection and its tests; canonical data is unchanged.
+Step 3 will execute hierarchical analysis and define subdivision for oversized
+sections. Until that is implemented and later connected through the Model Data
+Gateway, existing assistant retrieval behavior remains active. Rollback removes
+the unused projection, capacity router, tokenizer dependency and their tests;
+canonical data is unchanged.
 
