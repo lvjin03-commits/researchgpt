@@ -21,6 +21,7 @@ import {
   type GrantWebSourceRecord,
 } from "../web-sources/contracts.ts";
 import { assembleGrantWebGroundedAnswer, GrantWebGroundingError } from "../web-sources/grounded-answer-assembler.ts";
+import { assessGrantWebSearchEgress } from "../web-sources/query-egress-policy.ts";
 import { revalidateGrantWebCheckpoint, type GrantWebResumableCheckpoint } from "../web-sources/resumable-checkpoint.ts";
 import { GrantGeneralWebSearchService } from "./grant-general-web-search-service.ts";
 import { GrantModelExecutionError, GrantModelExecutor } from "./grant-model-executor.ts";
@@ -92,7 +93,17 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
         operation: GRANT_WEB_QUERY_REWRITE_OPERATION, artifactOperation: "query_rewrite",
         invoke: (attemptPurpose) => this.dependencies.model.rewriteQuery({ question: context.question,
           admittedApplicationContext: context.applicationContext, attemptPurpose }),
-        parse: (value) => GrantWebQueryRewriteProposalSchema.parse(value) });
+        parse: (value) => {
+          const proposal = GrantWebQueryRewriteProposalSchema.parse(value);
+          const hasAllowedQuery = this.researchQueries(proposal.query).some((candidateQuery) =>
+            assessGrantWebSearchEgress({ candidateQuery, documentText: context.documentTextForEgressCheck,
+              sensitiveTerms: context.sensitiveTerms }).allowed);
+          if (!hasAllowedQuery) {
+            throw new GrantWebModelError("structured_output_invalid",
+              "The rewritten academic query did not satisfy the outbound-data policy.");
+          }
+          return proposal;
+        } });
     }
     if (input.operation === "search_query") return this.runSearchPhase({ input, checkpoint, context, phaseId });
     if (input.operation === "source_assessment") {
@@ -165,7 +176,10 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
             candidateQuery, documentText: input.context.documentTextForEgressCheck,
             sensitiveTerms: input.context.sensitiveTerms, maximumResults: 8,
             billingOperationId: input.phaseId });
-          if (search.status === "blocked") throw new Error("A planned academic query failed the egress policy.");
+          // Each complementary query is audited independently. A conservative
+          // rejection suppresses that outbound query without discarding usable
+          // results from the other authorized queries.
+          if (search.status === "blocked") continue;
           searches.push(search);
         }
         const completed = searches.filter((search) => search.status === "completed");

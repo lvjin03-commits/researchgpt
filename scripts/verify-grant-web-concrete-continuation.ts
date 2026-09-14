@@ -45,13 +45,13 @@ const searchService = new GrantGeneralWebSearchService({
   } },
   auditRepository: { async append(audit) {
     calls.push("audit");
-    if (!audit.outgoingQuery) throw new Error("Allowed search audit must retain its outgoing query.");
-    auditedQueries.push(audit.outgoingQuery);
+    if (audit.outgoingQuery) auditedQueries.push(audit.outgoingQuery);
   } },
   sourceRepository: webRepository,
 });
 const model = {
-  async rewriteQuery() { calls.push("model-rewrite"); return { value: { query: "safe research query" }, outputHash: "c".repeat(64),
+  async rewriteQuery(input: { attemptPurpose: string }) { calls.push("model-rewrite"); return { value: { query: input.attemptPurpose === "initial"
+    ? "confidential application mechanism phrase copied verbatim" : "safe research query" }, outputHash: "c".repeat(64),
     usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 0 } }; },
   async assess(input: { sources: readonly GrantWebSourceRecord[] }) { calls.push("model-assess"); return {
     value: { assessments: input.sources.map((source) => ({ sourceId: source.sourceId,
@@ -85,7 +85,8 @@ let contextLoads = 0;
 const executor = new GrantWebConcreteContinuationStepExecutor({
   phases: new GrantWebResumablePhaseExecutor(new GrantWebBudgetedPhaseOrchestrator(coordinator)),
   contextLoader: { async load() { contextLoads += 1; return { question: "What changed?", applicationContext: "Authorized excerpt",
-    documentTextForEgressCheck: "Public-safe document text", sensitiveTerms: [], assistantSessionId: sessionId,
+    documentTextForEgressCheck: "confidential application mechanism phrase copied verbatim; safe research query recent review advances",
+    sensitiveTerms: [], assistantSessionId: sessionId,
     sourceRevision: 1, contextHash, authorizationFingerprint }; } },
   model, modelExecutor, searchService, sourceRepository: webRepository, prices,
   configuredGrantModelId: "test-model",
@@ -104,11 +105,14 @@ assert.equal(result.state.status, "delivered_complete");
 assert.equal(result.checkpoint.answer?.claims[0]?.statement, "Grounded conclusion.");
 assert.equal(contextLoads, 4, "authoritative context must be rebuilt before every paid phase");
 assert.equal(calls.filter((value) => value === "reserve").length, 4);
+assert.equal(calls.filter((value) => value === "model-rewrite").length, 2,
+  "an unsafe query rewrite must be repaired before any search dispatch");
 assert.ok(calls.indexOf("reserve") < calls.indexOf("model-rewrite"), "reservation must precede model dispatch");
 assert.ok(calls.indexOf("audit") < calls.indexOf("provider-search"), "egress audit must precede web dispatch");
 assert.equal(calls.filter((value) => value === "audit").length, 5, "all five complementary queries must be audited");
-assert.equal(calls.filter((value) => value === "provider-search").length, 5);
-assert.equal(new Set(auditedQueries).size, 5, "research queries must be complementary, not repeated");
-assert.equal(result.checkpoint.search?.sources.length, 5, "all structured abstracts must reach assessment");
+assert.equal(calls.filter((value) => value === "provider-search").length, 4,
+  "one blocked complementary query must be suppressed without aborting the usable searches");
+assert.equal(new Set(auditedQueries).size, 4, "allowed research queries must be complementary, not repeated");
+assert.equal(result.checkpoint.search?.sources.length, 4, "all allowed structured abstracts must reach assessment");
 assert.ok(storedCheckpoint && typeof storedCheckpoint === "object");
 console.log("The formal Grant web path audited five complementary OpenAlex queries, merged real abstracts and delivered offline.");

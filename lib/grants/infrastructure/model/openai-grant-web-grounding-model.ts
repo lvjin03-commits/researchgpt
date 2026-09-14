@@ -82,7 +82,7 @@ export class OpenAIGrantWebGroundingModel implements GrantWebGroundingModel {
 
   rewriteQuery(input: Parameters<GrantWebGroundingModel["rewriteQuery"]>[0]) {
     return this.structured({ schema: GrantWebQueryRewriteProposalSchema, schemaName: "grant_web_query",
-      system: "Rewrite the question as one concise, generalized web search query. Exclude names, identifiers, contacts, URLs, exact measurements and verbatim application prose.",
+      system: "Rewrite the question as one concise, generalized academic search query made of topic keywords, not an application sentence. Exclude names, identifiers, contacts, URLs, years, exact measurements, and every continuous phrase copied from the application. On schema repair, generalize the terms further.",
       payload: { question: input.question, admittedApplicationContext: input.admittedApplicationContext },
       attemptPurpose: input.attemptPurpose, parse: (value) => GrantWebQueryRewriteProposalSchema.parse(value) });
   }
