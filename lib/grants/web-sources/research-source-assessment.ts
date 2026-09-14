@@ -31,9 +31,9 @@ export type GrantResearchSourceAssessmentView = GrantResearchSourceAssessmentV2 
   primarySourceId: string;
 };
 
-function memberEvidence(member: GrantResearchSourceMember): string | null {
-  if (member.sourceKind === "structured_academic") return member.record.evidence.text;
-  return member.record.snippet;
+function quantitativeEvidence(member: GrantResearchSourceMember): string | null {
+  if (member.sourceKind !== "structured_academic" || member.record.evidence.kind !== "abstract") return null;
+  return member.record.evidence.text;
 }
 
 function numericTokens(value: string): string[] {
@@ -79,7 +79,7 @@ export function validateGrantResearchSourceAssessments(input: {
       const evidence = finding.sourceIds.map((sourceId) => {
         const member = memberById.get(sourceId);
         if (!member) throw new Error("A quantitative finding references a source outside its research-source group.");
-        return memberEvidence(member);
+        return quantitativeEvidence(member);
       }).filter((value): value is string => Boolean(value)).join("\n");
       const tokens = numericTokens(finding.statement);
       if (tokens.length === 0) throw new Error("A quantitative finding must contain at least one numeric value.");

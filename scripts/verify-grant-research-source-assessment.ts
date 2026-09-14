@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createGrantAcademicSourceRecord } from "../lib/grants/web-sources/academic-source-record.ts";
 import { composeGrantResearchSources } from "../lib/grants/web-sources/research-source-acquisition.ts";
 import { validateGrantResearchSourceAssessments } from "../lib/grants/web-sources/research-source-assessment.ts";
+import { createGrantWebSourceRecord } from "../lib/grants/web-sources/source-record.ts";
 
 const sourceId = randomUUID();
 const academic = createGrantAcademicSourceRecord({ sourceId, retrievedAt: "2026-09-11T12:00:00.000Z", result: {
@@ -52,5 +53,14 @@ assert.throws(() => validateGrantResearchSourceAssessments({ sourceGroups: [grou
     applicationRelation: null, evidenceLimitations: [] }],
 } }), /outside its research-source group/u);
 
-console.log("Research-source assessment V2 and quantitative evidence validation verified offline.");
+const webSource = createGrantWebSourceRecord({ sourceId: randomUUID(), providerId: "openai_web_search",
+  providerRecordId: "response:1", url: "https://example.com/zinc", title: "Search-generated zinc brief",
+  snippet: "The generated search context mentions 99.9% efficiency.", retrievedAt: "2026-09-11T12:00:00.000Z" });
+const [webGroup] = composeGrantResearchSources({ academicSources: [], generalWebSources: [webSource], createId: randomUUID });
+assert.throws(() => validateGrantResearchSourceAssessments({ sourceGroups: [webGroup!], proposal: {
+  schemaVersion: 2, assessments: [{ sourceGroupId: webGroup!.groupId, disposition: "recommended", reason: "Relevant",
+    mechanismSummary: "A search-discovered lead.", quantitativeFindings: [{ statement: "Efficiency was 99.9%.",
+      sourceIds: [webSource.sourceId] }], applicationRelation: "Discovery only.", evidenceLimitations: [] }],
+} }), /unsupported values/u, "search excerpts must not support quantitative findings");
 
+console.log("Research-source assessment V2 and quantitative evidence validation verified offline.");

@@ -81,6 +81,7 @@
     "test:grant-research-source-acquisition": "node --experimental-strip-types scripts/verify-grant-research-source-acquisition.ts",
     "test:grant-research-source-assessment": "node --experimental-strip-types scripts/verify-grant-research-source-assessment.ts",
     "test:grant-research-gap-comparison": "node --experimental-strip-types scripts/verify-grant-research-gap-comparison.ts",
+    "test:grant-research-answer-contract": "node --experimental-strip-types scripts/verify-grant-research-answer-contract.ts",
     "test:grant-research-query-planning": "node --experimental-strip-types scripts/verify-grant-research-query-planning.ts",
     "test:grant-research-budgeted-workflow": "node --experimental-strip-types scripts/verify-grant-research-budgeted-workflow.ts",
     "test:grant-web-grounding-persistence": "node --experimental-strip-types scripts/verify-grant-web-grounding-persistence.ts",
