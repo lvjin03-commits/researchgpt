@@ -959,6 +959,22 @@ calculation, refusal to overspend and bounded partial delivery. Production
 route/UI replacement and removal of the fixed 50-point adapter remain a later,
 explicitly authorized rollout step.
 
+## Research Evidence Pipeline Integration Status
+
+One application service now owns the ordered judgment path: validated source
+assessment, frozen-location existing-design comparison, deterministic scope
+decision and constrained answer assembly. Routes and renderers must call this
+service instead of invoking individual assemblers or recreating eligibility
+rules. Offline fixtures prove that a direct bounded residual gap reaches the
+numbered answer while an adjacent lifecycle work package cannot bypass the
+scope gate.
+
+The remaining cutover is stateful rather than semantic: the resumable web
+checkpoint must persist source groups, comparison artifacts, answer selection
+and run trace, then the production composition root can replace the legacy
+assessment-to-free-form-synthesis transition. Until that migration is complete,
+the service is not claimed as active production behavior.
+
 ## Unified Grant Assistant Answer Step 1 Status
 
 The one free-text assistant entry now has one explicit discriminated answer
