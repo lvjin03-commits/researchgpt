@@ -59,6 +59,12 @@ const record = createGrantAcademicSourceRecord({
 });
 assert.equal(record.schemaVersion, 2);
 assert.equal(record.evidence.kind, "abstract");
+if (record.evidence.kind !== "abstract") throw new Error("Expected structured abstract evidence.");
+assert.equal(record.evidence.origin, "structured_abstract");
+assert.equal(record.evidence.spans[0]?.section, "abstract");
+assert.match(record.evidence.spans[0]?.excerptHash ?? "", /^[a-f0-9]{64}$/u);
+assert.deepEqual(record.identity, { canonicalDoi: "10.1000/example", openAlexId: "W1234567890",
+  normalizedTitle: "anion bridged secondary solvation sheaths", publicationVersion: "version_of_record" });
 assert.equal(record.publication.doi, "https://doi.org/10.1000/example");
 assert.equal(record.classification.qualityTier, "academic_database");
 
@@ -73,4 +79,3 @@ assert.throws(() => createGrantAcademicSourceRecord({ sourceId: randomUUID(),
   result: { ...response.results[0]!, retracted: true }, retrievedAt: "2026-09-11T12:00:00.000Z" }), /Retracted/u);
 
 console.log("Structured OpenAlex academic source contract verified offline without a network or paid model call.");
-

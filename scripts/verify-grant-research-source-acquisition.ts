@@ -27,6 +27,8 @@ const paperGroup = groups.find((group) => group.members.length === 2)!;
 assert.equal(paperGroup.deduplicationKey, "doi:10.1000/zinc.1");
 assert.equal(paperGroup.primarySourceId, academic.sourceId, "structured abstract must outrank generated citation context");
 assert.deepEqual(paperGroup.members.map((member) => member.evidenceKind), ["abstract", "citation_context"]);
+assert.equal(academic.identity.canonicalDoi, "10.1000/zinc.1");
+assert.equal(academic.identity.normalizedTitle, "dynamic solvation at zinc interfaces");
 assert.equal(paperGroup.members[1]?.record.contentFingerprint, duplicateDoiWeb.contentFingerprint,
   "deduplication must preserve the original provenance record");
 assert.equal(groups[0]?.primarySourceId, academic.sourceId, "newer academic work should sort first");
@@ -35,4 +37,3 @@ assert.throws(() => composeGrantResearchSources({ academicSources: [academic],
   generalWebSources: [{ ...official, sourceId: academic.sourceId }], createId: randomUUID }), /must be unique/u);
 
 console.log("Grant research-source composition and provenance-preserving deduplication verified offline.");
-

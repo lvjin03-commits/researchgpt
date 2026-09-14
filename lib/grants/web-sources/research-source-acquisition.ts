@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { GrantAcademicSourceRecord } from "./academic-source-contracts.ts";
 import type { GrantWebSourceRecord } from "./contracts.ts";
+import { normalizeGrantResearchDoi, normalizeGrantResearchTitle } from "./academic-source-record.ts";
 
 export type GrantResearchSourceMember =
   | { sourceKind: "structured_academic"; evidenceKind: "abstract" | "metadata_only"; record: GrantAcademicSourceRecord }
@@ -13,21 +14,14 @@ export type GrantResearchSourceGroup = {
   members: GrantResearchSourceMember[];
 };
 
-const DOI_PATTERN = /10\.\d{4,9}\/[A-Za-z0-9._;()/:+-]+/u;
-
-function normalizeDoi(value: string): string | null {
-  const decoded = decodeURIComponent(value).match(DOI_PATTERN)?.[0];
-  return decoded ? decoded.replace(/[).,;]+$/u, "").toLowerCase() : null;
-}
-
 function doiFor(member: GrantResearchSourceMember): string | null {
   if (member.sourceKind === "structured_academic") {
-    return member.record.publication.doi ? normalizeDoi(member.record.publication.doi) : null;
+    return member.record.identity.canonicalDoi;
   }
   try {
     const url = new URL(member.record.canonicalUrl);
     return url.hostname.toLowerCase() === "doi.org" || url.hostname.toLowerCase() === "dx.doi.org"
-      ? normalizeDoi(`${url.pathname}${url.search}`) : null;
+      ? normalizeGrantResearchDoi(`${url.pathname}${url.search}`) : null;
   } catch { return null; }
 }
 
@@ -45,13 +39,16 @@ function normalizedUrl(member: GrantResearchSourceMember): string {
 }
 
 function normalizedTitle(member: GrantResearchSourceMember): string {
-  return member.record.title.normalize("NFKC").toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/gu, " ");
+  return member.sourceKind === "structured_academic"
+    ? member.record.identity.normalizedTitle : normalizeGrantResearchTitle(member.record.title);
 }
 
 function candidateKeys(member: GrantResearchSourceMember): string[] {
   const doi = doiFor(member);
-  return [...(doi ? [`doi:${doi}`] : []), `url:${normalizedUrl(member)}`, `title:${normalizedTitle(member)}`];
+  const providerIdentity = member.sourceKind === "structured_academic" && member.record.identity.openAlexId
+    ? [`openalex:${member.record.identity.openAlexId}`] : [];
+  return [...(doi ? [`doi:${doi}`] : []), ...providerIdentity,
+    `url:${normalizedUrl(member)}`, `title:${normalizedTitle(member)}`];
 }
 
 function memberPriority(member: GrantResearchSourceMember): number {
@@ -112,4 +109,3 @@ export function composeGrantResearchSources(input: {
       || left.groupId.localeCompare(right.groupId);
   });
 }
-
