@@ -139,7 +139,7 @@ const diagnosticsRouteSource = await readFile(new URL("../app/api/grants/documen
 assert.match(panelSource, /建议默认收起/);
 assert.match(assistantChatPanelSource, /href=\{citation\.url\}/);
 assert.match(assistantChatPanelSource, /rel="noopener noreferrer"/);
-for (const token of ["最多 {billing.maximumChargePoints} 智点", "本次联网问答实际消耗", "智点不足：需要预留"]) {
+for (const token of ["最多 {billing.maximumChargePoints} 智点", "本次联网问答实际消耗", "账户智点不足", "增加预算上限不会增加账户余额", "系统按剩余全部阶段估算", "确认后立即继续"]) {
   assert.ok(assistantChatPanelSource.includes(token), `Grant Assistant billing feedback missing ${token}`);
 }
 for (const token of ["aria-modal=\"true\"", "不追加，整理现有结果", "requiredAdditionalPoints} 智点并继续",

@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WebAnswerPhaseReservationPort } from "../../application/resumable-web-answer-budget-coordinator.ts";
+import { InsufficientPointsError, PointAccountOnHoldError } from "../../domain/contracts.ts";
 import { ResumableWebAnswerBudgetStateSchema, type ResumableWebAnswerBudgetState } from "../../domain/resumable-web-answer-budget.ts";
+import { SupabasePointLedgerRepository } from "./supabase-point-ledger-repository.ts";
 
 function assertRpc(error: { message: string } | null): void {
   if (error) throw new Error(`Resumable web-answer budget RPC failed: ${error.message}`);
@@ -81,6 +83,11 @@ export class SupabaseResumableWebAnswerBudgetRepository implements WebAnswerPhas
       p_expires_at: new Date(Date.parse(now) + this.reservationTtlMs).toISOString(),
       p_next_state: input.state, p_now: now,
     });
+    if (error?.message.includes("point_account_on_hold")) throw new PointAccountOnHoldError();
+    if (error?.message.includes("insufficient_points")) {
+      const snapshot = await new SupabasePointLedgerRepository(this.client).getAccount(input.state.ownerId);
+      throw new InsufficientPointsError(snapshot?.account.availablePoints ?? 0, input.maximumChargePoints);
+    }
     assertRpc(error);
   }
 

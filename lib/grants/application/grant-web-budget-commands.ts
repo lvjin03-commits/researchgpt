@@ -55,6 +55,7 @@ export interface GrantWebContinuationStepExecutor {
     "answer_synthesis" | "existing_results_delivery"; state: ResumableWebAnswerBudgetState;
     checkpoint: GrantWebResumableCheckpoint }): Promise<GrantWebContinuationStepResult>;
   getProtectedDeliveryMaximumPoints(): Promise<number>;
+  getRemainingResearchMaximumPoints?(checkpoint: GrantWebResumableCheckpoint): Promise<number>;
 }
 
 export type GrantWebCompletedDelivery = {
@@ -78,8 +79,9 @@ export class GrantWebBudgetCommandService {
     const stored = await this.repository.getLatestPausedForDocument?.(documentId) ?? null;
     if (!stored) return null;
     const checkpoint = GrantWebResumableCheckpointSchema.parse(stored.checkpoint);
+    const requiredAdditionalPoints = await this.recommendedAdditionalPoints(stored.state, checkpoint);
     return { budgetId: stored.state.budgetId, version: stored.state.version,
-      requiredAdditionalPoints: stored.state.requiredAdditionalPoints!, settledPoints: stored.state.settledPoints,
+      requiredAdditionalPoints, settledPoints: stored.state.settledPoints,
       authorizedPoints: stored.state.authorizedPoints,
       turnId: checkpoint.turnId,
       question: checkpoint.question,
@@ -175,11 +177,22 @@ export class GrantWebBudgetCommandService {
       const operation = this.flow.next({ checkpoint, deliverExisting: input.mode === "deliver_existing" });
       if (operation === "complete") return { status: "completed", state, checkpoint, answer: checkpoint.answer };
       const result = await this.executor.execute({ operation, state, checkpoint });
+      if (result.status === "awaiting_budget") return { ...result,
+        requiredAdditionalPoints: await this.recommendedAdditionalPoints(result.state, checkpoint) };
       if (result.status !== "advanced") return result;
       state = result.state;
       checkpoint = GrantWebResumableCheckpointSchema.parse(result.checkpoint);
     }
     throw new Error("Grant web answer exceeded its bounded phase count.");
+  }
+
+  private async recommendedAdditionalPoints(state: ResumableWebAnswerBudgetState,
+    checkpoint: GrantWebResumableCheckpoint): Promise<number> {
+    const immediate = state.requiredAdditionalPoints ?? 0;
+    if (!this.executor?.getRemainingResearchMaximumPoints) return immediate;
+    const remainingMaximum = await this.executor.getRemainingResearchMaximumPoints(checkpoint);
+    const suggested = Math.max(immediate, state.settledPoints + remainingMaximum - state.authorizedPoints, 1);
+    return Math.min(suggested, Math.max(immediate, 500 - state.authorizedPoints));
   }
 
   private withDelivery(result: GrantWebContinuationStepResult) {

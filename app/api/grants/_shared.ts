@@ -48,7 +48,7 @@ import {
 export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof InsufficientPointsError) {
     return Response.json({
-      error: `智点不足，本次联网问答需要预留 ${error.requestedPoints} 智点。`,
+      error: `账户可用 ${error.availablePoints} 智点，下一阶段需要预留 ${error.requestedPoints} 智点。增加预算上限不会增加账户余额。`,
       code: error.code,
       availablePoints: error.availablePoints,
       requestedPoints: error.requestedPoints,

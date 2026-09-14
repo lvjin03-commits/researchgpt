@@ -45,10 +45,16 @@ const pausedCommands = new GrantWebBudgetCommandService({
   },
   async authorizeIncrease(_previous, _id, _points, next) { return next; },
   async transition(_previous, next) { return next; },
+}, undefined, {
+  async execute({ state: next, checkpoint: currentCheckpoint }) { return { status: "awaiting_budget", state: next,
+    checkpoint: currentCheckpoint,
+    requiredAdditionalPoints: next.requiredAdditionalPoints ?? 1 }; },
+  async getProtectedDeliveryMaximumPoints() { return 15; },
+  async getRemainingResearchMaximumPoints() { return 40; },
 });
 assert.deepEqual(await pausedCommands.getPaused(state.documentId), {
   budgetId: state.budgetId, turnId: state.turnId, version: state.version,
-  requiredAdditionalPoints: state.requiredAdditionalPoints,
+  requiredAdditionalPoints: 20,
   settledPoints: state.settledPoints, authorizedPoints: state.authorizedPoints,
   question: checkpoint.question, canDeliverExisting: true,
 });

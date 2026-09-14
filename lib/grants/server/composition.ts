@@ -258,6 +258,7 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
     const assistantSessions = new SupabaseGrantAssistantSessionRepository(client, ownerId);
     const revisions = new GrantRevisionService({ repository: new SupabaseGrantRevisionRepository(client, ownerId) });
     const prices = new SupabasePriceCatalogRepository(client);
+    const pointLedger = new SupabasePointLedgerRepository(client);
     const phaseExecutor = new GrantWebConcreteContinuationStepExecutor({
       phases: new GrantWebResumablePhaseExecutor(new GrantWebBudgetedPhaseOrchestrator(
         new ResumableWebAnswerBudgetCoordinator(budgetRepository),
@@ -298,8 +299,14 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
       });
     return Object.freeze({ modelGateway: ai.gateway, workflow,
       orchestrator: {
-        getBillingPreview: async () => ({ charging: "resumable" as const, canSubmit: true,
-          maximumChargePoints: await phaseExecutor.getProtectedDeliveryMaximumPoints(), availablePoints: null }),
+        getBillingPreview: async () => {
+          const account = await pointLedger.getAccount(ownerId);
+          const availablePoints = account?.account.availablePoints ?? 0;
+          const maximumChargePoints = await phaseExecutor.getProtectedDeliveryMaximumPoints();
+          return { charging: "resumable" as const, canSubmit: availablePoints >= maximumChargePoints,
+            maximumChargePoints, availablePoints,
+            ...(availablePoints < maximumChargePoints ? { reason: "insufficient_points" as const } : {}) };
+        },
         getPausedBudget: (documentId: string) => workflow.getPaused(documentId),
         run: async (input: Parameters<GrantWebGroundedChatOrchestrator["run"]>[0] & { webBudgetPoints?: number }) => {
           if (!input.webBudgetPoints) throw new Error("A user-authorized web budget is required.");

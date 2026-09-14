@@ -157,6 +157,26 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
     return quote.maximumChargePoints;
   }
 
+  async getRemainingResearchMaximumPoints(checkpoint: GrantWebResumableCheckpoint): Promise<number> {
+    const remaining: GrantWebBudgetOperationKey[] = checkpoint.query == null
+      ? ["query_rewrite", "search_query", "source_assessment", "answer_synthesis"]
+      : checkpoint.search == null
+        ? ["search_query", "source_assessment", "answer_synthesis"]
+        : checkpoint.assessment == null
+          ? ["source_assessment", "answer_synthesis"]
+          : checkpoint.answer == null ? ["answer_synthesis"] : [];
+    const quotes = await Promise.all(remaining.map(async (operationKey) => {
+      const policy = getGrantWebBudgetOperationPolicy(operationKey);
+      const usage: StandardizedBillableUsage[] = operationKey === "search_query"
+        ? [{ kind: "tool_call", tool: "openai_web_search", count: policy.maximumToolCalls },
+          tokenUsage({ inputTokens: policy.maximumInputTokens, outputTokens: policy.maximumOutputTokens, reasoningTokens: 0 })]
+        : [tokenUsage({ inputTokens: policy.maximumInputTokens * policy.maximumProviderAttempts,
+          outputTokens: policy.maximumOutputTokens * policy.maximumProviderAttempts, reasoningTokens: 0 })];
+      return this.quote(operationKey, usage);
+    }));
+    return quotes.reduce((sum, quote) => sum + quote.maximumChargePoints, 0);
+  }
+
   private async runSearchPhase(input: {
     input: Parameters<GrantWebContinuationStepExecutor["execute"]>[0]; checkpoint: GrantWebResumableCheckpoint;
     context: GrantWebContinuationContext; phaseId: string;
