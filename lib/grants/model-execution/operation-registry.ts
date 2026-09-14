@@ -82,7 +82,9 @@ export function resolveGrantModelOperationPolicy(input: {
       : GRANT_EDIT_SESSION_TURN_POLICY_VERSION,
     provider: "openai",
     modelId,
-    maximumAttempts: input.operation === GRANT_WEB_NEXT_STEP_DECIDE_OPERATION || input.operation === GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION ? 1 : 2,
+    maximumAttempts: input.operation === GRANT_WEB_NEXT_STEP_DECIDE_OPERATION ||
+      input.operation === GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION ||
+      input.operation === GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION ? 1 : 2,
     executionLimits: input.operation === GRANT_WEB_NEXT_STEP_DECIDE_OPERATION
       ? { maximumInputTokens: 4_000, maximumOutputTokens: 300, maximumToolCalls: 0, timeoutMilliseconds: 30_000 }
       : input.operation === GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION

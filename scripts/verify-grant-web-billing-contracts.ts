@@ -18,7 +18,10 @@ assert.equal(resolveBillingDecision({ operation: AI_OPERATIONS.grant.webAnswerSy
 assert.deepEqual(GRANT_WEB_BILLABLE_USAGE.search, { kind: "tool_call", tool: "openai_web_search" });
 
 assert.equal(resolveGrantModelOperationPolicy({ operation: GRANT_WEB_SOURCE_ASSESS_OPERATION, configuredGrantModelId: "test-model" }).policyVersion, "grant-web-source-assess-v1");
-assert.equal(resolveGrantModelOperationPolicy({ operation: GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION, configuredGrantModelId: "test-model" }).policyVersion, "grant-web-answer-synthesize-v1");
+const answerPolicy = resolveGrantModelOperationPolicy({ operation: GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION,
+  configuredGrantModelId: "test-model" });
+assert.equal(answerPolicy.policyVersion, "grant-web-answer-synthesize-v1");
+assert.equal(answerPolicy.maximumAttempts, 1, "Final answer delivery must reserve exactly one provider attempt.");
 const decisionPolicy = resolveGrantModelOperationPolicy({ operation: GRANT_WEB_NEXT_STEP_DECIDE_OPERATION, configuredGrantModelId: "test-model" });
 const deliveryPolicy = resolveGrantModelOperationPolicy({ operation: GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION, configuredGrantModelId: "test-model" });
 assert.equal(decisionPolicy.maximumAttempts, 1);

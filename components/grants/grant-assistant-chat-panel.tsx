@@ -31,7 +31,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   const [webSearch, setWebSearch] = useState(false);
   const [billing, setBilling] = useState<BillingPreview | null>(null);
   const [lastChargedPoints, setLastChargedPoints] = useState<number | null>(null);
-  const [webBudgetPoints, setWebBudgetPoints] = useState(50);
+  const [webBudgetPoints, setWebBudgetPoints] = useState("50");
   const [pausedBudget, setPausedBudget] = useState<PausedBudget | null>(null);
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
 
@@ -50,7 +50,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       const nextBilling = data.billing ?? null;
       if (active) setBilling(nextBilling);
       if (active && nextBilling?.charging === "resumable") {
-        setWebBudgetPoints((current) => Math.max(current, nextBilling.maximumChargePoints, 20));
+        setWebBudgetPoints((current) => String(Math.max(Number(current) || 0, nextBilling.maximumChargePoints, 20)));
       }
       if (active) {
         const restoredBudget = data.pausedBudget ?? null;
@@ -95,7 +95,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           ignoreAmbiguousFocus: ignoreAmbiguousFocusOnce,
           candidateContext,
           webSearch,
-          ...(webSearch && billing?.charging === "resumable" ? { webBudgetPoints } : {}),
+          ...(webSearch && billing?.charging === "resumable" ? { webBudgetPoints: Number(webBudgetPoints) } : {}),
         }),
       });
       const data = await response.json();
@@ -219,10 +219,10 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         </div>
       </section>}
       <GrantAssistantSourceControls documentId={documentId} enabled={evidenceEnabled} selectedSourceIds={selectedSourceIds} onSelectionChange={setSelectedSourceIds} onError={setError} />
-      {webGroundingEnabled && <div className="mb-2 flex flex-wrap items-center gap-2"><button type="button" aria-pressed={webSearch} disabled={Boolean(pausedBudget)} onClick={() => setWebSearch((value) => !value)} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${webSearch ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 bg-white text-slate-700"}`}>{webSearch ? "联网补充：已开启" : "联网补充"}</button>{webSearch && billing?.charging === "canary" && <span className="text-[11px] text-slate-500">最多 {billing.maximumChargePoints} 智点 · 可用 {billing.availablePoints ?? 0}</span>}{webSearch && billing?.charging === "resumable" && <><label className="text-[11px] text-slate-600">本次智点上限 <input aria-label="联网智点上限" type="number" min={Math.max(20, billing.maximumChargePoints)} max={500} value={webBudgetPoints} disabled={Boolean(pausedBudget)} onChange={(event) => setWebBudgetPoints(Math.max(20, billing.maximumChargePoints, Math.min(500, Number(event.target.value) || 20)))} className="ml-1 w-16 rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100" /></label><span className="text-[11px] text-slate-500">仅按实际消耗扣除，未使用部分不会扣费</span></>}</div>}
+      {webGroundingEnabled && <div className="mb-2 flex flex-wrap items-center gap-2"><button type="button" aria-pressed={webSearch} disabled={Boolean(pausedBudget)} onClick={() => setWebSearch((value) => !value)} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${webSearch ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 bg-white text-slate-700"}`}>{webSearch ? "联网补充：已开启" : "联网补充"}</button>{webSearch && billing?.charging === "canary" && <span className="text-[11px] text-slate-500">最多 {billing.maximumChargePoints} 智点 · 可用 {billing.availablePoints ?? 0}</span>}{webSearch && billing?.charging === "resumable" && <><label className="text-[11px] text-slate-600">本次智点上限 <input aria-label="联网智点上限" type="number" min={Math.max(20, billing.maximumChargePoints)} max={500} value={webBudgetPoints} disabled={Boolean(pausedBudget)} onChange={(event) => setWebBudgetPoints(event.target.value)} onBlur={() => setWebBudgetPoints(String(Math.max(20, billing.maximumChargePoints, Math.min(500, Number(webBudgetPoints) || 20))))} className="ml-1 w-16 rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100" /></label><span className="text-[11px] text-slate-500">可设置 {Math.max(20, billing.maximumChargePoints)}–500，仅按实际消耗扣除</span></>}</div>}
       <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 focus-within:border-blue-500">
         <textarea aria-label="向 Grant AI 提问" value={input} onChange={(event) => { const next = event.target.value; setInput(next); setError(""); if (ambiguity && next.trim() !== ambiguity.question) { setAmbiguity(null); setIgnoreAmbiguousFocusOnce(true); } }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="询问基金写作、研究思路或术语" className="min-h-16 flex-1 resize-none border-0 px-2 py-1 text-sm outline-none" />
-        <button type="button" disabled={!input.trim() || busy || !canGenerate || Boolean(pausedBudget) || Boolean(webSearch && billing?.charging === "canary" && !billing.canSubmit)} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{busy ? "处理中…" : "发送"}</button>
+        <button type="button" disabled={!input.trim() || busy || !canGenerate || Boolean(pausedBudget) || Boolean(webSearch && billing?.charging === "canary" && !billing.canSubmit) || Boolean(webSearch && billing?.charging === "resumable" && (!Number.isInteger(Number(webBudgetPoints)) || Number(webBudgetPoints) < Math.max(20, billing.maximumChargePoints) || Number(webBudgetPoints) > 500))} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{busy ? "处理中…" : "发送"}</button>
       </div>
       {webSearch && billing?.charging === "canary" && !billing.canSubmit && <p className="mt-2 text-xs text-amber-700">{billing.reason === "insufficient_points" ? `智点不足：需要预留 ${billing.maximumChargePoints}，当前可用 ${billing.availablePoints ?? 0}。` : billing.reason === "account_on_hold" ? "智点账户暂时不可用。" : "今日联网问答额度已用完。"}</p>}
       {lastChargedPoints !== null && <p className="mt-2 text-[11px] text-emerald-700">本次联网问答实际消耗 {lastChargedPoints} 智点。</p>}
