@@ -35,6 +35,7 @@ import {
 import { GrantAiEditSessionError } from "@/lib/grants/application/grant-ai-edit-session-service";
 import { GrantWebSourceError } from "@/lib/grants/application/grant-web-source-service";
 import { GrantAssistantChatError } from "@/lib/grants/application/grant-assistant-chat-service";
+import { GrantWebBudgetCommandError } from "@/lib/grants/application/grant-web-budget-commands";
 import { GrantCandidateDiffError } from "@/lib/grants/application/grant-candidate-diff-service";
 import { GrantModelExecutionError } from "@/lib/grants/application/grant-model-executor";
 import {
@@ -87,6 +88,9 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantAssistantChatError) {
     return Response.json({ error: error.message, code: error.code, focusChoices: error.focusChoices }, { status: error.code === "grant_assistant_duplicate_turn" ? 409 : 400 });
+  }
+  if (error instanceof GrantWebBudgetCommandError) {
+    return Response.json({ error: error.message, code: error.code }, { status: 409 });
   }
   if (error instanceof GrantModelExecutionError) {
     const message = error.category === "provider_rate_limited"

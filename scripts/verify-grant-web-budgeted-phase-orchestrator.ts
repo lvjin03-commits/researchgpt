@@ -14,6 +14,7 @@ let reserves = 0;
 let invocations = 0;
 let settledCheckpoint: unknown;
 const orchestrator = new GrantWebBudgetedPhaseOrchestrator(new ResumableWebAnswerBudgetCoordinator({
+  async pause() {},
   async reserve() { reserves += 1; }, async settle(input) { settledCheckpoint = input.checkpointArtifact; }, async release() {},
 }));
 const queryPolicy = getGrantWebBudgetOperationPolicy("query_rewrite");

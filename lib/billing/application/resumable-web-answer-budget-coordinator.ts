@@ -7,6 +7,8 @@ import {
 } from "../domain/resumable-web-answer-budget.ts";
 
 export type WebAnswerPhaseReservationPort = {
+  pause(input: { previousState: ResumableWebAnswerBudgetState;
+    nextState: ResumableWebAnswerBudgetState }): Promise<void>;
   reserve(input: { state: ResumableWebAnswerBudgetState; phaseId: string; maximumChargePoints: number;
     pricePolicyVersion: string }): Promise<void>;
   settle(input: { state: ResumableWebAnswerBudgetState; nextState: ResumableWebAnswerBudgetState;
@@ -35,7 +37,10 @@ export class ResumableWebAnswerBudgetCoordinator {
     | { status: "completed"; state: ResumableWebAnswerBudgetState; value: T }
   > {
     const admission = admitResumableWebAnswerPhase(input);
-    if (admission.decision === "awaiting_budget") return { status: "awaiting_budget", ...admission };
+    if (admission.decision === "awaiting_budget") {
+      await this.reservations.pause({ previousState: input.state, nextState: admission.state });
+      return { status: "awaiting_budget", ...admission };
+    }
 
     // The reservation port will become one atomic state+ledger RPC in Step 4.
     // Provider invocation is deliberately sequenced strictly after it succeeds.

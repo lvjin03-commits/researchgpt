@@ -9,6 +9,7 @@ let state = createResumableWebAnswerBudget({ budgetId: randomUUID(), ownerId: ra
   decisionHardMaximumPoints: 5, deliveryHardMaximumPoints: 15 });
 const events: string[] = [];
 const coordinator = new ResumableWebAnswerBudgetCoordinator({
+  async pause() { events.push("pause"); },
   async reserve({ phaseId }) { events.push(`reserve:${phaseId}`); },
   async settle({ phaseId }) { events.push(`settle:${phaseId}`); },
   async release({ phaseId }) { events.push(`release:${phaseId}`); },
@@ -76,4 +77,3 @@ plannedCall: { inputTokens: 1000, outputTokens: 300, toolCalls: 2, providerAttem
 invoke: async () => ({ value: "invalid", chargedPoints: 1 }) }), /Planned tool calls exceed/u);
 
 console.log("Grant research phases pause before overspend and preserve bounded partial delivery.");
-

@@ -56,6 +56,10 @@ export class SupabaseResumableWebAnswerBudgetRepository implements WebAnswerPhas
     return ResumableWebAnswerBudgetStateSchema.parse(data);
   }
 
+  async pause(input: Parameters<WebAnswerPhaseReservationPort["pause"]>[0]): Promise<void> {
+    await this.transition(input.previousState, input.nextState);
+  }
+
   async authorizeIncrease(previous: ResumableWebAnswerBudgetState, authorizationId: string,
     additionalPoints: number, next: ResumableWebAnswerBudgetState): Promise<ResumableWebAnswerBudgetState> {
     const { data, error } = await this.client.rpc("authorize_grant_web_answer_budget_increase", {

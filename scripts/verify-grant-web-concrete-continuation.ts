@@ -23,6 +23,7 @@ const auditedQueries: string[] = [];
 let searchNumber = 0;
 let storedCheckpoint: unknown;
 const coordinator = new ResumableWebAnswerBudgetCoordinator({
+  async pause() { calls.push("pause"); },
   async reserve() { calls.push("reserve"); },
   async settle(input) { calls.push("settle"); storedCheckpoint = input.checkpointArtifact; },
   async release() { calls.push("release"); },

@@ -24,7 +24,8 @@ const increased = await commands.increase({ state, command: { budgetId: state.bu
   expectedVersion: state.version, authorizationId: randomUUID(), additionalPoints: 10 } });
 assert.equal(increased.authorizedPoints, 30);
 await assert.rejects(() => commands.increase({ state, command: { budgetId: state.budgetId,
-  expectedVersion: state.version - 1, authorizationId: randomUUID(), additionalPoints: 10 } }), /stale/u);
+  expectedVersion: state.version - 1, authorizationId: randomUUID(), additionalPoints: 10 } }),
+{ name: "GrantWebBudgetCommandError", code: "grant_web_budget_stale" });
 
 const checkpoint: GrantWebResumableCheckpoint = { schemaVersion: 1, documentId: state.documentId,
   turnId: state.turnId, assistantSessionId: randomUUID(), question: "What changed?", sourceRevision: 1,

@@ -35,7 +35,13 @@ assert.equal(admitResumableWebAnswerPhase({ state, phaseId: execution2, envelope
 
 let calls = 0;
 let reservations = 0;
+let pauses = 0;
 const coordinator = new ResumableWebAnswerBudgetCoordinator({
+  async pause({ previousState, nextState }) {
+    pauses += 1;
+    assert.equal(nextState.version, previousState.version + 1);
+    assert.equal(nextState.status, "awaiting_budget");
+  },
   async reserve() { reservations += 1; },
   async settle() {},
   async release() {},
@@ -46,6 +52,7 @@ const blocked = await coordinator.executePhase({ state: paused.state, phaseId: r
   invoke: async () => { calls += 1; return { value: "must not execute", chargedPoints: 1 }; },
 });
 assert.equal(blocked.status, "awaiting_budget");
+assert.equal(pauses, 1, "a budget pause must be persisted before it is returned to the client");
 assert.equal(calls, 0, "budget rejection must happen before provider invocation");
 assert.equal(reservations, 0, "budget rejection must happen before ledger reservation");
 
@@ -75,6 +82,7 @@ assert.throws(() => authorizeResumableWebAnswerBudgetIncrease({ state: increased
 
 let invalidSettlementCalls = 0;
 const validationCoordinator = new ResumableWebAnswerBudgetCoordinator({
+  async pause() {},
   async reserve() {},
   async settle() { invalidSettlementCalls += 1; },
   async release() {},

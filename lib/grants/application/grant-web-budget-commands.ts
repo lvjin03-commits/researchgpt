@@ -22,6 +22,15 @@ export const GrantWebAnswerStartSchema = z.object({
   authorizationFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
 }).strict();
 
+export class GrantWebBudgetCommandError extends Error {
+  readonly code: "grant_web_budget_stale";
+  constructor() {
+    super("联网预算状态已经更新，请按最新状态继续。");
+    this.name = "GrantWebBudgetCommandError";
+    this.code = "grant_web_budget_stale";
+  }
+}
+
 export interface GrantWebBudgetCommandRepository {
   create(state: ResumableWebAnswerBudgetState,
     checkpoint: GrantWebResumableCheckpoint): Promise<ResumableWebAnswerBudgetState>;
@@ -144,7 +153,7 @@ export class GrantWebBudgetCommandService {
   }
 
   private assertCurrent(state: ResumableWebAnswerBudgetState, budgetId: string, expectedVersion: number) {
-    if (state.budgetId !== budgetId || state.version !== expectedVersion) throw new Error("Grant web budget command is stale.");
+    if (state.budgetId !== budgetId || state.version !== expectedVersion) throw new GrantWebBudgetCommandError();
   }
 
   async resume(input: { state: ResumableWebAnswerBudgetState; checkpoint: GrantWebResumableCheckpoint;
