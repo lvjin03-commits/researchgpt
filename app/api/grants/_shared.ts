@@ -36,6 +36,7 @@ import { GrantAiEditSessionError } from "@/lib/grants/application/grant-ai-edit-
 import { GrantWebSourceError } from "@/lib/grants/application/grant-web-source-service";
 import { GrantAssistantChatError } from "@/lib/grants/application/grant-assistant-chat-service";
 import { GrantWebBudgetCommandError } from "@/lib/grants/application/grant-web-budget-commands";
+import { GrantWebContinuationError } from "@/lib/grants/application/grant-web-concrete-continuation-executor";
 import { GrantCandidateDiffError } from "@/lib/grants/application/grant-candidate-diff-service";
 import { GrantModelExecutionError } from "@/lib/grants/application/grant-model-executor";
 import {
@@ -91,6 +92,11 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof GrantWebBudgetCommandError) {
     return Response.json({ error: error.message, code: error.code }, { status: 409 });
+  }
+  if (error instanceof GrantWebContinuationError) {
+    const status = error.code === "grant_web_no_results" || error.code === "grant_web_no_relevant_sources"
+      ? 422 : error.code === "grant_web_state_invalid" ? 409 : 503;
+    return Response.json({ error: error.message, code: error.code }, { status });
   }
   if (error instanceof GrantModelExecutionError) {
     const message = error.category === "provider_rate_limited"
@@ -186,6 +192,14 @@ export function grantApiError(error: unknown, operation: string): Response {
   }
   if (error instanceof ZodError) {
     return Response.json({ error: "请求中的文档结构不合法。", code: "invalid_grant_request", issues: error.issues }, { status: 400 });
+  }
+  if (operation === "grant_assistant_chat" || operation === "increase_grant_web_budget" ||
+    operation === "deliver_existing_grant_web_results") {
+    console.error("[grant-api] assistant turn failed", { operation, error });
+    return Response.json({
+      error: "本次 AI 回答没有完成，申请书和已保存内容不受影响。请重试；若开启了联网补充，也可关闭后继续提问。",
+      code: "grant_assistant_turn_unavailable",
+    }, { status: 503 });
   }
   console.error("[grant-api]", { operation, error });
   return Response.json({ error: "申请书服务暂时不可用。", code: "grant_service_unavailable" }, { status: 500 });

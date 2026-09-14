@@ -39,6 +39,16 @@ export type GrantWebContinuationContext = Readonly<{
   authorizationFingerprint: string;
 }>;
 
+export class GrantWebContinuationError extends Error {
+  readonly code: "grant_web_no_results" | "grant_web_no_relevant_sources" |
+    "grant_web_state_invalid" | "grant_web_pricing_unavailable";
+  constructor(code: GrantWebContinuationError["code"], message: string) {
+    super(message);
+    this.name = "GrantWebContinuationError";
+    this.code = code;
+  }
+}
+
 export interface GrantWebContinuationContextLoader {
   load(checkpoint: GrantWebResumableCheckpoint): Promise<GrantWebContinuationContext>;
 }
@@ -151,7 +161,9 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
     input: Parameters<GrantWebContinuationStepExecutor["execute"]>[0]; checkpoint: GrantWebResumableCheckpoint;
     context: GrantWebContinuationContext; phaseId: string;
   }): Promise<GrantWebContinuationStepResult> {
-    if (!input.checkpoint.query) throw new Error("Search requires a saved query rewrite.");
+    if (!input.checkpoint.query) {
+      throw new GrantWebContinuationError("grant_web_state_invalid", "联网任务状态已失效，请重新发起检索。");
+    }
     const operationKey = "search_query" as const;
     const policy = getGrantWebBudgetOperationPolicy(operationKey);
     const quote = await this.quote(operationKey, [
@@ -183,7 +195,9 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
           searches.push(search);
         }
         const completed = searches.filter((search) => search.status === "completed");
-        if (completed.length === 0) throw new Error("The structured academic searches returned no abstracts.");
+        if (completed.length === 0) {
+          throw new GrantWebContinuationError("grant_web_no_results", "本次没有检索到可用的学术摘要，请调整问题后重试。");
+        }
         const seen = new Set<string>();
         const sources = completed.flatMap((search) => search.sources).filter((source) => {
           const identity = source.providerRecordId ?? source.canonicalUrl;
@@ -250,14 +264,18 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
     const operation = getGrantWebBudgetOperationPolicy(operationKey).operation;
     const policy = await this.dependencies.prices.getPolicy({ operation, provider: "openai",
       modelId: this.dependencies.configuredGrantModelId, at: this.now() });
-    if (!policy) throw new Error(`No active price policy for ${operation}.`);
+    if (!policy) {
+      throw new GrantWebContinuationError("grant_web_pricing_unavailable", "联网问答计费配置暂时不可用，未继续产生费用。");
+    }
     return { operation, pricePolicyVersion: policy.policyVersion,
       maximumChargePoints: calculateUsagePrice({ policy, usage: maximumUsage }).points };
   }
 
   private async actualCharge(policyVersion: string, usage: StandardizedBillableUsage[]) {
     const policy = await this.dependencies.prices.getPolicyByVersion(policyVersion);
-    if (!policy) throw new Error("Frozen Grant web price policy is unavailable.");
+    if (!policy) {
+      throw new GrantWebContinuationError("grant_web_pricing_unavailable", "联网问答计费配置暂时不可用，未继续产生费用。");
+    }
     return calculateUsagePrice({ policy, usage }).points;
   }
 
@@ -274,13 +292,15 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
     const nextCheckpoint = result.value && typeof result.value === "object" && "checkpoint" in result.value
       ? (result.value as { checkpoint: GrantWebResumableCheckpoint }).checkpoint : undefined;
     if (!nextCheckpoint) {
-      throw new Error("A completed Grant web phase must expose its checkpoint artifact.");
+      throw new GrantWebContinuationError("grant_web_state_invalid", "联网任务状态已失效，请重新发起检索。");
     }
     return { status: "advanced", state: result.state, checkpoint: nextCheckpoint };
   }
 
   private requireSources(checkpoint: GrantWebResumableCheckpoint) {
-    if (!checkpoint.search?.sources.length) throw new Error("Grant web phase requires saved search results.");
+    if (!checkpoint.search?.sources.length) {
+      throw new GrantWebContinuationError("grant_web_state_invalid", "联网任务没有可恢复的检索结果，请重新发起检索。");
+    }
     return checkpoint.search.sources;
   }
 
@@ -290,7 +310,9 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
     const recommended = new Set(checkpoint.assessment.assessments
       .filter((item) => item.disposition === "recommended").map((item) => item.sourceId));
     const selected = sources.filter((source) => recommended.has(source.sourceId));
-    if (selected.length === 0) throw new Error("No recommended Grant web sources are available.");
+    if (selected.length === 0) {
+      throw new GrantWebContinuationError("grant_web_no_relevant_sources", "检索结果与当前问题的相关性不足，请换一种问法后重试。");
+    }
     return selected;
   }
 

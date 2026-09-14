@@ -208,6 +208,7 @@ assert.match(sidebarSource, /国自然申请书/);
 const documentListSource = await readFile(new URL("../components/grants/grant-document-list.tsx", import.meta.url), "utf8");
 const previewRouteSource = await readFile(new URL("../app/api/grants/imports/preview/route.ts", import.meta.url), "utf8");
 const confirmRouteSource = await readFile(new URL("../app/api/grants/imports/confirm/route.ts", import.meta.url), "utf8");
+const grantApiErrorSource = await readFile(new URL("../app/api/grants/_shared.ts", import.meta.url), "utf8");
 assert.match(documentListSource, /上传 Word 初稿/);
 assert.match(documentListSource, /先解析并核对章节和表格，确认后才创建正式申请书/);
 assert.match(documentListSource, /确认导入并开始编辑/);
@@ -217,6 +218,10 @@ assert.match(documentListSource, /aria-label=\{`删除申请书/);
 assert.match(previewRouteSource, /docxImporter\.preview/);
 assert.doesNotMatch(previewRouteSource, /createDocument|importDocument/);
 assert.match(confirmRouteSource, /docxImporter\.confirm/);
+assert.match(grantApiErrorSource, /grant_web_no_results/);
+assert.match(grantApiErrorSource, /grant_web_no_relevant_sources/);
+assert.match(grantApiErrorSource, /grant_assistant_turn_unavailable/);
+assert.match(grantApiErrorSource, /申请书和已保存内容不受影响/);
 
 console.log("Grant three-pane workspace contracts passed.");
 
