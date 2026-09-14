@@ -24,6 +24,18 @@ sections without dropping coverage and flags a section that still needs finer
 subdivision. This step does not dispatch a model or replace the active six-node
 assistant retrieval path.
 
+## Step 3 scope
+
+Add the hierarchical analysis executor and its model port. Oversized sections
+are split at canonical node boundaries; a single oversized node is divided into
+lossless Unicode fragments that retain its program-issued source alias. The
+executor analyzes every unit, rejects model references outside that unit, then
+synthesizes only after proving complete section and source coverage. If the
+intermediate analyses exceed synthesis capacity, execution fails explicitly so
+a later reduction stage can be authorized; no analysis is silently discarded.
+The OpenAI adapter, unified Model Executor registration, billing, persistence and
+assistant routing remain Step 4 integration work.
+
 ## Ownership and invariants
 
 - The Grant Document Repository and Revision Service remain authoritative for
@@ -38,9 +50,9 @@ assistant retrieval path.
 
 ## Follow-up and rollback
 
-Step 3 will execute hierarchical analysis and define subdivision for oversized
-sections. Until that is implemented and later connected through the Model Data
-Gateway, existing assistant retrieval behavior remains active. Rollback removes
+Step 4 will connect the executor through the Model Data Gateway, registered model
+operations, billing and assistant routing. Until that integration is complete,
+existing assistant retrieval behavior remains active. Rollback removes
 the unused projection, capacity router, tokenizer dependency and their tests;
 canonical data is unchanged.
 
