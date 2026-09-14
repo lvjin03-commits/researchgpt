@@ -378,6 +378,21 @@ declare whether existing design was found. `found` requires resolved application
 locations; `not_found` requires none; `unable_to_verify` must agree with the
 overall disposition. A found design must state why it remains insufficient.
 
+Each located existing design separates `coverageLevel` (mentioned, planned,
+preliminary result or completed result) from `verificationStatus` (document
+statement, visible data/figure, linked publication, independent verification or
+unable to verify). Its `supportBoundary` explicitly lists what the located
+material directly supports, indirectly supports and does not support. A model
+cannot promote a planned experiment or a performance figure into completed
+mechanistic proof.
+
+Research-gap comparison also returns bounded scope signals. The program-owned
+Grant Research Scope Decision Policy derives relevance, scope impact and final
+disposition. Adjacent candidates and major scope expansions are rejected;
+direct, bounded residual gaps may become main suggestions. Rejected candidates
+retain an audit summary, related source identity and deterministic rejection
+reason so absence from the answer is distinguishable from failed retrieval.
+
 Research query planning returns three to five ordered, distinct candidates with
 execution-local references and one controlled dimension each. The program
 replaces those references with internal UUIDs and requires recent-review,

@@ -4,6 +4,11 @@ import {
   GrantScientificEvidenceTierV1Schema,
 } from "../diagnostics/semantic-review-v6-contracts.ts";
 import type { GrantResearchSourceAssessmentView } from "./research-source-assessment.ts";
+import {
+  decideGrantResearchSuggestionScope,
+  GrantResearchScopeSignalsSchema,
+  type GrantResearchScopeDecision,
+} from "./research-scope-decision.ts";
 
 const BoundedTextSchema = z.string().trim().min(1).max(2000);
 
@@ -16,6 +21,13 @@ export const GrantResearchGapComparisonProviderV1Schema = z.object({
       locationRef: z.string().trim().min(1).max(100),
       summary: z.string().trim().min(1).max(1200),
       evidenceTier: GrantScientificEvidenceTierV1Schema,
+      coverageLevel: z.enum(["mentioned", "planned", "preliminary_result", "completed_result"]),
+      verificationStatus: z.enum(["document_statement_only", "data_or_figure_present", "published_source_linked", "independently_verified", "unable_to_verify"]),
+      supportBoundary: z.object({
+        directlySupports: z.array(BoundedTextSchema).max(10),
+        indirectlySupports: z.array(BoundedTextSchema).max(10),
+        doesNotSupport: z.array(BoundedTextSchema).max(10),
+      }).strict(),
     }).strict()).max(6),
     disposition: GrantFactMapCoverageDispositionV1Schema,
     residualGap: BoundedTextSchema.nullable(),
@@ -26,6 +38,7 @@ export const GrantResearchGapComparisonProviderV1Schema = z.object({
       "ambiguous_application_mapping",
       "source_evidence_insufficient",
     ]).nullable(),
+    scopeSignals: GrantResearchScopeSignalsSchema,
   }).strict()).max(25),
 }).strict();
 
@@ -37,6 +50,9 @@ export type GrantResearchGapComparison = {
     nodeId: string;
     summary: string;
     evidenceTier: z.infer<typeof GrantScientificEvidenceTierV1Schema>;
+    coverageLevel: "mentioned" | "planned" | "preliminary_result" | "completed_result";
+    verificationStatus: "document_statement_only" | "data_or_figure_present" | "published_source_linked" | "independently_verified" | "unable_to_verify";
+    supportBoundary: { directlySupports: string[]; indirectlySupports: string[]; doesNotSupport: string[] };
   }>;
   latestDevelopment: Pick<GrantResearchSourceAssessmentView,
     "mechanismSummary" | "quantitativeFindings" | "applicationRelation" | "evidenceLimitations"
@@ -47,6 +63,12 @@ export type GrantResearchGapComparison = {
   recommendation: string | null;
   unableToVerifyReason: "insufficient_application_context" | "ambiguous_application_mapping"
     | "source_evidence_insufficient" | null;
+  scopeDecision: GrantResearchScopeDecision;
+  rejectedSuggestion: {
+    candidateSummary: string;
+    relatedSourceIds: string[];
+    rejectionReason: "already_covered" | "adjacent_topic" | "major_scope_expansion";
+  } | null;
 };
 
 export function assembleGrantResearchGapComparisons(input: {
@@ -98,9 +120,26 @@ export function assembleGrantResearchGapComparisons(input: {
       const key = `${location.sectionId}:${location.nodeId}`;
       if (seenLocations.has(key)) throw new Error("Existing-design locations must be unique.");
       seenLocations.add(key);
-      return { ...location, summary: design.summary, evidenceTier: design.evidenceTier };
+      return { ...location, summary: design.summary, evidenceTier: design.evidenceTier,
+        coverageLevel: design.coverageLevel, verificationStatus: design.verificationStatus,
+        supportBoundary: design.supportBoundary };
     });
     const assessment = recommended.get(comparison.sourceGroupId)!;
+    const calculatedScope = decideGrantResearchSuggestionScope(comparison.scopeSignals);
+    const scopeDecision: GrantResearchScopeDecision = comparison.disposition === "verified_no_residual_gap"
+      ? { finalDecision: "reject", relevance: calculatedScope.relevance,
+        scopeImpact: calculatedScope.scopeImpact, rejectionReason: null }
+      : comparison.disposition === "unable_to_verify"
+        ? { finalDecision: "reject", relevance: calculatedScope.relevance,
+          scopeImpact: calculatedScope.scopeImpact, rejectionReason: null }
+        : calculatedScope;
+    const rejectionReason = comparison.disposition === "verified_no_residual_gap" ? "already_covered" as const
+      : scopeDecision.rejectionReason;
+    const rejectedSuggestion = scopeDecision.finalDecision === "reject" && rejectionReason
+      ? { candidateSummary: comparison.recommendation ?? assessment.applicationRelation
+          ?? assessment.mechanismSummary ?? comparison.sourceGroupId,
+        relatedSourceIds: [assessment.primarySourceId], rejectionReason }
+      : null;
     return {
       sourceGroupId: comparison.sourceGroupId,
       existingDesignStatus: comparison.existingDesignStatus,
@@ -119,6 +158,8 @@ export function assembleGrantResearchGapComparisons(input: {
       reasonExistingDesignIsInsufficient: comparison.reasonExistingDesignIsInsufficient,
       recommendation: comparison.recommendation,
       unableToVerifyReason: comparison.unableToVerifyReason,
+      scopeDecision,
+      rejectedSuggestion,
     };
   });
 }

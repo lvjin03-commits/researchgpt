@@ -129,6 +129,7 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | Web-grounded turn phase admission and pause/resume | Resumable Web-answer Budget Coordinator | Every paid call requires prior user authorization and atomic budget admission; model and UI cannot authorize spend |
 | Academic paper metadata and abstracts for research-task search | Structured Academic Source Provider | General-web citation context, models and UI cannot manufacture or relabel bibliographic facts |
 | Cross-provider source normalization, provenance-preserving deduplication and ordering | Grant Web Source Acquisition Service | Individual Providers and synthesis models cannot merge or overwrite source provenance |
+| Research suggestion relevance and scope disposition | Grant Research Scope Decision Policy | Models propose bounded signals; models and renderers cannot promote adjacent or scope-expanding candidates |
 
 When Patch Commit Service and Revision Service disagree, Revision Service owns
 the final write decision. Patch validation success never overrides a stale base
