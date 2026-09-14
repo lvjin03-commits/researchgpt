@@ -6,20 +6,26 @@ import { buildGrantFullDocumentContext } from "../lib/grants/application/grant-f
 import { CanonicalGrantSnapshotSchema } from "../lib/grants/domain/contracts.ts";
 import { TiktokenGrantTokenCounter } from "../lib/grants/infrastructure/model/tiktoken-grant-token-counter.ts";
 import type { GrantFullDocumentAnalysisModel } from "../lib/grants/ports/grant-full-document-analysis-model.ts";
+import { requestsFullGrantDocumentAnalysis } from "../lib/grants/assistant/full-document-intent.ts";
+import { GrantModelDataGateway } from "../lib/grants/application/grant-model-data-gateway.ts";
+
+assert.equal(requestsFullGrantDocumentAnalysis("请从整体上评价整篇申请书"), true);
+assert.equal(requestsFullGrantDocumentAnalysis("你对这篇申请书有什么评价和修改意见？"), true);
+assert.equal(requestsFullGrantDocumentAnalysis("解释一下这一段"), false);
 
 const firstSectionId = randomUUID();
 const secondSectionId = randomUUID();
 const longNodeId = randomUUID();
 const shortNodeId = randomUUID();
-const context = buildGrantFullDocumentContext({ documentId: randomUUID(), sourceRevisionId: randomUUID(),
-  snapshot: CanonicalGrantSnapshotSchema.parse({ schemaVersion: "grant-canonical-v1", title: "全文分析测试",
+const snapshot = CanonicalGrantSnapshotSchema.parse({ schemaVersion: "grant-canonical-v1", title: "全文分析测试",
     sections: [
       { sectionId: firstSectionId, semanticRole: "rationale", title: "立项依据", order: 0, nodeIds: [longNodeId] },
       { sectionId: secondSectionId, semanticRole: "plan", title: "研究方案", order: 1, nodeIds: [shortNodeId] },
     ], nodes: [
       { nodeId: longNodeId, sectionId: firstSectionId, order: 0, nodeType: "paragraph", content: { text: "长段落科学问题与研究依据。".repeat(400) } },
       { nodeId: shortNodeId, sectionId: secondSectionId, order: 0, nodeType: "paragraph", content: { text: "研究方案正文。".repeat(20) } },
-    ] }) });
+    ] });
+const context = buildGrantFullDocumentContext({ documentId: randomUUID(), sourceRevisionId: randomUUID(), snapshot });
 const tokenCounter = new TiktokenGrantTokenCounter();
 const route = routeGrantFullDocumentContext({ context, tokenCounter, fixedPromptText: "分析问题",
   policy: { policyVersion: "hierarchical-test-v1", contextWindowTokens: 500, maximumInputTokens: 420,
@@ -31,11 +37,12 @@ const analyzedUnitIds: string[] = [];
 const model: GrantFullDocumentAnalysisModel = {
   async analyzeUnit(input) {
     analyzedUnitIds.push(input.unitId);
-    return { summary: `已分析 ${input.unitId}`, findings: input.allowedSourceAliases.length > 0
-      ? [{ statement: "分块结论", sourceAliases: [input.allowedSourceAliases[0]!] }] : [] };
+    return { summary: `已分析 ${input.unitId}`, provider: "openai", modelId: "test-model",
+      findings: input.allowedSourceAliases.length > 0
+        ? [{ statement: "分块结论", sourceAliases: [input.allowedSourceAliases[0]!] }] : [] };
   },
   async synthesize(input) {
-    return { content: "完整申请书综合分析", claims: [{ statement: "全文结论",
+    return { content: "完整申请书综合分析", provider: "openai", modelId: "test-model", claims: [{ statement: "全文结论",
       sourceAliases: [...new Set(input.analyses.flatMap((analysis) =>
         analysis.findings.flatMap((finding) => finding.sourceAliases)))] }] };
   },
@@ -51,13 +58,46 @@ assert.ok(result.units.every((unit) => unit.tokenCount <= route.capacity.availab
 assert.ok(result.units.filter((unit) => unit.sourceAliases.includes("D1")).length > 1);
 assert.equal(result.answer.content, "完整申请书综合分析");
 assert.match(result.executionHash, /^[a-f0-9]{64}$/);
+assert.equal(result.modelId, "test-model");
 
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
   question: "评价整篇申请书", synthesisMaximumInputTokens: 10_000, model: { ...model,
-    async analyzeUnit() { return { summary: "错误引用", findings: [{ statement: "错误", sourceAliases: ["D999"] }] }; } } }),
+    async analyzeUnit() { return { summary: "错误引用", provider: "openai", modelId: "test-model",
+      findings: [{ statement: "错误", sourceAliases: ["D999"] }] }; } } }),
   /unavailable source alias/);
 
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter, model,
   question: "评价整篇申请书", synthesisMaximumInputTokens: 1 }), /reduction stage is required/);
+
+let singlePassCalls = 0;
+const gateway = new GrantModelDataGateway({
+  generate: async () => { throw new Error("not used"); },
+  ...model,
+  async answerChat(request) {
+    singlePassCalls += 1;
+    assert.ok(request.admittedContext.some((item) => item.sourceAlias === "DOCSTRUCTURE"));
+    assert.deepEqual(request.admittedContext.filter((item) => /^D\d+$/u.test(item.sourceAlias))
+      .map((item) => item.sourceAlias), ["D1", "D2"]);
+    return { content: "单次完整分析", claims: [{ claimId: "C1", statement: "全文结论", citationIds: ["X1"] }],
+      citations: [{ citationId: "X1", sourceAlias: "D1" }], provider: "openai" as const,
+      modelId: "test-model", usage: { inputTokens: 100, outputTokens: 20, reasoningTokens: 2 } };
+  },
+}, undefined, undefined, undefined, tokenCounter);
+const gatewayResult = await gateway.answerFullDocumentAssistantChat({ documentId: context.documentId,
+  sourceRevisionId: context.sourceRevisionId, snapshot, messages: [{ role: "user", content: "整体评价整篇申请书" }],
+  attemptPurpose: "initial", capacityPolicy: { policyVersion: "gateway-full-v1", contextWindowTokens: 20_000,
+    maximumInputTokens: 16_000, reservedOutputTokens: 2_000, protocolOverheadTokens: 100, safetyMarginTokens: 500 } });
+assert.equal(singlePassCalls, 1);
+assert.equal(gatewayResult.fullDocument.mode, "single_pass");
+assert.equal(gatewayResult.fullDocument.coverage.complete, true);
+
+const hierarchicalGatewayResult = await gateway.answerFullDocumentAssistantChat({ documentId: context.documentId,
+  sourceRevisionId: context.sourceRevisionId, snapshot, messages: [{ role: "user", content: "评价整篇申请书" }],
+  attemptPurpose: "initial", capacityPolicy: { policyVersion: "gateway-hierarchical-v1", contextWindowTokens: 4_000,
+    maximumInputTokens: 3_000, reservedOutputTokens: 500, protocolOverheadTokens: 100, safetyMarginTokens: 200 } });
+assert.equal(hierarchicalGatewayResult.fullDocument.mode, "hierarchical");
+assert.equal(hierarchicalGatewayResult.fullDocument.coverage.complete, true);
+assert.ok(hierarchicalGatewayResult.fullDocument.unitCount > 1);
+assert.equal(hierarchicalGatewayResult.modelId, "test-model");
 
 console.log("Grant hierarchical full-document analysis covers every section and source without truncation.");

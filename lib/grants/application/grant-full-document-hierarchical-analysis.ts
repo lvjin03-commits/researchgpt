@@ -25,6 +25,10 @@ export type GrantFullDocumentHierarchicalAnalysisResult = {
   answer: GrantFullDocumentAnalysisAnswer;
   units: Array<GrantFullDocumentAnalysisUnit & { analysis: GrantFullDocumentUnitAnalysis }>;
   coverage: { sectionAliases: string[]; sourceAliases: string[]; complete: true };
+  providerRequestIds: string[];
+  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  provider: "openai";
+  modelId: string;
 };
 
 export class GrantFullDocumentAnalysisError extends Error {
@@ -168,16 +172,27 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
   const units = buildGrantFullDocumentAnalysisUnits(input);
   const documentLanguage = /[\u3400-\u9fff]/u.test(input.context.title + input.question) ? "zh" : "en";
   const analyzed = [] as GrantFullDocumentHierarchicalAnalysisResult["units"];
+  const providerRequestIds: string[] = [];
+  const usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+  const addMetadata = (result: { providerRequestId?: string; usage?: {
+    inputTokens?: number; outputTokens?: number; reasoningTokens?: number } }) => {
+    if (result.providerRequestId) providerRequestIds.push(result.providerRequestId);
+    usage.inputTokens += result.usage?.inputTokens ?? 0;
+    usage.outputTokens += result.usage?.outputTokens ?? 0;
+    usage.reasoningTokens += result.usage?.reasoningTokens ?? 0;
+  };
   for (const unit of units) {
     const analysis = await input.model.analyzeUnit({ documentLanguage, question: input.question,
       contextHash: input.context.contextHash, unitId: unit.unitId, modelText: unit.modelText,
       allowedSourceAliases: unit.sourceAliases });
     const allowed = new Set(unit.sourceAliases);
     validateUnitAnalysis(analysis, allowed);
+    addMetadata(analysis);
     analyzed.push({ ...unit, analysis });
   }
   const synthesisPayload = { question: input.question, contextHash: input.context.contextHash,
-    analyses: analyzed.map(({ unitId, analysis }) => ({ unitId, ...analysis })) };
+    analyses: analyzed.map(({ unitId, analysis }) => ({ unitId, summary: analysis.summary,
+      findings: analysis.findings })) };
   if (input.tokenCounter.count(JSON.stringify(synthesisPayload)) > input.synthesisMaximumInputTokens) {
     throw new GrantFullDocumentAnalysisError("synthesis_capacity_exceeded",
       "Complete unit analyses exceed the synthesis input budget; a reduction stage is required.");
@@ -189,12 +204,20 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
   if (!answer.content.trim() || answer.claims.some((claim) => !claim.statement.trim())) {
     throw new GrantFullDocumentAnalysisError("invalid_source_reference", "Model synthesis returned empty required content.");
   }
+  addMetadata(answer);
+  const modelIds = new Set([...analyzed.map((unit) => unit.analysis.modelId), answer.modelId].filter(Boolean));
+  if (answer.provider !== "openai" || analyzed.some((unit) => unit.analysis.provider !== "openai") || modelIds.size !== 1) {
+    throw new GrantFullDocumentAnalysisError("invalid_source_reference", "Hierarchical analysis model identity is inconsistent.");
+  }
   answer.claims.forEach((claim) => validateReferences(claim.sourceAliases, allAliases));
   const coveredSectionAliases = [...new Set(analyzed.flatMap((unit) => unit.sectionAliases))];
   const coveredSourceAliases = [...new Set(analyzed.flatMap((unit) => unit.sourceAliases))];
   return { schemaVersion: "grant-full-document-hierarchical-analysis-v1", documentId: input.context.documentId,
     sourceRevisionId: input.context.sourceRevisionId, contextHash: input.context.contextHash,
     executionHash: sha256Canonical({ contextHash: input.context.contextHash, question: input.question,
-      units: analyzed, answer }), answer, units: analyzed,
-    coverage: { sectionAliases: coveredSectionAliases, sourceAliases: coveredSourceAliases, complete: true } };
+      units: analyzed.map(({ unitId, sectionAliases, sourceAliases, modelText, analysis }) => ({
+        unitId, sectionAliases, sourceAliases, modelText, summary: analysis.summary, findings: analysis.findings })),
+      answer: { content: answer.content, claims: answer.claims } }), answer, units: analyzed,
+    coverage: { sectionAliases: coveredSectionAliases, sourceAliases: coveredSourceAliases, complete: true },
+    providerRequestIds, usage, provider: "openai", modelId: [...modelIds][0]! };
 }

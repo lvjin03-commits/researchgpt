@@ -36,6 +36,18 @@ a later reduction stage can be authorized; no analysis is silently discarded.
 The OpenAI adapter, unified Model Executor registration, billing, persistence and
 assistant routing remain Step 4 integration work.
 
+## Step 4 scope
+
+Connect explicit whole-application questions to the complete-context authority
+through `GrantAssistantChatService` and `GrantModelDataGateway`. A deterministic
+intent boundary selects whole-document context only for unscoped, non-web chat;
+explicit selections, Candidates, Evidence and web search keep their existing
+owners. Single-pass analysis sends every canonical node plus the complete section
+outline. Hierarchical analysis uses the Step 3 executor and the OpenAI adapter's
+structured unit/synthesis contracts. The existing `grant.assistant.chat`
+Operation, retry ceiling, model-call repository and usage observer remain the
+sole execution and billing path; no parallel route or Operation is introduced.
+
 ## Ownership and invariants
 
 - The Grant Document Repository and Revision Service remain authoritative for
@@ -50,9 +62,9 @@ assistant routing remain Step 4 integration work.
 
 ## Follow-up and rollback
 
-Step 4 will connect the executor through the Model Data Gateway, registered model
-operations, billing and assistant routing. Until that integration is complete,
-existing assistant retrieval behavior remains active. Rollback removes
+Step 5 will extend complete-document grounding to web-assisted turns and expose
+coverage metadata in the UI before production effect verification. Narrow chat
+continues using retrieval. Rollback removes
 the unused projection, capacity router, tokenizer dependency and their tests;
 canonical data is unchanged.
 

@@ -16,6 +16,7 @@ import { prepareGrantCandidateAnalysis } from "../edit-session/candidate-analysi
 import { grantAssistantCacheKey, grantCandidateRecommendedQuestions } from "../assistant/chat-intelligence.ts";
 import { retrieveGrantDocumentBlocks } from "./grant-document-retriever.ts";
 import type { GrantWebGroundedChatOrchestrator, GrantWebGroundedChatResult } from "./grant-web-grounded-chat-orchestrator.ts";
+import { requestsFullGrantDocumentAnalysis } from "../assistant/full-document-intent.ts";
 
 type GrantAssistantWebRuntime = {
   getBillingPreview?: () => Promise<unknown>;
@@ -40,7 +41,8 @@ export class GrantAssistantChatError extends Error {
 export class GrantAssistantChatService {
   private readonly dependencies: {
     revisionService: Pick<GrantRevisionService, "getDocument" | "getRevision">;
-    modelGateway: Pick<GrantModelDataGateway, "answerAssistantChat" | "validateAssistantDocumentSelections" | "prepareWebGroundingContext">;
+    modelGateway: Pick<GrantModelDataGateway, "answerAssistantChat" | "answerFullDocumentAssistantChat" |
+      "validateAssistantDocumentSelections" | "prepareWebGroundingContext">;
     modelExecutor: GrantModelExecutor;
     modelCalls: GrantModelCallRepository;
     configuredGrantModelId: string;
@@ -132,6 +134,11 @@ export class GrantAssistantChatService {
           (code, message) => new GrantAssistantChatError("grant_assistant_history_invalid", `${code}: ${message}`),
         )
       : null;
+    const fullDocumentRequested = requestsFullGrantDocumentAnalysis(question)
+      && !input.webSearch
+      && input.evidenceSourceIds.length === 0
+      && effectiveContextCards.length === 0
+      && !candidateAnalysis;
     this.dependencies.modelGateway.validateAssistantDocumentSelections({
       documentId: input.documentId,
       sourceRevisionId: input.expectedRevisionId,
@@ -249,7 +256,24 @@ export class GrantAssistantChatService {
       policy,
       classifyFailure: (error): GrantModelFailureCategory => error instanceof GrantAssistantModelError ? error.category : "provider_unavailable",
       invoke: async ({ attemptPurpose }) => {
-        const result = await this.dependencies.modelGateway.answerAssistantChat({
+        const result = fullDocumentRequested
+          ? await this.dependencies.modelGateway.answerFullDocumentAssistantChat({
+              documentId: input.documentId,
+              sourceRevisionId: input.expectedRevisionId,
+              snapshot: aggregate.currentRevision.snapshot,
+              messages,
+              attemptPurpose,
+              capacityPolicy: {
+                policyVersion: `${policy.policyVersion}:full-document-v1`,
+                contextWindowTokens: policy.executionLimits.maximumInputTokens
+                  + policy.executionLimits.maximumOutputTokens + 2_000,
+                maximumInputTokens: policy.executionLimits.maximumInputTokens,
+                reservedOutputTokens: policy.executionLimits.maximumOutputTokens,
+                protocolOverheadTokens: 800,
+                safetyMarginTokens: 1_000,
+              },
+            })
+          : await this.dependencies.modelGateway.answerAssistantChat({
           documentId: input.documentId,
           sourceRevisionId: input.expectedRevisionId,
           snapshot: aggregate.currentRevision.snapshot,
@@ -267,7 +291,7 @@ export class GrantAssistantChatService {
           evidenceSourceIds: input.evidenceSourceIds,
           taskId: input.turnId,
           attemptPurpose,
-        });
+          });
         const answer = validateGrantAssistantGroundedAnswer(result);
         return {
           value: { ...answer, provider: result.provider, modelId: result.modelId },

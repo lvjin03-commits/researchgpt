@@ -6,11 +6,19 @@ export type GrantFullDocumentAnalysisFinding = {
 export type GrantFullDocumentUnitAnalysis = {
   summary: string;
   findings: GrantFullDocumentAnalysisFinding[];
+  providerRequestId?: string;
+  usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
+  provider?: "openai";
+  modelId?: string;
 };
 
 export type GrantFullDocumentAnalysisAnswer = {
   content: string;
   claims: GrantFullDocumentAnalysisFinding[];
+  providerRequestId?: string;
+  usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
+  provider?: "openai";
+  modelId?: string;
 };
 
 export interface GrantFullDocumentAnalysisModel {

@@ -27,6 +27,7 @@ const sessions = {
   linkEditSession: async () => undefined,
 };
 let providerCalls = 0;
+let fullDocumentCalls = 0;
 let lastProviderMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
 let lastContextCardCount = 0;
 const revisions = {
@@ -36,6 +37,14 @@ const gateway = {
   validateAssistantDocumentSelections: () => [],
   prepareWebGroundingContext: () => ({ schemaVersion: 1 as const, documentId, sourceRevisionId: revisionId,
     documentLanguage: "zh" as const, applicationContext: "", contextHash: "c".repeat(64) }),
+  answerFullDocumentAssistantChat: async () => {
+    fullDocumentCalls += 1;
+    return { content: "这是基于完整申请书的整体分析。", claims: [{ claimId: "FC1", statement: "整体结论",
+      citationIds: ["FD1"] }], citations: [{ citationId: "FD1", sourceAlias: "D1" }],
+      admittedContext: [{ sourceAlias: "D1", sourceType: "document_selection" as const,
+        label: "完整申请书", excerpt: "全文" }], provider: "openai" as const, modelId: "gpt-test",
+      providerRequestId: "req_full", usage: { inputTokens: 20, outputTokens: 10, reasoningTokens: 1 } };
+  },
   answerAssistantChat: async (request: { attemptPurpose: string; messages: Array<{ role: "user" | "assistant"; content: string }>; contextCards: unknown[] }) => {
     providerCalls += 1;
     lastProviderMessages = request.messages;
@@ -95,6 +104,13 @@ await service.answer({ documentId, expectedRevisionId: revisionId, turnId: rando
 assert.equal(lastProviderMessages[0]?.content, "解释一下研究假设。");
 assert.equal(lastProviderMessages.at(-1)?.content, "继续解释第二个问题。");
 assert.equal(storedMessages.length, 4);
+
+const ordinaryCallsBeforeFullDocument = providerCalls;
+const fullDocumentResult = await service.answer({ documentId, expectedRevisionId: revisionId,
+  turnId: randomUUID(), message: "请从整体上评价整篇申请书。", contextCards: [], evidenceSourceIds: [] });
+assert.equal(fullDocumentCalls, 1, "explicit whole-document wording must use the full-document gateway path");
+assert.equal(providerCalls, ordinaryCallsBeforeFullDocument, "whole-document analysis must not fall back to six-block chat");
+assert.equal(fullDocumentResult.content, "这是基于完整申请书的整体分析。");
 
 const webResult = await service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(),
   message: "联网补充这一判断。", contextCards: [], evidenceSourceIds: [], webSearch: true });

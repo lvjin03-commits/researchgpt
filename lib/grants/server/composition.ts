@@ -68,6 +68,7 @@ import { sha256Canonical } from "../domain/canonical-json.ts";
 import { assembleGrantWebGroundedAnswer } from "../web-sources/grounded-answer-assembler.ts";
 import { OpenAlexStructuredAcademicProvider } from "../infrastructure/web/openalex-structured-academic-provider.ts";
 import { OpenAlexResearchSearchAdapter } from "../infrastructure/web/openalex-research-search-adapter.ts";
+import { TiktokenGrantTokenCounter } from "../infrastructure/model/tiktoken-grant-token-counter.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -119,6 +120,7 @@ function createGrantModelDataGateway(client: ReturnType<typeof createGrantSupaba
         new SupabaseGrantFigureAuthorizationRepository(client, ownerId),
       ),
       new SupabaseGrantFigureAssetReader(client),
+      new TiktokenGrantTokenCounter(),
     ),
   };
 }

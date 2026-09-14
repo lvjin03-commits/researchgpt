@@ -1,6 +1,6 @@
 # ADR 0056: Revision-bound full-document assistant context
 
-- Status: accepted, Steps 1-3 implemented
+- Status: accepted, Steps 1-4 implemented
 - Date: 2026-09-14
 - Owner: Grant Model Data Gateway
 
@@ -26,6 +26,13 @@ the program never drops intermediate results to force a response. The Grant Mode
 responsible for provider admission. Keyword retrieval may
 select emphasis, but it cannot be represented as whole-document coverage.
 
+Explicit whole-application questions in ordinary Grant Assistant chat now route
+through this authority. The visible user action and billable Operation remain
+`grant.assistant.chat`; its unified executor records the aggregate usage of the
+single-pass or hierarchical provider work. Explicit selection, Candidate,
+Evidence and web-search turns retain their established authorities and cannot be
+silently reinterpreted as whole-document analysis.
+
 ## Consequences
 
 - Full coverage becomes programmatically testable before any provider call.
@@ -33,8 +40,8 @@ select emphasis, but it cannot be represented as whole-document coverage.
 - Capacity decisions carry their tokenizer and policy versions for auditability.
 - Exact token counts apply to assembled text; protocol and safety reservations
   remain explicit policy inputs rather than hidden estimates.
-- Hierarchical execution carries a deterministic execution fingerprint and
+- Hierarchical execution carries a content-derived execution fingerprint and
   explicit section/source coverage evidence.
-- Current six-node chat retrieval is unchanged until the later routing step.
+- Narrow ordinary chat retains the existing six-node retrieval path.
 - Figure bytes, Evidence Cards, Patch authority and Revision writes are unchanged.
 
