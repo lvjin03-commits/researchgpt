@@ -33,6 +33,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   const [lastChargedPoints, setLastChargedPoints] = useState<number | null>(null);
   const [webBudgetPoints, setWebBudgetPoints] = useState(50);
   const [pausedBudget, setPausedBudget] = useState<PausedBudget | null>(null);
+  const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
 
   useEffect(() => {
     // The selected-document action supplies a new one-shot prompt to this mounted panel.
@@ -51,7 +52,11 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       if (active && nextBilling?.charging === "resumable") {
         setWebBudgetPoints((current) => Math.max(current, nextBilling.maximumChargePoints, 20));
       }
-      if (active) setPausedBudget(data.pausedBudget ?? null);
+      if (active) {
+        const restoredBudget = data.pausedBudget ?? null;
+        setPausedBudget(restoredBudget);
+        setBudgetDialogOpen(Boolean(restoredBudget));
+      }
     }).catch((cause) => active && setError(cause instanceof Error ? cause.message : "无法恢复 Grant AI 对话。"));
     return () => { active = false; };
   }, [documentId]);
@@ -110,6 +115,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           authorizedPoints: data.webGrounding.authorizedPoints,
           question,
           canDeliverExisting: data.webGrounding.canDeliverExisting });
+        setBudgetDialogOpen(true);
       }
       if (charge?.mode === "charged") {
         setLastChargedPoints(charge.chargedPoints);
@@ -139,7 +145,14 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "联网预算操作失败。");
+      if (!response.ok) {
+        if (data.code === "grant_web_budget_stale") {
+          const currentResponse = await fetch(`/api/grants/documents/${documentId}/assistant/chat`, { cache: "no-store" });
+          const current = await currentResponse.json();
+          if (currentResponse.ok) setPausedBudget(current.pausedBudget ?? null);
+        }
+        throw new Error(data.error ?? "联网预算操作失败。");
+      }
       const continuation = data.continuation;
       if (continuation?.status === "awaiting_budget") {
         setPausedBudget({ budgetId: continuation.state.budgetId,
@@ -149,8 +162,10 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           authorizedPoints: continuation.state.authorizedPoints,
           question: continuation.checkpoint?.question ?? pausedBudget.question,
           canDeliverExisting: Boolean(continuation.checkpoint?.search?.sources?.length) });
+        setBudgetDialogOpen(true);
       } else {
         setPausedBudget(null);
+        setBudgetDialogOpen(false);
       }
       const delivered = continuation?.delivery?.answer;
       if (delivered) {
@@ -211,14 +226,15 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       </div>
       {webSearch && billing?.charging === "canary" && !billing.canSubmit && <p className="mt-2 text-xs text-amber-700">{billing.reason === "insufficient_points" ? `智点不足：需要预留 ${billing.maximumChargePoints}，当前可用 ${billing.availablePoints ?? 0}。` : billing.reason === "account_on_hold" ? "智点账户暂时不可用。" : "今日联网问答额度已用完。"}</p>}
       {lastChargedPoints !== null && <p className="mt-2 text-[11px] text-emerald-700">本次联网问答实际消耗 {lastChargedPoints} 智点。</p>}
-      {pausedBudget && <p className="mt-2 text-xs text-amber-700">请先处理上一次联网研究的智点确认，再提交新问题。</p>}
+      {pausedBudget && <p className="mt-2 text-xs text-amber-700">请先处理上一次联网研究的智点确认，再提交新问题。{!budgetDialogOpen && <button type="button" onClick={() => setBudgetDialogOpen(true)} className="ml-1 font-semibold underline underline-offset-2">查看</button>}</p>}
       {!canGenerate && <p className="mt-2 text-xs text-amber-700">请先保存当前正文，再开始普通对话。</p>}
       {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
       <p className="mt-2 text-[11px] leading-4 text-slate-400">对话已安全保存，可在刷新页面后继续。</p>
     </div>
-    {pausedBudget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4" role="presentation">
-      <section role="dialog" aria-modal="true" aria-label="是否增加联网智点" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-        <h2 className="text-base font-semibold text-slate-950">是否继续完善联网结果？</h2>
+    {pausedBudget && budgetDialogOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4" role="presentation">
+      <section role="dialog" aria-modal="true" aria-labelledby="grant-web-budget-dialog-title" className="relative w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <button type="button" aria-label="关闭智点提醒" disabled={busy} onClick={() => setBudgetDialogOpen(false)} className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40">×</button>
+        <h2 id="grant-web-budget-dialog-title" className="pr-9 text-base font-semibold text-slate-950">是否继续完善联网结果？</h2>
         <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">正在处理：{pausedBudget.question}</p>
         <p className="mt-2 text-sm leading-6 text-slate-600">当前已使用 {pausedBudget.settledPoints} / {pausedBudget.authorizedPoints} 智点。完成下一阶段还需授权最多 <strong className="text-slate-950">{pausedBudget.requiredAdditionalPoints} 智点</strong>。</p>
         <p className="mt-2 text-xs leading-5 text-slate-500">追加后继续检索和分析，仍只按实际消耗扣费。{pausedBudget.canDeliverExisting ? "也可以不追加，基于已经保存的搜索结果生成当前可交付答案。" : "目前尚未取得可整理的搜索结果，因此需要追加预算才能继续。"}</p>
