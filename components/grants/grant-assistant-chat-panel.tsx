@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GrantAssistantCandidateContext, GrantAssistantDocumentSelectionContext } from "@/lib/grants/assistant/contracts";
 import { GrantAssistantSourceControls } from "./grant-assistant-source-controls";
 import { candidateContextFocus, documentSelectionFocuses, resolveGrantAssistantFocus, type GrantAssistantFocus } from "@/lib/grants/assistant/focus-state";
@@ -34,6 +34,8 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   const [webBudgetPoints, setWebBudgetPoints] = useState("50");
   const [pausedBudget, setPausedBudget] = useState<PausedBudget | null>(null);
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
+  const budgetActionInFlight = useRef(false);
+  const budgetIncreaseAuthorization = useRef<{ budgetId: string; authorizationId: string } | null>(null);
 
   useEffect(() => {
     // The selected-document action supplies a new one-shot prompt to this mounted panel.
@@ -134,11 +136,15 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   }
 
   async function resolvePausedBudget(action: "increase" | "deliver-existing") {
-    if (!pausedBudget || busy) return;
+    if (!pausedBudget || busy || budgetActionInFlight.current) return;
+    budgetActionInFlight.current = true;
     setBusy(true); setError("");
     try {
+      if (action === "increase" && budgetIncreaseAuthorization.current?.budgetId !== pausedBudget.budgetId) {
+        budgetIncreaseAuthorization.current = { budgetId: pausedBudget.budgetId, authorizationId: crypto.randomUUID() };
+      }
       const body = action === "increase" ? { budgetId: pausedBudget.budgetId,
-        expectedVersion: pausedBudget.version, authorizationId: crypto.randomUUID(),
+        expectedVersion: pausedBudget.version, authorizationId: budgetIncreaseAuthorization.current!.authorizationId,
         additionalPoints: pausedBudget.requiredAdditionalPoints }
         : { budgetId: pausedBudget.budgetId, expectedVersion: pausedBudget.version };
       const response = await fetch(`/api/grants/documents/${documentId}/assistant/web-budget/${action}`, {
@@ -166,6 +172,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       } else {
         setPausedBudget(null);
         setBudgetDialogOpen(false);
+        budgetIncreaseAuthorization.current = null;
       }
       const delivered = continuation?.delivery?.answer;
       if (delivered) {
@@ -180,7 +187,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         }
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "联网预算操作失败。"); }
-    finally { setBusy(false); }
+    finally { budgetActionInFlight.current = false; setBusy(false); }
   }
 
   return <section aria-label="Grant AI 普通对话" className="flex min-h-0 flex-1 flex-col overflow-hidden">

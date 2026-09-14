@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { GrantWebBudgetCommandService } from "../lib/grants/application/grant-web-budget-commands.ts";
-import { admitResumableWebAnswerPhase,
+import { admitResumableWebAnswerPhase, authorizeResumableWebAnswerBudgetIncrease,
   createResumableWebAnswerBudget } from "../lib/billing/domain/resumable-web-answer-budget.ts";
 import type { GrantWebResumableCheckpoint } from "../lib/grants/web-sources/resumable-checkpoint.ts";
 
@@ -83,5 +83,24 @@ const resumable = new GrantWebBudgetCommandService({
 await resumable.increaseStored({ documentId: state.documentId, command: { budgetId: state.budgetId,
   expectedVersion: state.version, authorizationId: randomUUID(), additionalPoints: 10 } });
 assert.equal(savedTurn, state.turnId, "A resumed answer must be persisted through the completion sink.");
+
+const replayAuthorizationId = randomUUID();
+const increasedForReplay = authorizeResumableWebAnswerBudgetIncrease({ state,
+  authorizationId: replayAuthorizationId, additionalPoints: 10 });
+let replayed = false;
+const resumableCheckpoint = { ...completedCheckpoint, answer: null };
+const replayable = new GrantWebBudgetCommandService({
+  async create(next) { return next; },
+  async get() { return { state: increasedForReplay, checkpoint: resumableCheckpoint }; },
+  async authorizeIncrease() { throw new Error("An accepted authorization must not be charged twice."); },
+  async transition(_previous, next) { return next; },
+}, undefined, {
+  async execute({ state: next }) { replayed = true; return { status: "completed", state: next,
+    checkpoint: completedCheckpoint, answer: completedCheckpoint.answer }; },
+  async getProtectedDeliveryMaximumPoints() { return 15; },
+});
+await replayable.increaseStored({ documentId: state.documentId, command: { budgetId: state.budgetId,
+  expectedVersion: state.version, authorizationId: replayAuthorizationId, additionalPoints: 10 } });
+assert.equal(replayed, true, "A replay after accepted authorization must resume work immediately.");
 
 console.log("Grant web budget increase and deliver-existing commands passed.");

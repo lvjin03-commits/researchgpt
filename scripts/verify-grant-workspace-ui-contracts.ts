@@ -145,6 +145,7 @@ for (const token of ["最多 {billing.maximumChargePoints} 智点", "本次联�
 for (const token of ["aria-modal=\"true\"", "不追加，整理现有结果", "requiredAdditionalPoints} 智点并继续",
   "canDeliverExisting", "data.pausedBudget", "仅按实际消耗扣除", "正在处理：{pausedBudget.question}",
   "aria-label=\"关闭智点提醒\"", "setBudgetDialogOpen(false)", ">查看</button>",
+  "budgetActionInFlight.current", "budgetIncreaseAuthorization.current",
   "onChange={(event) => setWebBudgetPoints(event.target.value)}", "可设置 {Math.max(20, billing.maximumChargePoints)}–500"]) {
   assert.ok(assistantChatPanelSource.includes(token), `Grant Assistant resumable budget UI missing ${token}`);
 }

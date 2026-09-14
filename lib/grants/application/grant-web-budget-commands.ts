@@ -117,7 +117,17 @@ export class GrantWebBudgetCommandService {
     const command = GrantWebBudgetIncreaseCommandSchema.parse(input.command);
     const stored = await this.repository.get(command.budgetId);
     if (!stored || stored.state.documentId !== input.documentId) throw new Error("Grant web budget was not found.");
-    const state = await this.increase({ state: stored.state, command });
+    const existingAuthorization = stored.state.authorizations.find((authorization) =>
+      authorization.authorizationId === command.authorizationId);
+    if (existingAuthorization && existingAuthorization.authorizedPoints !== command.additionalPoints) {
+      throw new Error("A budget authorization cannot be replayed with a different amount.");
+    }
+    // A successful authorization may be followed by a transient continuation
+    // failure. Replaying the same user action must resume the persisted running
+    // task instead of rejecting the client for holding the pre-increase version.
+    const state = existingAuthorization
+      ? stored.state
+      : await this.increase({ state: stored.state, command });
     const checkpoint = stored.checkpoint == null ? null : GrantWebResumableCheckpointSchema.parse(stored.checkpoint);
     const continuation = checkpoint && this.executor
       ? await this.resume({ state, checkpoint, mode: "continue_research" }) : null;
