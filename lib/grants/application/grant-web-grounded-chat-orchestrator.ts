@@ -92,7 +92,7 @@ export class GrantWebGroundedChatOrchestrator {
     try {
       rewritten = await execute(GRANT_WEB_QUERY_REWRITE_OPERATION, async ({ attemptPurpose }) => {
         const result = await this.dependencies.model.rewriteQuery({ question: input.question,
-          admittedApplicationContext: input.context.applicationContext, attemptPurpose });
+          admittedApplicationContext: input.context.searchContext, attemptPurpose });
         return { ...result, value: GrantWebQueryRewriteProposalSchema.parse(result.value) };
       }, { question: input.question, contextHash: input.context.contextHash }, billingOperationIds.queryRewrite);
     } catch (error) {

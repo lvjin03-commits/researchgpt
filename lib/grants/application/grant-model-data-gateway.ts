@@ -28,6 +28,7 @@ import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import { buildGrantFullDocumentContext } from "./grant-full-document-context.ts";
 import { routeGrantFullDocumentContext, type GrantFullDocumentCapacityPolicy } from "./grant-full-document-capacity-router.ts";
 import { executeGrantFullDocumentHierarchicalAnalysis } from "./grant-full-document-hierarchical-analysis.ts";
+import type { GrantAssistantContextCoverage } from "../assistant/context-coverage.ts";
 import {
   GRANT_DIAGNOSTIC_IMAGE_MEDIA_TYPES,
   grantDiagnosticImageScopeFingerprint,
@@ -54,7 +55,9 @@ export type GrantWebGroundingAdmittedContext = {
   sourceRevisionId: string;
   documentLanguage: "zh" | "en";
   applicationContext: string;
+  searchContext: string;
   contextHash: string;
+  coverage: GrantAssistantContextCoverage;
 };
 
 export class GrantModelDataGateway {
@@ -83,7 +86,21 @@ export class GrantModelDataGateway {
     sourceRevisionId: string;
     snapshot: CanonicalGrantSnapshot;
     retrievedDocumentBlocks: GrantDocumentSearchResult[];
+    fullDocument?: boolean;
   }): GrantWebGroundingAdmittedContext {
+    if (input.fullDocument) {
+      const context = buildGrantFullDocumentContext({ documentId: input.documentId,
+        sourceRevisionId: input.sourceRevisionId, snapshot: input.snapshot });
+      const searchContext = [`申请书标题：${context.title}`, ...context.sections.map((section) =>
+        `${"  ".repeat(section.depth)}${section.title}`)].join("\n");
+      return Object.freeze({ schemaVersion: 1 as const, documentId: input.documentId,
+        sourceRevisionId: input.sourceRevisionId,
+        documentLanguage: /[\u3400-\u9fff]/u.test(context.title + context.modelText) ? "zh" as const : "en" as const,
+        applicationContext: context.modelText, searchContext, contextHash: context.contextHash,
+        coverage: { mode: "full_document" as const, strategy: "long_context" as const, sourceRevisionId: input.sourceRevisionId,
+          sectionCount: context.coverage.sectionCount, coveredSectionCount: context.coverage.coveredSectionCount,
+          nodeCount: context.coverage.nodeCount, coveredNodeCount: context.coverage.coveredNodeCount, complete: true } });
+    }
     const unique = new Set<string>();
     const blocks = input.retrievedDocumentBlocks.slice(0, 6).map((block) => {
       const node = block.nodeId ? input.snapshot.nodes.find((candidate) => candidate.nodeId === block.nodeId) : null;
@@ -103,7 +120,12 @@ export class GrantModelDataGateway {
       sourceRevisionId: input.sourceRevisionId,
       documentLanguage,
       applicationContext,
+      searchContext: input.snapshot.title,
       contextHash: sha256Canonical({ documentId: input.documentId, sourceRevisionId: input.sourceRevisionId, applicationContext }),
+      coverage: { mode: "retrieved_excerpts" as const, strategy: "retrieval" as const, sourceRevisionId: input.sourceRevisionId,
+        sectionCount: input.snapshot.sections.length,
+        coveredSectionCount: new Set(input.retrievedDocumentBlocks.map((block) => block.sectionId)).size,
+        nodeCount: input.snapshot.nodes.length, coveredNodeCount: blocks.length, complete: false },
     });
   }
 

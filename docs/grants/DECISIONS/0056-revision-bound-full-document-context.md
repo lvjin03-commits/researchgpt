@@ -1,6 +1,6 @@
 # ADR 0056: Revision-bound full-document assistant context
 
-- Status: accepted, Steps 1-4 implemented
+- Status: accepted, Steps 1-5 implemented
 - Date: 2026-09-14
 - Owner: Grant Model Data Gateway
 
@@ -26,12 +26,15 @@ the program never drops intermediate results to force a response. The Grant Mode
 responsible for provider admission. Keyword retrieval may
 select emphasis, but it cannot be represented as whole-document coverage.
 
-Explicit whole-application questions in ordinary Grant Assistant chat now route
-through this authority. The visible user action and billable Operation remain
-`grant.assistant.chat`; its unified executor records the aggregate usage of the
-single-pass or hierarchical provider work. Explicit selection, Candidate,
-Evidence and web-search turns retain their established authorities and cannot be
-silently reinterpreted as whole-document analysis.
+Explicit whole-application questions in Grant Assistant chat now route through
+this authority for both ordinary and web-assisted answers. The visible ordinary
+chat action and billable Operation remain `grant.assistant.chat`; its unified
+executor records the aggregate usage of the single-pass or hierarchical provider
+work. Web-assisted answers retain the established resumable web workflow and its
+Operations, but source assessment and final synthesis receive the same complete,
+Revision-bound projection. Query rewriting receives only the title and section
+outline, so the complete application is not sent to the external search provider.
+Explicit selections, Candidates and Evidence retain their established authorities.
 
 ## Consequences
 
@@ -43,5 +46,7 @@ silently reinterpreted as whole-document analysis.
 - Hierarchical execution carries a content-derived execution fingerprint and
   explicit section/source coverage evidence.
 - Narrow ordinary chat retains the existing six-node retrieval path.
+- Web answers persist coverage metadata and show whether the response covered
+  the full Revision or only retrieved excerpts.
 - Figure bytes, Evidence Cards, Patch authority and Revision writes are unchanged.
 

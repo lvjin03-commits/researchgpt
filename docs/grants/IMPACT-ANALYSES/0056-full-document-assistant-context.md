@@ -48,6 +48,22 @@ structured unit/synthesis contracts. The existing `grant.assistant.chat`
 Operation, retry ceiling, model-call repository and usage observer remain the
 sole execution and billing path; no parallel route or Operation is introduced.
 
+## Step 5 scope
+
+Extend the same intent boundary and complete Revision projection to web-assisted
+whole-application questions. Query rewriting receives only the application title
+and section outline; relevance assessment and grounded answer synthesis receive
+the complete admitted application context. The established resumable budget,
+search, source snapshot, assessment and delivery authorities remain unchanged.
+Their assessment and synthesis input ceilings are widened to accommodate the
+complete projection, while their Operation and policy identities stay unchanged.
+
+Every assistant answer now carries persisted coverage metadata: source Revision,
+full-document or retrieved-excerpt mode, strategy, canonical section/node totals
+and covered counts. The chat UI renders that metadata as an explicit coverage
+badge. Budget pauses preserve it across continuation and final delivery rebuilds
+it from the current authoritative Revision before persistence.
+
 ## Ownership and invariants
 
 - The Grant Document Repository and Revision Service remain authoritative for
@@ -62,9 +78,9 @@ sole execution and billing path; no parallel route or Operation is introduced.
 
 ## Follow-up and rollback
 
-Step 5 will extend complete-document grounding to web-assisted turns and expose
-coverage metadata in the UI before production effect verification. Narrow chat
-continues using retrieval. Rollback removes
+Narrow chat continues using retrieval. Production effect verification remains a
+deployment concern; offline verification covers routing, persistence shape,
+search-egress minimization and UI presence. Rollback removes
 the unused projection, capacity router, tokenizer dependency and their tests;
 canonical data is unchanged.
 

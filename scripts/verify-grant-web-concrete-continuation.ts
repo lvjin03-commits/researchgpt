@@ -61,6 +61,33 @@ const model = {
     value: { claims: [{ claimId: randomUUID(), statement: "Grounded conclusion.",
       sourceIds: [input.sources[0]!.sourceId] }] }, outputHash: "e".repeat(64),
     usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 0 } }; },
+  async analyzeResearch(input: { sourceGroups: ReadonlyArray<{ groupId: string; primarySourceId: string }> }) {
+    calls.push("model-research-analysis");
+    const assessments = input.sourceGroups.map((group) => ({ sourceGroupId: group.groupId,
+      disposition: "recommended" as const, reason: "Directly relevant structured abstract",
+      mechanismSummary: "A source-supported mechanism.", quantitativeFindings: [],
+      applicationRelation: "The application plans the topic but lacks a proof criterion.", evidenceLimitations: [] }));
+    const comparisons = input.sourceGroups.map((group) => ({ sourceGroupId: group.groupId,
+      existingDesignStatus: "found" as const,
+      existingDesign: [{ locationRef: "APP1", summary: "The application contains a planned experiment.",
+        evidenceTier: "description_only" as const, coverageLevel: "planned" as const,
+        verificationStatus: "document_statement_only" as const,
+        supportBoundary: { directlySupports: ["planned experiment"], indirectlySupports: [],
+          doesNotSupport: ["mechanism has been proven"] } }],
+      disposition: "residual_gap_found" as const,
+      residualGap: "The planned experiment lacks a falsifiable mechanism criterion.",
+      reasonExistingDesignIsInsufficient: "A plan is not completed mechanistic evidence.",
+      recommendation: "Define the observable and pass/fail criterion without adding a new workstream.",
+      unableToVerifyReason: null,
+      scopeSignals: { coreQuestionMatch: 2, researchObjectMatch: 2, mechanismMatch: 2,
+        plannedMethodMatch: 1, introducesNewObject: false, introducesNewMethodChain: false,
+        introducesNewEvaluationSystem: false, workloadImpact: 0 } }));
+    return { value: { assessment: { schemaVersion: 2 as const, assessments },
+      comparison: { schemaVersion: 1 as const, comparisons },
+      selection: { schemaVersion: 1 as const, coreJudgment: "Existing plans are present, but proof criteria remain incomplete.",
+        selectedSourceGroupIds: input.sourceGroups.slice(0, 4).map((group) => group.groupId) } },
+      outputHash: "f".repeat(64), usage: { inputTokens: 20, outputTokens: 10, reasoningTokens: 0 } };
+  },
 };
 const modelExecutor = new GrantModelExecutor({
   async start() {}, async finish() {}, async listByTrace() { return []; },
@@ -85,6 +112,7 @@ let contextLoads = 0;
 const executor = new GrantWebConcreteContinuationStepExecutor({
   phases: new GrantWebResumablePhaseExecutor(new GrantWebBudgetedPhaseOrchestrator(coordinator)),
   contextLoader: { async load() { contextLoads += 1; return { question: "What changed?", applicationContext: "Authorized excerpt",
+    searchContext: "Grant title and section outline",
     documentTextForEgressCheck: "confidential application mechanism phrase copied verbatim; safe research query recent review advances",
     sensitiveTerms: [], assistantSessionId: sessionId,
     sourceRevision: 1, contextHash, authorizationFingerprint }; } },
@@ -102,7 +130,9 @@ const result = await workflow.start({ budgetId: randomUUID(), authorizationId: r
 assert.equal(result.status, "completed");
 if (result.status !== "completed") throw new Error("Expected completed continuation.");
 assert.equal(result.state.status, "delivered_complete");
-assert.equal(result.checkpoint.answer?.claims[0]?.statement, "Grounded conclusion.");
+assert.match(result.checkpoint.answer?.claims[0]?.statement ?? "", /^核心判断：/u);
+assert.ok(calls.includes("model-research-analysis"), "the formal answer phase must enter the governed research pipeline");
+assert.ok(!calls.includes("model-synthesize"), "the formal path must not fall back to legacy direct synthesis");
 assert.equal(contextLoads, 4, "authoritative context must be rebuilt before every paid phase");
 assert.equal(calls.filter((value) => value === "reserve").length, 4);
 assert.equal(calls.filter((value) => value === "model-rewrite").length, 2,

@@ -1066,3 +1066,17 @@ falling through to another policy. A dedicated CI check proves that chat routes
 and UI contain no write endpoints, the retired explanation operation cannot be
 resolved, and Candidate application remains bound to the visible
 `应用到正文` click inside the Edit Session surface.
+
+## Formal Research Evidence Pipeline Cutover
+
+The resumable production web-answer phase now enters the unified research
+evidence pipeline before it can produce a completed answer. Structured OpenAlex
+abstracts are bridged from existing checkpoint records, then source assessment,
+application existing-design verification, residual-gap comparison, deterministic
+scope filtering and final selection are validated in order. The resulting
+approved suggestions are adapted to the existing citation renderer, so routes,
+budget continuation and saved conversations keep one delivery contract.
+
+Version-1 paused checkpoints remain readable and require no database rewrite.
+The no-more-budget `existing_results_delivery` path remains a deliberately
+partial legacy summary and is labeled partial by the budget state machine.

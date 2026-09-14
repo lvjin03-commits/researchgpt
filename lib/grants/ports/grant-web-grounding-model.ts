@@ -4,6 +4,7 @@ import type {
   GrantWebSourceAssessmentProposal,
   GrantWebSourceRecord,
 } from "../web-sources/contracts.ts";
+import type { GrantResearchSourceGroup } from "../web-sources/research-source-acquisition.ts";
 
 export type GrantWebModelResult<T> = {
   value: T;
@@ -45,4 +46,16 @@ export interface GrantWebGroundingModel {
     attemptPurpose: GrantWebModelAttemptPurpose;
     maximumOutputTokens?: number;
   }): Promise<GrantWebModelResult<GrantWebAnswerProposal>>;
+  analyzeResearch?(input: {
+    question: string;
+    admittedApplicationContext: string;
+    applicationLocationRef: string;
+    sourceGroups: readonly GrantResearchSourceGroup[];
+    attemptPurpose: GrantWebModelAttemptPurpose;
+    maximumOutputTokens?: number;
+  }): Promise<GrantWebModelResult<{
+    assessment: unknown;
+    comparison: unknown;
+    selection: unknown;
+  }>>;
 }

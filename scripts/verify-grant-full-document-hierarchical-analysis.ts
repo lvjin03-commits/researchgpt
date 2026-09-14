@@ -100,4 +100,13 @@ assert.equal(hierarchicalGatewayResult.fullDocument.coverage.complete, true);
 assert.ok(hierarchicalGatewayResult.fullDocument.unitCount > 1);
 assert.equal(hierarchicalGatewayResult.modelId, "test-model");
 
+const webContext = gateway.prepareWebGroundingContext({ documentId: context.documentId,
+  sourceRevisionId: context.sourceRevisionId, snapshot, retrievedDocumentBlocks: [], fullDocument: true });
+assert.equal(webContext.applicationContext, context.modelText, "web synthesis must receive the canonical full document");
+assert.equal(webContext.coverage.complete, true);
+assert.equal(webContext.coverage.coveredSectionCount, snapshot.sections.length);
+assert.equal(webContext.coverage.coveredNodeCount, snapshot.nodes.length);
+assert.ok(webContext.searchContext.length < webContext.applicationContext.length,
+  "query rewriting should receive only the title and outline, not the full application");
+
 console.log("Grant hierarchical full-document analysis covers every section and source without truncation.");

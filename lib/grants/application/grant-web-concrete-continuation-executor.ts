@@ -16,6 +16,7 @@ import type { GrantWebBudgetOperationKey } from "./grant-web-budgeted-phase-orch
 import { GrantWebModelError, type GrantWebGroundingModel } from "../ports/grant-web-grounding-model.ts";
 import type { GrantWebGroundingRepository } from "../ports/grant-web-grounding-repository.ts";
 import {
+  GrantWebAnswerProposalSchema,
   GrantWebQueryRewriteProposalSchema,
   validateGrantWebSourceAssessments,
   type GrantWebSourceRecord,
@@ -24,13 +25,16 @@ import { assembleGrantWebGroundedAnswer, GrantWebGroundingError } from "../web-s
 import { assessGrantWebSearchEgress } from "../web-sources/query-egress-policy.ts";
 import { revalidateGrantWebCheckpoint, type GrantWebResumableCheckpoint } from "../web-sources/resumable-checkpoint.ts";
 import { GrantGeneralWebSearchService } from "./grant-general-web-search-service.ts";
-import { GrantModelExecutionError, GrantModelExecutor } from "./grant-model-executor.ts";
+import { GrantModelExecutor } from "./grant-model-executor.ts";
 import type { GrantWebContinuationStepExecutor, GrantWebContinuationStepResult } from "./grant-web-budget-commands.ts";
 import { GrantWebResumablePhaseExecutor, type GrantWebCheckpointArtifact } from "./grant-web-resumable-flow.ts";
+import { bridgeGrantWebSourcesToResearchGroups } from "../web-sources/research-source-bridge.ts";
+import { executeGrantResearchEvidencePipeline } from "./grant-research-evidence-pipeline.ts";
 
 export type GrantWebContinuationContext = Readonly<{
   question: string;
   applicationContext: string;
+  searchContext: string;
   documentTextForEgressCheck: string;
   sensitiveTerms: readonly string[];
   assistantSessionId: string;
@@ -102,7 +106,7 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
       return this.runModelPhase({ input, checkpoint, context, phaseId, operationKey: "query_rewrite",
         operation: GRANT_WEB_QUERY_REWRITE_OPERATION, artifactOperation: "query_rewrite",
         invoke: (attemptPurpose) => this.dependencies.model.rewriteQuery({ question: context.question,
-          admittedApplicationContext: context.applicationContext, attemptPurpose }),
+          admittedApplicationContext: context.searchContext, attemptPurpose }),
         parse: (value) => {
           const proposal = GrantWebQueryRewriteProposalSchema.parse(value);
           const hasAllowedQuery = this.researchQueries(proposal.query).some((candidateQuery) =>
@@ -133,9 +137,12 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
       ? GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION : GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION;
     return this.runModelPhase({ input, checkpoint, context, phaseId, operationKey, operation,
       artifactOperation: operationKey, deliveryOutcome: input.operation === "existing_results_delivery" ? "partial" : "complete",
-      invoke: (attemptPurpose) => this.dependencies.model.synthesize({ question: context.question,
-        admittedApplicationContext: context.applicationContext, sources, attemptPurpose,
-        maximumOutputTokens: getGrantWebBudgetOperationPolicy(operationKey).maximumOutputTokens }),
+      invoke: (attemptPurpose) => input.operation === "answer_synthesis"
+        ? this.analyzeAndSynthesize({ checkpoint, context, sources, attemptPurpose,
+          maximumOutputTokens: getGrantWebBudgetOperationPolicy(operationKey).maximumOutputTokens })
+        : this.dependencies.model.synthesize({ question: context.question,
+          admittedApplicationContext: context.applicationContext, sources, attemptPurpose,
+          maximumOutputTokens: getGrantWebBudgetOperationPolicy(operationKey).maximumOutputTokens }),
       parse: (value) => {
         const assessment = checkpoint.assessment ?? { assessments: checkpoint.search!.sources.map((source) => ({
           sourceId: source.sourceId, disposition: "recommended" as const, reason: "Available saved result",
@@ -345,6 +352,53 @@ export class GrantWebConcreteContinuationStepExecutor implements GrantWebContinu
       `${normalized} dynamic interface electric field`,
       `${normalized} application limitations research gap`,
     ].map((query) => query.slice(0, 160));
+  }
+
+  private async analyzeAndSynthesize(input: {
+    checkpoint: GrantWebResumableCheckpoint;
+    context: GrantWebContinuationContext;
+    sources: readonly GrantWebSourceRecord[];
+    attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
+    maximumOutputTokens: number;
+  }) {
+    if (!this.dependencies.model.analyzeResearch) {
+      return this.dependencies.model.synthesize({ question: input.context.question,
+        admittedApplicationContext: input.context.applicationContext, sources: input.sources,
+        attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.maximumOutputTokens });
+    }
+    const sourceGroups = bridgeGrantWebSourcesToResearchGroups({ sources: input.sources,
+      createId: () => this.createId() });
+    const startedAt = this.now();
+    const response = await this.dependencies.model.analyzeResearch({ question: input.context.question,
+      admittedApplicationContext: input.context.applicationContext, applicationLocationRef: "APP1",
+      sourceGroups, attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.maximumOutputTokens });
+    const result = executeGrantResearchEvidencePipeline({ sourceGroups,
+      sourceAssessmentProposal: response.value.assessment,
+      gapComparisonProposal: response.value.comparison,
+      locationByRef: new Map([["APP1", { sectionId: "whole-document", nodeId: "whole-document" }]]),
+      answerSelection: response.value.selection,
+      trace: { pipelineVersion: "research-grounding-v6",
+        featureFlags: { structuredSources: true, existingDesignCheck: true,
+          residualGapScopeFilter: true, evidenceBasedSynthesis: true },
+        queryPlannerVersion: "grant-web-five-query-v1",
+        sourceProviderVersions: ["openalex-v1"], evidenceContractVersion: "academic-source-v2",
+        scopeFilterVersion: "grant-research-scope-v1", synthesisPromptVersion: "grant-research-analysis-v1",
+        model: this.dependencies.configuredGrantModelId, reasoningEffort: "low",
+        legacyFallbackUsed: false, startedAt, completedAt: this.now() } });
+    if (result.answer.suggestions.length === 0) {
+      throw new GrantWebContinuationError("grant_web_no_relevant_sources",
+        "检索结果未形成经申请书原文核验后的有效残余缺口，请调整问题后重试。");
+    }
+    const coreSourceIds = [...new Set(result.answer.suggestions.flatMap((item) => item.sourceIds))].slice(0, 5);
+    const value = GrantWebAnswerProposalSchema.parse({ claims: [
+      { claimId: this.createId(), statement: `核心判断：${response.value.selection && typeof response.value.selection === "object"
+        && "coreJudgment" in response.value.selection ? String(response.value.selection.coreJudgment) : "已完成申请书原文核验。"}`,
+        sourceIds: coreSourceIds },
+      ...result.answer.suggestions.map((suggestion) => ({ claimId: this.createId(),
+        statement: `补充建议${suggestion.number}：${suggestion.residualGap} ${suggestion.recommendation}`,
+        sourceIds: suggestion.sourceIds })),
+    ] });
+    return { ...response, value };
   }
 
   private createId() { return (this.dependencies.createId ?? randomUUID)(); }

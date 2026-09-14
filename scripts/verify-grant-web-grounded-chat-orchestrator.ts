@@ -77,7 +77,10 @@ const orchestrator = new GrantWebGroundedChatOrchestrator({ model, modelExecutor
   async (event) => { observedBillingOperationIds.push(event.billingOperationId); }),
   searchService, sourceRepository: sources, configuredGrantModelId: "offline-model" });
 const context = { schemaVersion: 1 as const, documentId, sourceRevisionId: randomUUID(), documentLanguage: "zh" as const,
-  applicationContext: "申请书讨论锌电池电解液与界面稳定性。", contextHash: sha256Canonical("admitted") };
+  applicationContext: "申请书讨论锌电池电解液与界面稳定性。", searchContext: "申请书标题：锌电池项目",
+  contextHash: sha256Canonical("admitted"), coverage: { mode: "retrieved_excerpts" as const,
+    strategy: "retrieval" as const, sourceRevisionId: randomUUID(), sectionCount: 3, coveredSectionCount: 2,
+    nodeCount: 8, coveredNodeCount: 5, complete: false } };
 const result = await orchestrator.run({ documentId, sourceRevision: 3, actorId, assistantSessionId: sessionId,
   turnId, question: "联网补充研究方案的相关信息", context, documentTextForEgressCheck: context.applicationContext, sensitiveTerms: [] });
 assert.equal(result.status, "completed");

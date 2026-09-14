@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { GrantAssistantAnswerSchema } from "./answer-contract.ts";
+import { GrantAssistantContextCoverageSchema } from "./context-coverage.ts";
 
 const UuidSchema = z.string().uuid();
 const TimestampSchema = z.string().datetime({ offset: true });
@@ -33,6 +34,7 @@ export const GrantAssistantMessageSchema = z.object({
   cacheKey: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   cachedAnswer: CachedAnswerSchema.optional(),
   recommendedQuestions: z.array(z.string().min(1).max(160)).max(6).optional(),
+  contextCoverage: GrantAssistantContextCoverageSchema.optional(),
   createdAt: TimestampSchema,
 }).strict();
 

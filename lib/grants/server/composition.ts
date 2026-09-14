@@ -69,6 +69,7 @@ import { assembleGrantWebGroundedAnswer } from "../web-sources/grounded-answer-a
 import { OpenAlexStructuredAcademicProvider } from "../infrastructure/web/openalex-structured-academic-provider.ts";
 import { OpenAlexResearchSearchAdapter } from "../infrastructure/web/openalex-research-search-adapter.ts";
 import { TiktokenGrantTokenCounter } from "../infrastructure/model/tiktoken-grant-token-counter.ts";
+import { requestsFullGrantDocumentAnalysis } from "../assistant/full-document-intent.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -271,8 +272,10 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
         const blocks = retrieveGrantDocumentBlocks({ snapshot: aggregate.currentRevision.snapshot,
           sourceRevisionId, query: checkpoint.question, limit: 6 });
         const admitted = ai.gateway.prepareWebGroundingContext({ documentId: checkpoint.documentId,
-          sourceRevisionId, snapshot: aggregate.currentRevision.snapshot, retrievedDocumentBlocks: blocks });
+          sourceRevisionId, snapshot: aggregate.currentRevision.snapshot, retrievedDocumentBlocks: blocks,
+          fullDocument: requestsFullGrantDocumentAnalysis(checkpoint.question) });
         return { question: checkpoint.question, applicationContext: admitted.applicationContext,
+          searchContext: admitted.searchContext,
           documentTextForEgressCheck: JSON.stringify(aggregate.currentRevision.snapshot),
           sensitiveTerms: [aggregate.document.title], assistantSessionId: checkpoint.assistantSessionId,
           sourceRevision: aggregate.currentRevision.revisionNumber, contextHash: admitted.contextHash,
@@ -286,6 +289,13 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
       async ({ checkpoint, answer }) => {
         const existing = await assistantSessions.listMessages(checkpoint.assistantSessionId);
         if (existing.some((message) => message.turnId === checkpoint.turnId)) return;
+        const aggregate = await revisions.getDocument(checkpoint.documentId);
+        const sourceRevisionId = aggregate.document.currentRevisionId;
+        const blocks = retrieveGrantDocumentBlocks({ snapshot: aggregate.currentRevision.snapshot,
+          sourceRevisionId, query: checkpoint.question, limit: 6 });
+        const admitted = ai.gateway.prepareWebGroundingContext({ documentId: checkpoint.documentId,
+          sourceRevisionId, snapshot: aggregate.currentRevision.snapshot, retrievedDocumentBlocks: blocks,
+          fullDocument: requestsFullGrantDocumentAnalysis(checkpoint.question) });
         const createdAt = new Date().toISOString();
         await assistantSessions.appendTurn({ sessionId: checkpoint.assistantSessionId,
           userMessage: { messageId: randomUUID(), sessionId: checkpoint.assistantSessionId,
@@ -296,7 +306,7 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
             content: answer.content, grounding: answer.grounding,
             citations: answer.citations.map(({ citationId, sourceAlias, sourceType, label, url }) =>
               ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
-            cachedAnswer: answer, recommendedQuestions: [], createdAt },
+            cachedAnswer: answer, recommendedQuestions: [], contextCoverage: admitted.coverage, createdAt },
           lastActiveAt: createdAt });
       });
     return Object.freeze({ modelGateway: ai.gateway, workflow,

@@ -5,10 +5,14 @@ import type { GrantAssistantCandidateContext, GrantAssistantDocumentSelectionCon
 import { GrantAssistantSourceControls } from "./grant-assistant-source-controls";
 import { candidateContextFocus, documentSelectionFocuses, resolveGrantAssistantFocus, type GrantAssistantFocus } from "@/lib/grants/assistant/focus-state";
 
-type Message = { messageId: string; turnId?: string; role: "user" | "assistant"; content: string; grounding?: "general_reasoning" | "evidence_grounded"; citations?: Array<{ citationId: string; sourceAlias?: string; label: string; url?: string }>; recommendedQuestions?: string[] };
+type ContextCoverage = { mode: "full_document" | "retrieved_excerpts"; strategy: "single_pass" | "hierarchical" | "long_context" | "retrieval";
+  sourceRevisionId: string; sectionCount: number; coveredSectionCount: number; nodeCount: number; coveredNodeCount: number;
+  complete: boolean; unitCount?: number };
+type Message = { messageId: string; turnId?: string; role: "user" | "assistant"; content: string; grounding?: "general_reasoning" | "evidence_grounded"; citations?: Array<{ citationId: string; sourceAlias?: string; label: string; url?: string }>; recommendedQuestions?: string[]; contextCoverage?: ContextCoverage };
 type BillingPreview = { charging: "meter_only" | "canary" | "resumable"; canSubmit: boolean; maximumChargePoints: number; availablePoints: number | null; reason?: "insufficient_points" | "account_on_hold" | "daily_limit" };
 type PausedBudget = { budgetId: string; turnId: string; version: number; requiredAdditionalPoints: number;
-  settledPoints: number; authorizedPoints: number; question: string; canDeliverExisting: boolean };
+  settledPoints: number; authorizedPoints: number; question: string; canDeliverExisting: boolean;
+  contextCoverage?: ContextCoverage };
 
 export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGenerate, contextCards, candidateContext, initialPrompt, onCandidateContextClear, evidenceEnabled, webGroundingEnabled }: {
   documentId: string;
@@ -107,7 +111,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           : "";
         throw new Error(detail ? `${data.error ?? "请求失败"}（${detail}）` : (data.error ?? "Grant AI 对话失败。"));
       }
-      setMessages((items) => [...items, { messageId: `${turnId}:user`, turnId, role: "user", content: question }, { messageId: `${turnId}:assistant`, turnId, role: "assistant", content: data.content, grounding: data.grounding, citations: data.citations, recommendedQuestions: data.recommendedQuestions }]);
+      setMessages((items) => [...items, { messageId: `${turnId}:user`, turnId, role: "user", content: question }, { messageId: `${turnId}:assistant`, turnId, role: "assistant", content: data.content, grounding: data.grounding, citations: data.citations, recommendedQuestions: data.recommendedQuestions, contextCoverage: data.contextCoverage }]);
       setInput("");
       const charge = data.webGrounding?.charging;
       if (data.webGrounding?.status === "awaiting_budget") {
@@ -116,7 +120,8 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           settledPoints: data.webGrounding.settledPoints,
           authorizedPoints: data.webGrounding.authorizedPoints,
           question,
-          canDeliverExisting: data.webGrounding.canDeliverExisting });
+          canDeliverExisting: data.webGrounding.canDeliverExisting,
+          contextCoverage: data.contextCoverage });
         setBudgetDialogOpen(true);
       }
       if (charge?.mode === "charged") {
@@ -171,7 +176,8 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           settledPoints: continuation.state.settledPoints,
           authorizedPoints: continuation.state.authorizedPoints,
           question: continuation.checkpoint?.question ?? pausedBudget.question,
-          canDeliverExisting: Boolean(continuation.checkpoint?.search?.sources?.length) });
+          canDeliverExisting: Boolean(continuation.checkpoint?.search?.sources?.length),
+          contextCoverage: pausedBudget.contextCoverage });
         setBudgetDialogOpen(true);
       } else {
         setPausedBudget(null);
@@ -185,7 +191,8 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
             ? [{ messageId: `${pausedBudget.budgetId}:user`, turnId: pausedBudget.turnId,
               role: "user" as const, content: pausedBudget.question }] : []),
           { messageId: crypto.randomUUID(), role: "assistant", content: delivered.content,
-            grounding: delivered.grounding, citations: delivered.citations, recommendedQuestions: [] }]);
+            grounding: delivered.grounding, citations: delivered.citations, recommendedQuestions: [],
+            contextCoverage: pausedBudget.contextCoverage }]);
         if (typeof continuation.state?.settledPoints === "number") {
           setLastChargedPoints(continuation.state.settledPoints);
         }
@@ -201,6 +208,11 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         ? <div key={message.messageId} className="ml-8 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-sm text-white">{message.content}</div>
         : <div key={message.messageId} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
             {message.content}
+            {message.contextCoverage && <div className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${message.contextCoverage.complete ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+              {message.contextCoverage.complete
+                ? `全文已覆盖 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点${message.contextCoverage.unitCount ? ` · ${message.contextCoverage.unitCount} 个分析单元` : ""}`
+                : `相关片段 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点`}
+            </div>}
             {message.grounding === "evidence_grounded" && <div className="mt-3 border-t border-slate-100 pt-2 text-[11px] leading-5 text-slate-500">
               <div className="mb-1 font-semibold text-slate-600">参考来源</div>
               <ol className="space-y-1 pl-4">

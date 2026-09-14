@@ -11,6 +11,16 @@ import {
   GrantWebQueryRewriteProposalSchema,
   GrantWebSourceAssessmentProposalSchema,
 } from "../../web-sources/contracts.ts";
+import { GrantResearchSourceAssessmentProposalV2Schema } from "../../web-sources/research-source-assessment.ts";
+import { GrantResearchGapComparisonProviderV1Schema } from "../../web-sources/research-gap-comparison.ts";
+import { GrantResearchAnswerSelectionSchema } from "../../web-sources/research-answer-contract.ts";
+import { z } from "zod";
+
+const GrantResearchAnalysisSchema = z.object({
+  assessment: GrantResearchSourceAssessmentProposalV2Schema,
+  comparison: GrantResearchGapComparisonProviderV1Schema,
+  selection: GrantResearchAnswerSelectionSchema,
+}).strict();
 
 type WebOpenAIResponse = {
   id: string;
@@ -106,5 +116,31 @@ export class OpenAIGrantWebGroundingModel implements GrantWebGroundingModel {
           qualityTier: source.classification.qualityTier })) },
       attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.maximumOutputTokens,
       parse: (value) => GrantWebAnswerProposalSchema.parse(value) });
+  }
+
+  analyzeResearch(input: Parameters<NonNullable<GrantWebGroundingModel["analyzeResearch"]>>[0]) {
+    const sources = input.sourceGroups.map((group) => ({
+      sourceGroupId: group.groupId,
+      primarySourceId: group.primarySourceId,
+      members: group.members.map((member) => ({ sourceId: member.record.sourceId,
+        title: member.record.title, url: member.record.canonicalUrl,
+        evidenceOrigin: member.sourceKind === "structured_academic" ? member.record.evidence.kind : "search_excerpt",
+        evidence: member.sourceKind === "structured_academic"
+          ? member.record.evidence.kind === "abstract" ? member.record.evidence.text : null
+          : member.record.snippet })),
+    }));
+    return this.structured({ schema: GrantResearchAnalysisSchema, schemaName: "grant_research_analysis",
+      system: [
+        "Perform one evidence-governed grant research analysis in three ordered parts.",
+        "First assess every source group exactly once. Quantitative findings may use only numbers literally present in structured abstracts.",
+        `Then compare every recommended group with the application at locationRef ${input.applicationLocationRef}. Distinguish mentioned, planned, preliminary and completed evidence; never treat a plan as proof.`,
+        "A residual gap must be specific, directly relevant to the core scientific question, and must not merely repeat an existing design.",
+        "Use scopeSignals conservatively: reject adjacent topics and major scope expansion; prefer clarify or narrow over adding experiments.",
+        "Finally select every program-eligible main suggestion and at most four total. The core judgment must distinguish existing coverage from remaining proof gaps.",
+      ].join(" "),
+      payload: { question: input.question,
+        application: { locationRef: input.applicationLocationRef, text: input.admittedApplicationContext }, sources },
+      attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.maximumOutputTokens,
+      parse: (value) => GrantResearchAnalysisSchema.parse(value) });
   }
 }

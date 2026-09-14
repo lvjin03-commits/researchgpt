@@ -17,6 +17,7 @@ import { grantAssistantCacheKey, grantCandidateRecommendedQuestions } from "../a
 import { retrieveGrantDocumentBlocks } from "./grant-document-retriever.ts";
 import type { GrantWebGroundedChatOrchestrator, GrantWebGroundedChatResult } from "./grant-web-grounded-chat-orchestrator.ts";
 import { requestsFullGrantDocumentAnalysis } from "../assistant/full-document-intent.ts";
+import type { GrantAssistantContextCoverage } from "../assistant/context-coverage.ts";
 
 type GrantAssistantWebRuntime = {
   getBillingPreview?: () => Promise<unknown>;
@@ -135,7 +136,6 @@ export class GrantAssistantChatService {
         )
       : null;
     const fullDocumentRequested = requestsFullGrantDocumentAnalysis(question)
-      && !input.webSearch
       && input.evidenceSourceIds.length === 0
       && effectiveContextCards.length === 0
       && !candidateAnalysis;
@@ -162,6 +162,7 @@ export class GrantAssistantChatService {
         sourceRevisionId: input.expectedRevisionId,
         snapshot: aggregate.currentRevision.snapshot,
         retrievedDocumentBlocks,
+        fullDocument: fullDocumentRequested,
       });
       const web = await this.dependencies.webGrounding.orchestrator.run({
         documentId: input.documentId,
@@ -180,7 +181,7 @@ export class GrantAssistantChatService {
           operation: GRANT_ASSISTANT_CHAT_OPERATION, attempts: 0, cached: false, focus: focusResolution,
           content: "联网研究已暂停，继续前需要确认增加智点；也可以直接整理当前结果。",
           grounding: "general_reasoning" as const, citations: [], claims: [], unsupportedClaims: [], warnings: [],
-          recommendedQuestions: [], webGrounding: web };
+          recommendedQuestions: [], contextCoverage: admitted.coverage, webGrounding: web };
       }
       if (web.status === "completed") {
         const userMessage: GrantAssistantMessage = { messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId,
@@ -188,12 +189,13 @@ export class GrantAssistantChatService {
         const assistantMessage: GrantAssistantMessage = { messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId,
           traceId: input.turnId, role: "assistant", content: web.answer.content, grounding: web.answer.grounding,
           citations: web.answer.citations.map(({ citationId, sourceAlias, sourceType, label, url }) => ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
-          cachedAnswer: web.answer, recommendedQuestions: [], createdAt: new Date().toISOString() };
+          cachedAnswer: web.answer, recommendedQuestions: [], contextCoverage: admitted.coverage,
+          createdAt: new Date().toISOString() };
         await this.dependencies.sessions.appendTurn({ sessionId: session.sessionId, userMessage, assistantMessage, lastActiveAt: assistantMessage.createdAt });
         return { sessionId: session.sessionId, turnId: input.turnId, traceId: input.turnId,
           operation: GRANT_ASSISTANT_CHAT_OPERATION, attempts: 1, cached: false, focus: focusResolution,
           recommendedQuestions: [], webGrounding: { searchedCount: web.searchedCount, recommendedCount: web.recommendedCount,
-            excludedCount: web.excludedCount, charging: web.charging }, ...web.answer };
+            excludedCount: web.excludedCount, charging: web.charging }, contextCoverage: admitted.coverage, ...web.answer };
       }
     }
     const policy = resolveGrantModelOperationPolicy({ operation: GRANT_ASSISTANT_CHAT_OPERATION, configuredGrantModelId: this.dependencies.configuredGrantModelId });
@@ -231,6 +233,7 @@ export class GrantAssistantChatService {
         citations: cachedAssistant.cachedAnswer.citations.map(({ citationId, sourceAlias, sourceType, label, url }) => ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
         cachedAnswer: cachedAssistant.cachedAnswer,
         recommendedQuestions: cachedAssistant.recommendedQuestions ?? recommendedQuestions,
+        ...(cachedAssistant.contextCoverage ? { contextCoverage: cachedAssistant.contextCoverage } : {}),
         createdAt: new Date().toISOString(),
       };
       await this.dependencies.sessions.appendTurn({ sessionId: session.sessionId, userMessage, assistantMessage, lastActiveAt: assistantMessage.createdAt });
@@ -238,6 +241,7 @@ export class GrantAssistantChatService {
         sessionId: session.sessionId, turnId: input.turnId, traceId: input.turnId, operation: policy.operation,
         attempts: 0, cached: true, focus: focusResolution,
         recommendedQuestions: assistantMessage.recommendedQuestions ?? [],
+        ...(assistantMessage.contextCoverage ? { contextCoverage: assistantMessage.contextCoverage } : {}),
         ...cachedAssistant.cachedAnswer,
       };
     }
@@ -248,6 +252,13 @@ export class GrantAssistantChatService {
       ...recent.map(({ role, content }) => ({ role, content })),
       { role: "user", content: question },
     ];
+    let contextCoverage: GrantAssistantContextCoverage = {
+      mode: "retrieved_excerpts", strategy: "retrieval", sourceRevisionId: input.expectedRevisionId,
+      sectionCount: aggregate.currentRevision.snapshot.sections.length,
+      coveredSectionCount: new Set(retrievedDocumentBlocks.map((block) => block.sectionId)).size,
+      nodeCount: aggregate.currentRevision.snapshot.nodes.length,
+      coveredNodeCount: retrievedDocumentBlocks.length, complete: false,
+    };
     const execution = await this.dependencies.modelExecutor.execute({
       documentId: input.documentId,
       turnId: input.turnId,
@@ -293,6 +304,15 @@ export class GrantAssistantChatService {
           attemptPurpose,
           });
         const answer = validateGrantAssistantGroundedAnswer(result);
+        if ("fullDocument" in result) {
+          contextCoverage = { mode: "full_document", strategy: result.fullDocument.mode,
+            sourceRevisionId: input.expectedRevisionId,
+            sectionCount: aggregate.currentRevision.snapshot.sections.length,
+            coveredSectionCount: aggregate.currentRevision.snapshot.sections.length,
+            nodeCount: aggregate.currentRevision.snapshot.nodes.length,
+            coveredNodeCount: aggregate.currentRevision.snapshot.nodes.length, complete: true,
+            ...("unitCount" in result.fullDocument ? { unitCount: result.fullDocument.unitCount } : {}) };
+        }
         return {
           value: { ...answer, provider: result.provider, modelId: result.modelId },
           outputHash: sha256Canonical(answer),
@@ -306,9 +326,11 @@ export class GrantAssistantChatService {
       messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId, traceId: execution.traceId,
       role: "assistant", content: execution.value.content, grounding: execution.value.grounding,
       citations: execution.value.citations.map(({ citationId, sourceAlias, sourceType, label, url }) => ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
-      cachedAnswer: execution.value, recommendedQuestions, createdAt: new Date().toISOString(),
+      cachedAnswer: execution.value, recommendedQuestions, contextCoverage, createdAt: new Date().toISOString(),
     };
     await this.dependencies.sessions.appendTurn({ sessionId: session.sessionId, userMessage, assistantMessage, lastActiveAt: assistantMessage.createdAt });
-    return { sessionId: session.sessionId, turnId: input.turnId, traceId: execution.traceId, operation: policy.operation, attempts: execution.attempts, cached: false, focus: focusResolution, recommendedQuestions, ...execution.value };
+    return { sessionId: session.sessionId, turnId: input.turnId, traceId: execution.traceId, operation: policy.operation,
+      attempts: execution.attempts, cached: false, focus: focusResolution, recommendedQuestions, contextCoverage,
+      ...execution.value };
   }
 }

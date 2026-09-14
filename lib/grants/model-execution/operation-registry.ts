@@ -92,11 +92,11 @@ export function resolveGrantModelOperationPolicy(input: {
         : input.operation === GRANT_WEB_QUERY_REWRITE_OPERATION
           ? { maximumInputTokens: 4_000, maximumOutputTokens: 300, maximumToolCalls: 0, timeoutMilliseconds: 45_000 }
           : input.operation === GRANT_WEB_SOURCE_ASSESS_OPERATION
-            ? { maximumInputTokens: 12_000, maximumOutputTokens: 1_600, maximumToolCalls: 0, timeoutMilliseconds: 90_000 }
+            ? { maximumInputTokens: 32_000, maximumOutputTokens: 1_600, maximumToolCalls: 0, timeoutMilliseconds: 90_000 }
             : input.operation === GRANT_WEB_GAP_COMPARE_OPERATION
               ? { maximumInputTokens: 16_000, maximumOutputTokens: 2_000, maximumToolCalls: 0, timeoutMilliseconds: 120_000 }
             : input.operation === GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION
-              ? { maximumInputTokens: 16_000, maximumOutputTokens: 2_400, maximumToolCalls: 0, timeoutMilliseconds: 120_000 }
+              ? { maximumInputTokens: 32_000, maximumOutputTokens: 2_400, maximumToolCalls: 0, timeoutMilliseconds: 120_000 }
               : { maximumInputTokens: 24_000, maximumOutputTokens: 4_000, maximumToolCalls: 0, timeoutMilliseconds: 120_000 },
     retryableCategories: new Set<GrantModelFailureCategory>(input.operation === GRANT_WEB_NEXT_STEP_DECIDE_OPERATION || input.operation === GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION ? [] : [
       "structured_output_invalid",

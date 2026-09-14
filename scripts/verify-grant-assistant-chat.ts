@@ -28,6 +28,7 @@ const sessions = {
 };
 let providerCalls = 0;
 let fullDocumentCalls = 0;
+let lastWebFullDocument = false;
 let lastProviderMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
 let lastContextCardCount = 0;
 const revisions = {
@@ -35,8 +36,13 @@ const revisions = {
 } as unknown as GrantRevisionService;
 const gateway = {
   validateAssistantDocumentSelections: () => [],
-  prepareWebGroundingContext: () => ({ schemaVersion: 1 as const, documentId, sourceRevisionId: revisionId,
-    documentLanguage: "zh" as const, applicationContext: "", contextHash: "c".repeat(64) }),
+  prepareWebGroundingContext: (input: { fullDocument?: boolean }) => { lastWebFullDocument = Boolean(input.fullDocument); return ({ schemaVersion: 1 as const, documentId, sourceRevisionId: revisionId,
+    documentLanguage: "zh" as const, applicationContext: "", searchContext: "测试申请书", contextHash: "c".repeat(64),
+    coverage: input.fullDocument
+      ? { mode: "full_document" as const, strategy: "long_context" as const, sourceRevisionId: revisionId,
+          sectionCount: 4, coveredSectionCount: 4, nodeCount: 24, coveredNodeCount: 24, complete: true }
+      : { mode: "retrieved_excerpts" as const, strategy: "retrieval" as const, sourceRevisionId: revisionId,
+          sectionCount: 4, coveredSectionCount: 2, nodeCount: 24, coveredNodeCount: 6, complete: false } }); },
   answerFullDocumentAssistantChat: async () => {
     fullDocumentCalls += 1;
     return { content: "这是基于完整申请书的整体分析。", claims: [{ claimId: "FC1", statement: "整体结论",
@@ -118,6 +124,13 @@ assert.equal(webCalls, 1);
 assert.equal(webResult.grounding, "evidence_grounded");
 assert.equal(webResult.citations[0]?.sourceType, "web_source");
 assert.equal(storedMessages.at(-1)?.content, "联网资料支持该判断。 [W1]");
+
+const fullWebResult = await service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(),
+  message: "请联网并基于整篇申请书做全面评价。", contextCards: [], evidenceSourceIds: [], webSearch: true });
+assert.equal(lastWebFullDocument, true, "whole-document web questions must admit the canonical full document");
+assert.equal(fullWebResult.contextCoverage?.complete, true);
+assert.equal(fullWebResult.contextCoverage?.coveredNodeCount, 24);
+assert.equal(storedMessages.at(-1)?.contextCoverage?.mode, "full_document", "coverage must be persisted with the answer");
 
 const focusCard = (label: string) => ({
   kind: "document_selection" as const,
@@ -238,6 +251,8 @@ assert.match(panelSource, /contextCards/);
 assert.match(panelSource, /recommendedQuestions/);
 assert.match(panelSource, /联网补充：已开启/);
 assert.match(panelSource, /webSearch/);
+assert.match(panelSource, /全文已覆盖/);
+assert.match(panelSource, /contextCoverage/);
 assert.match(gatewaySource, /answerAssistantChat/);
 assert.match(providerSource, /zodResponseFormat\(AssistantChatResultSchema, "grant_assistant_chat"\)/);
 assert.match(providerSource, /request\.admittedContext\.length === 0/);
