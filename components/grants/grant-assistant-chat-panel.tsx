@@ -8,7 +8,7 @@ import { candidateContextFocus, documentSelectionFocuses, resolveGrantAssistantF
 type ContextCoverage = { mode: "full_document" | "document_memory" | "retrieved_excerpts"; strategy: "single_pass" | "hierarchical" | "long_context" | "semantic_memory" | "semantic_targeted" | "retrieval";
   sourceRevisionId: string; sectionCount: number; coveredSectionCount: number; nodeCount: number; coveredNodeCount: number;
   complete: boolean; unitCount?: number };
-type Message = { messageId: string; turnId?: string; role: "user" | "assistant"; content: string; grounding?: "general_reasoning" | "evidence_grounded"; citations?: Array<{ citationId: string; sourceAlias?: string; label: string; url?: string }>; recommendedQuestions?: string[]; contextCoverage?: ContextCoverage };
+type Message = { messageId: string; turnId?: string; role: "user" | "assistant"; content: string; localStatus?: "failed"; grounding?: "general_reasoning" | "evidence_grounded"; citations?: Array<{ citationId: string; sourceAlias?: string; label: string; url?: string }>; recommendedQuestions?: string[]; contextCoverage?: ContextCoverage };
 type BillingPreview = { charging: "meter_only" | "canary" | "resumable"; canSubmit: boolean; maximumChargePoints: number; availablePoints: number | null; reason?: "insufficient_points" | "account_on_hold" | "daily_limit" };
 type PausedBudget = { budgetId: string; turnId: string; version: number; requiredAdditionalPoints: number;
   settledPoints: number; authorizedPoints: number; question: string; canDeliverExisting: boolean;
@@ -28,6 +28,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingAssistantTurnId, setPendingAssistantTurnId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [ambiguity, setAmbiguity] = useState<{ question: string; choices: GrantAssistantFocus[] } | null>(null);
@@ -40,6 +41,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const budgetActionInFlight = useRef(false);
   const budgetIncreaseAuthorization = useRef<{ budgetId: string; authorizationId: string } | null>(null);
+  const conversationEnd = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     // The selected-document action supplies a new one-shot prompt to this mounted panel.
@@ -67,6 +69,10 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
     return () => { active = false; };
   }, [documentId]);
 
+  useEffect(() => {
+    conversationEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages.length, pendingAssistantTurnId]);
+
   async function send(explicitFocusId?: string) {
     const question = input.trim();
     if (!question || busy || !canGenerate || pausedBudget) return;
@@ -86,6 +92,9 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       ? currentContextCards.filter((card) => card.contextCardId === focusResolution.focus.focusId)
       : [];
     const submittedFocusId = focusResolution.kind === "resolved" ? focusResolution.focus.focusId : null;
+    setMessages((items) => [...items, { messageId: `${turnId}:user`, turnId, role: "user", content: question }]);
+    setInput("");
+    setPendingAssistantTurnId(turnId);
     setBusy(true); setError("");
     try {
       const response = await fetch(`/api/grants/documents/${documentId}/assistant/chat`, {
@@ -111,8 +120,7 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           : "";
         throw new Error(detail ? `${data.error ?? "请求失败"}（${detail}）` : (data.error ?? "Grant AI 对话失败。"));
       }
-      setMessages((items) => [...items, { messageId: `${turnId}:user`, turnId, role: "user", content: question }, { messageId: `${turnId}:assistant`, turnId, role: "assistant", content: data.content, grounding: data.grounding, citations: data.citations, recommendedQuestions: data.recommendedQuestions, contextCoverage: data.contextCoverage }]);
-      setInput("");
+      setMessages((items) => [...items, { messageId: `${turnId}:assistant`, turnId, role: "assistant", content: data.content, grounding: data.grounding, citations: data.citations, recommendedQuestions: data.recommendedQuestions, contextCoverage: data.contextCoverage }]);
       const charge = data.webGrounding?.charging;
       if (data.webGrounding?.status === "awaiting_budget") {
         setPausedBudget({ budgetId: data.webGrounding.budgetId, turnId, version: data.webGrounding.version,
@@ -134,8 +142,12 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       setAmbiguity(null);
       setIgnoreAmbiguousFocusOnce(false);
     } catch (cause) {
+      setMessages((items) => items.map((message) => message.turnId === turnId && message.role === "user"
+        ? { ...message, localStatus: "failed" }
+        : message));
       setError(cause instanceof Error ? cause.message : "Grant AI 对话失败。");
     } finally {
+      setPendingAssistantTurnId(null);
       setBusy(false);
     }
   }
@@ -205,7 +217,13 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-2">
       {messages.length === 0 && <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">可以像普通 AI 对话一样讨论基金写作、研究思路和术语。系统先建立当前申请书的全文记忆，再按问题自动核对相关原文和当前 AI 诊断；点选正文后也可以限定讨论范围。对话不能修改正文。</div>}
       {messages.map((message) => message.role === "user"
-        ? <div key={message.messageId} className="ml-8 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-sm text-white">{message.content}</div>
+        ? <div key={message.messageId} className="ml-8 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-sm text-white">
+            {message.content}
+            {message.localStatus === "failed" && <div className="mt-2 flex items-center justify-end gap-2 border-t border-blue-400/60 pt-1.5 text-[11px] text-blue-100">
+              <span>发送失败</span>
+              <button type="button" onClick={() => { setMessages((items) => items.filter((item) => item.messageId !== message.messageId)); setInput((current) => current || message.content); }} className="font-semibold underline underline-offset-2 hover:text-white">重新编辑</button>
+            </div>}
+          </div>
         : <div key={message.messageId} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
             {message.content}
             {message.contextCoverage && <div className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${message.contextCoverage.complete ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
@@ -227,6 +245,15 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
               {message.recommendedQuestions.map((question) => <button key={question} type="button" onClick={() => setInput(question)} className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-left text-xs leading-5 text-blue-700 hover:border-blue-400">{question}</button>)}
             </div>}
           </div>)}
+      {pendingAssistantTurnId && <div aria-label="Grant AI 正在回复" className="w-fit rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+        <span className="sr-only">Grant AI 正在分析申请书</span>
+        <span aria-hidden="true" className="flex items-center gap-1 py-1">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
+        </span>
+      </div>}
+      <div ref={conversationEnd} />
     </div>
     <div className="shrink-0 border-t border-slate-200 pt-3">
       {candidateContext && <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs">
@@ -248,8 +275,8 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
       <GrantAssistantSourceControls documentId={documentId} enabled={evidenceEnabled} selectedSourceIds={selectedSourceIds} onSelectionChange={setSelectedSourceIds} onError={setError} />
       {webGroundingEnabled && <div className="mb-2 flex flex-wrap items-center gap-2"><button type="button" aria-pressed={webSearch} disabled={Boolean(pausedBudget)} onClick={() => setWebSearch((value) => !value)} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${webSearch ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 bg-white text-slate-700"}`}>{webSearch ? "联网补充：已开启" : "联网补充"}</button>{webSearch && billing?.charging === "canary" && <span className="text-[11px] text-slate-500">最多 {billing.maximumChargePoints} 智点 · 可用 {billing.availablePoints ?? 0}</span>}{webSearch && billing?.charging === "resumable" && <><label className="text-[11px] text-slate-600">本次智点上限 <input aria-label="联网智点上限" type="number" min={Math.max(20, billing.maximumChargePoints)} max={500} value={webBudgetPoints} disabled={Boolean(pausedBudget)} onChange={(event) => setWebBudgetPoints(event.target.value)} onBlur={() => setWebBudgetPoints(String(Math.max(20, billing.maximumChargePoints, Math.min(500, Number(webBudgetPoints) || 20))))} className="ml-1 w-16 rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100" /></label><span className="text-[11px] text-slate-500">可设置 {Math.max(20, billing.maximumChargePoints)}–500 · 账户可用 {billing.availablePoints ?? 0} · 仅按实际消耗扣除</span></>}</div>}
       <div className="flex items-end gap-2 rounded-xl border border-slate-300 bg-white p-2 focus-within:border-blue-500">
-        <textarea aria-label="向 Grant AI 提问" value={input} onChange={(event) => { const next = event.target.value; setInput(next); setError(""); if (ambiguity && next.trim() !== ambiguity.question) { setAmbiguity(null); setIgnoreAmbiguousFocusOnce(true); } }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="询问基金写作、研究思路或术语" className="min-h-16 flex-1 resize-none border-0 px-2 py-1 text-sm outline-none" />
-        <button type="button" disabled={!input.trim() || busy || !canGenerate || Boolean(pausedBudget) || Boolean(webSearch && billing && !billing.canSubmit) || Boolean(webSearch && billing?.charging === "resumable" && (!Number.isInteger(Number(webBudgetPoints)) || Number(webBudgetPoints) < Math.max(20, billing.maximumChargePoints) || Number(webBudgetPoints) > 500))} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{busy ? "处理中…" : "发送"}</button>
+        <textarea aria-label="向 Grant AI 提问" value={input} onChange={(event) => { const next = event.target.value; setInput(next); setError(""); if (ambiguity && next.trim() !== ambiguity.question) { setAmbiguity(null); setIgnoreAmbiguousFocusOnce(true); } }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !busy) { event.preventDefault(); void send(); } }} placeholder="询问基金写作、研究思路或术语" className="min-h-16 flex-1 resize-none border-0 px-2 py-1 text-sm outline-none" />
+        <button type="button" disabled={!input.trim() || busy || !canGenerate || Boolean(pausedBudget) || Boolean(webSearch && billing && !billing.canSubmit) || Boolean(webSearch && billing?.charging === "resumable" && (!Number.isInteger(Number(webBudgetPoints)) || Number(webBudgetPoints) < Math.max(20, billing.maximumChargePoints) || Number(webBudgetPoints) > 500))} onClick={() => void send()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">发送</button>
       </div>
       {webSearch && billing && !billing.canSubmit && <p className="mt-2 text-xs text-amber-700">{billing.reason === "insufficient_points" ? `账户智点不足：下一阶段需要预留 ${billing.maximumChargePoints}，当前可用 ${billing.availablePoints ?? 0}。增加预算上限不会增加账户余额。` : billing.reason === "account_on_hold" ? "智点账户暂时不可用。" : "今日联网问答额度已用完。"}</p>}
       {lastChargedPoints !== null && <p className="mt-2 text-[11px] text-emerald-700">本次联网问答实际消耗 {lastChargedPoints} 智点。</p>}
