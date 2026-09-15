@@ -105,6 +105,10 @@ verification, and DOCX rendering may be reused only behind explicit ports.
 | ArgumentMap interpretation | Versioned Semantic Checker Contract | Descriptive, revision-bound scaffold only; never durable identity |
 | Semantic object recognition | Versioned Semantic Checker Contract | Revision-bound interpretation only; never creates canonical document nodes |
 | Frozen semantic-review input | Grant Model Data Gateway | Reuses one admitted revision, evidence set, figure set and atomic-location scope; no checker rebuilds aliases |
+| Revision-bound grant document memory | Grant Model Data Gateway | Builds one rebuildable semantic projection from complete canonical content; repository stores it, but cannot reinterpret or admit stale memory |
+| Grant Assistant context plan | Grant Assistant Context Planner | Model proposes semantic needs from current memory; program validates targets, while authorization services retain spend, evidence, image and write decisions |
+| Grant Assistant planned context assembly | Grant Assistant Planned Context Assembler | Resolves a validated plan against the current canonical Revision and current open Findings; stale or fabricated anchors fail closed |
+| Grant Assistant memory-planned execution | Grant Model Data Gateway | Runs memory, planning, context admission and grounded answering as one candidate turn and reports aggregate provider usage; it owns no billing settlement |
 | Fact Map identity and anchor assembly | Fact Map Assembler | Assigns execution-local semantic refs and resolves canonical anchors/hashes; model never mints IDs |
 | Semantic-object review disposition | Versioned Semantic Checker Contract | Explicit residual-gap, verified-no-gap, or unable-to-verify judgment; no severity |
 | Fact Map coverage completeness | Fact Map Coverage Assembler | Validates the frozen semantic-object and Finding sets; never infers completeness from prose |

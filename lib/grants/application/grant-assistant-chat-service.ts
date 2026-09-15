@@ -16,8 +16,10 @@ import { prepareGrantCandidateAnalysis } from "../edit-session/candidate-analysi
 import { grantAssistantCacheKey, grantCandidateRecommendedQuestions } from "../assistant/chat-intelligence.ts";
 import { retrieveGrantDocumentBlocks } from "./grant-document-retriever.ts";
 import type { GrantWebGroundedChatOrchestrator, GrantWebGroundedChatResult } from "./grant-web-grounded-chat-orchestrator.ts";
-import { requestsFullGrantDocumentAnalysis } from "../assistant/full-document-intent.ts";
 import type { GrantAssistantContextCoverage } from "../assistant/context-coverage.ts";
+import type { GrantDocumentMemoryRepository } from "../ports/grant-document-memory-repository.ts";
+import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
+import type { GrantAssistantMemoryPipelineResult } from "./grant-assistant-memory-pipeline.ts";
 
 type GrantAssistantWebRuntime = {
   getBillingPreview?: () => Promise<unknown>;
@@ -27,6 +29,28 @@ type GrantAssistantWebRuntime = {
       requiredAdditionalPoints: number; settledPoints: number; authorizedPoints: number;
       canDeliverExisting: boolean }>;
 };
+
+function memoryPlannedCoverage(
+  result: GrantAssistantMemoryPipelineResult,
+  sectionCount: number,
+  nodeCount: number,
+  sourceRevisionId: string,
+): GrantAssistantContextCoverage {
+  const coverage = result.plannedContext.coverage;
+  if (coverage.completeOriginal) return {
+    mode: "full_document", strategy: "long_context", sourceRevisionId,
+    sectionCount, coveredSectionCount: sectionCount, nodeCount, coveredNodeCount: nodeCount, complete: true,
+  };
+  if (coverage.originalMode === "targeted_original") return {
+    mode: "retrieved_excerpts", strategy: "semantic_targeted", sourceRevisionId,
+    sectionCount, coveredSectionCount: coverage.coveredSectionCount,
+    nodeCount, coveredNodeCount: coverage.coveredNodeCount, complete: false,
+  };
+  return {
+    mode: "document_memory", strategy: "semantic_memory", sourceRevisionId,
+    sectionCount, coveredSectionCount: sectionCount, nodeCount, coveredNodeCount: nodeCount, complete: true,
+  };
+}
 
 export class GrantAssistantChatError extends Error {
   readonly code: "grant_assistant_duplicate_turn" | "grant_assistant_history_invalid" | "grant_assistant_focus_ambiguous";
@@ -42,13 +66,15 @@ export class GrantAssistantChatError extends Error {
 export class GrantAssistantChatService {
   private readonly dependencies: {
     revisionService: Pick<GrantRevisionService, "getDocument" | "getRevision">;
-    modelGateway: Pick<GrantModelDataGateway, "answerAssistantChat" | "answerFullDocumentAssistantChat" |
+    modelGateway: Pick<GrantModelDataGateway, "answerAssistantChat" | "answerMemoryPlannedAssistantChat" |
       "validateAssistantDocumentSelections" | "prepareWebGroundingContext">;
     modelExecutor: GrantModelExecutor;
     modelCalls: GrantModelCallRepository;
     configuredGrantModelId: string;
     sessions: GrantAssistantSessionRepository;
     editSessions: GrantAiEditSessionRepository;
+    documentMemories: GrantDocumentMemoryRepository;
+    diagnostics: Pick<GrantDiagnosticRepository, "listNormalizedFindings">;
     webGrounding?: { actorId: string; orchestrator: GrantAssistantWebRuntime };
   };
 
@@ -94,7 +120,7 @@ export class GrantAssistantChatService {
     if (!question || question.length > 12000) throw new GrantAssistantChatError("grant_assistant_history_invalid", "Grant assistant message is invalid.");
     // Browser selections are one-shot precision focus, never implicit chat
     // context. Without an explicit focusId, stale cards must not participate
-    // in focus resolution or validation; ordinary turns use retrieval.
+    // in focus resolution; ordinary turns use semantic memory planning.
     const availableFocuses = [
       ...(input.focusId ? documentSelectionFocuses(input.contextCards) : []),
       ...(input.candidateContext ? [candidateContextFocus(input.candidateContext)] : []),
@@ -111,7 +137,7 @@ export class GrantAssistantChatService {
     if (focusResolution.kind === "ambiguous") {
       throw new GrantAssistantChatError("grant_assistant_focus_ambiguous", "请先确认这句话指的是哪一处内容。", focusResolution.choices);
     }
-    // Ordinary chat is grounded by server-side retrieval. Only an explicitly
+    // Only an explicitly
     // resolved document focus may carry a browser selection into validation;
     // stale cards from an older page/session must never block a normal turn.
     const effectiveContextCards = input.ignoreAmbiguousFocus || focusResolution.kind !== "resolved"
@@ -119,12 +145,6 @@ export class GrantAssistantChatService {
       : focusResolution.focus.kind === "document_selection"
         ? input.contextCards.filter((card) => card.contextCardId === focusResolution.focus.focusId)
         : [];
-    const retrievedDocumentBlocks = retrieveGrantDocumentBlocks({
-      snapshot: aggregate.currentRevision.snapshot,
-      sourceRevisionId: input.expectedRevisionId,
-      query: question,
-      limit: 6,
-    });
     const candidateIsEffective = Boolean(input.candidateContext)
       && !input.ignoreAmbiguousFocus
       && (focusResolution.kind !== "resolved" || focusResolution.focus.kind === "edit_candidate");
@@ -135,10 +155,15 @@ export class GrantAssistantChatService {
           (code, message) => new GrantAssistantChatError("grant_assistant_history_invalid", `${code}: ${message}`),
         )
       : null;
-    const fullDocumentRequested = requestsFullGrantDocumentAnalysis(question)
-      && input.evidenceSourceIds.length === 0
+    const useMemoryPlanning = input.evidenceSourceIds.length === 0
       && effectiveContextCards.length === 0
       && !candidateAnalysis;
+    const retrievedDocumentBlocks = useMemoryPlanning && !input.webSearch ? [] : retrieveGrantDocumentBlocks({
+      snapshot: aggregate.currentRevision.snapshot,
+      sourceRevisionId: input.expectedRevisionId,
+      query: question,
+      limit: 6,
+    });
     this.dependencies.modelGateway.validateAssistantDocumentSelections({
       documentId: input.documentId,
       sourceRevisionId: input.expectedRevisionId,
@@ -162,7 +187,7 @@ export class GrantAssistantChatService {
         sourceRevisionId: input.expectedRevisionId,
         snapshot: aggregate.currentRevision.snapshot,
         retrievedDocumentBlocks,
-        fullDocument: fullDocumentRequested,
+        fullDocument: true,
       });
       const web = await this.dependencies.webGrounding.orchestrator.run({
         documentId: input.documentId,
@@ -267,24 +292,45 @@ export class GrantAssistantChatService {
       policy,
       classifyFailure: (error): GrantModelFailureCategory => error instanceof GrantAssistantModelError ? error.category : "provider_unavailable",
       invoke: async ({ attemptPurpose }) => {
-        const result = fullDocumentRequested
-          ? await this.dependencies.modelGateway.answerFullDocumentAssistantChat({
-              documentId: input.documentId,
-              sourceRevisionId: input.expectedRevisionId,
-              snapshot: aggregate.currentRevision.snapshot,
-              messages,
-              attemptPurpose,
-              capacityPolicy: {
-                policyVersion: `${policy.policyVersion}:full-document-v1`,
-                contextWindowTokens: policy.executionLimits.maximumInputTokens
-                  + policy.executionLimits.maximumOutputTokens + 2_000,
-                maximumInputTokens: policy.executionLimits.maximumInputTokens,
-                reservedOutputTokens: policy.executionLimits.maximumOutputTokens,
-                protocolOverheadTokens: 800,
-                safetyMarginTokens: 1_000,
-              },
-            })
-          : await this.dependencies.modelGateway.answerAssistantChat({
+        if (useMemoryPlanning) {
+          const result = await this.dependencies.modelGateway.answerMemoryPlannedAssistantChat({
+            documentId: input.documentId,
+            sourceRevisionId: input.expectedRevisionId,
+            snapshot: aggregate.currentRevision.snapshot,
+            messages,
+            memoryRepository: this.dependencies.documentMemories,
+            diagnostics: this.dependencies.diagnostics,
+            expectedModelId: policy.modelId,
+            memoryPolicyVersion: `${policy.policyVersion}:document-memory-v1:${policy.modelId}`,
+            plannerPolicyVersion: `${policy.policyVersion}:semantic-context-v1`,
+            memoryCapacityPolicy: {
+              policyVersion: `${policy.policyVersion}:document-memory-capacity-v1`,
+              contextWindowTokens: policy.executionLimits.maximumInputTokens
+                + policy.executionLimits.maximumOutputTokens + 2_000,
+              maximumInputTokens: policy.executionLimits.maximumInputTokens,
+              reservedOutputTokens: policy.executionLimits.maximumOutputTokens,
+              protocolOverheadTokens: 800,
+              safetyMarginTokens: 1_000,
+            },
+            memorySynthesisMaximumInputTokens: policy.executionLimits.maximumInputTokens,
+            plannerMaximumInputTokens: Math.min(8_000, policy.executionLimits.maximumInputTokens),
+            answerMaximumInputTokens: policy.executionLimits.maximumInputTokens,
+            attemptPurpose,
+            explicitContext: { hasDocumentSelection: false, hasCandidate: false,
+              hasEvidence: false, webSearchEnabledByUser: Boolean(input.webSearch) },
+          });
+          contextCoverage = memoryPlannedCoverage(result, aggregate.currentRevision.snapshot.sections.length,
+            aggregate.currentRevision.snapshot.nodes.length, input.expectedRevisionId);
+          const answer = result.status === "answered" ? result.answer : {
+            content: result.clarificationQuestion, grounding: "general_reasoning" as const,
+            claims: [] as [], citations: [] as [], referencedObjects: [], suggestedActions: [] as [],
+          };
+          return { value: { ...answer, provider: result.provider, modelId: result.modelId },
+            outputHash: result.status === "answered" ? result.outputHash : sha256Canonical(answer),
+            ...(result.providerRequestIds.at(-1) ? { providerRequestId: result.providerRequestIds.at(-1) } : {}),
+            usage: result.usage };
+        }
+        const result = await this.dependencies.modelGateway.answerAssistantChat({
           documentId: input.documentId,
           sourceRevisionId: input.expectedRevisionId,
           snapshot: aggregate.currentRevision.snapshot,
@@ -302,17 +348,8 @@ export class GrantAssistantChatService {
           evidenceSourceIds: input.evidenceSourceIds,
           taskId: input.turnId,
           attemptPurpose,
-          });
+        });
         const answer = validateGrantAssistantGroundedAnswer(result);
-        if ("fullDocument" in result) {
-          contextCoverage = { mode: "full_document", strategy: result.fullDocument.mode,
-            sourceRevisionId: input.expectedRevisionId,
-            sectionCount: aggregate.currentRevision.snapshot.sections.length,
-            coveredSectionCount: aggregate.currentRevision.snapshot.sections.length,
-            nodeCount: aggregate.currentRevision.snapshot.nodes.length,
-            coveredNodeCount: aggregate.currentRevision.snapshot.nodes.length, complete: true,
-            ...("unitCount" in result.fullDocument ? { unitCount: result.fullDocument.unitCount } : {}) };
-        }
         return {
           value: { ...answer, provider: result.provider, modelId: result.modelId },
           outputHash: sha256Canonical(answer),

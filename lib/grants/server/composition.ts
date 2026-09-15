@@ -69,7 +69,7 @@ import { assembleGrantWebGroundedAnswer } from "../web-sources/grounded-answer-a
 import { OpenAlexStructuredAcademicProvider } from "../infrastructure/web/openalex-structured-academic-provider.ts";
 import { OpenAlexResearchSearchAdapter } from "../infrastructure/web/openalex-research-search-adapter.ts";
 import { TiktokenGrantTokenCounter } from "../infrastructure/model/tiktoken-grant-token-counter.ts";
-import { requestsFullGrantDocumentAnalysis } from "../assistant/full-document-intent.ts";
+import { SupabaseGrantDocumentMemoryRepository } from "../infrastructure/supabase/supabase-grant-document-memory-repository.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -217,6 +217,8 @@ export function createGrantAssistantChatService(ownerId: string): GrantAssistant
     configuredGrantModelId: ai.config.modelId,
     sessions: new SupabaseGrantAssistantSessionRepository(client, ownerId),
     editSessions: new SupabaseGrantAiEditSessionRepository(client, ownerId),
+    documentMemories: new SupabaseGrantDocumentMemoryRepository(client, ownerId),
+    diagnostics: new SupabaseGrantDiagnosticRepository(client, ownerId),
     ...(webRuntime ? { webGrounding: { actorId: ownerId, orchestrator: webRuntime.orchestrator } } : {}),
   });
 }
@@ -273,7 +275,7 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
           sourceRevisionId, query: checkpoint.question, limit: 6 });
         const admitted = ai.gateway.prepareWebGroundingContext({ documentId: checkpoint.documentId,
           sourceRevisionId, snapshot: aggregate.currentRevision.snapshot, retrievedDocumentBlocks: blocks,
-          fullDocument: requestsFullGrantDocumentAnalysis(checkpoint.question) });
+          fullDocument: true });
         return { question: checkpoint.question, applicationContext: admitted.applicationContext,
           searchContext: admitted.searchContext,
           documentTextForEgressCheck: JSON.stringify(aggregate.currentRevision.snapshot),
@@ -295,7 +297,7 @@ export function createGrantWebGroundedChatRuntime(ownerId: string) {
           sourceRevisionId, query: checkpoint.question, limit: 6 });
         const admitted = ai.gateway.prepareWebGroundingContext({ documentId: checkpoint.documentId,
           sourceRevisionId, snapshot: aggregate.currentRevision.snapshot, retrievedDocumentBlocks: blocks,
-          fullDocument: requestsFullGrantDocumentAnalysis(checkpoint.question) });
+          fullDocument: true });
         const createdAt = new Date().toISOString();
         await assistantSessions.appendTurn({ sessionId: checkpoint.assistantSessionId,
           userMessage: { messageId: randomUUID(), sessionId: checkpoint.assistantSessionId,

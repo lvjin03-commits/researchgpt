@@ -5,7 +5,7 @@ import type { GrantAssistantCandidateContext, GrantAssistantDocumentSelectionCon
 import { GrantAssistantSourceControls } from "./grant-assistant-source-controls";
 import { candidateContextFocus, documentSelectionFocuses, resolveGrantAssistantFocus, type GrantAssistantFocus } from "@/lib/grants/assistant/focus-state";
 
-type ContextCoverage = { mode: "full_document" | "retrieved_excerpts"; strategy: "single_pass" | "hierarchical" | "long_context" | "retrieval";
+type ContextCoverage = { mode: "full_document" | "document_memory" | "retrieved_excerpts"; strategy: "single_pass" | "hierarchical" | "long_context" | "semantic_memory" | "semantic_targeted" | "retrieval";
   sourceRevisionId: string; sectionCount: number; coveredSectionCount: number; nodeCount: number; coveredNodeCount: number;
   complete: boolean; unitCount?: number };
 type Message = { messageId: string; turnId?: string; role: "user" | "assistant"; content: string; grounding?: "general_reasoning" | "evidence_grounded"; citations?: Array<{ citationId: string; sourceAlias?: string; label: string; url?: string }>; recommendedQuestions?: string[]; contextCoverage?: ContextCoverage };
@@ -203,15 +203,19 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
 
   return <section aria-label="Grant AI 普通对话" className="flex min-h-0 flex-1 flex-col overflow-hidden">
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-2">
-      {messages.length === 0 && <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">可以讨论基金写作、研究思路和术语。提问时会自动查找申请书相关原文；点选正文后也可以限定讨论范围。对话不能修改正文。</div>}
+      {messages.length === 0 && <div className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">可以像普通 AI 对话一样讨论基金写作、研究思路和术语。系统先建立当前申请书的全文记忆，再按问题自动核对相关原文和当前 AI 诊断；点选正文后也可以限定讨论范围。对话不能修改正文。</div>}
       {messages.map((message) => message.role === "user"
         ? <div key={message.messageId} className="ml-8 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-sm text-white">{message.content}</div>
         : <div key={message.messageId} className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
             {message.content}
             {message.contextCoverage && <div className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${message.contextCoverage.complete ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
-              {message.contextCoverage.complete
-                ? `全文已覆盖 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点${message.contextCoverage.unitCount ? ` · ${message.contextCoverage.unitCount} 个分析单元` : ""}`
-                : `相关片段 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点`}
+              {message.contextCoverage.mode === "document_memory"
+                ? `全文记忆已启用 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · 按需核对原文`
+                : message.contextCoverage.strategy === "semantic_targeted"
+                  ? `全文记忆 + 定向原文 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点`
+                  : message.contextCoverage.complete
+                    ? `全文原文已覆盖 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点${message.contextCoverage.unitCount ? ` · ${message.contextCoverage.unitCount} 个分析单元` : ""}`
+                    : `相关片段 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点`}
             </div>}
             {message.grounding === "evidence_grounded" && <div className="mt-3 border-t border-slate-100 pt-2 text-[11px] leading-5 text-slate-500">
               <div className="mb-1 font-semibold text-slate-600">参考来源</div>

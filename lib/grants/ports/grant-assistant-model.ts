@@ -2,7 +2,7 @@ export type GrantAssistantChatMessage = { role: "user" | "assistant"; content: s
 
 export type GrantAssistantAdmittedContext = {
   sourceAlias: string;
-  sourceType: "document_selection" | "edit_candidate" | "evidence" | "academic_source" | "web_source";
+  sourceType: "document_selection" | "document_memory" | "original_text" | "diagnostic" | "edit_candidate" | "evidence" | "academic_source" | "web_source";
   label: string;
   excerpt: string;
   /** Program-owned public URL. Present only for externally navigable sources. */
@@ -25,6 +25,12 @@ export type GrantAssistantChatModelRequest = {
   documentLanguage: "zh" | "en";
   messages: GrantAssistantChatMessage[];
   admittedContext: GrantAssistantAdmittedContext[];
+  contextPlan?: {
+    answerMode: "answer" | "explain" | "analyze" | "compare" | "review" | "revise_guidance";
+    documentAccess: "memory_only" | "targeted_original" | "full_original";
+    diagnosticAccess: "none" | "relevant" | "all";
+    rationale: string;
+  };
   attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
 };
 

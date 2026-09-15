@@ -17,7 +17,8 @@ const [service, route, panel, editPanel, answerContract, registry, provider] = a
 ]);
 
 assert.match(service, /Pick<GrantRevisionService, "getDocument" \| "getRevision">/);
-assert.match(service, /Pick<GrantModelDataGateway, "answerAssistantChat" \| "validateAssistantDocumentSelections">/);
+assert.match(service, /Pick<GrantModelDataGateway, "answerAssistantChat" \| "answerMemoryPlannedAssistantChat"/);
+assert.match(service, /"validateAssistantDocumentSelections" \| "prepareWebGroundingContext">/);
 assert.doesNotMatch(service, /commitRevision|restoreRevision|patchService|applyActiveCandidate/);
 assert.match(route, /assistantChat\.answer/);
 assert.doesNotMatch(route, /editSessions|patches|commitRevision/);

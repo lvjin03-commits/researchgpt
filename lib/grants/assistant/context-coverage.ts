@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 export const GrantAssistantContextCoverageSchema = z.object({
-  mode: z.enum(["full_document", "retrieved_excerpts"]),
-  strategy: z.enum(["single_pass", "hierarchical", "long_context", "retrieval"]),
+  mode: z.enum(["full_document", "document_memory", "retrieved_excerpts"]),
+  strategy: z.enum(["single_pass", "hierarchical", "long_context", "semantic_memory", "semantic_targeted", "retrieval"]),
   sourceRevisionId: z.string().uuid(),
   sectionCount: z.number().int().nonnegative(),
   coveredSectionCount: z.number().int().nonnegative(),

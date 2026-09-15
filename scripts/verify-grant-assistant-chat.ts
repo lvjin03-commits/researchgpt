@@ -27,7 +27,7 @@ const sessions = {
   linkEditSession: async () => undefined,
 };
 let providerCalls = 0;
-let fullDocumentCalls = 0;
+let memoryPlannedCalls = 0;
 let lastWebFullDocument = false;
 let lastProviderMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
 let lastContextCardCount = 0;
@@ -43,13 +43,22 @@ const gateway = {
           sectionCount: 4, coveredSectionCount: 4, nodeCount: 24, coveredNodeCount: 24, complete: true }
       : { mode: "retrieved_excerpts" as const, strategy: "retrieval" as const, sourceRevisionId: revisionId,
           sectionCount: 4, coveredSectionCount: 2, nodeCount: 24, coveredNodeCount: 6, complete: false } }); },
-  answerFullDocumentAssistantChat: async () => {
-    fullDocumentCalls += 1;
-    return { content: "这是基于完整申请书的整体分析。", claims: [{ claimId: "FC1", statement: "整体结论",
-      citationIds: ["FD1"] }], citations: [{ citationId: "FD1", sourceAlias: "D1" }],
-      admittedContext: [{ sourceAlias: "D1", sourceType: "document_selection" as const,
-        label: "完整申请书", excerpt: "全文" }], provider: "openai" as const, modelId: "gpt-test",
-      providerRequestId: "req_full", usage: { inputTokens: 20, outputTokens: 10, reasoningTokens: 1 } };
+  answerMemoryPlannedAssistantChat: async (request: { attemptPurpose: string; messages: Array<{ role: "user" | "assistant"; content: string }> }) => {
+    providerCalls += 1;
+    memoryPlannedCalls += 1;
+    lastProviderMessages = request.messages;
+    if (request.attemptPurpose === "initial") throw new GrantAssistantModelError("structured_output_invalid", "bad plan");
+    const answer = validateGrantAssistantGroundedAnswer({
+      content: "这是基于全文记忆和按需原文的分析。", admittedContext: [{ sourceAlias: "MEMORY1",
+        sourceType: "document_memory" as const, label: "当前申请书全文记忆", excerpt: "全文语义记忆" }],
+      claims: [{ claimId: "MC1", statement: "基于全文语义记忆。", citationIds: ["MR1"] }],
+      citations: [{ citationId: "MR1", sourceAlias: "MEMORY1" }],
+    });
+    return { status: "answered" as const, answer, admittedContext: [], outputHash: "d".repeat(64),
+      memoryReused: true, memoryId: randomUUID(), memoryHash: "e".repeat(64),
+      plan: {}, plannedContext: { coverage: { completeOriginal: false, originalMode: "memory_only" as const,
+        coveredSectionCount: 0, coveredNodeCount: 0 } }, provider: "openai" as const, modelId: "gpt-test",
+      providerRequestIds: ["req_memory"], usage: { inputTokens: 14, outputTokens: 8, reasoningTokens: 1 } };
   },
   answerAssistantChat: async (request: { attemptPurpose: string; messages: Array<{ role: "user" | "assistant"; content: string }>; contextCards: unknown[] }) => {
     providerCalls += 1;
@@ -73,6 +82,8 @@ const service = new GrantAssistantChatService({
     markSessionStale: async () => undefined, markCandidateNeedsRepair: async () => undefined,
     markSessionApplied: async () => undefined, listTurns: async () => [], listCandidates: async () => [],
   },
+  documentMemories: { findReusable: async () => null, save: async (snapshot) => snapshot },
+  diagnostics: { listNormalizedFindings: async () => [] },
   webGrounding: { actorId: randomUUID(), orchestrator: { async run() {
     webCalls += 1;
     return { status: "completed" as const, searchedCount: 2, recommendedCount: 1, excludedCount: 1, usedSourceIds: [randomUUID()], answer: {
@@ -111,12 +122,13 @@ assert.equal(lastProviderMessages[0]?.content, "解释一下研究假设。");
 assert.equal(lastProviderMessages.at(-1)?.content, "继续解释第二个问题。");
 assert.equal(storedMessages.length, 4);
 
-const ordinaryCallsBeforeFullDocument = providerCalls;
+const ordinaryCallsBeforeWholeDocument = providerCalls;
 const fullDocumentResult = await service.answer({ documentId, expectedRevisionId: revisionId,
   turnId: randomUUID(), message: "请从整体上评价整篇申请书。", contextCards: [], evidenceSourceIds: [] });
-assert.equal(fullDocumentCalls, 1, "explicit whole-document wording must use the full-document gateway path");
-assert.equal(providerCalls, ordinaryCallsBeforeFullDocument, "whole-document analysis must not fall back to six-block chat");
-assert.equal(fullDocumentResult.content, "这是基于完整申请书的整体分析。");
+assert.equal(providerCalls, ordinaryCallsBeforeWholeDocument + 2,
+  "whole-document wording must use the same semantic memory planner without keyword routing");
+assert.equal(fullDocumentResult.content, "这是基于全文记忆和按需原文的分析。");
+assert.equal(fullDocumentResult.contextCoverage?.mode, "document_memory");
 
 const webResult = await service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(),
   message: "联网补充这一判断。", contextCards: [], evidenceSourceIds: [], webSearch: true });
@@ -162,11 +174,14 @@ assert.equal(cached.attempts, 0);
 assert.equal(providerCalls, callsBeforeCacheHit, "an unchanged focused question must not call the provider again");
 assert.equal((await modelCalls.listByTrace(documentId, cacheHitTurnId)).length, 0, "a cache hit must not create a model-call attempt");
 
-await service.answer({
+const memoryCallsBeforeIgnoredAmbiguity = memoryPlannedCalls;
+const ignoredAmbiguityResult = await service.answer({
   documentId, expectedRevisionId: revisionId, turnId: randomUUID(), message: "换一个无关问题。",
   contextCards: focusCards, evidenceSourceIds: [], ignoreAmbiguousFocus: true,
 });
-assert.equal(lastContextCardCount, 0, "new prose after ignored ambiguity must use focus none");
+assert.equal(memoryPlannedCalls, memoryCallsBeforeIgnoredAmbiguity + 2,
+  "new prose after ignored ambiguity must use semantic memory planning with no stale focus");
+assert.equal(ignoredAmbiguityResult.contextCoverage?.mode, "document_memory");
 
 const admittedContext = [{ sourceAlias: "D1", sourceType: "document_selection" as const, label: "研究意义", excerpt: "受控正文" }];
 const grounded = validateGrantAssistantGroundedAnswer({
@@ -230,6 +245,7 @@ assert.ok(recommended.length <= 4);
 
 const routeSource = await readFile(new URL("../app/api/grants/documents/[id]/assistant/chat/route.ts", import.meta.url), "utf8");
 const panelSource = await readFile(new URL("../components/grants/grant-assistant-chat-panel.tsx", import.meta.url), "utf8");
+const serviceSource = await readFile(new URL("../lib/grants/application/grant-assistant-chat-service.ts", import.meta.url), "utf8");
 const gatewaySource = await readFile(new URL("../lib/grants/application/grant-model-data-gateway.ts", import.meta.url), "utf8");
 const providerSource = await readFile(new URL("../lib/grants/infrastructure/model/openai-grant-ai-model.ts", import.meta.url), "utf8");
 const modelCallContractSource = await readFile(new URL("../lib/grants/model-execution/contracts.ts", import.meta.url), "utf8");
@@ -244,16 +260,19 @@ assert.match(routeSource, /contextCards: z\.array\(GrantAssistantDocumentSelecti
 assert.match(routeSource, /webSearch: z\.boolean\(\)\.optional\(\)/);
 assert.match(panelSource, /对话已安全保存/);
 assert.match(panelSource, /method: "GET"|assistant\/chat/);
-assert.match(panelSource, /自动查找申请书相关原文/);
+assert.match(panelSource, /先建立当前申请书的全文记忆/);
 assert.match(panelSource, /GrantAssistantSourceControls/);
 assert.match(panelSource, /crypto\.randomUUID/);
 assert.match(panelSource, /contextCards/);
 assert.match(panelSource, /recommendedQuestions/);
 assert.match(panelSource, /联网补充：已开启/);
 assert.match(panelSource, /webSearch/);
-assert.match(panelSource, /全文已覆盖/);
+assert.match(panelSource, /全文记忆已启用/);
 assert.match(panelSource, /contextCoverage/);
+assert.match(serviceSource, /answerMemoryPlannedAssistantChat/);
+assert.doesNotMatch(serviceSource, /requestsFullGrantDocumentAnalysis|full-document-intent/);
 assert.match(gatewaySource, /answerAssistantChat/);
+assert.match(gatewaySource, /answerMemoryPlannedAssistantChat/);
 assert.match(providerSource, /zodResponseFormat\(AssistantChatResultSchema, "grant_assistant_chat"\)/);
 assert.match(providerSource, /request\.admittedContext\.length === 0/);
 assert.match(modelCallContractSource, /GRANT_ASSISTANT_CHAT_OPERATION/);
@@ -266,7 +285,7 @@ assert.match(sessionMigrationSource, /UNIQUE\(session_id, turn_id, role\)/);
 assert.match(sessionMigrationSource, /maintain_grant_assistant_sessions/);
 assert.match(sessionMigrationSource, /INTERVAL '7 days'/);
 assert.match(sessionMigrationSource, /INTERVAL '90 days'/);
-assert.match(configSource, /GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA\?\.trim\(\) === "056"/);
+assert.match(configSource, /GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA\?\.trim\(\) === "072"/);
 assert.match(configSource, /GRANT_WEB_GROUNDING_PRICE_CATALOG_VERSION\?\.trim\(\) === "001"/);
 
 console.log("Grant assistant ordinary-chat execution contracts passed.");

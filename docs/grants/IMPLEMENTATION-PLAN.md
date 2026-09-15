@@ -742,7 +742,7 @@ a deployment concern and must call the same retention owner rather than delete
 rows from UI code.
 
 Rollout now fails closed unless both `GRANT_ASSISTANT_CHAT_ENABLED=true` and
-`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=056` are present. Disabling the flag hides
+`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=072` are present. Disabling the flag hides
 the surface without deleting sessions, messages, Edit Session links or model
 call telemetry.
 

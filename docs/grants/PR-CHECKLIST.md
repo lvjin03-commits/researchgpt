@@ -55,6 +55,12 @@ Copy the relevant sections into every grant-platform PR.
       candidate; the assistant does not become a second candidate owner.
 - [ ] Grant Model Data Gateway derives grounding from the effective admitted
       context rather than user phrasing or a model declaration.
+- [ ] Ordinary unscoped chat uses the Revision-bound complete document memory
+      and semantic context planner; no keyword matcher selects full-document access.
+- [ ] Memory reuse matches document, Revision, context hash, policy version and
+      configured model; targeted/full original text is resolved from canonical nodes.
+- [ ] Memory, targeted original text and current diagnostics remain visibly and
+      structurally distinct source types in grounded answers.
 - [ ] Grounded claim aliases resolve only to frozen, currently authorized
       sources; unknown, revoked or fabricated aliases cannot render as grounded.
 - [ ] The assistant answer is a discriminated union selected from effective
@@ -78,7 +84,7 @@ Copy the relevant sections into every grant-platform PR.
       analysis, ADR, retention policy and rollout.
 - [ ] The client submits only the new assistant message; the server selects the
       bounded stored conversation context.
-- [ ] Assistant rollout requires schema marker 056, follows the canary runbook,
+- [ ] Assistant rollout requires schema marker 072, follows the canary runbook,
       and rolls back by flag without deleting audit or Revision data.
 - [ ] Retention distinguishes disposable general reasoning, grounded audit
       metadata and Revision-linked records.

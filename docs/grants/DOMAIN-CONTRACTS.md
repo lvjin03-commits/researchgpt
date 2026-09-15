@@ -317,7 +317,8 @@ provider dispatch. `grant_model_calls` admits only the registered
 operation/policy pairs; `grant.assistant.chat` must carry
 `grant-assistant-chat-v1`. The feature is default-off under
 `GRANT_ASSISTANT_CHAT_ENABLED` and fails closed unless
-`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=056` confirms persistence readiness.
+`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=072` confirms assistant-session and
+Revision-bound document-memory persistence readiness.
 
 Admitted-context grounding is program-owned. Valid selection cards, explicitly
 selected current Evidence Cards and user-confirmed academic snapshots may enter

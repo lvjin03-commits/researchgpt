@@ -24,11 +24,16 @@ import { GrantFigureAuthorizationDeniedError, GrantFigureModelAuthorizationServi
 import type { GrantDocumentSearchResult } from "./grant-document-retriever.ts";
 import type { GrantFigureAssetReader } from "../ports/grant-figure-asset-reader.ts";
 import type { GrantFullDocumentAnalysisModel } from "../ports/grant-full-document-analysis-model.ts";
+import type { GrantDocumentMemoryModel } from "../ports/grant-document-memory-model.ts";
+import type { GrantAssistantContextPlannerModel } from "../ports/grant-assistant-context-planner-model.ts";
+import type { GrantDocumentMemoryRepository } from "../ports/grant-document-memory-repository.ts";
+import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import { buildGrantFullDocumentContext } from "./grant-full-document-context.ts";
 import { routeGrantFullDocumentContext, type GrantFullDocumentCapacityPolicy } from "./grant-full-document-capacity-router.ts";
 import { executeGrantFullDocumentHierarchicalAnalysis } from "./grant-full-document-hierarchical-analysis.ts";
 import type { GrantAssistantContextCoverage } from "../assistant/context-coverage.ts";
+import { executeGrantAssistantMemoryPipeline } from "./grant-assistant-memory-pipeline.ts";
 import {
   GRANT_DIAGNOSTIC_IMAGE_MEDIA_TYPES,
   grantDiagnosticImageScopeFingerprint,
@@ -61,14 +66,18 @@ export type GrantWebGroundingAdmittedContext = {
 };
 
 export class GrantModelDataGateway {
-  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel> & Partial<GrantFullDocumentAnalysisModel>;
+  private readonly model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>
+    & Partial<GrantFullDocumentAnalysisModel> & Partial<GrantDocumentMemoryModel>
+    & Partial<GrantAssistantContextPlannerModel>;
   private readonly evidenceAuthorization?: GrantEvidenceAuthorizationService;
   private readonly figureAuthorization?: GrantFigureModelAuthorizationService;
   private readonly figureAssetReader?: GrantFigureAssetReader;
   private readonly tokenCounter?: GrantTokenCounter;
 
   constructor(
-    model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel> & Partial<GrantFullDocumentAnalysisModel>,
+    model: GrantPatchModel & Partial<GrantDiagnosticModel> & Partial<GrantAssistantModel>
+      & Partial<GrantFullDocumentAnalysisModel> & Partial<GrantDocumentMemoryModel>
+      & Partial<GrantAssistantContextPlannerModel>,
     evidenceAuthorization?: GrantEvidenceAuthorizationService,
     figureAuthorization?: GrantFigureModelAuthorizationService,
     figureAssetReader?: GrantFigureAssetReader,
@@ -79,6 +88,37 @@ export class GrantModelDataGateway {
     this.figureAuthorization = figureAuthorization;
     this.figureAssetReader = figureAssetReader;
     this.tokenCounter = tokenCounter;
+  }
+
+  async answerMemoryPlannedAssistantChat(input: {
+    documentId: string;
+    sourceRevisionId: string;
+    snapshot: CanonicalGrantSnapshot;
+    messages: GrantAssistantChatModelRequest["messages"];
+    memoryRepository: GrantDocumentMemoryRepository;
+    diagnostics: Pick<GrantDiagnosticRepository, "listNormalizedFindings">;
+    expectedModelId: string;
+    memoryPolicyVersion: string;
+    plannerPolicyVersion: string;
+    memoryCapacityPolicy: GrantFullDocumentCapacityPolicy;
+    memorySynthesisMaximumInputTokens: number;
+    plannerMaximumInputTokens: number;
+    answerMaximumInputTokens: number;
+    attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
+    explicitContext?: {
+      hasDocumentSelection?: boolean;
+      hasCandidate?: boolean;
+      hasEvidence?: boolean;
+      webSearchEnabledByUser?: boolean;
+    };
+  }) {
+    if (!this.tokenCounter || !this.model.answerChat || !this.model.analyzeMemoryUnit
+      || !this.model.synthesizeMemory || !this.model.plan) {
+      throw new GrantEvidenceProviderPolicyError("Memory-planned Grant Assistant is not configured.");
+    }
+    return executeGrantAssistantMemoryPipeline({ ...input, tokenCounter: this.tokenCounter,
+      model: this.model as GrantPatchModel & GrantAssistantModel & GrantDocumentMemoryModel
+        & GrantAssistantContextPlannerModel });
   }
 
   prepareWebGroundingContext(input: {

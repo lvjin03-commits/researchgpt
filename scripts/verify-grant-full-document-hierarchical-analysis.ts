@@ -6,12 +6,8 @@ import { buildGrantFullDocumentContext } from "../lib/grants/application/grant-f
 import { CanonicalGrantSnapshotSchema } from "../lib/grants/domain/contracts.ts";
 import { TiktokenGrantTokenCounter } from "../lib/grants/infrastructure/model/tiktoken-grant-token-counter.ts";
 import type { GrantFullDocumentAnalysisModel } from "../lib/grants/ports/grant-full-document-analysis-model.ts";
-import { requestsFullGrantDocumentAnalysis } from "../lib/grants/assistant/full-document-intent.ts";
 import { GrantModelDataGateway } from "../lib/grants/application/grant-model-data-gateway.ts";
 
-assert.equal(requestsFullGrantDocumentAnalysis("请从整体上评价整篇申请书"), true);
-assert.equal(requestsFullGrantDocumentAnalysis("你对这篇申请书有什么评价和修改意见？"), true);
-assert.equal(requestsFullGrantDocumentAnalysis("解释一下这一段"), false);
 
 const firstSectionId = randomUUID();
 const secondSectionId = randomUUID();

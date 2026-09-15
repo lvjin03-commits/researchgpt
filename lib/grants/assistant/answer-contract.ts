@@ -7,7 +7,7 @@ import type {
 
 const ContextReferenceSchema = z.object({
   sourceAlias: z.string(),
-  sourceType: z.enum(["document_selection", "edit_candidate", "evidence", "academic_source", "web_source"]),
+  sourceType: z.enum(["document_selection", "document_memory", "original_text", "diagnostic", "edit_candidate", "evidence", "academic_source", "web_source"]),
   label: z.string(),
   url: z.string().url().optional(),
 }).strict();
