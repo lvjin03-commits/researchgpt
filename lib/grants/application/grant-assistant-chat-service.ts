@@ -301,7 +301,7 @@ export class GrantAssistantChatService {
             memoryRepository: this.dependencies.documentMemories,
             diagnostics: this.dependencies.diagnostics,
             expectedModelId: policy.modelId,
-            memoryPolicyVersion: `${policy.policyVersion}:document-memory-v2:${policy.modelId}`,
+            memoryPolicyVersion: `${policy.policyVersion}:document-memory-v3:${policy.modelId}`,
             plannerPolicyVersion: `${policy.policyVersion}:semantic-context-v1`,
             memoryCapacityPolicy: {
               policyVersion: `${policy.policyVersion}:document-memory-capacity-v2`,
@@ -313,13 +313,10 @@ export class GrantAssistantChatService {
               safetyMarginTokens: 1_000,
               maximumSectionsPerChunk: attemptPurpose === "capacity_retry" ? 2 : 4,
             },
-            memorySynthesisMaximumInputTokens: policy.executionLimits.maximumInputTokens,
+            memoryMaximumConcurrentUnitAnalyses: 4,
             memoryUnitMaximumOutputTokens: attemptPurpose === "capacity_retry"
               ? policy.executionLimits.maximumOutputTokens
               : Math.min(2_400, policy.executionLimits.maximumOutputTokens),
-            memorySynthesisMaximumOutputTokens: attemptPurpose === "capacity_retry"
-              ? policy.executionLimits.maximumOutputTokens
-              : Math.min(3_200, policy.executionLimits.maximumOutputTokens),
             plannerMaximumInputTokens: Math.min(8_000, policy.executionLimits.maximumInputTokens),
             answerMaximumInputTokens: policy.executionLimits.maximumInputTokens,
             attemptPurpose,

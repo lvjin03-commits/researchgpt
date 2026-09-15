@@ -101,9 +101,8 @@ export class GrantModelDataGateway {
     memoryPolicyVersion: string;
     plannerPolicyVersion: string;
     memoryCapacityPolicy: GrantFullDocumentCapacityPolicy;
-    memorySynthesisMaximumInputTokens: number;
+    memoryMaximumConcurrentUnitAnalyses: number;
     memoryUnitMaximumOutputTokens: number;
-    memorySynthesisMaximumOutputTokens: number;
     plannerMaximumInputTokens: number;
     answerMaximumInputTokens: number;
     attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
@@ -114,8 +113,7 @@ export class GrantModelDataGateway {
       webSearchEnabledByUser?: boolean;
     };
   }) {
-    if (!this.tokenCounter || !this.model.answerChat || !this.model.analyzeMemoryUnit
-      || !this.model.synthesizeMemory || !this.model.plan) {
+    if (!this.tokenCounter || !this.model.answerChat || !this.model.analyzeMemoryUnit || !this.model.plan) {
       throw new GrantEvidenceProviderPolicyError("Memory-planned Grant Assistant is not configured.");
     }
     return executeGrantAssistantMemoryPipeline({ ...input, tokenCounter: this.tokenCounter,

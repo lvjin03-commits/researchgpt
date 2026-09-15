@@ -26,12 +26,6 @@ export type GrantDocumentMemoryUnitAnalysis = GrantDocumentMemoryModelMetadata &
   semanticItems: GrantDocumentMemorySemanticItemProposal[];
 };
 
-export type GrantDocumentMemorySynthesis = GrantDocumentMemoryModelMetadata & {
-  overview: string;
-  sectionSummaries: GrantDocumentMemorySectionProposal[];
-  semanticItems: GrantDocumentMemorySemanticItemProposal[];
-};
-
 export interface GrantDocumentMemoryModel {
   analyzeMemoryUnit(input: {
     documentLanguage: "zh" | "en";
@@ -43,18 +37,4 @@ export interface GrantDocumentMemoryModel {
     attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
     maximumOutputTokens: number;
   }): Promise<GrantDocumentMemoryUnitAnalysis>;
-  synthesizeMemory(input: {
-    documentLanguage: "zh" | "en";
-    contextHash: string;
-    analyses: Array<{
-      unitId: string;
-      summary: string;
-      sectionSummaries: GrantDocumentMemorySectionProposal[];
-      semanticItems: GrantDocumentMemorySemanticItemProposal[];
-    }>;
-    allowedSectionAliases: string[];
-    allowedSourceAliases: string[];
-    attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
-    maximumOutputTokens: number;
-  }): Promise<GrantDocumentMemorySynthesis>;
 }

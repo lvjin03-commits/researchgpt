@@ -18,7 +18,6 @@ const snapshot = CanonicalGrantSnapshotSchema.parse({ schemaVersion: "grant-cano
   nodes: [{ nodeId, sectionId, order: 0, nodeType: "paragraph", content: { text: "项目拟解决界面副反应问题。" } }] });
 
 let memoryUnitCalls = 0;
-let memorySynthesisCalls = 0;
 let plannerCalls = 0;
 let answerCalls = 0;
 const model: GrantPatchModel & GrantDocumentMemoryModel & GrantAssistantContextPlannerModel & GrantAssistantModel = {
@@ -30,15 +29,6 @@ const model: GrantPatchModel & GrantDocumentMemoryModel & GrantAssistantContextP
       sectionSummaries: [{ sectionAlias: input.allowedSectionAliases[0]!, summary: "提出科学问题。",
         sourceAliases: [input.allowedSourceAliases[0]!] }],
       semanticItems: [{ kind: "scientific_problem", statement: "界面副反应限制性能。", concepts: ["界面副反应"],
-        sourceAliases: [input.allowedSourceAliases[0]!] }] };
-  },
-  async synthesizeMemory(input) {
-    memorySynthesisCalls += 1;
-    return { overview: "申请书围绕界面副反应展开。", provider: "openai", modelId: "gpt-offline",
-      providerRequestId: "memory-synthesis", usage: { inputTokens: 8, outputTokens: 3, reasoningTokens: 1 },
-      sectionSummaries: [{ sectionAlias: input.allowedSectionAliases[0]!, summary: "提出并界定科学问题。",
-        sourceAliases: [input.allowedSourceAliases[0]!] }],
-      semanticItems: [{ kind: "scientific_problem", statement: "界面副反应是核心科学问题。", concepts: ["界面副反应"],
         sourceAliases: [input.allowedSourceAliases[0]!] }] };
   },
   async plan(input) {
@@ -70,8 +60,8 @@ const base = { documentId, sourceRevisionId: revisionId, snapshot, memoryReposit
   memoryPolicyVersion: "memory-v1", plannerPolicyVersion: "planner-v1",
   memoryCapacityPolicy: { policyVersion: "memory-capacity-v1", contextWindowTokens: 10_000,
     maximumInputTokens: 8_000, reservedOutputTokens: 1_000, protocolOverheadTokens: 100, safetyMarginTokens: 200 },
-  memorySynthesisMaximumInputTokens: 8_000, memoryUnitMaximumOutputTokens: 2_400,
-  memorySynthesisMaximumOutputTokens: 3_200, plannerMaximumInputTokens: 8_000,
+  memoryMaximumConcurrentUnitAnalyses: 4, memoryUnitMaximumOutputTokens: 2_400,
+  plannerMaximumInputTokens: 8_000,
   answerMaximumInputTokens: 8_000, attemptPurpose: "initial" as const };
 const first = await gateway.answerMemoryPlannedAssistantChat({ ...base,
   messages: [{ role: "user", content: "解释这个科学问题为什么成立。" }] });
@@ -81,15 +71,14 @@ assert.equal(first.memoryReused, false);
 assert.equal(first.answer.grounding, "evidence_grounded");
 assert.equal(first.answer.citations[0]?.sourceType, "original_text");
 assert.equal(first.plannedContext.coverage.coveredNodeCount, 1);
-assert.deepEqual(first.providerRequestIds, ["memory-unit", "memory-synthesis", "planner-1", "answer-1"]);
-assert.deepEqual(first.usage, { inputTokens: 28, outputTokens: 11, reasoningTokens: 4 });
+assert.deepEqual(first.providerRequestIds, ["memory-unit", "planner-1", "answer-1"]);
+assert.deepEqual(first.usage, { inputTokens: 20, outputTokens: 8, reasoningTokens: 3 });
 
 const second = await gateway.answerMemoryPlannedAssistantChat({ ...base,
   messages: [{ role: "user", content: "换一种方式解释这个科学问题。" }] });
 assert.equal(second.status, "answered");
 assert.equal(second.memoryReused, true);
 assert.equal(memoryUnitCalls, 1);
-assert.equal(memorySynthesisCalls, 1);
 assert.equal(plannerCalls, 2);
 assert.equal(answerCalls, 2);
 assert.deepEqual(second.providerRequestIds, ["planner-2", "answer-2"]);

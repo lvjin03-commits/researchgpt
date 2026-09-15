@@ -30,9 +30,15 @@ const route = routeGrantFullDocumentContext({ context, tokenCounter: counter, fi
 assert.equal(route.mode, "hierarchical");
 
 let modelCalls = 0;
+let inFlight = 0;
+let maximumInFlight = 0;
 const model: GrantDocumentMemoryModel = {
   async analyzeMemoryUnit(input) {
     modelCalls += 1;
+    inFlight += 1;
+    maximumInFlight = Math.max(maximumInFlight, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    inFlight -= 1;
     assert.equal(input.attemptPurpose, "initial");
     assert.equal(input.maximumOutputTokens, 2_400);
     return { provider: "openai", modelId: "offline-test-model", providerRequestId: `unit-${input.unitId}`,
@@ -43,24 +49,11 @@ const model: GrantDocumentMemoryModel = {
         kind: "research_content" as const, statement: `${input.unitId} 的研究内容`, concepts: ["界面调控"],
         sourceAliases: [sourceAlias] })) };
   },
-  async synthesizeMemory(input) {
-    modelCalls += 1;
-    assert.equal(input.attemptPurpose, "initial");
-    assert.equal(input.maximumOutputTokens, 3_200);
-    const firstSource = input.allowedSourceAliases[0]!;
-    return { provider: "openai", modelId: "offline-test-model", providerRequestId: "synthesis-1",
-      usage: { inputTokens: 20, outputTokens: 8, reasoningTokens: 2 }, overview: "全文围绕界面调控展开。",
-      sectionSummaries: input.allowedSectionAliases.map((sectionAlias) => ({ sectionAlias,
-        summary: `${sectionAlias} 的完整章节摘要`, sourceAliases: context.sections
-          .find((section) => section.sectionAlias === sectionAlias)!.nodeAliases })),
-      semanticItems: [{ kind: "scientific_problem", statement: "界面副反应限制循环稳定性。",
-        concepts: ["界面副反应", "循环稳定性"], sourceAliases: [firstSource] }] };
-  },
 };
 const repository = new InMemoryGrantDocumentMemoryRepository();
 const fixedMemoryId = randomUUID();
-const memoryExecution = { synthesisMaximumInputTokens: 20_000, unitMaximumOutputTokens: 2_400,
-  synthesisMaximumOutputTokens: 3_200, attemptPurpose: "initial" as const };
+const memoryExecution = { maximumConcurrentUnitAnalyses: 4, unitMaximumOutputTokens: 2_400,
+  attemptPurpose: "initial" as const };
 const first = await buildGrantDocumentMemory({ context, route, tokenCounter: counter, model, repository,
   policyVersion: "grant-memory-v1", ...memoryExecution,
   createId: () => fixedMemoryId, now: () => "2026-09-15T12:00:00.000Z" });
@@ -75,7 +68,8 @@ assert.deepEqual(first.snapshot.sections.flatMap((section) => section.sourceNode
 assert.deepEqual(first.snapshot.items[0]?.sourceNodeIds, [nodeIds[0]]);
 assert.deepEqual(first.snapshot.items[0]?.sourceSectionIds, [sectionIds[0]]);
 assert.match(first.snapshot.memoryHash, /^[a-f0-9]{64}$/u);
-assert.ok(modelCalls > 2, "The oversized document should be fully read in multiple units before synthesis.");
+assert.ok(modelCalls > 1, "The oversized document should be fully read in multiple units.");
+assert.ok(maximumInFlight > 1, "Independent memory units should run concurrently instead of serially.");
 
 const callsAfterFirstBuild = modelCalls;
 const reused = await buildGrantDocumentMemory({ context, route, tokenCounter: counter, model, repository,
@@ -95,7 +89,7 @@ assert.ok(modelCalls > callsAfterFirstBuild, "A new canonical Revision must rebu
 const invalidRepository = new InMemoryGrantDocumentMemoryRepository();
 await assert.rejects(() => buildGrantDocumentMemory({ context, route, tokenCounter: counter,
   repository: invalidRepository, policyVersion: "invalid-memory-v1", ...memoryExecution,
-  model: { ...model, async synthesizeMemory(input) { return { overview: "错误记忆", provider: "openai",
+  model: { async analyzeMemoryUnit(input) { return { summary: "错误记忆", provider: "openai",
     modelId: "offline-test-model", sectionSummaries: input.allowedSectionAliases.map((sectionAlias) => ({
       sectionAlias, summary: "摘要", sourceAliases: [] })), semanticItems: [{ kind: "other", statement: "错误引用",
       concepts: [], sourceAliases: ["D999"] }] }; } } }), /unavailable grant content/);

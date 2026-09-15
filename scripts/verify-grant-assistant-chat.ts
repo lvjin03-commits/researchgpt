@@ -32,8 +32,8 @@ let memoryInitialFailure: GrantAssistantModelError["category"] = "structured_out
 const memoryExecutionPolicies: Array<{
   attemptPurpose: string;
   maximumSectionsPerChunk?: number;
+  maximumConcurrentUnitAnalyses: number;
   unitOutputTokens: number;
-  synthesisOutputTokens: number;
 }> = [];
 let lastWebFullDocument = false;
 let lastProviderMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
@@ -52,14 +52,14 @@ const gateway = {
           sectionCount: 4, coveredSectionCount: 2, nodeCount: 24, coveredNodeCount: 6, complete: false } }); },
   answerMemoryPlannedAssistantChat: async (request: { attemptPurpose: string;
     memoryCapacityPolicy: { maximumSectionsPerChunk?: number };
-    memoryUnitMaximumOutputTokens: number; memorySynthesisMaximumOutputTokens: number;
+    memoryMaximumConcurrentUnitAnalyses: number; memoryUnitMaximumOutputTokens: number;
     messages: Array<{ role: "user" | "assistant"; content: string }> }) => {
     providerCalls += 1;
     memoryPlannedCalls += 1;
     memoryExecutionPolicies.push({ attemptPurpose: request.attemptPurpose,
       maximumSectionsPerChunk: request.memoryCapacityPolicy.maximumSectionsPerChunk,
-      unitOutputTokens: request.memoryUnitMaximumOutputTokens,
-      synthesisOutputTokens: request.memorySynthesisMaximumOutputTokens });
+      maximumConcurrentUnitAnalyses: request.memoryMaximumConcurrentUnitAnalyses,
+      unitOutputTokens: request.memoryUnitMaximumOutputTokens });
     lastProviderMessages = request.messages;
     if (request.attemptPurpose === "initial") throw new GrantAssistantModelError(memoryInitialFailure, "bad plan");
     const answer = validateGrantAssistantGroundedAnswer({
@@ -146,10 +146,10 @@ assert.equal(fullDocumentResult.content, "这是基于全文记忆和按需原�
 assert.equal(fullDocumentResult.contextCoverage?.mode, "document_memory");
 assert.deepEqual(memoryExecutionPolicies.slice(-2), [
   { attemptPurpose: "initial", maximumSectionsPerChunk: 4,
-    unitOutputTokens: 2_400, synthesisOutputTokens: 3_200 },
+    maximumConcurrentUnitAnalyses: 4, unitOutputTokens: 2_400 },
   { attemptPurpose: "capacity_retry", maximumSectionsPerChunk: 2,
-    unitOutputTokens: 4_000, synthesisOutputTokens: 4_000 },
-], "a capacity retry must shrink memory batches and expand output budgets instead of repeating the failed request");
+    maximumConcurrentUnitAnalyses: 4, unitOutputTokens: 4_000 },
+], "a capacity retry must shrink memory batches while keeping independent units concurrent");
 
 const webResult = await service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(),
   message: "联网补充这一判断。", contextCards: [], evidenceSourceIds: [], webSearch: true });

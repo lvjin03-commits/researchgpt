@@ -62,9 +62,8 @@ export async function executeGrantAssistantMemoryPipeline(input: {
   memoryPolicyVersion: string;
   plannerPolicyVersion: string;
   memoryCapacityPolicy: GrantFullDocumentCapacityPolicy;
-  memorySynthesisMaximumInputTokens: number;
+  memoryMaximumConcurrentUnitAnalyses: number;
   memoryUnitMaximumOutputTokens: number;
-  memorySynthesisMaximumOutputTokens: number;
   plannerMaximumInputTokens: number;
   answerMaximumInputTokens: number;
   attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
@@ -83,9 +82,9 @@ export async function executeGrantAssistantMemoryPipeline(input: {
     fixedPromptText: "Build reusable Revision-bound grant document memory.", policy: input.memoryCapacityPolicy });
   const memoryResult = await buildGrantDocumentMemory({ context: fullContext, route: memoryRoute,
     tokenCounter: input.tokenCounter, model: input.model, repository: input.memoryRepository,
-    policyVersion: input.memoryPolicyVersion, synthesisMaximumInputTokens: input.memorySynthesisMaximumInputTokens,
+    policyVersion: input.memoryPolicyVersion,
+    maximumConcurrentUnitAnalyses: input.memoryMaximumConcurrentUnitAnalyses,
     unitMaximumOutputTokens: input.memoryUnitMaximumOutputTokens,
-    synthesisMaximumOutputTokens: input.memorySynthesisMaximumOutputTokens,
     attemptPurpose: input.attemptPurpose });
   const plan = await planGrantAssistantContext({ documentId: input.documentId,
     sourceRevisionId: input.sourceRevisionId, question, recentConversation: input.messages.slice(0, -1),

@@ -4,7 +4,7 @@ import { sha256Canonical } from "../domain/canonical-json.ts";
 import { GrantAssistantModelError } from "../ports/grant-assistant-model.ts";
 import type { GrantDocumentMemoryModel, GrantDocumentMemoryModelMetadata,
   GrantDocumentMemorySectionProposal, GrantDocumentMemorySemanticItemProposal,
-  GrantDocumentMemorySynthesis, GrantDocumentMemoryUnitAnalysis } from "../ports/grant-document-memory-model.ts";
+  GrantDocumentMemoryUnitAnalysis } from "../ports/grant-document-memory-model.ts";
 import type { GrantDocumentMemoryRepository } from "../ports/grant-document-memory-repository.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import { buildGrantFullDocumentAnalysisUnits, type GrantFullDocumentAnalysisUnit } from "./grant-full-document-hierarchical-analysis.ts";
@@ -13,7 +13,7 @@ import type { GrantFullDocumentContext } from "./grant-full-document-context.ts"
 
 export class GrantDocumentMemoryError extends Error {
   readonly code: "context_unavailable" | "invalid_model_output" | "incomplete_section_memory" |
-    "synthesis_capacity_exceeded" | "inconsistent_model_identity";
+    "inconsistent_model_identity";
   constructor(code: GrantDocumentMemoryError["code"], message: string) {
     super(message);
     this.name = "GrantDocumentMemoryError";
@@ -79,9 +79,8 @@ export async function buildGrantDocumentMemory(input: {
   model: GrantDocumentMemoryModel;
   repository: GrantDocumentMemoryRepository;
   policyVersion: string;
-  synthesisMaximumInputTokens: number;
+  maximumConcurrentUnitAnalyses: number;
   unitMaximumOutputTokens: number;
-  synthesisMaximumOutputTokens: number;
   attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
   now?: () => string;
   createId?: () => string;
@@ -90,64 +89,80 @@ export async function buildGrantDocumentMemory(input: {
     sourceRevisionId: input.context.sourceRevisionId, contextHash: input.context.contextHash,
     policyVersion: input.policyVersion });
   if (reusable) return { snapshot: GrantDocumentMemorySnapshotSchema.parse(reusable), reused: true };
-  if (!Number.isSafeInteger(input.synthesisMaximumInputTokens) || input.synthesisMaximumInputTokens <= 0) {
-    throw new Error("Memory synthesis maximum input tokens must be a positive integer.");
+  if (!Number.isSafeInteger(input.maximumConcurrentUnitAnalyses) || input.maximumConcurrentUnitAnalyses <= 0) {
+    throw new Error("Maximum concurrent memory-unit analyses must be a positive integer.");
   }
-  if (![input.unitMaximumOutputTokens, input.synthesisMaximumOutputTokens]
-    .every((value) => Number.isSafeInteger(value) && value > 0)) {
-    throw new Error("Memory output-token limits must be positive integers.");
+  if (!Number.isSafeInteger(input.unitMaximumOutputTokens) || input.unitMaximumOutputTokens <= 0) {
+    throw new Error("Memory unit output-token limit must be a positive integer.");
   }
 
   const units = buildUnits(input);
   const documentLanguage = /[\u3400-\u9fff]/u.test(input.context.title) ? "zh" : "en";
   const metadata = { requestIds: [] as string[], usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
     identities: new Set<string>() };
-  const analyses: Array<MemoryUnit & { analysis: GrantDocumentMemoryUnitAnalysis }> = [];
-  for (const unit of units) {
-    let analysis: GrantDocumentMemoryUnitAnalysis;
-    try {
-      analysis = await input.model.analyzeMemoryUnit({ documentLanguage, contextHash: input.context.contextHash,
-        unitId: unit.unitId, modelText: unit.modelText, allowedSectionAliases: unit.sectionAliases,
-        allowedSourceAliases: unit.sourceAliases, attemptPurpose: input.attemptPurpose,
-        maximumOutputTokens: input.unitMaximumOutputTokens });
-    } catch (error) {
-      throw accumulateFailureMetadata(error, metadata.usage);
+  const analysisResults: Array<GrantDocumentMemoryUnitAnalysis | undefined> = new Array(units.length);
+  let nextUnitIndex = 0;
+  let firstError: unknown;
+  const worker = async () => {
+    while (firstError == null) {
+      const unitIndex = nextUnitIndex++;
+      const unit = units[unitIndex];
+      if (!unit) return;
+      try {
+        const analysis = await input.model.analyzeMemoryUnit({ documentLanguage,
+          contextHash: input.context.contextHash, unitId: unit.unitId, modelText: unit.modelText,
+          allowedSectionAliases: unit.sectionAliases, allowedSourceAliases: unit.sourceAliases,
+          attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.unitMaximumOutputTokens });
+        if (!analysis.summary.trim()) throw new GrantDocumentMemoryError("invalid_model_output",
+          "Memory unit analysis returned an empty summary.");
+        validateAliases({ sections: analysis.sectionSummaries, items: analysis.semanticItems,
+          allowedSections: new Set(unit.sectionAliases), allowedSources: new Set(unit.sourceAliases) });
+        analysisResults[unitIndex] = analysis;
+      } catch (error) {
+        firstError ??= error;
+      }
     }
-    if (!analysis.summary.trim()) throw new GrantDocumentMemoryError("invalid_model_output",
-      "Memory unit analysis returned an empty summary.");
-    validateAliases({ sections: analysis.sectionSummaries, items: analysis.semanticItems,
-      allowedSections: new Set(unit.sectionAliases), allowedSources: new Set(unit.sourceAliases) });
+  };
+  const workerCount = Math.min(units.length, input.maximumConcurrentUnitAnalyses);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const analyses: Array<MemoryUnit & { analysis: GrantDocumentMemoryUnitAnalysis }> = [];
+  for (const [index, analysis] of analysisResults.entries()) {
+    if (!analysis) continue;
     addMetadata(metadata, analysis);
-    analyses.push({ ...unit, analysis });
+    analyses.push({ ...units[index]!, analysis });
   }
+  if (firstError != null) throw accumulateFailureMetadata(firstError, metadata.usage);
+  if (analyses.length !== units.length) throw new GrantDocumentMemoryError("invalid_model_output",
+    "Memory unit analysis did not complete every declared unit.");
 
-  const synthesisInput = analyses.map(({ unitId, analysis }) => ({ unitId, summary: analysis.summary,
-    sectionSummaries: analysis.sectionSummaries, semanticItems: analysis.semanticItems }));
-  if (input.tokenCounter.count(JSON.stringify(synthesisInput)) > input.synthesisMaximumInputTokens) {
-    throw new GrantDocumentMemoryError("synthesis_capacity_exceeded",
-      "Complete memory analyses exceed the declared synthesis input budget.");
-  }
   const allSections = new Set(input.context.sections.map((section) => section.sectionAlias));
   const allSources = new Set(input.context.nodes.map((node) => node.sourceAlias));
-  let synthesis: GrantDocumentMemorySynthesis;
-  try {
-    synthesis = await input.model.synthesizeMemory({ documentLanguage, contextHash: input.context.contextHash,
-      analyses: synthesisInput, allowedSectionAliases: [...allSections], allowedSourceAliases: [...allSources],
-      attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.synthesisMaximumOutputTokens });
-  } catch (error) {
-    throw accumulateFailureMetadata(error, metadata.usage);
+  const sectionParts = new Map<string, { summaries: string[]; sourceAliases: string[] }>();
+  for (const { analysis } of analyses) {
+    for (const section of analysis.sectionSummaries) {
+      const current = sectionParts.get(section.sectionAlias) ?? { summaries: [], sourceAliases: [] };
+      if (!current.summaries.includes(section.summary.trim())) current.summaries.push(section.summary.trim());
+      current.sourceAliases.push(...section.sourceAliases);
+      sectionParts.set(section.sectionAlias, current);
+    }
   }
-  if (!synthesis.overview.trim()) throw new GrantDocumentMemoryError("invalid_model_output",
-    "Memory synthesis returned an empty overview.");
-  validateAliases({ sections: synthesis.sectionSummaries, items: synthesis.semanticItems,
+  const assembled = {
+    overview: analyses.map(({ unitId, analysis }) => `[${unitId}] ${analysis.summary.trim()}`).join("\n"),
+    sectionSummaries: input.context.sections.flatMap((section) => {
+      const parts = sectionParts.get(section.sectionAlias);
+      return parts ? [{ sectionAlias: section.sectionAlias, summary: parts.summaries.join(" "),
+        sourceAliases: [...new Set(parts.sourceAliases)] }] : [];
+    }),
+    semanticItems: analyses.flatMap(({ analysis }) => analysis.semanticItems),
+  };
+  validateAliases({ sections: assembled.sectionSummaries, items: assembled.semanticItems,
     allowedSections: allSections, allowedSources: allSources });
-  const sectionAliases = synthesis.sectionSummaries.map((section) => section.sectionAlias);
+  const sectionAliases = assembled.sectionSummaries.map((section) => section.sectionAlias);
   if (sectionAliases.length !== input.context.sections.length || new Set(sectionAliases).size !== allSections.size
     || sectionAliases.some((alias) => !allSections.has(alias))) {
     throw new GrantDocumentMemoryError("incomplete_section_memory",
-      "Memory synthesis must summarize every canonical section exactly once.");
+      "Memory assembly must summarize every canonical section exactly once.");
   }
-  addMetadata(metadata, synthesis);
   if (metadata.identities.size !== 1) throw new GrantDocumentMemoryError("inconsistent_model_identity",
     "All memory stages must report one consistent provider and model identity.");
   const [provider, modelId] = [...metadata.identities][0]!.split(":", 2);
@@ -156,17 +171,17 @@ export async function buildGrantDocumentMemory(input: {
 
   const sectionByAlias = new Map(input.context.sections.map((section) => [section.sectionAlias, section]));
   const nodeByAlias = new Map(input.context.nodes.map((node) => [node.sourceAlias, node]));
-  const sections = synthesis.sectionSummaries.map((proposal) => {
+  const sections = assembled.sectionSummaries.map((proposal) => {
     const section = sectionByAlias.get(proposal.sectionAlias)!;
     return { sectionId: section.sectionId, title: section.title, semanticRole: section.semanticRole,
       summary: proposal.summary, sourceNodeIds: proposal.sourceAliases.map((alias) => nodeByAlias.get(alias)!.nodeId) };
   });
-  const items = synthesis.semanticItems.map((proposal, index) => ({ memoryItemId: `M${index + 1}`,
+  const items = assembled.semanticItems.map((proposal, index) => ({ memoryItemId: `M${index + 1}`,
     kind: proposal.kind, statement: proposal.statement, concepts: [...new Set(proposal.concepts.map((item) => item.trim()).filter(Boolean))].slice(0, 12),
     sourceSectionIds: [...new Set(proposal.sourceAliases.map((alias) =>
       sectionByAlias.get(nodeByAlias.get(alias)!.sectionAlias)!.sectionId))],
     sourceNodeIds: [...new Set(proposal.sourceAliases.map((alias) => nodeByAlias.get(alias)!.nodeId))] }));
-  const content = { overview: synthesis.overview, sections, items };
+  const content = { overview: assembled.overview, sections, items };
   const snapshot = GrantDocumentMemorySnapshotSchema.parse({ schemaVersion: "grant-document-memory-v1",
     memoryId: (input.createId ?? randomUUID)(), documentId: input.context.documentId,
     sourceRevisionId: input.context.sourceRevisionId, contextHash: input.context.contextHash,

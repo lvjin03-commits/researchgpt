@@ -8,10 +8,6 @@ const responses = [
     summary: "单元摘要", sectionSummaries: [{ sectionAlias: "S1", summary: "章节摘要", sourceAliases: ["D1"] }],
     semanticItems: [{ kind: "scientific_problem", statement: "科学问题", concepts: ["界面"], sourceAliases: ["D1"] }],
   }) } }], usage: { prompt_tokens: 10, completion_tokens: 5, completion_tokens_details: { reasoning_tokens: 1 } } },
-  { id: "req-memory-synthesis", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
-    overview: "全文概览", sectionSummaries: [{ sectionAlias: "S1", summary: "完整章节摘要", sourceAliases: ["D1"] }],
-    semanticItems: [{ kind: "research_objective", statement: "研究目标", concepts: ["目标"], sourceAliases: ["D1"] }],
-  }) } }], usage: { prompt_tokens: 8, completion_tokens: 4, completion_tokens_details: { reasoning_tokens: 1 } } },
   { id: "req-planner", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
     answerMode: "explain", documentAccess: "targeted_original", diagnosticAccess: "relevant",
     webRecommendation: "none", targetSectionAliases: ["S1"], targetMemoryItemAliases: ["M1"],
@@ -20,11 +16,13 @@ const responses = [
 ];
 const requestedFormats: string[] = [];
 const requestedOutputTokens: number[] = [];
+const requestedReasoningEfforts: string[] = [];
 const client = { chat: { completions: { async create(request: {
-  response_format?: { json_schema?: { name?: string } }; max_completion_tokens?: number;
+  response_format?: { json_schema?: { name?: string } }; max_completion_tokens?: number; reasoning_effort?: string;
 }) {
   requestedFormats.push(request.response_format?.json_schema?.name ?? "unknown");
   requestedOutputTokens.push(request.max_completion_tokens ?? 0);
+  requestedReasoningEfforts.push(request.reasoning_effort ?? "unknown");
   return responses.shift()!;
 } } } } as unknown as OpenAI;
 const model = new OpenAIGrantAiModel("gpt-offline", "unused-test-key", client);
@@ -33,21 +31,17 @@ const unit = await model.analyzeMemoryUnit({ documentLanguage: "zh", contextHash
   attemptPurpose: "initial", maximumOutputTokens: 2_400 });
 assert.equal(unit.providerRequestId, "req-memory-unit");
 assert.equal(unit.semanticItems[0]?.kind, "scientific_problem");
-const synthesis = await model.synthesizeMemory({ documentLanguage: "zh", contextHash: "a".repeat(64),
-  analyses: [{ unitId: "U1", summary: unit.summary, sectionSummaries: unit.sectionSummaries,
-    semanticItems: unit.semanticItems }], allowedSectionAliases: ["S1"], allowedSourceAliases: ["D1"],
-  attemptPurpose: "initial", maximumOutputTokens: 3_200 });
-assert.equal(synthesis.overview, "全文概览");
 const plan = await model.plan({ documentLanguage: "zh", question: "解释研究目标", recentConversation: [],
   documentMemoryText: "全文记忆", allowedSectionAliases: ["S1"], allowedMemoryItemAliases: ["M1"],
   explicitContext: { hasDocumentSelection: false, hasCandidate: false, hasEvidence: false,
     webSearchEnabledByUser: false } });
 assert.equal(plan.documentAccess, "targeted_original");
 assert.equal(plan.clarificationQuestion, undefined);
-assert.deepEqual(requestedFormats, ["grant_document_memory_unit", "grant_document_memory_synthesis",
-  "grant_assistant_context_plan"]);
-assert.deepEqual(requestedOutputTokens, [2_400, 3_200, 700],
-  "Memory stages must consume their caller-owned output budgets instead of adapter hard-coded limits.");
+assert.deepEqual(requestedFormats, ["grant_document_memory_unit", "grant_assistant_context_plan"]);
+assert.deepEqual(requestedOutputTokens, [2_400, 700],
+  "Memory extraction must consume its caller-owned output budget instead of an adapter hard-coded limit.");
+assert.equal(requestedReasoningEfforts[0], "none",
+  "Deterministic memory extraction must not spend hidden reasoning tokens.");
 assert.equal(responses.length, 0);
 
 const truncatedClient = { chat: { completions: { async create() {
