@@ -29,6 +29,14 @@ const direct = routeGrantFullDocumentContext({ context, tokenCounter: counter,
 assert.equal(direct.mode, "single_pass");
 assert.equal(direct.capacity.fullDocumentTokens, counter.count(context.modelText));
 
+const outputBounded = routeGrantFullDocumentContext({ context, tokenCounter: counter,
+  fixedPromptText: "构建全文记忆", policy: { ...basePolicy, maximumSectionsPerChunk: 2 } });
+assert.equal(outputBounded.mode, "hierarchical",
+  "Output-heavy memory must be chunked even when the complete input fits the context window.");
+if (outputBounded.mode !== "hierarchical") throw new Error("Expected output-bounded hierarchical routing.");
+assert.deepEqual(outputBounded.chunks.map((chunk) => chunk.sectionAliases.length), [2, 1]);
+assert.ok(outputBounded.chunks.every((chunk) => chunk.sectionAliases.length <= 2));
+
 const hierarchical = routeGrantFullDocumentContext({ context, tokenCounter: counter,
   fixedPromptText: "系统提示\n用户问题", policy: { ...basePolicy,
     contextWindowTokens: 600, maximumInputTokens: 500, reservedOutputTokens: 100, safetyMarginTokens: 20 } });
@@ -58,4 +66,4 @@ assert.throws(() => routeGrantFullDocumentContext({ context: { ...context,
   coverage: { ...context.coverage, coveredSectionCount: 2 } }, tokenCounter: counter,
   fixedPromptText: "固定", policy: basePolicy }), /complete full-document context/);
 
-console.log("Grant full-document capacity routing uses exact tokenizer counts and never truncates coverage.");
+console.log("Grant full-document capacity routing bounds both input and section-heavy output without truncating coverage.");

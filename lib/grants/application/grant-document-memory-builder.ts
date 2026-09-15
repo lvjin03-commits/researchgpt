@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { GrantDocumentMemorySnapshotSchema, type GrantDocumentMemorySnapshot } from "../assistant/document-memory-contracts.ts";
 import { sha256Canonical } from "../domain/canonical-json.ts";
+import { GrantAssistantModelError } from "../ports/grant-assistant-model.ts";
 import type { GrantDocumentMemoryModel, GrantDocumentMemoryModelMetadata,
   GrantDocumentMemorySectionProposal, GrantDocumentMemorySemanticItemProposal,
-  GrantDocumentMemoryUnitAnalysis } from "../ports/grant-document-memory-model.ts";
+  GrantDocumentMemorySynthesis, GrantDocumentMemoryUnitAnalysis } from "../ports/grant-document-memory-model.ts";
 import type { GrantDocumentMemoryRepository } from "../ports/grant-document-memory-repository.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import { buildGrantFullDocumentAnalysisUnits, type GrantFullDocumentAnalysisUnit } from "./grant-full-document-hierarchical-analysis.ts";
@@ -59,6 +60,18 @@ function addMetadata(target: { requestIds: string[]; usage: GrantDocumentMemoryS
   if (metadata.provider && metadata.modelId) target.identities.add(`${metadata.provider}:${metadata.modelId}`);
 }
 
+function accumulateFailureMetadata(error: unknown, accumulated: GrantDocumentMemorySnapshot["usage"]) {
+  if (!(error instanceof GrantAssistantModelError)) return error;
+  return new GrantAssistantModelError(error.category, error.message, {
+    ...(error.providerRequestId ? { providerRequestId: error.providerRequestId } : {}),
+    usage: {
+      inputTokens: accumulated.inputTokens + (error.usage?.inputTokens ?? 0),
+      outputTokens: accumulated.outputTokens + (error.usage?.outputTokens ?? 0),
+      reasoningTokens: accumulated.reasoningTokens + (error.usage?.reasoningTokens ?? 0),
+    },
+  });
+}
+
 export async function buildGrantDocumentMemory(input: {
   context: GrantFullDocumentContext;
   route: GrantFullDocumentCapacityRoute;
@@ -67,6 +80,9 @@ export async function buildGrantDocumentMemory(input: {
   repository: GrantDocumentMemoryRepository;
   policyVersion: string;
   synthesisMaximumInputTokens: number;
+  unitMaximumOutputTokens: number;
+  synthesisMaximumOutputTokens: number;
+  attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
   now?: () => string;
   createId?: () => string;
 }): Promise<{ snapshot: GrantDocumentMemorySnapshot; reused: boolean }> {
@@ -77,6 +93,10 @@ export async function buildGrantDocumentMemory(input: {
   if (!Number.isSafeInteger(input.synthesisMaximumInputTokens) || input.synthesisMaximumInputTokens <= 0) {
     throw new Error("Memory synthesis maximum input tokens must be a positive integer.");
   }
+  if (![input.unitMaximumOutputTokens, input.synthesisMaximumOutputTokens]
+    .every((value) => Number.isSafeInteger(value) && value > 0)) {
+    throw new Error("Memory output-token limits must be positive integers.");
+  }
 
   const units = buildUnits(input);
   const documentLanguage = /[\u3400-\u9fff]/u.test(input.context.title) ? "zh" : "en";
@@ -84,9 +104,15 @@ export async function buildGrantDocumentMemory(input: {
     identities: new Set<string>() };
   const analyses: Array<MemoryUnit & { analysis: GrantDocumentMemoryUnitAnalysis }> = [];
   for (const unit of units) {
-    const analysis = await input.model.analyzeMemoryUnit({ documentLanguage, contextHash: input.context.contextHash,
-      unitId: unit.unitId, modelText: unit.modelText, allowedSectionAliases: unit.sectionAliases,
-      allowedSourceAliases: unit.sourceAliases });
+    let analysis: GrantDocumentMemoryUnitAnalysis;
+    try {
+      analysis = await input.model.analyzeMemoryUnit({ documentLanguage, contextHash: input.context.contextHash,
+        unitId: unit.unitId, modelText: unit.modelText, allowedSectionAliases: unit.sectionAliases,
+        allowedSourceAliases: unit.sourceAliases, attemptPurpose: input.attemptPurpose,
+        maximumOutputTokens: input.unitMaximumOutputTokens });
+    } catch (error) {
+      throw accumulateFailureMetadata(error, metadata.usage);
+    }
     if (!analysis.summary.trim()) throw new GrantDocumentMemoryError("invalid_model_output",
       "Memory unit analysis returned an empty summary.");
     validateAliases({ sections: analysis.sectionSummaries, items: analysis.semanticItems,
@@ -103,8 +129,14 @@ export async function buildGrantDocumentMemory(input: {
   }
   const allSections = new Set(input.context.sections.map((section) => section.sectionAlias));
   const allSources = new Set(input.context.nodes.map((node) => node.sourceAlias));
-  const synthesis = await input.model.synthesizeMemory({ documentLanguage, contextHash: input.context.contextHash,
-    analyses: synthesisInput, allowedSectionAliases: [...allSections], allowedSourceAliases: [...allSources] });
+  let synthesis: GrantDocumentMemorySynthesis;
+  try {
+    synthesis = await input.model.synthesizeMemory({ documentLanguage, contextHash: input.context.contextHash,
+      analyses: synthesisInput, allowedSectionAliases: [...allSections], allowedSourceAliases: [...allSources],
+      attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.synthesisMaximumOutputTokens });
+  } catch (error) {
+    throw accumulateFailureMetadata(error, metadata.usage);
+  }
   if (!synthesis.overview.trim()) throw new GrantDocumentMemoryError("invalid_model_output",
     "Memory synthesis returned an empty overview.");
   validateAliases({ sections: synthesis.sectionSummaries, items: synthesis.semanticItems,

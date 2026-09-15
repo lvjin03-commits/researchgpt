@@ -102,6 +102,8 @@ export class GrantModelDataGateway {
     plannerPolicyVersion: string;
     memoryCapacityPolicy: GrantFullDocumentCapacityPolicy;
     memorySynthesisMaximumInputTokens: number;
+    memoryUnitMaximumOutputTokens: number;
+    memorySynthesisMaximumOutputTokens: number;
     plannerMaximumInputTokens: number;
     answerMaximumInputTokens: number;
     attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];

@@ -40,6 +40,8 @@ export interface GrantDocumentMemoryModel {
     modelText: string;
     allowedSectionAliases: string[];
     allowedSourceAliases: string[];
+    attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
+    maximumOutputTokens: number;
   }): Promise<GrantDocumentMemoryUnitAnalysis>;
   synthesizeMemory(input: {
     documentLanguage: "zh" | "en";
@@ -52,5 +54,7 @@ export interface GrantDocumentMemoryModel {
     }>;
     allowedSectionAliases: string[];
     allowedSourceAliases: string[];
+    attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
+    maximumOutputTokens: number;
   }): Promise<GrantDocumentMemorySynthesis>;
 }

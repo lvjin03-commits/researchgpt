@@ -8,6 +8,7 @@ export type GrantFullDocumentCapacityPolicy = {
   reservedOutputTokens: number;
   protocolOverheadTokens: number;
   safetyMarginTokens: number;
+  maximumSectionsPerChunk?: number;
 };
 
 type CapacityFacts = {
@@ -55,6 +56,9 @@ export function routeGrantFullDocumentContext(input: {
   positiveInteger(policy.contextWindowTokens, "Context window");
   positiveInteger(policy.maximumInputTokens, "Maximum input");
   positiveInteger(policy.reservedOutputTokens, "Reserved output");
+  const maximumSectionsPerChunk = policy.maximumSectionsPerChunk == null
+    ? Number.POSITIVE_INFINITY
+    : positiveInteger(policy.maximumSectionsPerChunk, "Maximum sections per chunk");
   if (![policy.protocolOverheadTokens, policy.safetyMarginTokens].every((value) => Number.isSafeInteger(value) && value >= 0)) {
     throw new Error("Protocol overhead and safety margin must be non-negative integers.");
   }
@@ -71,7 +75,8 @@ export function routeGrantFullDocumentContext(input: {
   if (availableDocumentTokens <= 0) return { mode: "unavailable", reason: "fixed_context_exceeds_capacity",
     contextHash: input.context.contextHash, documentId: input.context.documentId,
     sourceRevisionId: input.context.sourceRevisionId, capacity };
-  if (fullRequestInputTokens <= effectiveInputMaximumTokens) return { mode: "single_pass",
+  if (fullRequestInputTokens <= effectiveInputMaximumTokens
+    && input.context.sections.length <= maximumSectionsPerChunk) return { mode: "single_pass",
     context: input.context, capacity };
 
   const title = `申请书标题：${input.context.title}`;
@@ -89,7 +94,8 @@ export function routeGrantFullDocumentContext(input: {
   };
   for (const section of input.context.sections) {
     const candidateText = [title, ...sectionTexts, section.modelText].join("\n\n");
-    if (sectionTexts.length > 0 && input.tokenCounter.count(candidateText) > availableDocumentTokens) flush();
+    if (sectionTexts.length > 0 && (sectionAliases.length >= maximumSectionsPerChunk
+      || input.tokenCounter.count(candidateText) > availableDocumentTokens)) flush();
     sectionAliases.push(section.sectionAlias);
     sectionTexts.push(section.modelText);
   }

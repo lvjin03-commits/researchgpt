@@ -47,10 +47,18 @@ export type GrantAssistantChatModelResult = {
 export class GrantAssistantModelError extends Error {
   readonly category: "structured_output_invalid" | "output_truncated" | "content_filtered" | "provider_refusal" | "provider_rate_limited" | "provider_transient_error" | "provider_contract_error" | "provider_unavailable";
 
-  constructor(category: GrantAssistantModelError["category"], message: string) {
+  readonly providerRequestId?: string;
+  readonly usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
+
+  constructor(category: GrantAssistantModelError["category"], message: string, metadata?: {
+    providerRequestId?: string;
+    usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
+  }) {
     super(message);
     this.name = "GrantAssistantModelError";
     this.category = category;
+    this.providerRequestId = metadata?.providerRequestId;
+    this.usage = metadata?.usage;
   }
 }
 

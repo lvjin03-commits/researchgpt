@@ -33,6 +33,23 @@ export type GrantModelUsageObserver = (event: {
   occurredAt: string;
 }) => Promise<void>;
 
+function failureAttemptMetadata(error: unknown) {
+  if (!error || typeof error !== "object") return {
+    inputTokens: 0, outputTokens: 0, reasoningTokens: 0,
+  };
+  const candidate = error as { providerRequestId?: unknown; usage?: {
+    inputTokens?: unknown; outputTokens?: unknown; reasoningTokens?: unknown } };
+  const count = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+  return {
+    ...(typeof candidate.providerRequestId === "string" && candidate.providerRequestId.trim()
+      ? { providerRequestId: candidate.providerRequestId }
+      : {}),
+    inputTokens: count(candidate.usage?.inputTokens),
+    outputTokens: count(candidate.usage?.outputTokens),
+    reasoningTokens: count(candidate.usage?.reasoningTokens),
+  };
+}
+
 export class GrantModelExecutor {
   private readonly repository: GrantModelCallRepository;
   private readonly createId: () => string;
@@ -84,9 +101,10 @@ export class GrantModelExecutor {
       } catch (error) {
         lastError = error;
         lastCategory = input.classifyFailure(error);
+        const failureMetadata = failureAttemptMetadata(error);
         await this.repository.finish({
           callId, expectedStatus: "started", status: "failed", failureCategory: lastCategory,
-          inputTokens: 0, outputTokens: 0, reasoningTokens: 0, completedAt: this.now(),
+          ...failureMetadata, completedAt: this.now(),
         });
         if (attemptNumber >= input.policy.maximumAttempts || !input.policy.retryableCategories.has(lastCategory)) break;
         purpose = grantModelRetryPurpose(lastCategory);

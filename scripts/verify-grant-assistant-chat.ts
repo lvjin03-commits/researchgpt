@@ -28,6 +28,13 @@ const sessions = {
 };
 let providerCalls = 0;
 let memoryPlannedCalls = 0;
+let memoryInitialFailure: GrantAssistantModelError["category"] = "structured_output_invalid";
+const memoryExecutionPolicies: Array<{
+  attemptPurpose: string;
+  maximumSectionsPerChunk?: number;
+  unitOutputTokens: number;
+  synthesisOutputTokens: number;
+}> = [];
 let lastWebFullDocument = false;
 let lastProviderMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
 let lastContextCardCount = 0;
@@ -43,11 +50,18 @@ const gateway = {
           sectionCount: 4, coveredSectionCount: 4, nodeCount: 24, coveredNodeCount: 24, complete: true }
       : { mode: "retrieved_excerpts" as const, strategy: "retrieval" as const, sourceRevisionId: revisionId,
           sectionCount: 4, coveredSectionCount: 2, nodeCount: 24, coveredNodeCount: 6, complete: false } }); },
-  answerMemoryPlannedAssistantChat: async (request: { attemptPurpose: string; messages: Array<{ role: "user" | "assistant"; content: string }> }) => {
+  answerMemoryPlannedAssistantChat: async (request: { attemptPurpose: string;
+    memoryCapacityPolicy: { maximumSectionsPerChunk?: number };
+    memoryUnitMaximumOutputTokens: number; memorySynthesisMaximumOutputTokens: number;
+    messages: Array<{ role: "user" | "assistant"; content: string }> }) => {
     providerCalls += 1;
     memoryPlannedCalls += 1;
+    memoryExecutionPolicies.push({ attemptPurpose: request.attemptPurpose,
+      maximumSectionsPerChunk: request.memoryCapacityPolicy.maximumSectionsPerChunk,
+      unitOutputTokens: request.memoryUnitMaximumOutputTokens,
+      synthesisOutputTokens: request.memorySynthesisMaximumOutputTokens });
     lastProviderMessages = request.messages;
-    if (request.attemptPurpose === "initial") throw new GrantAssistantModelError("structured_output_invalid", "bad plan");
+    if (request.attemptPurpose === "initial") throw new GrantAssistantModelError(memoryInitialFailure, "bad plan");
     const answer = validateGrantAssistantGroundedAnswer({
       content: "这是基于全文记忆和按需原文的分析。", admittedContext: [{ sourceAlias: "MEMORY1",
         sourceType: "document_memory" as const, label: "当前申请书全文记忆", excerpt: "全文语义记忆" }],
@@ -123,12 +137,19 @@ assert.equal(lastProviderMessages.at(-1)?.content, "继续解释第二个问题�
 assert.equal(storedMessages.length, 4);
 
 const ordinaryCallsBeforeWholeDocument = providerCalls;
+memoryInitialFailure = "output_truncated";
 const fullDocumentResult = await service.answer({ documentId, expectedRevisionId: revisionId,
   turnId: randomUUID(), message: "请从整体上评价整篇申请书。", contextCards: [], evidenceSourceIds: [] });
 assert.equal(providerCalls, ordinaryCallsBeforeWholeDocument + 2,
   "whole-document wording must use the same semantic memory planner without keyword routing");
 assert.equal(fullDocumentResult.content, "这是基于全文记忆和按需原文的分析。");
 assert.equal(fullDocumentResult.contextCoverage?.mode, "document_memory");
+assert.deepEqual(memoryExecutionPolicies.slice(-2), [
+  { attemptPurpose: "initial", maximumSectionsPerChunk: 4,
+    unitOutputTokens: 2_400, synthesisOutputTokens: 3_200 },
+  { attemptPurpose: "capacity_retry", maximumSectionsPerChunk: 2,
+    unitOutputTokens: 4_000, synthesisOutputTokens: 4_000 },
+], "a capacity retry must shrink memory batches and expand output budgets instead of repeating the failed request");
 
 const webResult = await service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(),
   message: "联网补充这一判断。", contextCards: [], evidenceSourceIds: [], webSearch: true });
@@ -252,6 +273,7 @@ const modelCallContractSource = await readFile(new URL("../lib/grants/model-exec
 const migrationSource = await readFile(new URL("../supabase/migrations/055_grant_assistant_chat_model_calls.sql", import.meta.url), "utf8");
 const sessionMigrationSource = await readFile(new URL("../supabase/migrations/056_grant_assistant_sessions.sql", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../lib/grants/server/config.ts", import.meta.url), "utf8");
+const sharedRouteSource = await readFile(new URL("../app/api/grants/_shared.ts", import.meta.url), "utf8");
 assert.match(routeSource, /requireGrantAssistantChatRequestContext/);
 assert.match(routeSource, /Cache-Control.*no-store/);
 assert.match(routeSource, /message: z\.string\(\)/);
@@ -287,5 +309,7 @@ assert.match(sessionMigrationSource, /INTERVAL '7 days'/);
 assert.match(sessionMigrationSource, /INTERVAL '90 days'/);
 assert.match(configSource, /GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA\?\.trim\(\) === "072"/);
 assert.match(configSource, /GRANT_WEB_GROUNDING_PRICE_CATALOG_VERSION\?\.trim\(\) === "001"/);
+assert.match(sharedRouteSource, /error\.category === "output_truncated"/);
+assert.match(sharedRouteSource, /全文记忆或回答达到本轮容量上限/);
 
 console.log("Grant assistant ordinary-chat execution contracts passed.");

@@ -101,6 +101,8 @@ export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantModelExecutionError) {
     const message = error.category === "provider_rate_limited"
       ? "当前 AI 请求较多，请稍后重试。"
+      : error.category === "output_truncated"
+        ? "全文记忆或回答达到本轮容量上限，系统没有使用不完整结果。请重新发送问题，系统会自动缩小分批范围。"
       : error.category === "provider_contract_error" || error.category === "structured_output_invalid"
         ? "这次回答格式没有成功生成，请重新发送问题。"
         : "AI 服务暂时不可用，请稍后重试。";

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { GrantModelExecutionError, GrantModelExecutor } from "../lib/grants/application/grant-model-executor.ts";
 import { InMemoryGrantModelCallRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-model-call-repository.ts";
 import { GRANT_ASSISTANT_CHAT_OPERATION, GRANT_EDIT_SESSION_TURN_OPERATION, resolveGrantModelOperationPolicy } from "../lib/grants/model-execution/operation-registry.ts";
+import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const documentId = randomUUID();
@@ -37,15 +38,24 @@ assert.deepEqual(attempts.map((attempt) => attempt.attemptPurpose), ["initial", 
 assert.equal(attempts[1]?.inputTokens, 10);
 
 let permanentCalls = 0;
+let permanentTraceId = "";
 await assert.rejects(
   executor.execute({
     documentId, inputHash: hash("other-input"), policy,
-    classifyFailure: () => "content_filtered",
-    invoke: async () => { permanentCalls += 1; throw new Error("filtered"); },
+    traceId: permanentTraceId = randomUUID(),
+    classifyFailure: (error) => error instanceof GrantAssistantModelError ? error.category : "provider_unavailable",
+    invoke: async () => { permanentCalls += 1; throw new GrantAssistantModelError("content_filtered", "filtered", {
+      providerRequestId: "req_filtered", usage: { inputTokens: 31, outputTokens: 7, reasoningTokens: 2 },
+    }); },
   }),
   (error) => error instanceof GrantModelExecutionError && error.category === "content_filtered",
 );
 assert.equal(permanentCalls, 1, "non-retryable failures consume one provider attempt");
+const failedAttempts = await repository.listByTrace(documentId, permanentTraceId);
+assert.deepEqual(failedAttempts.map(({ providerRequestId, inputTokens, outputTokens, reasoningTokens }) => ({
+  providerRequestId, inputTokens, outputTokens, reasoningTokens,
+})), [{ providerRequestId: "req_filtered", inputTokens: 31, outputTokens: 7, reasoningTokens: 2 }],
+"A provider-completed failure must retain its factual request ID and token usage in model-call telemetry.");
 
 const unavailableRepository = new InMemoryGrantModelCallRepository();
 unavailableRepository.start = async () => { throw new Error("telemetry unavailable"); };

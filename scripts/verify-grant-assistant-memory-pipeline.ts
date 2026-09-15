@@ -70,7 +70,8 @@ const base = { documentId, sourceRevisionId: revisionId, snapshot, memoryReposit
   memoryPolicyVersion: "memory-v1", plannerPolicyVersion: "planner-v1",
   memoryCapacityPolicy: { policyVersion: "memory-capacity-v1", contextWindowTokens: 10_000,
     maximumInputTokens: 8_000, reservedOutputTokens: 1_000, protocolOverheadTokens: 100, safetyMarginTokens: 200 },
-  memorySynthesisMaximumInputTokens: 8_000, plannerMaximumInputTokens: 8_000,
+  memorySynthesisMaximumInputTokens: 8_000, memoryUnitMaximumOutputTokens: 2_400,
+  memorySynthesisMaximumOutputTokens: 3_200, plannerMaximumInputTokens: 8_000,
   answerMaximumInputTokens: 8_000, attemptPurpose: "initial" as const };
 const first = await gateway.answerMemoryPlannedAssistantChat({ ...base,
   messages: [{ role: "user", content: "解释这个科学问题为什么成立。" }] });

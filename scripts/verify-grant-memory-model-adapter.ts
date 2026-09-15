@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type OpenAI from "openai";
 import { OpenAIGrantAiModel } from "../lib/grants/infrastructure/model/openai-grant-ai-model.ts";
+import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
 
 const responses = [
   { id: "req-memory-unit", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
@@ -18,18 +19,24 @@ const responses = [
   }) } }], usage: { prompt_tokens: 6, completion_tokens: 3, completion_tokens_details: { reasoning_tokens: 1 } } },
 ];
 const requestedFormats: string[] = [];
-const client = { chat: { completions: { async create(request: { response_format?: { json_schema?: { name?: string } } }) {
+const requestedOutputTokens: number[] = [];
+const client = { chat: { completions: { async create(request: {
+  response_format?: { json_schema?: { name?: string } }; max_completion_tokens?: number;
+}) {
   requestedFormats.push(request.response_format?.json_schema?.name ?? "unknown");
+  requestedOutputTokens.push(request.max_completion_tokens ?? 0);
   return responses.shift()!;
 } } } } as unknown as OpenAI;
 const model = new OpenAIGrantAiModel("gpt-offline", "unused-test-key", client);
 const unit = await model.analyzeMemoryUnit({ documentLanguage: "zh", contextHash: "a".repeat(64), unitId: "U1",
-  modelText: "[D1] 正文", allowedSectionAliases: ["S1"], allowedSourceAliases: ["D1"] });
+  modelText: "[D1] 正文", allowedSectionAliases: ["S1"], allowedSourceAliases: ["D1"],
+  attemptPurpose: "initial", maximumOutputTokens: 2_400 });
 assert.equal(unit.providerRequestId, "req-memory-unit");
 assert.equal(unit.semanticItems[0]?.kind, "scientific_problem");
 const synthesis = await model.synthesizeMemory({ documentLanguage: "zh", contextHash: "a".repeat(64),
   analyses: [{ unitId: "U1", summary: unit.summary, sectionSummaries: unit.sectionSummaries,
-    semanticItems: unit.semanticItems }], allowedSectionAliases: ["S1"], allowedSourceAliases: ["D1"] });
+    semanticItems: unit.semanticItems }], allowedSectionAliases: ["S1"], allowedSourceAliases: ["D1"],
+  attemptPurpose: "initial", maximumOutputTokens: 3_200 });
 assert.equal(synthesis.overview, "全文概览");
 const plan = await model.plan({ documentLanguage: "zh", question: "解释研究目标", recentConversation: [],
   documentMemoryText: "全文记忆", allowedSectionAliases: ["S1"], allowedMemoryItemAliases: ["M1"],
@@ -39,6 +46,31 @@ assert.equal(plan.documentAccess, "targeted_original");
 assert.equal(plan.clarificationQuestion, undefined);
 assert.deepEqual(requestedFormats, ["grant_document_memory_unit", "grant_document_memory_synthesis",
   "grant_assistant_context_plan"]);
+assert.deepEqual(requestedOutputTokens, [2_400, 3_200, 700],
+  "Memory stages must consume their caller-owned output budgets instead of adapter hard-coded limits.");
 assert.equal(responses.length, 0);
+
+const truncatedClient = { chat: { completions: { async create() {
+  return {
+    id: "req-memory-truncated",
+    choices: [{ finish_reason: "length", message: { content: "" } }],
+    usage: { prompt_tokens: 31, completion_tokens: 17, completion_tokens_details: { reasoning_tokens: 3 } },
+  };
+} } } } as unknown as OpenAI;
+const truncatedModel = new OpenAIGrantAiModel("gpt-offline", "unused-test-key", truncatedClient);
+await assert.rejects(
+  truncatedModel.analyzeMemoryUnit({
+    documentLanguage: "zh", contextHash: "b".repeat(64), unitId: "U2",
+    modelText: "[D2] 正文", allowedSectionAliases: ["S2"], allowedSourceAliases: ["D2"],
+    attemptPurpose: "capacity_retry", maximumOutputTokens: 4_000,
+  }),
+  (error: unknown) => {
+    assert.ok(error instanceof GrantAssistantModelError);
+    assert.equal(error.category, "output_truncated");
+    assert.equal(error.providerRequestId, "req-memory-truncated");
+    assert.deepEqual(error.usage, { inputTokens: 31, outputTokens: 17, reasoningTokens: 3 });
+    return true;
+  },
+);
 
 console.log("OpenAI Grant adapter enforces structured memory and semantic-planning contracts without a network call.");

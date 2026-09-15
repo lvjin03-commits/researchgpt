@@ -33,6 +33,8 @@ let modelCalls = 0;
 const model: GrantDocumentMemoryModel = {
   async analyzeMemoryUnit(input) {
     modelCalls += 1;
+    assert.equal(input.attemptPurpose, "initial");
+    assert.equal(input.maximumOutputTokens, 2_400);
     return { provider: "openai", modelId: "offline-test-model", providerRequestId: `unit-${input.unitId}`,
       usage: { inputTokens: 10, outputTokens: 4, reasoningTokens: 1 }, summary: `已读 ${input.unitId}`,
       sectionSummaries: input.allowedSectionAliases.map((sectionAlias) => ({ sectionAlias,
@@ -43,6 +45,8 @@ const model: GrantDocumentMemoryModel = {
   },
   async synthesizeMemory(input) {
     modelCalls += 1;
+    assert.equal(input.attemptPurpose, "initial");
+    assert.equal(input.maximumOutputTokens, 3_200);
     const firstSource = input.allowedSourceAliases[0]!;
     return { provider: "openai", modelId: "offline-test-model", providerRequestId: "synthesis-1",
       usage: { inputTokens: 20, outputTokens: 8, reasoningTokens: 2 }, overview: "全文围绕界面调控展开。",
@@ -55,8 +59,10 @@ const model: GrantDocumentMemoryModel = {
 };
 const repository = new InMemoryGrantDocumentMemoryRepository();
 const fixedMemoryId = randomUUID();
+const memoryExecution = { synthesisMaximumInputTokens: 20_000, unitMaximumOutputTokens: 2_400,
+  synthesisMaximumOutputTokens: 3_200, attemptPurpose: "initial" as const };
 const first = await buildGrantDocumentMemory({ context, route, tokenCounter: counter, model, repository,
-  policyVersion: "grant-memory-v1", synthesisMaximumInputTokens: 20_000,
+  policyVersion: "grant-memory-v1", ...memoryExecution,
   createId: () => fixedMemoryId, now: () => "2026-09-15T12:00:00.000Z" });
 assert.equal(first.reused, false);
 assert.equal(first.snapshot.memoryId, fixedMemoryId);
@@ -73,7 +79,7 @@ assert.ok(modelCalls > 2, "The oversized document should be fully read in multip
 
 const callsAfterFirstBuild = modelCalls;
 const reused = await buildGrantDocumentMemory({ context, route, tokenCounter: counter, model, repository,
-  policyVersion: "grant-memory-v1", synthesisMaximumInputTokens: 20_000 });
+  policyVersion: "grant-memory-v1", ...memoryExecution });
 assert.equal(reused.reused, true);
 assert.equal(reused.snapshot.memoryId, first.snapshot.memoryId);
 assert.equal(modelCalls, callsAfterFirstBuild, "An identical Revision and policy must reuse memory without a model call.");
@@ -83,12 +89,12 @@ const nextRoute = routeGrantFullDocumentContext({ context: nextContext, tokenCou
   fixedPromptText: "构建申请书记忆", policy: { policyVersion: "memory-capacity-v1", contextWindowTokens: 600,
     maximumInputTokens: 520, reservedOutputTokens: 50, protocolOverheadTokens: 10, safetyMarginTokens: 20 } });
 await buildGrantDocumentMemory({ context: nextContext, route: nextRoute, tokenCounter: counter, model, repository,
-  policyVersion: "grant-memory-v1", synthesisMaximumInputTokens: 20_000 });
+  policyVersion: "grant-memory-v1", ...memoryExecution });
 assert.ok(modelCalls > callsAfterFirstBuild, "A new canonical Revision must rebuild memory.");
 
 const invalidRepository = new InMemoryGrantDocumentMemoryRepository();
 await assert.rejects(() => buildGrantDocumentMemory({ context, route, tokenCounter: counter,
-  repository: invalidRepository, policyVersion: "invalid-memory-v1", synthesisMaximumInputTokens: 20_000,
+  repository: invalidRepository, policyVersion: "invalid-memory-v1", ...memoryExecution,
   model: { ...model, async synthesizeMemory(input) { return { overview: "错误记忆", provider: "openai",
     modelId: "offline-test-model", sectionSummaries: input.allowedSectionAliases.map((sectionAlias) => ({
       sectionAlias, summary: "摘要", sourceAliases: [] })), semanticItems: [{ kind: "other", statement: "错误引用",
