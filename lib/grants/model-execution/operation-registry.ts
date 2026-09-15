@@ -43,6 +43,9 @@ export type GrantModelFailureCategory =
   | "provider_transient_error"
   | "provider_contract_error"
   | "provider_unavailable"
+  | "planning_capacity_exceeded"
+  | "answer_capacity_exceeded"
+  | "internal_contract_error"
   | "evidence_authorization_changed"
   | "figure_authorization_changed"
   | "web_source_unavailable"
@@ -56,6 +59,18 @@ export type GrantModelOperationPolicy = {
   modelId: string;
   maximumAttempts: 1 | 2;
   executionLimits: GrantModelOperationExecutionLimits;
+  assistantContextLimits?: {
+    semanticPlanning: { maximumInputTokens: number; maximumOutputTokens: number };
+    groundedAnswer: { maximumInputTokens: number; maximumOutputTokens: number };
+    fullDocumentReview: {
+      maximumUnitInputTokens: number;
+      maximumUnitOutputTokens: number;
+      maximumSynthesisInputTokens: number;
+      maximumSynthesisOutputTokens: number;
+      maximumUnits: number;
+      maximumSectionsPerUnit: number;
+    };
+  };
   retryableCategories: ReadonlySet<GrantModelFailureCategory>;
 };
 
@@ -70,6 +85,19 @@ export function resolveGrantModelOperationPolicy(input: {
     input.operation !== GRANT_WEB_NEXT_STEP_DECIDE_OPERATION && input.operation !== GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION) {
     throw new Error(`Grant model operation is not registered: ${String(input.operation)}`);
   }
+  const executionLimits = input.operation === GRANT_WEB_NEXT_STEP_DECIDE_OPERATION
+    ? { maximumInputTokens: 4_000, maximumOutputTokens: 300, maximumToolCalls: 0, timeoutMilliseconds: 30_000 }
+    : input.operation === GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION
+      ? { maximumInputTokens: 16_000, maximumOutputTokens: 1_600, maximumToolCalls: 0, timeoutMilliseconds: 90_000 }
+      : input.operation === GRANT_WEB_QUERY_REWRITE_OPERATION
+        ? { maximumInputTokens: 4_000, maximumOutputTokens: 300, maximumToolCalls: 0, timeoutMilliseconds: 45_000 }
+        : input.operation === GRANT_WEB_SOURCE_ASSESS_OPERATION
+          ? { maximumInputTokens: 32_000, maximumOutputTokens: 1_600, maximumToolCalls: 0, timeoutMilliseconds: 90_000 }
+          : input.operation === GRANT_WEB_GAP_COMPARE_OPERATION
+            ? { maximumInputTokens: 16_000, maximumOutputTokens: 2_000, maximumToolCalls: 0, timeoutMilliseconds: 120_000 }
+            : input.operation === GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION
+              ? { maximumInputTokens: 32_000, maximumOutputTokens: 2_400, maximumToolCalls: 0, timeoutMilliseconds: 120_000 }
+              : { maximumInputTokens: 24_000, maximumOutputTokens: 4_000, maximumToolCalls: 0, timeoutMilliseconds: 120_000 };
   return Object.freeze({
     operation: input.operation,
     policyVersion: input.operation === GRANT_ASSISTANT_CHAT_OPERATION ? GRANT_ASSISTANT_CHAT_POLICY_VERSION
@@ -85,19 +113,21 @@ export function resolveGrantModelOperationPolicy(input: {
     maximumAttempts: input.operation === GRANT_WEB_NEXT_STEP_DECIDE_OPERATION ||
       input.operation === GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION ||
       input.operation === GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION ? 1 : 2,
-    executionLimits: input.operation === GRANT_WEB_NEXT_STEP_DECIDE_OPERATION
-      ? { maximumInputTokens: 4_000, maximumOutputTokens: 300, maximumToolCalls: 0, timeoutMilliseconds: 30_000 }
-      : input.operation === GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION
-        ? { maximumInputTokens: 16_000, maximumOutputTokens: 1_600, maximumToolCalls: 0, timeoutMilliseconds: 90_000 }
-        : input.operation === GRANT_WEB_QUERY_REWRITE_OPERATION
-          ? { maximumInputTokens: 4_000, maximumOutputTokens: 300, maximumToolCalls: 0, timeoutMilliseconds: 45_000 }
-          : input.operation === GRANT_WEB_SOURCE_ASSESS_OPERATION
-            ? { maximumInputTokens: 32_000, maximumOutputTokens: 1_600, maximumToolCalls: 0, timeoutMilliseconds: 90_000 }
-            : input.operation === GRANT_WEB_GAP_COMPARE_OPERATION
-              ? { maximumInputTokens: 16_000, maximumOutputTokens: 2_000, maximumToolCalls: 0, timeoutMilliseconds: 120_000 }
-            : input.operation === GRANT_WEB_ANSWER_SYNTHESIZE_OPERATION
-              ? { maximumInputTokens: 32_000, maximumOutputTokens: 2_400, maximumToolCalls: 0, timeoutMilliseconds: 120_000 }
-              : { maximumInputTokens: 24_000, maximumOutputTokens: 4_000, maximumToolCalls: 0, timeoutMilliseconds: 120_000 },
+    executionLimits,
+    ...(input.operation === GRANT_ASSISTANT_CHAT_OPERATION ? {
+      assistantContextLimits: {
+        semanticPlanning: { maximumInputTokens: executionLimits.maximumInputTokens, maximumOutputTokens: 700 },
+        groundedAnswer: { maximumInputTokens: executionLimits.maximumInputTokens, maximumOutputTokens: 2_400 },
+        fullDocumentReview: {
+          maximumUnitInputTokens: Math.min(12_000, executionLimits.maximumInputTokens),
+          maximumUnitOutputTokens: 800,
+          maximumSynthesisInputTokens: Math.min(16_000, executionLimits.maximumInputTokens),
+          maximumSynthesisOutputTokens: 2_400,
+          maximumUnits: 12,
+          maximumSectionsPerUnit: 4,
+        },
+      },
+    } : {}),
     retryableCategories: new Set<GrantModelFailureCategory>(input.operation === GRANT_WEB_NEXT_STEP_DECIDE_OPERATION || input.operation === GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION ? [] : [
       "structured_output_invalid",
       "structured_reference_invalid",

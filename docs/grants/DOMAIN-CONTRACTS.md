@@ -317,8 +317,8 @@ provider dispatch. `grant_model_calls` admits only the registered
 operation/policy pairs; `grant.assistant.chat` must carry
 `grant-assistant-chat-v1`. The feature is default-off under
 `GRANT_ASSISTANT_CHAT_ENABLED` and fails closed unless
-`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=072` confirms assistant-session and
-Revision-bound document-memory persistence readiness.
+`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=074` confirms assistant-session,
+execution telemetry and layered Revision-bound document-memory readiness.
 
 Admitted-context grounding is program-owned. Valid selection cards, explicitly
 selected current Evidence Cards and user-confirmed academic snapshots may enter
@@ -332,6 +332,25 @@ Grounded content may shed message bodies while retaining non-reconstructive
 source and execution audit metadata. Candidate-, Patch- and Revision-linked
 records follow canonical AI-edit audit retention. Provider context is always a
 bounded program-built projection, never the entire client message history.
+
+Ordinary document conversation, targeted original-text verification and
+whole-document review share one Revision-bound memory-planned execution
+pipeline. `full_original` is not permission to place the entire canonical
+document in one provider request. It deterministically selects hierarchical
+review: every canonical section is analyzed in bounded units and a bounded
+synthesis produces the normal grounded-answer contract. Exact unit and
+synthesis messages pass the same authoritative context-budget planner before
+dispatch. The final answer exposes only current original nodes and current open
+diagnostic Findings that synthesis actually cites. The former independent
+full-document gateway entry point is not a compatibility path.
+
+Grant Assistant failures are stage-aware. Durable model-call telemetry records
+the factual category, execution stage, whether a provider request was
+dispatched, whether usage is known, all available provider request IDs and
+aggregate token usage. User-facing presentation is derived from those facts by
+one application service. Capacity rejection and internal context failure must
+not be labeled as provider unavailability. The API returns a safe trace ID but
+never prompt, excerpt, diagnostic or generated content as failure telemetry.
 
 Generated images and image editing are not part of this contract. Imported-
 figure analysis authorization does not authorize derivative generation.

@@ -118,7 +118,10 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
         const detail = Array.isArray(data.issues)
           ? data.issues.map((issue: { path?: unknown[]; message?: string }) => `${issue.path?.join(".") || "请求"}: ${issue.message ?? "格式错误"}`).join("；")
           : "";
-        throw new Error(detail ? `${data.error ?? "请求失败"}（${detail}）` : (data.error ?? "Grant AI 对话失败。"));
+        const trace = typeof data.traceId === "string" && data.traceId.trim()
+          ? `（追踪编号：${data.traceId}）` : "";
+        const message = detail ? `${data.error ?? "请求失败"}（${detail}）` : (data.error ?? "Grant AI 对话失败。");
+        throw new Error(`${message}${trace}`);
       }
       setMessages((items) => [...items, { messageId: `${turnId}:assistant`, turnId, role: "assistant", content: data.content, grounding: data.grounding, citations: data.citations, recommendedQuestions: data.recommendedQuestions, contextCoverage: data.contextCoverage }]);
       const charge = data.webGrounding?.charging;

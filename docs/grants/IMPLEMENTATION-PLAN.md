@@ -742,7 +742,7 @@ a deployment concern and must call the same retention owner rather than delete
 rows from UI code.
 
 Rollout now fails closed unless both `GRANT_ASSISTANT_CHAT_ENABLED=true` and
-`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=072` are present. Disabling the flag hides
+`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=074` are present. Disabling the flag hides
 the surface without deleting sessions, messages, Edit Session links or model
 call telemetry.
 
@@ -1066,6 +1066,37 @@ falling through to another policy. A dedicated CI check proves that chat routes
 and UI contain no write endpoints, the retired explanation operation cannot be
 resolved, and Candidate application remains bound to the visible
 `应用到正文` click inside the Edit Session surface.
+
+## Grant Assistant Unified Context Step 3 Status
+
+The existing memory-planned pipeline now owns ordinary memory discussion,
+targeted current-Revision original verification and hierarchical full-document
+review. The semantic plan selects one mode; it does not select a route or grant
+authorization. Full review always analyzes bounded canonical section groups and
+then performs a bounded synthesis. It never places the complete original in one
+`answerChat` request, including when a short document would fit.
+
+The former independent full-document gateway method is removed. Unit and
+synthesis limits come from the registered `grant.assistant.chat` policy, and
+the budget planner measures the same provider messages dispatched by the OpenAI
+adapter. The final grounded answer resolves only cited original nodes and
+current normalized Findings. Offline integration is complete; production
+deployment and a paid-provider path verification remain separately authorized.
+
+## Grant Assistant Failure and Verification Step 4 Status
+
+Grant Assistant errors now retain stage-aware category, dispatch state,
+usage-known state, provider request IDs and aggregate token use through Model
+Executor. Hierarchical review preserves earlier successful-unit metadata when a
+later unit fails. One application presenter owns safe HTTP status, retryability
+and Chinese user text; API and UI no longer collapse local capacity or contract
+failures into “AI service unavailable”. The UI also displays the trace ID.
+
+Offline verification covers the three assistant modes, complete hierarchical
+coverage, current diagnostic participation, exact pre-dispatch admission,
+capacity rejection, truncated-stage presentation and partial multi-call failure
+accounting. Production migration/deployment, signed-in browser verification and
+any real paid-provider probe remain separately authorized.
 
 ## Formal Research Evidence Pipeline Cutover
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { GrantDocumentMemorySnapshotSchema, type GrantDocumentMemorySnapshot } from "../assistant/document-memory-contracts.ts";
+import { GrantDocumentMemoryItemKindSchema, GrantDocumentMemorySnapshotSchema,
+  type GrantDocumentMemorySnapshot } from "../assistant/document-memory-contracts.ts";
 import { sha256Canonical } from "../domain/canonical-json.ts";
 import { GrantAssistantModelError } from "../ports/grant-assistant-model.ts";
 import type { GrantDocumentMemoryModel, GrantDocumentMemoryModelMetadata,
@@ -60,15 +61,21 @@ function addMetadata(target: { requestIds: string[]; usage: GrantDocumentMemoryS
   if (metadata.provider && metadata.modelId) target.identities.add(`${metadata.provider}:${metadata.modelId}`);
 }
 
-function accumulateFailureMetadata(error: unknown, accumulated: GrantDocumentMemorySnapshot["usage"]) {
+function accumulateFailureMetadata(error: unknown, accumulated: GrantDocumentMemorySnapshot["usage"],
+  accumulatedRequestIds: string[]) {
   if (!(error instanceof GrantAssistantModelError)) return error;
+  const providerRequestIds = [...new Set([...accumulatedRequestIds, ...error.providerRequestIds])];
   return new GrantAssistantModelError(error.category, error.message, {
-    ...(error.providerRequestId ? { providerRequestId: error.providerRequestId } : {}),
+    providerRequestIds,
+    ...(providerRequestIds.at(-1) ? { providerRequestId: providerRequestIds.at(-1) } : {}),
     usage: {
       inputTokens: accumulated.inputTokens + (error.usage?.inputTokens ?? 0),
       outputTokens: accumulated.outputTokens + (error.usage?.outputTokens ?? 0),
       reasoningTokens: accumulated.reasoningTokens + (error.usage?.reasoningTokens ?? 0),
     },
+    failureStage: "memory_build",
+    requestDispatched: providerRequestIds.length > 0 || error.requestDispatched,
+    usageKnown: error.usageKnown || accumulatedRequestIds.length > 0,
   });
 }
 
@@ -131,7 +138,7 @@ export async function buildGrantDocumentMemory(input: {
     addMetadata(metadata, analysis);
     analyses.push({ ...units[index]!, analysis });
   }
-  if (firstError != null) throw accumulateFailureMetadata(firstError, metadata.usage);
+  if (firstError != null) throw accumulateFailureMetadata(firstError, metadata.usage, metadata.requestIds);
   if (analyses.length !== units.length) throw new GrantDocumentMemoryError("invalid_model_output",
     "Memory unit analysis did not complete every declared unit.");
 
@@ -171,18 +178,35 @@ export async function buildGrantDocumentMemory(input: {
 
   const sectionByAlias = new Map(input.context.sections.map((section) => [section.sectionAlias, section]));
   const nodeByAlias = new Map(input.context.nodes.map((node) => [node.sourceAlias, node]));
-  const sections = assembled.sectionSummaries.map((proposal) => {
+  const sectionEntries = assembled.sectionSummaries.map((proposal) => {
     const section = sectionByAlias.get(proposal.sectionAlias)!;
-    return { sectionId: section.sectionId, title: section.title, semanticRole: section.semanticRole,
-      summary: proposal.summary, sourceNodeIds: proposal.sourceAliases.map((alias) => nodeByAlias.get(alias)!.nodeId) };
+    return { memory: { sectionId: section.sectionId, title: section.title,
+      parentSectionId: section.parentSectionAlias
+        ? sectionByAlias.get(section.parentSectionAlias)!.sectionId : null,
+      semanticRole: section.semanticRole, summary: proposal.summary },
+    anchor: { sectionId: section.sectionId,
+      sourceNodeIds: [...new Set(proposal.sourceAliases.map((alias) => nodeByAlias.get(alias)!.nodeId))] } };
   });
-  const items = assembled.semanticItems.map((proposal, index) => ({ memoryItemId: `M${index + 1}`,
-    kind: proposal.kind, statement: proposal.statement, concepts: [...new Set(proposal.concepts.map((item) => item.trim()).filter(Boolean))].slice(0, 12),
-    sourceSectionIds: [...new Set(proposal.sourceAliases.map((alias) =>
-      sectionByAlias.get(nodeByAlias.get(alias)!.sectionAlias)!.sectionId))],
-    sourceNodeIds: [...new Set(proposal.sourceAliases.map((alias) => nodeByAlias.get(alias)!.nodeId))] }));
-  const content = { overview: assembled.overview, sections, items };
-  const snapshot = GrantDocumentMemorySnapshotSchema.parse({ schemaVersion: "grant-document-memory-v1",
+  const itemEntries = assembled.semanticItems.map((proposal, index) => {
+    const memoryItemId = `M${index + 1}`;
+    return { memory: { memoryItemId, kind: proposal.kind, statement: proposal.statement,
+      concepts: [...new Set(proposal.concepts.map((item) => item.trim()).filter(Boolean))].slice(0, 12),
+      sourceSectionIds: [...new Set(proposal.sourceAliases.map((alias) =>
+        sectionByAlias.get(nodeByAlias.get(alias)!.sectionAlias)!.sectionId))] },
+    anchor: { memoryItemId,
+      sourceNodeIds: [...new Set(proposal.sourceAliases.map((alias) => nodeByAlias.get(alias)!.nodeId))] } };
+  });
+  const itemIdsByKind = Object.fromEntries(GrantDocumentMemoryItemKindSchema.options
+    .map((kind) => [kind, itemEntries.filter((entry) => entry.memory.kind === kind)
+      .map((entry) => entry.memory.memoryItemId)]));
+  const content = {
+    l0: { overview: assembled.overview, itemIdsByKind },
+    l1: { sections: sectionEntries.map((entry) => entry.memory),
+      items: itemEntries.map((entry) => entry.memory) },
+    l2: { sectionAnchors: sectionEntries.map((entry) => entry.anchor),
+      itemAnchors: itemEntries.map((entry) => entry.anchor) },
+  };
+  const snapshot = GrantDocumentMemorySnapshotSchema.parse({ schemaVersion: "grant-document-memory-v2",
     memoryId: (input.createId ?? randomUUID)(), documentId: input.context.documentId,
     sourceRevisionId: input.context.sourceRevisionId, contextHash: input.context.contextHash,
     memoryHash: sha256Canonical(content), policyVersion: input.policyVersion, provider: "openai", modelId,

@@ -30,10 +30,11 @@ import type { GrantDocumentMemoryRepository } from "../ports/grant-document-memo
 import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import { buildGrantFullDocumentContext } from "./grant-full-document-context.ts";
-import { routeGrantFullDocumentContext, type GrantFullDocumentCapacityPolicy } from "./grant-full-document-capacity-router.ts";
-import { executeGrantFullDocumentHierarchicalAnalysis } from "./grant-full-document-hierarchical-analysis.ts";
+import type { GrantFullDocumentCapacityPolicy } from "./grant-full-document-capacity-router.ts";
 import type { GrantAssistantContextCoverage } from "../assistant/context-coverage.ts";
 import { executeGrantAssistantMemoryPipeline } from "./grant-assistant-memory-pipeline.ts";
+import { admitGrantAssistantAnswerContext,
+  type GrantAssistantContextBudgetPolicy } from "./grant-assistant-context-budget.ts";
 import {
   GRANT_DIAGNOSTIC_IMAGE_MEDIA_TYPES,
   grantDiagnosticImageScopeFingerprint,
@@ -103,8 +104,7 @@ export class GrantModelDataGateway {
     memoryCapacityPolicy: GrantFullDocumentCapacityPolicy;
     memoryMaximumConcurrentUnitAnalyses: number;
     memoryUnitMaximumOutputTokens: number;
-    plannerMaximumInputTokens: number;
-    answerMaximumInputTokens: number;
+    contextBudgetPolicy: GrantAssistantContextBudgetPolicy;
     attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
     explicitContext?: {
       hasDocumentSelection?: boolean;
@@ -210,6 +210,7 @@ export class GrantModelDataGateway {
     evidenceSourceIds: string[];
     taskId: string;
     attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
+    contextBudgetPolicy: GrantAssistantContextBudgetPolicy;
   }) {
     if (!this.model.answerChat) throw new GrantEvidenceProviderPolicyError("Grant assistant chat is not configured.");
     const admittedContext = this.validateAssistantDocumentSelections(input);
@@ -253,12 +254,11 @@ export class GrantModelDataGateway {
       excerpt: card.excerpt,
     }));
     const documentLanguage = /[\u3400-\u9fff]/u.test(input.snapshot.title + input.messages.at(-1)!.content) ? "zh" : "en";
-    const generated = await this.model.answerChat({
-      documentLanguage,
-      messages: input.messages,
-      admittedContext,
-      attemptPurpose: input.attemptPurpose,
-    });
+    if (!this.tokenCounter) throw new GrantEvidenceProviderPolicyError("Grant Assistant context budgeting is not configured.");
+    const admission = admitGrantAssistantAnswerContext({ documentLanguage, messages: input.messages,
+      admittedContext, attemptPurpose: input.attemptPurpose, budgetPolicy: input.contextBudgetPolicy,
+      tokenCounter: this.tokenCounter });
+    const generated = await this.model.answerChat(admission.request);
     if (sourceIds.length > 0) {
       const current = await this.evidenceAuthorization!.materializeCurrent({ documentId: input.documentId, sourceIds, taskId: input.taskId, use: "reasoning" });
       const currentRevision = new Map(current.map((resource) => [resource.source.sourceId, resource.authorization.revision]));
@@ -266,62 +266,7 @@ export class GrantModelDataGateway {
         throw new GrantPatchEvidenceMismatchError("资料授权在本轮对话期间发生变化，请重新发送。");
       }
     }
-    return { ...generated, admittedContext };
-  }
-
-  async answerFullDocumentAssistantChat(input: {
-    documentId: string;
-    sourceRevisionId: string;
-    snapshot: CanonicalGrantSnapshot;
-    messages: GrantAssistantChatModelRequest["messages"];
-    attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
-    capacityPolicy: GrantFullDocumentCapacityPolicy;
-  }) {
-    if (!this.model.answerChat || !this.tokenCounter) {
-      throw new GrantEvidenceProviderPolicyError("Full-document Grant assistant analysis is not configured.");
-    }
-    const context = buildGrantFullDocumentContext({ documentId: input.documentId,
-      sourceRevisionId: input.sourceRevisionId, snapshot: input.snapshot });
-    const fixedPromptText = JSON.stringify({ messages: input.messages, attemptPurpose: input.attemptPurpose });
-    const route = routeGrantFullDocumentContext({ context, tokenCounter: this.tokenCounter,
-      fixedPromptText, policy: input.capacityPolicy });
-    if (route.mode === "unavailable") {
-      throw new GrantEvidenceProviderPolicyError("The conversation context leaves no capacity for the grant document.");
-    }
-    const sectionTitleByAlias = new Map(context.sections.map((section) => [section.sectionAlias, section.title]));
-    const admittedContext: GrantAssistantAdmittedContext[] = context.nodes.map((node) => ({
-      sourceAlias: node.sourceAlias, sourceType: "document_selection" as const,
-      label: `${context.title} / ${sectionTitleByAlias.get(node.sectionAlias) ?? node.sectionAlias}`, excerpt: node.text,
-    }));
-    admittedContext.unshift({ sourceAlias: "DOCSTRUCTURE", sourceType: "document_selection",
-      label: `${context.title} / 申请书结构`, excerpt: context.sections.map((section) =>
-        `${"  ".repeat(section.depth)}[${section.sectionAlias}] ${section.title}`).join("\n") });
-    if (route.mode === "single_pass") {
-      const generated = await this.model.answerChat({ documentLanguage: /[\u3400-\u9fff]/u.test(context.title + (input.messages.at(-1)?.content ?? "")) ? "zh" : "en",
-        messages: input.messages, admittedContext, attemptPurpose: input.attemptPurpose });
-      return { ...generated, admittedContext, fullDocument: { mode: route.mode, contextHash: context.contextHash,
-        coverage: context.coverage } };
-    }
-    if (!this.model.analyzeUnit || !this.model.synthesize) {
-      throw new GrantEvidenceProviderPolicyError("Hierarchical Grant assistant analysis is not configured.");
-    }
-    const question = input.messages.at(-1)?.content ?? "";
-    const execution = await executeGrantFullDocumentHierarchicalAnalysis({ context, route,
-      tokenCounter: this.tokenCounter, model: this.model as GrantFullDocumentAnalysisModel, question,
-      synthesisMaximumInputTokens: input.capacityPolicy.maximumInputTokens });
-    const aliases = [...new Set(execution.answer.claims.flatMap((claim) => claim.sourceAliases))];
-    const citationIdByAlias = new Map(aliases.map((alias, index) => [alias, `FD${index + 1}`]));
-    return {
-      content: execution.answer.content,
-      claims: execution.answer.claims.map((claim, index) => ({ claimId: `FC${index + 1}`,
-        statement: claim.statement, citationIds: claim.sourceAliases.map((alias) => citationIdByAlias.get(alias)!) })),
-      citations: aliases.map((sourceAlias) => ({ citationId: citationIdByAlias.get(sourceAlias)!, sourceAlias })),
-      provider: execution.provider,
-      modelId: execution.modelId,
-      providerRequestId: execution.providerRequestIds.at(-1), usage: execution.usage, admittedContext,
-      fullDocument: { mode: route.mode, contextHash: context.contextHash, coverage: execution.coverage,
-        unitCount: execution.units.length, executionHash: execution.executionHash },
-    };
+    return { ...generated, admittedContext, contextManifests: [admission.manifest] };
   }
 
   async prepareDiagnosticV3Input(input: {

@@ -5,8 +5,8 @@
 1. Apply migrations 055 and 056 in order.
 2. Confirm the existing Edit Session, Evidence and OpenAlex snapshot flags for
    the intended canary accounts.
-3. Apply through migration 072, then set
-   `GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=072` before enabling traffic.
+3. Apply through migration 074, then set
+   `GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=074` before enabling traffic.
 4. Set `GRANT_ASSISTANT_CHAT_ENABLED=true` only for the intended deployment.
 
 The API fails closed if either assistant variable is absent. Do not enable the

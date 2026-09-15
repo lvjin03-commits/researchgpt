@@ -39,6 +39,7 @@ import { GrantWebBudgetCommandError } from "@/lib/grants/application/grant-web-b
 import { GrantWebContinuationError } from "@/lib/grants/application/grant-web-concrete-continuation-executor";
 import { GrantCandidateDiffError } from "@/lib/grants/application/grant-candidate-diff-service";
 import { GrantModelExecutionError } from "@/lib/grants/application/grant-model-executor";
+import { presentGrantModelFailure } from "@/lib/grants/application/grant-model-failure-presentation";
 import {
   BillingChargeLimitExceededError,
   InsufficientPointsError,
@@ -99,14 +100,12 @@ export function grantApiError(error: unknown, operation: string): Response {
     return Response.json({ error: error.message, code: error.code }, { status });
   }
   if (error instanceof GrantModelExecutionError) {
-    const message = error.category === "provider_rate_limited"
-      ? "当前 AI 请求较多，请稍后重试。"
-      : error.category === "output_truncated"
-        ? "全文记忆或回答达到本轮容量上限，系统没有使用不完整结果。请重新发送问题，系统会自动缩小分批范围。"
-      : error.category === "provider_contract_error" || error.category === "structured_output_invalid"
-        ? "这次回答格式没有成功生成，请重新发送问题。"
-        : "AI 服务暂时不可用，请稍后重试。";
-    return Response.json({ error: message, code: "grant_model_retryable_error", traceId: error.traceId }, { status: 503 });
+    const presented = presentGrantModelFailure({ category: error.category,
+      ...(error.failureStage ? { failureStage: error.failureStage } : {}) });
+    return Response.json({ error: presented.message, code: error.category,
+      failureStage: error.failureStage, traceId: error.traceId,
+      retryable: presented.retryable, requestDispatched: error.requestDispatched,
+      usageKnown: error.usageKnown }, { status: presented.status });
   }
   if (error instanceof GrantAiEditSessionError) {
     const status = error.code.endsWith("_not_found") ? 404 : error.code.includes("stale") || error.code.includes("not_active") || error.code.includes("not_safe") || error.code.includes("needs_repair") ? 409 : 400;

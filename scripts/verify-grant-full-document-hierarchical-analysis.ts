@@ -6,6 +6,7 @@ import { buildGrantFullDocumentContext } from "../lib/grants/application/grant-f
 import { CanonicalGrantSnapshotSchema } from "../lib/grants/domain/contracts.ts";
 import { TiktokenGrantTokenCounter } from "../lib/grants/infrastructure/model/tiktoken-grant-token-counter.ts";
 import type { GrantFullDocumentAnalysisModel } from "../lib/grants/ports/grant-full-document-analysis-model.ts";
+import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
 import { GrantModelDataGateway } from "../lib/grants/application/grant-model-data-gateway.ts";
 
 
@@ -32,19 +33,25 @@ if (route.mode !== "hierarchical") throw new Error("Expected hierarchical route.
 const analyzedUnitIds: string[] = [];
 const model: GrantFullDocumentAnalysisModel = {
   async analyzeUnit(input) {
+    assert.equal(input.maximumOutputTokens, 800);
     analyzedUnitIds.push(input.unitId);
     return { summary: `已分析 ${input.unitId}`, provider: "openai", modelId: "test-model",
       findings: input.allowedSourceAliases.length > 0
         ? [{ statement: "分块结论", sourceAliases: [input.allowedSourceAliases[0]!] }] : [] };
   },
   async synthesize(input) {
+    assert.equal(input.maximumOutputTokens, 2_400);
     return { content: "完整申请书综合分析", provider: "openai", modelId: "test-model", claims: [{ statement: "全文结论",
       sourceAliases: [...new Set(input.analyses.flatMap((analysis) =>
         analysis.findings.flatMap((finding) => finding.sourceAliases)))] }] };
   },
 };
+let admittedUnitCount = 0;
+let synthesisAdmitted = false;
 const result = await executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter, model,
-  question: "评价整篇申请书", synthesisMaximumInputTokens: 10_000 });
+  question: "评价整篇申请书", unitMaximumOutputTokens: 800,
+  synthesisMaximumInputTokens: 10_000, synthesisMaximumOutputTokens: 2_400, maximumUnits: 20,
+  beforeUnit() { admittedUnitCount += 1; }, beforeSynthesis() { synthesisAdmitted = true; } });
 assert.equal(result.coverage.complete, true);
 assert.deepEqual(result.coverage.sectionAliases, ["S1", "S2"]);
 assert.deepEqual(result.coverage.sourceAliases, ["D1", "D2"]);
@@ -55,46 +62,47 @@ assert.ok(result.units.filter((unit) => unit.sourceAliases.includes("D1")).lengt
 assert.equal(result.answer.content, "完整申请书综合分析");
 assert.match(result.executionHash, /^[a-f0-9]{64}$/);
 assert.equal(result.modelId, "test-model");
+assert.equal(admittedUnitCount, result.units.length);
+assert.equal(synthesisAdmitted, true);
+
+let failingUnitCall = 0;
+await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
+  question: "验证分块失败审计", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,
+  synthesisMaximumOutputTokens: 2_400, maximumUnits: 20, model: { ...model,
+    async analyzeUnit(input) {
+      failingUnitCall += 1;
+      if (failingUnitCall === 2) throw new GrantAssistantModelError("provider_transient_error", "unit failed", {
+        providerRequestId: "unit-failed", usage: { inputTokens: 5, outputTokens: 1, reasoningTokens: 0 },
+        failureStage: "answer_generation", requestDispatched: true, usageKnown: true });
+      return { summary: "first unit", provider: "openai", modelId: "test-model",
+        providerRequestId: "unit-succeeded", usage: { inputTokens: 7, outputTokens: 2, reasoningTokens: 1 },
+        findings: [{ statement: "first finding", sourceAliases: [input.allowedSourceAliases[0]!] }] };
+    },
+  } }), (error: unknown) => {
+    assert.ok(error instanceof GrantAssistantModelError);
+    assert.deepEqual(error.providerRequestIds, ["unit-succeeded", "unit-failed"]);
+    assert.deepEqual(error.usage, { inputTokens: 12, outputTokens: 3, reasoningTokens: 1 });
+    assert.equal(error.usageKnown, true);
+    return true;
+  });
 
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
-  question: "评价整篇申请书", synthesisMaximumInputTokens: 10_000, model: { ...model,
+  question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,
+  synthesisMaximumOutputTokens: 2_400, maximumUnits: 20, model: { ...model,
     async analyzeUnit() { return { summary: "错误引用", provider: "openai", modelId: "test-model",
       findings: [{ statement: "错误", sourceAliases: ["D999"] }] }; } } }),
   /unavailable source alias/);
 
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter, model,
-  question: "评价整篇申请书", synthesisMaximumInputTokens: 1 }), /reduction stage is required/);
+  question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 1,
+  synthesisMaximumOutputTokens: 2_400, maximumUnits: 20 }), /reduction stage is required/);
 
-let singlePassCalls = 0;
-const gateway = new GrantModelDataGateway({
-  generate: async () => { throw new Error("not used"); },
-  ...model,
-  async answerChat(request) {
-    singlePassCalls += 1;
-    assert.ok(request.admittedContext.some((item) => item.sourceAlias === "DOCSTRUCTURE"));
-    assert.deepEqual(request.admittedContext.filter((item) => /^D\d+$/u.test(item.sourceAlias))
-      .map((item) => item.sourceAlias), ["D1", "D2"]);
-    return { content: "单次完整分析", claims: [{ claimId: "C1", statement: "全文结论", citationIds: ["X1"] }],
-      citations: [{ citationId: "X1", sourceAlias: "D1" }], provider: "openai" as const,
-      modelId: "test-model", usage: { inputTokens: 100, outputTokens: 20, reasoningTokens: 2 } };
-  },
-}, undefined, undefined, undefined, tokenCounter);
-const gatewayResult = await gateway.answerFullDocumentAssistantChat({ documentId: context.documentId,
-  sourceRevisionId: context.sourceRevisionId, snapshot, messages: [{ role: "user", content: "整体评价整篇申请书" }],
-  attemptPurpose: "initial", capacityPolicy: { policyVersion: "gateway-full-v1", contextWindowTokens: 20_000,
-    maximumInputTokens: 16_000, reservedOutputTokens: 2_000, protocolOverheadTokens: 100, safetyMarginTokens: 500 } });
-assert.equal(singlePassCalls, 1);
-assert.equal(gatewayResult.fullDocument.mode, "single_pass");
-assert.equal(gatewayResult.fullDocument.coverage.complete, true);
+await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter, model,
+  question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,
+  synthesisMaximumOutputTokens: 2_400, maximumUnits: 1 }), /maximum is 1/);
 
-const hierarchicalGatewayResult = await gateway.answerFullDocumentAssistantChat({ documentId: context.documentId,
-  sourceRevisionId: context.sourceRevisionId, snapshot, messages: [{ role: "user", content: "评价整篇申请书" }],
-  attemptPurpose: "initial", capacityPolicy: { policyVersion: "gateway-hierarchical-v1", contextWindowTokens: 4_000,
-    maximumInputTokens: 3_000, reservedOutputTokens: 500, protocolOverheadTokens: 100, safetyMarginTokens: 200 } });
-assert.equal(hierarchicalGatewayResult.fullDocument.mode, "hierarchical");
-assert.equal(hierarchicalGatewayResult.fullDocument.coverage.complete, true);
-assert.ok(hierarchicalGatewayResult.fullDocument.unitCount > 1);
-assert.equal(hierarchicalGatewayResult.modelId, "test-model");
+const gateway = new GrantModelDataGateway({ generate: async () => { throw new Error("not used"); } },
+  undefined, undefined, undefined, tokenCounter);
 
 const webContext = gateway.prepareWebGroundingContext({ documentId: context.documentId,
   sourceRevisionId: context.sourceRevisionId, snapshot, retrievedDocumentBlocks: [], fullDocument: true });

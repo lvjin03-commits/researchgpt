@@ -18,19 +18,22 @@ export type GrantAssistantContextPlanProposal = {
   usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
 };
 
+export type GrantAssistantContextPlanModelRequest = {
+  documentLanguage: "zh" | "en";
+  question: string;
+  recentConversation: Array<{ role: "user" | "assistant"; content: string }>;
+  documentMemoryText: string;
+  allowedSectionAliases: string[];
+  allowedMemoryItemAliases: string[];
+  explicitContext: {
+    hasDocumentSelection: boolean;
+    hasCandidate: boolean;
+    hasEvidence: boolean;
+    webSearchEnabledByUser: boolean;
+  };
+  maximumOutputTokens: number;
+};
+
 export interface GrantAssistantContextPlannerModel {
-  plan(input: {
-    documentLanguage: "zh" | "en";
-    question: string;
-    recentConversation: Array<{ role: "user" | "assistant"; content: string }>;
-    documentMemoryText: string;
-    allowedSectionAliases: string[];
-    allowedMemoryItemAliases: string[];
-    explicitContext: {
-      hasDocumentSelection: boolean;
-      hasCandidate: boolean;
-      hasEvidence: boolean;
-      webSearchEnabledByUser: boolean;
-    };
-  }): Promise<GrantAssistantContextPlanProposal>;
+  plan(input: GrantAssistantContextPlanModelRequest): Promise<GrantAssistantContextPlanProposal>;
 }

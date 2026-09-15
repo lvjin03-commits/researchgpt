@@ -63,10 +63,13 @@ assert.equal(first.snapshot.sourceRevisionId, revisionId);
 assert.equal(first.snapshot.coverage.complete, true);
 assert.equal(first.snapshot.coverage.coveredSectionCount, 2);
 assert.equal(first.snapshot.coverage.coveredNodeCount, 2);
-assert.deepEqual(first.snapshot.sections.map((section) => section.sectionId), sectionIds);
-assert.deepEqual(first.snapshot.sections.flatMap((section) => section.sourceNodeIds), nodeIds);
-assert.deepEqual(first.snapshot.items[0]?.sourceNodeIds, [nodeIds[0]]);
-assert.deepEqual(first.snapshot.items[0]?.sourceSectionIds, [sectionIds[0]]);
+assert.equal(first.snapshot.schemaVersion, "grant-document-memory-v2");
+assert.deepEqual(first.snapshot.l1.sections.map((section) => section.sectionId), sectionIds);
+assert.deepEqual(first.snapshot.l2.sectionAnchors.flatMap((section) => section.sourceNodeIds), nodeIds);
+assert.deepEqual(first.snapshot.l2.itemAnchors[0]?.sourceNodeIds, [nodeIds[0]]);
+assert.deepEqual(first.snapshot.l1.items[0]?.sourceSectionIds, [sectionIds[0]]);
+assert.deepEqual(first.snapshot.l0.itemIdsByKind.research_content,
+  first.snapshot.l1.items.map((item) => item.memoryItemId));
 assert.match(first.snapshot.memoryHash, /^[a-f0-9]{64}$/u);
 assert.ok(modelCalls > 1, "The oversized document should be fully read in multiple units.");
 assert.ok(maximumInFlight > 1, "Independent memory units should run concurrently instead of serially.");

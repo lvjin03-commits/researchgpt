@@ -312,9 +312,10 @@ assert.match(sessionMigrationSource, /UNIQUE\(session_id, turn_id, role\)/);
 assert.match(sessionMigrationSource, /maintain_grant_assistant_sessions/);
 assert.match(sessionMigrationSource, /INTERVAL '7 days'/);
 assert.match(sessionMigrationSource, /INTERVAL '90 days'/);
-assert.match(configSource, /GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA\?\.trim\(\) === "072"/);
+assert.match(configSource, /GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA\?\.trim\(\) === "074"/);
 assert.match(configSource, /GRANT_WEB_GROUNDING_PRICE_CATALOG_VERSION\?\.trim\(\) === "001"/);
-assert.match(sharedRouteSource, /error\.category === "output_truncated"/);
-assert.match(sharedRouteSource, /全文记忆或回答达到本轮容量上限/);
+assert.match(sharedRouteSource, /presentGrantModelFailure/);
+assert.match(sharedRouteSource, /requestDispatched: error\.requestDispatched/);
+assert.match(panelSource, /追踪编号/);
 
 console.log("Grant assistant ordinary-chat execution contracts passed.");

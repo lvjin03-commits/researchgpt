@@ -20,14 +20,20 @@ const snapshot = CanonicalGrantSnapshotSchema.parse({ schemaVersion: "grant-cano
     { nodeId: nodeIds[1], sectionId: sectionIds[1], order: 0, nodeType: "paragraph", content: { text: "给出总体研究方案。" } },
     { nodeId: nodeIds[2], sectionId: sectionIds[2], order: 0, nodeType: "paragraph", content: { text: "使用原位表征验证机制。" } },
   ] });
-const memory = GrantDocumentMemorySnapshotSchema.parse({ schemaVersion: "grant-document-memory-v1",
+const memory = GrantDocumentMemorySnapshotSchema.parse({ schemaVersion: "grant-document-memory-v2",
   memoryId: randomUUID(), documentId, sourceRevisionId: revisionId, contextHash: "a".repeat(64),
   memoryHash: "b".repeat(64), policyVersion: "grant-memory-v1", provider: "openai", modelId: "offline-model",
-  builtAt: "2026-09-15T12:00:00.000Z", overview: "项目围绕科学问题和验证方案展开。",
-  sections: snapshot.sections.map((section, index) => ({ sectionId: section.sectionId, title: section.title,
-    semanticRole: section.semanticRole, summary: `${section.title}摘要`, sourceNodeIds: [nodeIds[index]!] })),
+  builtAt: "2026-09-15T12:00:00.000Z", l0: { overview: "项目围绕科学问题和验证方案展开。",
+    itemIdsByKind: { scientific_problem: [], research_objective: [], research_content: [], technical_route: ["M1"],
+      innovation: [], preliminary_basis: [], feasibility: [], risk: [], constraint: [], other: [] } },
+  l1: { sections: snapshot.sections.map((section) => ({ sectionId: section.sectionId,
+    parentSectionId: section.parentSectionId ?? null, title: section.title,
+    semanticRole: section.semanticRole, summary: `${section.title}摘要` })),
   items: [{ memoryItemId: "M1", kind: "technical_route", statement: "通过原位表征验证机制。",
-    concepts: ["原位表征"], sourceSectionIds: [sectionIds[2]], sourceNodeIds: [nodeIds[2]] }],
+    concepts: ["原位表征"], sourceSectionIds: [sectionIds[2]] }] },
+  l2: { sectionAnchors: snapshot.sections.map((section, index) => ({ sectionId: section.sectionId,
+    sourceNodeIds: [nodeIds[index]!] })),
+  itemAnchors: [{ memoryItemId: "M1", sourceNodeIds: [nodeIds[2]] }] },
   coverage: { sectionCount: 3, nodeCount: 3, coveredSectionCount: 3, coveredNodeCount: 3, complete: true },
   usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 1 }, providerRequestIds: ["memory"] });
 
@@ -72,6 +78,9 @@ assert.deepEqual(targeted.sources.map((source) => source.sourceType),
 assert.deepEqual(targeted.sources.filter((source) => source.sourceType === "original_text").map((source) => source.nodeId),
   [nodeIds[1], nodeIds[2]], "Selecting a parent section must include its canonical descendants.");
 assert.equal(targeted.sources.at(-1)?.findingId, currentRelevant.findingId);
+assert.match(targeted.sources[0]!.excerpt, /研究方案摘要/u);
+assert.doesNotMatch(targeted.sources[0]!.excerpt, /立项依据摘要/u,
+  "Answer context must project selected L1 memory instead of replaying the entire planning index.");
 assert.equal(targeted.coverage.coveredSectionCount, 2);
 assert.equal(targeted.coverage.coveredNodeCount, 2);
 assert.equal(targeted.coverage.availableCurrentFindingCount, 2);
@@ -91,7 +100,8 @@ assert.equal(complete.coverage.completeOriginal, true);
 assert.equal(complete.coverage.coveredSectionCount, 3);
 assert.equal(complete.coverage.coveredNodeCount, 3);
 assert.equal(complete.coverage.admittedFindingCount, 2);
-assert.equal(complete.sources.filter((source) => source.sourceType === "original_text").length, 3);
+assert.equal(complete.sources.filter((source) => source.sourceType === "original_text").length, 0,
+  "Full review must report complete coverage without materializing the whole original into one request.");
 
 await assert.rejects(() => assembleGrantAssistantPlannedContext({ documentId, sourceRevisionId: revisionId,
   snapshot, memory, plan: plan(), diagnostics: { async listNormalizedFindings() { return [finding({ invalidAnchor: true })]; } } }),

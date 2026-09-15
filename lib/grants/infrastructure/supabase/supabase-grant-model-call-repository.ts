@@ -27,7 +27,12 @@ export class SupabaseGrantModelCallRepository implements GrantModelCallRepositor
       p_owner_id: this.ownerId, p_call_id: input.callId, p_expected_status: input.expectedStatus,
       p_status: input.status, p_output_hash: input.outputHash ?? null,
       p_provider_request_id: input.providerRequestId ?? null,
+      p_provider_request_ids: input.providerRequestIds ?? null,
       p_failure_category: input.failureCategory ?? null,
+      p_failure_stage: input.failureStage ?? null,
+      p_request_dispatched: input.requestDispatched,
+      p_usage_known: input.usageKnown,
+      p_context_manifest_hash: input.contextManifestHash ?? null,
       p_input_tokens: input.inputTokens, p_output_tokens: input.outputTokens,
       p_reasoning_tokens: input.reasoningTokens, p_completed_at: input.completedAt,
     });

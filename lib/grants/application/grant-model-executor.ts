@@ -6,12 +6,22 @@ import type { GrantModelCallRepository } from "../ports/grant-model-call-reposit
 export class GrantModelExecutionError extends Error {
   readonly category: GrantModelFailureCategory;
   readonly traceId: string;
+  readonly failureStage?: "memory_build" | "semantic_planning" | "context_admission" |
+    "original_retrieval" | "answer_generation" | "persistence";
+  readonly requestDispatched: boolean;
+  readonly usageKnown: boolean;
 
-  constructor(category: GrantModelFailureCategory, traceId: string, message: string) {
+  constructor(category: GrantModelFailureCategory, traceId: string, message: string,
+    failureStage?: GrantModelExecutionError["failureStage"], metadata?: {
+      requestDispatched?: boolean; usageKnown?: boolean;
+    }) {
     super(message);
     this.name = "GrantModelExecutionError";
     this.category = category;
     this.traceId = traceId;
+    this.failureStage = failureStage;
+    this.requestDispatched = metadata?.requestDispatched ?? false;
+    this.usageKnown = metadata?.usageKnown ?? false;
   }
 }
 
@@ -19,6 +29,8 @@ export type GrantModelAttemptResult<T> = {
   value: T;
   outputHash: string;
   providerRequestId?: string;
+  providerRequestIds?: string[];
+  contextManifestHash?: string;
   usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
 };
 
@@ -36,14 +48,28 @@ export type GrantModelUsageObserver = (event: {
 function failureAttemptMetadata(error: unknown) {
   if (!error || typeof error !== "object") return {
     inputTokens: 0, outputTokens: 0, reasoningTokens: 0,
+    requestDispatched: false, usageKnown: false,
   };
-  const candidate = error as { providerRequestId?: unknown; usage?: {
-    inputTokens?: unknown; outputTokens?: unknown; reasoningTokens?: unknown } };
+  const candidate = error as { providerRequestId?: unknown; providerRequestIds?: unknown;
+    failureStage?: unknown; requestDispatched?: unknown; usageKnown?: unknown; usage?: {
+      inputTokens?: unknown; outputTokens?: unknown; reasoningTokens?: unknown } };
   const count = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+  const providerRequestIds = Array.isArray(candidate.providerRequestIds)
+    ? candidate.providerRequestIds.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+    : [];
+  const validStages = new Set(["memory_build", "semantic_planning", "context_admission",
+    "original_retrieval", "answer_generation", "persistence"]);
   return {
     ...(typeof candidate.providerRequestId === "string" && candidate.providerRequestId.trim()
       ? { providerRequestId: candidate.providerRequestId }
       : {}),
+    ...(providerRequestIds.length > 0 ? { providerRequestIds } : {}),
+    ...(typeof candidate.failureStage === "string" && validStages.has(candidate.failureStage)
+      ? { failureStage: candidate.failureStage as NonNullable<GrantModelExecutionError["failureStage"]> }
+      : {}),
+    requestDispatched: candidate.requestDispatched === true || providerRequestIds.length > 0
+      || (typeof candidate.providerRequestId === "string" && Boolean(candidate.providerRequestId.trim())),
+    usageKnown: candidate.usageKnown === true || candidate.usage !== undefined,
     inputTokens: count(candidate.usage?.inputTokens),
     outputTokens: count(candidate.usage?.outputTokens),
     reasoningTokens: count(candidate.usage?.reasoningTokens),
@@ -114,10 +140,14 @@ export class GrantModelExecutor {
       await this.repository.finish({
         callId, expectedStatus: "started", status: "succeeded", outputHash: result.outputHash,
         providerRequestId: result.providerRequestId,
+        providerRequestIds: result.providerRequestIds,
+        requestDispatched: true,
+        usageKnown: result.usage !== undefined,
+        contextManifestHash: result.contextManifestHash,
         inputTokens: result.usage?.inputTokens ?? 0, outputTokens: result.usage?.outputTokens ?? 0,
         reasoningTokens: result.usage?.reasoningTokens ?? 0, completedAt,
       });
-      await this.onUsage?.({
+      if (result.usage) await this.onUsage?.({
         usageEventId: callId,
         billingOperationId: input.billingOperationId ?? input.turnId ?? callId,
         operation: input.policy.operation,
@@ -137,6 +167,9 @@ export class GrantModelExecutor {
         reasoningTokens: result.usage?.reasoningTokens ?? 0,
       } };
     }
-    throw new GrantModelExecutionError(lastCategory, traceId, lastError instanceof Error ? lastError.message : "Grant model execution failed.");
+    const failure = failureAttemptMetadata(lastError);
+    throw new GrantModelExecutionError(lastCategory, traceId,
+      lastError instanceof Error ? lastError.message : "Grant model execution failed.",
+      failure.failureStage, { requestDispatched: failure.requestDispatched, usageKnown: failure.usageKnown });
   }
 }

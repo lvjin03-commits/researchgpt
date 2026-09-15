@@ -22,19 +22,8 @@ export type GrantFullDocumentAnalysisAnswer = {
 };
 
 export interface GrantFullDocumentAnalysisModel {
-  analyzeUnit(input: {
-    documentLanguage: "zh" | "en";
-    question: string;
-    contextHash: string;
-    unitId: string;
-    modelText: string;
-    allowedSourceAliases: string[];
-  }): Promise<GrantFullDocumentUnitAnalysis>;
-  synthesize(input: {
-    documentLanguage: "zh" | "en";
-    question: string;
-    contextHash: string;
-    analyses: Array<{ unitId: string; summary: string; findings: GrantFullDocumentAnalysisFinding[] }>;
-    allowedSourceAliases: string[];
-  }): Promise<GrantFullDocumentAnalysisAnswer>;
+  analyzeUnit(input: import("../assistant/grant-full-document-review-request.ts")
+    .GrantFullDocumentUnitRequest): Promise<GrantFullDocumentUnitAnalysis>;
+  synthesize(input: import("../assistant/grant-full-document-review-request.ts")
+    .GrantFullDocumentSynthesisRequest): Promise<GrantFullDocumentAnalysisAnswer>;
 }

@@ -6,6 +6,9 @@ import { GrantDocumentMemorySnapshotSchema, type GrantDocumentMemorySnapshot } f
 import { sha256Canonical } from "../domain/canonical-json.ts";
 import type { GrantAssistantContextPlannerModel } from "../ports/grant-assistant-context-planner-model.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
+import { admitGrantAssistantPlanningContext, type GrantAssistantContextBudgetManifest,
+  type GrantAssistantContextBudgetPolicy } from "./grant-assistant-context-budget.ts";
+import { buildGrantAssistantPlanningProjection } from "./grant-document-memory-projection.ts";
 
 export class GrantAssistantContextPlannerError extends Error {
   readonly code: "stale_memory" | "planning_capacity_exceeded" | "invalid_model_output" |
@@ -17,31 +20,6 @@ export class GrantAssistantContextPlannerError extends Error {
   }
 }
 
-export type GrantAssistantPlanningProjection = {
-  modelText: string;
-  sectionIdByAlias: Map<string, string>;
-  memoryItemIdByAlias: Map<string, string>;
-};
-
-export function buildGrantAssistantPlanningProjection(memoryInput: GrantDocumentMemorySnapshot): GrantAssistantPlanningProjection {
-  const memory = GrantDocumentMemorySnapshotSchema.parse(memoryInput);
-  const sectionIdByAlias = new Map(memory.sections.map((section, index) => [`S${index + 1}`, section.sectionId]));
-  const memoryItemIdByAlias = new Map(memory.items.map((item) => [item.memoryItemId, item.memoryItemId]));
-  const sectionAliasById = new Map([...sectionIdByAlias].map(([alias, sectionId]) => [sectionId, alias]));
-  const modelText = [
-    `全文记忆概览：${memory.overview}`,
-    "章节记忆：",
-    ...memory.sections.map((section, index) =>
-      `[S${index + 1}] ${section.title}（${section.semanticRole}）\n${section.summary}`),
-    "语义记忆：",
-    ...memory.items.map((item) => {
-      const sectionAliases = item.sourceSectionIds.map((sectionId) => sectionAliasById.get(sectionId)!).filter(Boolean);
-      return `[${item.memoryItemId}] ${item.kind} | ${item.concepts.join("、")} | 来源章节 ${sectionAliases.join(",") || "未知"}\n${item.statement}`;
-    }),
-  ].join("\n\n");
-  return { modelText, sectionIdByAlias, memoryItemIdByAlias };
-}
-
 export async function planGrantAssistantContext(input: {
   documentId: string;
   sourceRevisionId: string;
@@ -50,7 +28,7 @@ export async function planGrantAssistantContext(input: {
   memory: GrantDocumentMemorySnapshot;
   model: GrantAssistantContextPlannerModel;
   tokenCounter: GrantTokenCounter;
-  maximumInputTokens: number;
+  contextBudgetPolicy: GrantAssistantContextBudgetPolicy;
   plannerPolicyVersion: string;
   explicitContext?: {
     hasDocumentSelection?: boolean;
@@ -59,7 +37,7 @@ export async function planGrantAssistantContext(input: {
     webSearchEnabledByUser?: boolean;
   };
   createId?: () => string;
-}): Promise<GrantAssistantContextPlan> {
+}): Promise<GrantAssistantContextPlan & { contextManifest: GrantAssistantContextBudgetManifest }> {
   const question = input.question.trim();
   if (!question) throw new GrantAssistantContextPlannerError("invalid_model_output", "A planning question is required.");
   const memory = GrantDocumentMemorySnapshotSchema.parse(input.memory);
@@ -67,11 +45,8 @@ export async function planGrantAssistantContext(input: {
     throw new GrantAssistantContextPlannerError("stale_memory",
       "Assistant planning requires memory built from the current canonical Revision.");
   }
-  if (!Number.isSafeInteger(input.maximumInputTokens) || input.maximumInputTokens <= 0) {
-    throw new Error("Planner maximum input tokens must be a positive integer.");
-  }
   const projection = buildGrantAssistantPlanningProjection(memory);
-  const recentConversation = input.recentConversation.slice(-6).map((message) => ({
+  const recentConversation = input.recentConversation.map((message) => ({
     role: message.role, content: message.content.trim() }));
   const explicitContext = {
     hasDocumentSelection: input.explicitContext?.hasDocumentSelection ?? false,
@@ -79,14 +54,12 @@ export async function planGrantAssistantContext(input: {
     hasEvidence: input.explicitContext?.hasEvidence ?? false,
     webSearchEnabledByUser: input.explicitContext?.webSearchEnabledByUser ?? false,
   };
-  const planningPayload = { question, recentConversation, documentMemoryText: projection.modelText, explicitContext };
-  if (input.tokenCounter.count(JSON.stringify(planningPayload)) > input.maximumInputTokens) {
-    throw new GrantAssistantContextPlannerError("planning_capacity_exceeded",
-      "The complete grant memory does not fit the declared semantic-planning capacity.");
-  }
-  const proposal = await input.model.plan({ documentLanguage: /[\u3400-\u9fff]/u.test(question + memory.overview) ? "zh" : "en",
-    ...planningPayload, allowedSectionAliases: [...projection.sectionIdByAlias.keys()],
-    allowedMemoryItemAliases: [...projection.memoryItemIdByAlias.keys()] });
+  const documentLanguage = /[\u3400-\u9fff]/u.test(question + memory.l0.overview) ? "zh" : "en";
+  const planning = admitGrantAssistantPlanningContext({ documentLanguage, question, documentMemoryText: projection.modelText,
+    allowedSectionAliases: [...projection.sectionIdByAlias.keys()],
+    allowedMemoryItemAliases: [...projection.memoryItemIdByAlias.keys()], explicitContext, recentConversation,
+    budgetPolicy: input.contextBudgetPolicy, tokenCounter: input.tokenCounter });
+  const proposal = await input.model.plan(planning.request);
   const answerMode = GrantAssistantAnswerModeSchema.safeParse(proposal.answerMode);
   const documentAccess = GrantAssistantDocumentAccessSchema.safeParse(proposal.documentAccess);
   const diagnosticAccess = GrantAssistantDiagnosticAccessSchema.safeParse(proposal.diagnosticAccess);
@@ -124,7 +97,7 @@ export async function planGrantAssistantContext(input: {
     needsClarification: proposal.needsClarification,
     ...(proposal.clarificationQuestion?.trim() ? { clarificationQuestion: proposal.clarificationQuestion.trim() } : {}),
     confidence: Math.max(0, Math.min(1, proposal.confidence)), rationale: proposal.rationale.trim() };
-  return GrantAssistantContextPlanSchema.parse({ schemaVersion: "grant-assistant-context-plan-v1",
+  const plan = GrantAssistantContextPlanSchema.parse({ schemaVersion: "grant-assistant-context-plan-v1",
     planId: (input.createId ?? randomUUID)(), planHash: sha256Canonical({ sourceRevisionId: input.sourceRevisionId,
       memoryHash: memory.memoryHash, plannerPolicyVersion: input.plannerPolicyVersion, question, semanticDecision }),
     documentId: input.documentId, sourceRevisionId: input.sourceRevisionId, memoryId: memory.memoryId,
@@ -132,4 +105,5 @@ export async function planGrantAssistantContext(input: {
     provider: "openai", modelId: proposal.modelId, ...(proposal.providerRequestId ? { providerRequestId: proposal.providerRequestId } : {}),
     usage: { inputTokens: proposal.usage?.inputTokens ?? 0, outputTokens: proposal.usage?.outputTokens ?? 0,
       reasoningTokens: proposal.usage?.reasoningTokens ?? 0 } });
+  return { ...plan, contextManifest: planning.manifest };
 }

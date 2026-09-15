@@ -6,8 +6,7 @@ import { grantNodeText } from "../diagnostics/node-text.ts";
 import { sha256Canonical } from "../domain/canonical-json.ts";
 import { CanonicalGrantSnapshotSchema, type CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
-import { buildGrantAssistantPlanningProjection } from "./grant-assistant-context-planner.ts";
-import { buildGrantFullDocumentContext } from "./grant-full-document-context.ts";
+import { buildGrantAssistantAnswerMemoryProjection } from "./grant-document-memory-projection.ts";
 
 export class GrantAssistantPlannedContextError extends Error {
   readonly code: "stale_plan" | "stale_memory" | "invalid_target" | "diagnostics_unavailable" |
@@ -85,41 +84,56 @@ export async function assembleGrantAssistantPlannedContext(input: {
   }
   const sectionById = new Map(snapshot.sections.map((section) => [section.sectionId, section]));
   const nodeById = new Map(snapshot.nodes.map((node) => [node.nodeId, node]));
-  const memoryItemById = new Map(memory.items.map((item) => [item.memoryItemId, item]));
+  const memoryItemById = new Map(memory.l1.items.map((item) => [item.memoryItemId, item]));
+  const sectionAnchorById = new Map(memory.l2.sectionAnchors.map((anchor) => [anchor.sectionId, anchor]));
+  const itemAnchorById = new Map(memory.l2.itemAnchors.map((anchor) => [anchor.memoryItemId, anchor]));
+  for (const anchor of memory.l2.sectionAnchors) {
+    if (anchor.sourceNodeIds.some((nodeId) => nodeById.get(nodeId)?.sectionId !== anchor.sectionId)) {
+      throw new GrantAssistantPlannedContextError("stale_memory",
+        "L2 section references do not resolve inside the current canonical Revision.");
+    }
+  }
+  for (const anchor of memory.l2.itemAnchors) {
+    const item = memoryItemById.get(anchor.memoryItemId)!;
+    if (anchor.sourceNodeIds.some((nodeId) => {
+      const sectionId = nodeById.get(nodeId)?.sectionId;
+      return !sectionId || !item.sourceSectionIds.includes(sectionId);
+    })) {
+      throw new GrantAssistantPlannedContextError("stale_memory",
+        "L2 item references do not resolve inside their declared L1 sections.");
+    }
+  }
   if (plan.targetSectionIds.some((sectionId) => !sectionById.has(sectionId))
     || plan.targetMemoryItemIds.some((itemId) => !memoryItemById.has(itemId))) {
     throw new GrantAssistantPlannedContextError("invalid_target", "The plan selected content outside the current Revision memory.");
   }
 
-  const projection = buildGrantAssistantPlanningProjection(memory);
+  const memoryExcerpt = buildGrantAssistantAnswerMemoryProjection({ memory, answerMode: plan.answerMode,
+    targetSectionIds: plan.targetSectionIds, targetMemoryItemIds: plan.targetMemoryItemIds });
   const sources: GrantAssistantPlannedContext["sources"] = [{ sourceAlias: "MEMORY1",
-    sourceType: "document_memory", label: "当前申请书全文记忆", excerpt: projection.modelText,
+    sourceType: "document_memory", label: "当前申请书分层记忆", excerpt: memoryExcerpt,
     memoryId: memory.memoryId }];
   const requestedSectionIds = new Set(plan.targetSectionIds);
   const requestedNodeIds = new Set<string>();
   for (const itemId of plan.targetMemoryItemIds) {
     const item = memoryItemById.get(itemId)!;
     item.sourceSectionIds.forEach((sectionId) => requestedSectionIds.add(sectionId));
-    item.sourceNodeIds.forEach((nodeId) => requestedNodeIds.add(nodeId));
+    itemAnchorById.get(itemId)!.sourceNodeIds.forEach((nodeId) => requestedNodeIds.add(nodeId));
   }
   const admittedSectionIds = plan.documentAccess === "full_original"
     ? new Set(snapshot.sections.map((section) => section.sectionId))
     : descendantSectionIds(snapshot, requestedSectionIds);
   if (plan.documentAccess !== "memory_only") {
-    snapshot.nodes.filter((node) => admittedSectionIds.has(node.sectionId)).forEach((node) => requestedNodeIds.add(node.nodeId));
+    admittedSectionIds.forEach((sectionId) => sectionAnchorById.get(sectionId)?.sourceNodeIds
+      .forEach((nodeId) => requestedNodeIds.add(nodeId)));
   }
   const admittedNodeIds = plan.documentAccess === "memory_only" ? new Set<string>()
     : plan.documentAccess === "full_original" ? new Set(snapshot.nodes.map((node) => node.nodeId)) : requestedNodeIds;
 
-  if (plan.documentAccess === "full_original") {
-    const full = buildGrantFullDocumentContext({ documentId: input.documentId,
-      sourceRevisionId: input.sourceRevisionId, snapshot });
-    full.nodes.forEach((node, index) => {
-      const section = full.sections.find((candidate) => candidate.sectionAlias === node.sectionAlias)!;
-      sources.push({ sourceAlias: `O${index + 1}`, sourceType: "original_text",
-        label: `${section.title} / 原文`, excerpt: node.text, sectionId: section.sectionId, nodeId: node.nodeId });
-    });
-  } else if (plan.documentAccess === "targeted_original") {
+  // Full-original plans report deterministic complete coverage here, but do
+  // not materialize the whole document into one answer request. The memory
+  // pipeline owns hierarchical original-text reading for that mode.
+  if (plan.documentAccess === "targeted_original") {
     snapshot.nodes.filter((node) => admittedNodeIds.has(node.nodeId))
       .sort((left, right) => {
         const leftSection = snapshot.sections.findIndex((section) => section.sectionId === left.sectionId);

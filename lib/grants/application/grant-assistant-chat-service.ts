@@ -20,6 +20,7 @@ import type { GrantAssistantContextCoverage } from "../assistant/context-coverag
 import type { GrantDocumentMemoryRepository } from "../ports/grant-document-memory-repository.ts";
 import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import type { GrantAssistantMemoryPipelineResult } from "./grant-assistant-memory-pipeline.ts";
+import { GrantAssistantContextBudgetError } from "./grant-assistant-context-budget.ts";
 
 type GrantAssistantWebRuntime = {
   getBillingPreview?: () => Promise<unknown>;
@@ -38,7 +39,8 @@ function memoryPlannedCoverage(
 ): GrantAssistantContextCoverage {
   const coverage = result.plannedContext.coverage;
   if (coverage.completeOriginal) return {
-    mode: "full_document", strategy: "long_context", sourceRevisionId,
+    mode: "full_document", strategy: result.executionMode === "hierarchical_full_review"
+      ? "hierarchical" : "long_context", sourceRevisionId,
     sectionCount, coveredSectionCount: sectionCount, nodeCount, coveredNodeCount: nodeCount, complete: true,
   };
   if (coverage.originalMode === "targeted_original") return {
@@ -224,6 +226,11 @@ export class GrantAssistantChatService {
       }
     }
     const policy = resolveGrantModelOperationPolicy({ operation: GRANT_ASSISTANT_CHAT_OPERATION, configuredGrantModelId: this.dependencies.configuredGrantModelId });
+    if (!policy.assistantContextLimits) {
+      throw new GrantAssistantChatError("grant_assistant_history_invalid",
+        "Grant Assistant context policy is not configured.");
+    }
+    const contextBudgetPolicy = { modelId: policy.modelId, ...policy.assistantContextLimits };
     const recommendedQuestions = candidateAnalysis
       ? grantCandidateRecommendedQuestions({ diff: candidateAnalysis.diff, safetyState: candidateAnalysis.candidate.safetyState, blockingIssues: candidateAnalysis.blockingIssues })
       : [];
@@ -290,7 +297,11 @@ export class GrantAssistantChatService {
       traceId: input.turnId,
       inputHash: sha256Canonical({ sourceRevisionId: input.expectedRevisionId, messages, focusResolution, contextCards: effectiveContextCards, candidateContext: candidateAnalysis ? { candidateId: candidateAnalysis.candidate.candidateId, textHash: candidateAnalysis.candidate.textHash, diffHash: candidateAnalysis.diff.diffHash } : null, evidenceSourceIds: input.evidenceSourceIds }),
       policy,
-      classifyFailure: (error): GrantModelFailureCategory => error instanceof GrantAssistantModelError ? error.category : "provider_unavailable",
+      classifyFailure: (error): GrantModelFailureCategory => error instanceof GrantAssistantModelError
+        ? error.category
+        : error instanceof GrantAssistantContextBudgetError
+          ? error.code
+          : "internal_contract_error",
       invoke: async ({ attemptPurpose }) => {
         if (useMemoryPlanning) {
           const result = await this.dependencies.modelGateway.answerMemoryPlannedAssistantChat({
@@ -301,7 +312,7 @@ export class GrantAssistantChatService {
             memoryRepository: this.dependencies.documentMemories,
             diagnostics: this.dependencies.diagnostics,
             expectedModelId: policy.modelId,
-            memoryPolicyVersion: `${policy.policyVersion}:document-memory-v3:${policy.modelId}`,
+            memoryPolicyVersion: `${policy.policyVersion}:document-memory-v4-layered:${policy.modelId}`,
             plannerPolicyVersion: `${policy.policyVersion}:semantic-context-v1`,
             memoryCapacityPolicy: {
               policyVersion: `${policy.policyVersion}:document-memory-capacity-v2`,
@@ -317,8 +328,7 @@ export class GrantAssistantChatService {
             memoryUnitMaximumOutputTokens: attemptPurpose === "capacity_retry"
               ? policy.executionLimits.maximumOutputTokens
               : Math.min(2_400, policy.executionLimits.maximumOutputTokens),
-            plannerMaximumInputTokens: Math.min(8_000, policy.executionLimits.maximumInputTokens),
-            answerMaximumInputTokens: policy.executionLimits.maximumInputTokens,
+            contextBudgetPolicy,
             attemptPurpose,
             explicitContext: { hasDocumentSelection: false, hasCandidate: false,
               hasEvidence: false, webSearchEnabledByUser: Boolean(input.webSearch) },
@@ -332,6 +342,10 @@ export class GrantAssistantChatService {
           return { value: { ...answer, provider: result.provider, modelId: result.modelId },
             outputHash: result.status === "answered" ? result.outputHash : sha256Canonical(answer),
             ...(result.providerRequestIds.at(-1) ? { providerRequestId: result.providerRequestIds.at(-1) } : {}),
+            providerRequestIds: result.providerRequestIds,
+            ...(result.contextManifests ? {
+              contextManifestHash: sha256Canonical(result.contextManifests),
+            } : {}),
             usage: result.usage };
         }
         const result = await this.dependencies.modelGateway.answerAssistantChat({
@@ -352,12 +366,17 @@ export class GrantAssistantChatService {
           evidenceSourceIds: input.evidenceSourceIds,
           taskId: input.turnId,
           attemptPurpose,
+          contextBudgetPolicy,
         });
         const answer = validateGrantAssistantGroundedAnswer(result);
         return {
           value: { ...answer, provider: result.provider, modelId: result.modelId },
           outputHash: sha256Canonical(answer),
           providerRequestId: result.providerRequestId,
+          providerRequestIds: result.providerRequestId ? [result.providerRequestId] : [],
+          ...(result.contextManifests ? {
+            contextManifestHash: sha256Canonical(result.contextManifests),
+          } : {}),
           usage: result.usage,
         };
       },

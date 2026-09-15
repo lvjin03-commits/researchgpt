@@ -34,7 +34,7 @@ assert.equal(unit.semanticItems[0]?.kind, "scientific_problem");
 const plan = await model.plan({ documentLanguage: "zh", question: "解释研究目标", recentConversation: [],
   documentMemoryText: "全文记忆", allowedSectionAliases: ["S1"], allowedMemoryItemAliases: ["M1"],
   explicitContext: { hasDocumentSelection: false, hasCandidate: false, hasEvidence: false,
-    webSearchEnabledByUser: false } });
+    webSearchEnabledByUser: false }, maximumOutputTokens: 700 });
 assert.equal(plan.documentAccess, "targeted_original");
 assert.equal(plan.clarificationQuestion, undefined);
 assert.deepEqual(requestedFormats, ["grant_document_memory_unit", "grant_assistant_context_plan"]);

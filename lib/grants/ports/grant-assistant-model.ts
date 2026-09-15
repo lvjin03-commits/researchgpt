@@ -32,6 +32,7 @@ export type GrantAssistantChatModelRequest = {
     rationale: string;
   };
   attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
+  maximumOutputTokens: number;
 };
 
 export type GrantAssistantChatModelResult = {
@@ -45,20 +46,37 @@ export type GrantAssistantChatModelResult = {
 };
 
 export class GrantAssistantModelError extends Error {
-  readonly category: "structured_output_invalid" | "output_truncated" | "content_filtered" | "provider_refusal" | "provider_rate_limited" | "provider_transient_error" | "provider_contract_error" | "provider_unavailable";
+  readonly category: "structured_output_invalid" | "output_truncated" | "content_filtered" | "provider_refusal" | "provider_rate_limited" | "provider_transient_error" | "provider_contract_error" | "provider_unavailable" |
+    "planning_capacity_exceeded" | "answer_capacity_exceeded" | "internal_contract_error";
 
   readonly providerRequestId?: string;
+  readonly providerRequestIds: string[];
   readonly usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
+  readonly failureStage?: "memory_build" | "semantic_planning" | "context_admission" |
+    "original_retrieval" | "answer_generation" | "persistence";
+  readonly requestDispatched: boolean;
+  readonly usageKnown: boolean;
 
   constructor(category: GrantAssistantModelError["category"], message: string, metadata?: {
     providerRequestId?: string;
+    providerRequestIds?: string[];
     usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
+    failureStage?: GrantAssistantModelError["failureStage"];
+    requestDispatched?: boolean;
+    usageKnown?: boolean;
   }) {
     super(message);
     this.name = "GrantAssistantModelError";
     this.category = category;
     this.providerRequestId = metadata?.providerRequestId;
+    this.providerRequestIds = [...new Set([
+      ...(metadata?.providerRequestIds ?? []),
+      ...(metadata?.providerRequestId ? [metadata.providerRequestId] : []),
+    ])];
     this.usage = metadata?.usage;
+    this.failureStage = metadata?.failureStage;
+    this.requestDispatched = metadata?.requestDispatched ?? this.providerRequestIds.length > 0;
+    this.usageKnown = metadata?.usageKnown ?? metadata?.usage !== undefined;
   }
 }
 
