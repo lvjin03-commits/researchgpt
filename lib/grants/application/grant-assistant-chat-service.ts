@@ -21,6 +21,8 @@ import type { GrantDocumentMemoryRepository } from "../ports/grant-document-memo
 import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import type { GrantAssistantMemoryPipelineResult } from "./grant-assistant-memory-pipeline.ts";
 import { GrantAssistantContextBudgetError } from "./grant-assistant-context-budget.ts";
+import type { GrantAssistantExecutionRepository } from "../ports/grant-assistant-execution-repository.ts";
+import type { GrantAssistantAnswer } from "../assistant/answer-contract.ts";
 
 type GrantAssistantWebRuntime = {
   getBillingPreview?: () => Promise<unknown>;
@@ -38,6 +40,17 @@ function memoryPlannedCoverage(
   sourceRevisionId: string,
 ): GrantAssistantContextCoverage {
   const coverage = result.plannedContext.coverage;
+  if (result.executionMode === "hierarchical_full_review" && result.reviewCoverage) return {
+    mode: "full_document", strategy: "hierarchical", sourceRevisionId,
+    sectionCount, coveredSectionCount: result.reviewCoverage.coveredSectionCount,
+    nodeCount, coveredNodeCount: result.reviewCoverage.coveredNodeCount,
+    complete: result.reviewCoverage.complete,
+    unitCount: result.reviewCoverage.coveredUnitCount,
+    totalUnitCount: result.reviewCoverage.totalUnitCount,
+    synthesisComplete: result.reviewCoverage.synthesisComplete,
+    ...(result.reviewCoverage.partialReasonCode
+      ? { partialReasonCode: result.reviewCoverage.partialReasonCode } : {}),
+  };
   if (coverage.completeOriginal) return {
     mode: "full_document", strategy: result.executionMode === "hierarchical_full_review"
       ? "hierarchical" : "long_context", sourceRevisionId,
@@ -77,6 +90,7 @@ export class GrantAssistantChatService {
     editSessions: GrantAiEditSessionRepository;
     documentMemories: GrantDocumentMemoryRepository;
     diagnostics: Pick<GrantDiagnosticRepository, "listNormalizedFindings">;
+    executions: GrantAssistantExecutionRepository;
     webGrounding?: { actorId: string; orchestrator: GrantAssistantWebRuntime };
   };
 
@@ -205,8 +219,6 @@ export class GrantAssistantChatService {
     if (candidateAnalysis && candidateAnalysis.candidate.textHash !== input.candidateContext!.expectedCandidateHash) {
       throw new GrantAssistantChatError("grant_assistant_history_invalid", "候选稿已经变化，请重新选择后再提问。");
     }
-    const existing = await this.dependencies.modelCalls.listByTrace(input.documentId, input.turnId);
-    if (existing.length > 0) throw new GrantAssistantChatError("grant_assistant_duplicate_turn", "This assistant turn was already submitted.");
     const now = new Date().toISOString();
     const session = await this.dependencies.sessions.ensureSession({ documentId: input.documentId, sessionId: randomUUID(), now });
     const stored = await this.dependencies.sessions.listMessages(session.sessionId);
@@ -321,12 +333,53 @@ export class GrantAssistantChatService {
       nodeCount: aggregate.currentRevision.snapshot.nodes.length,
       coveredNodeCount: retrievedDocumentBlocks.length, complete: false,
     };
-    const execution = await this.dependencies.modelExecutor.execute({
+    const executionInputHash = sha256Canonical({ sourceRevisionId: input.expectedRevisionId, messages,
+      focusResolution, contextCards: effectiveContextCards,
+      candidateContext: candidateAnalysis ? { candidateId: candidateAnalysis.candidate.candidateId,
+        textHash: candidateAnalysis.candidate.textHash, diffHash: candidateAnalysis.diff.diffHash } : null,
+      evidenceSourceIds: input.evidenceSourceIds });
+    const leaseToken = randomUUID();
+    const leaseExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    let executionRecord = (await this.dependencies.executions.claim({ executionId: randomUUID(),
+      documentId: input.documentId, turnId: input.turnId, sourceRevisionId: input.expectedRevisionId,
+      inputHash: executionInputHash, policyVersion: policy.policyVersion, modelId: policy.modelId,
+      leaseToken, now: new Date().toISOString(), leaseExpiresAt })).execution;
+    if (executionRecord.leaseToken !== leaseToken) {
+      throw new GrantAssistantChatError("grant_assistant_duplicate_turn",
+        executionRecord.status === "completed" ? "This assistant turn was already completed."
+          : "This assistant turn is already running.");
+    }
+    const executionController = {
+      checkpoint: executionRecord.checkpoint,
+      save: async (checkpoint: typeof executionRecord.checkpoint) => {
+        executionRecord = await this.dependencies.executions.save({ executionId: executionRecord.executionId,
+          expectedVersion: executionRecord.version, leaseToken, status: "running", checkpoint,
+          now: new Date().toISOString(), leaseExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() });
+        executionController.checkpoint = executionRecord.checkpoint;
+      },
+    };
+    const previousAttempts = await this.dependencies.modelCalls.listByTrace(input.documentId, input.turnId);
+    const executionTraceId = previousAttempts.length === 0 ? input.turnId : randomUUID();
+    const executionPolicy = useMemoryPlanning
+      ? { ...policy, maximumAttempts: 1 as const, retryableCategories: new Set<GrantModelFailureCategory>() }
+      : policy;
+    let execution!: { value: GrantAssistantAnswer & { provider: "openai"; modelId: string };
+      traceId: string; attempts: number; usage: {
+        inputTokens: number; outputTokens: number; reasoningTokens: number } };
+    try {
+      if (executionController.checkpoint.result) {
+        if (executionController.checkpoint.contextCoverage) {
+          contextCoverage = executionController.checkpoint.contextCoverage;
+        }
+        execution = { value: { ...executionController.checkpoint.result,
+          provider: "openai", modelId: policy.modelId }, traceId: executionTraceId,
+          attempts: 0, usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 } };
+      } else execution = await this.dependencies.modelExecutor.execute({
       documentId: input.documentId,
       turnId: input.turnId,
-      traceId: input.turnId,
-      inputHash: sha256Canonical({ sourceRevisionId: input.expectedRevisionId, messages, focusResolution, contextCards: effectiveContextCards, candidateContext: candidateAnalysis ? { candidateId: candidateAnalysis.candidate.candidateId, textHash: candidateAnalysis.candidate.textHash, diffHash: candidateAnalysis.diff.diffHash } : null, evidenceSourceIds: input.evidenceSourceIds }),
-      policy,
+      traceId: executionTraceId,
+      inputHash: executionInputHash,
+      policy: executionPolicy,
       classifyFailure: (error): GrantModelFailureCategory => error instanceof GrantAssistantModelError
         ? error.category
         : error instanceof GrantAssistantContextBudgetError
@@ -343,7 +396,7 @@ export class GrantAssistantChatService {
             diagnostics: this.dependencies.diagnostics,
             expectedModelId: policy.modelId,
             memoryPolicyVersion: `${policy.policyVersion}:document-memory-v4-layered:${policy.modelId}`,
-            plannerPolicyVersion: `${policy.policyVersion}:semantic-context-v1`,
+            plannerPolicyVersion: `${policy.policyVersion}:semantic-context-v2`,
             memoryCapacityPolicy: {
               policyVersion: `${policy.policyVersion}:document-memory-capacity-v2`,
               contextWindowTokens: policy.executionLimits.maximumInputTokens
@@ -360,6 +413,7 @@ export class GrantAssistantChatService {
               : Math.min(2_400, policy.executionLimits.maximumOutputTokens),
             contextBudgetPolicy,
             attemptPurpose,
+            execution: executionController,
             explicitContext: { hasDocumentSelection: false, hasCandidate: false,
               hasEvidence: false, webSearchEnabledByUser: Boolean(input.webSearch) },
           });
@@ -410,7 +464,25 @@ export class GrantAssistantChatService {
           usage: result.usage,
         };
       },
-    });
+      });
+      const { provider: _provider, modelId: _modelId, ...persistedResult } = execution.value;
+      executionController.checkpoint = { ...executionController.checkpoint,
+        result: persistedResult, contextCoverage };
+      await executionController.save(executionController.checkpoint);
+    } catch (error) {
+      const reasonCode = error instanceof GrantAssistantModelError
+        ? error.failureReason?.reasonCode ?? "executor.unclassified_failure"
+        : "executor.unclassified_failure";
+      try {
+        executionRecord = await this.dependencies.executions.save({ executionId: executionRecord.executionId,
+          expectedVersion: executionRecord.version, leaseToken, status: "failed",
+          checkpoint: executionController.checkpoint, failureReasonCode: reasonCode,
+          now: new Date().toISOString() });
+      } catch {
+        // Preserve the original model failure; the model-call ledger records persistence attribution.
+      }
+      throw error;
+    }
     const userMessage: GrantAssistantMessage = { messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId, traceId: execution.traceId, role: "user", content: question, citations: [], ...(cacheKey ? { cacheKey } : {}), createdAt: now };
     const assistantMessage: GrantAssistantMessage = {
       messageId: randomUUID(), sessionId: session.sessionId, turnId: input.turnId, traceId: execution.traceId,
@@ -418,7 +490,23 @@ export class GrantAssistantChatService {
       citations: execution.value.citations.map(({ citationId, sourceAlias, sourceType, label, url }) => ({ citationId, sourceAlias, sourceType, label, ...(url ? { url } : {}) })),
       cachedAnswer: execution.value, recommendedQuestions, contextCoverage, createdAt: new Date().toISOString(),
     };
-    await this.dependencies.sessions.appendTurn({ sessionId: session.sessionId, userMessage, assistantMessage, lastActiveAt: assistantMessage.createdAt });
+    try {
+      await this.dependencies.sessions.appendTurn({ sessionId: session.sessionId, userMessage, assistantMessage,
+        lastActiveAt: assistantMessage.createdAt });
+    } catch (error) {
+      try {
+        executionRecord = await this.dependencies.executions.save({ executionId: executionRecord.executionId,
+          expectedVersion: executionRecord.version, leaseToken, status: "failed",
+          checkpoint: executionController.checkpoint, failureReasonCode: "persistence.turn_append_failed",
+          now: new Date().toISOString() });
+      } catch {
+        // Preserve the append failure; the execution lease prevents a concurrent replay.
+      }
+      throw error;
+    }
+    executionRecord = await this.dependencies.executions.save({ executionId: executionRecord.executionId,
+      expectedVersion: executionRecord.version, leaseToken, status: "completed",
+      checkpoint: executionController.checkpoint, now: new Date().toISOString() });
     return { sessionId: session.sessionId, turnId: input.turnId, traceId: execution.traceId, operation: policy.operation,
       attempts: execution.attempts, cached: false, focus: focusResolution, recommendedQuestions, contextCoverage,
       ...execution.value };

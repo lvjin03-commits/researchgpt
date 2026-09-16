@@ -38,11 +38,14 @@ const memory = GrantDocumentMemorySnapshotSchema.parse({ schemaVersion: "grant-d
   usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 1 }, providerRequestIds: ["memory"] });
 
 function plan(overrides: Partial<Parameters<typeof GrantAssistantContextPlanSchema.parse>[0]> = {}) {
-  return GrantAssistantContextPlanSchema.parse({ schemaVersion: "grant-assistant-context-plan-v1",
+  return GrantAssistantContextPlanSchema.parse({ schemaVersion: "grant-assistant-context-plan-v2",
     planId: randomUUID(), planHash: "c".repeat(64), documentId, sourceRevisionId: revisionId,
     memoryId: memory.memoryId, memoryHash: memory.memoryHash, plannerPolicyVersion: "planner-v1",
-    answerMode: "explain", documentAccess: "targeted_original", diagnosticAccess: "relevant",
-    webRecommendation: "none", targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M1"],
+    answerMode: "explain",
+    memoryScope: { kind: "targets", targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M1"] },
+    documentScope: { kind: "targeted_original", targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M1"] },
+    diagnosticScope: { kind: "relevant", targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M1"] },
+    webRecommendation: "none",
     needsClarification: false, confidence: 0.9, rationale: "核对研究方案及其验证方法。",
     provider: "openai", modelId: "offline-planner", usage: { inputTokens: 2, outputTokens: 1, reasoningTokens: 0 },
     ...overrides });
@@ -111,20 +114,29 @@ await assert.rejects(() => assembleGrantAssistantPlannedContext({ documentId, so
 "A section memory anchor must still reject nodes from outside its canonical subtree.");
 
 const memoryOnly = await assembleGrantAssistantPlannedContext({ documentId, sourceRevisionId: revisionId,
-  snapshot, memory, plan: plan({ documentAccess: "memory_only", diagnosticAccess: "none",
-    targetSectionIds: [], targetMemoryItemIds: [] }), diagnostics });
+  snapshot, memory, plan: plan({ memoryScope: { kind: "all_memory" },
+    documentScope: { kind: "memory_only" }, diagnosticScope: { kind: "none" } }), diagnostics });
 assert.deepEqual(memoryOnly.sources.map((source) => source.sourceType), ["document_memory"]);
 assert.equal(memoryOnly.coverage.coveredNodeCount, 0);
 
 const complete = await assembleGrantAssistantPlannedContext({ documentId, sourceRevisionId: revisionId,
-  snapshot, memory, plan: plan({ documentAccess: "full_original", diagnosticAccess: "all",
-    targetSectionIds: [], targetMemoryItemIds: [] }), diagnostics });
+  snapshot, memory, plan: plan({ memoryScope: { kind: "all_memory" },
+    documentScope: { kind: "full_original" }, diagnosticScope: { kind: "all" } }), diagnostics });
 assert.equal(complete.coverage.completeOriginal, true);
 assert.equal(complete.coverage.coveredSectionCount, 3);
 assert.equal(complete.coverage.coveredNodeCount, 3);
 assert.equal(complete.coverage.admittedFindingCount, 2);
 assert.equal(complete.sources.filter((source) => source.sourceType === "original_text").length, 0,
   "Full review must report complete coverage without materializing the whole original into one request.");
+
+const completeWithRelevantDiagnostics = await assembleGrantAssistantPlannedContext({ documentId,
+  sourceRevisionId: revisionId, snapshot, memory, plan: plan({ memoryScope: { kind: "all_memory" },
+    documentScope: { kind: "full_original" }, diagnosticScope: { kind: "relevant",
+      targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M1"] } }), diagnostics });
+assert.equal(completeWithRelevantDiagnostics.coverage.completeOriginal, true);
+assert.deepEqual(completeWithRelevantDiagnostics.sources.filter((source) => source.sourceType === "diagnostic")
+  .map((source) => source.findingId), [currentRelevant.findingId],
+"Whole-document original coverage and relevant diagnostic filtering must remain independent.");
 
 await assert.rejects(() => assembleGrantAssistantPlannedContext({ documentId, sourceRevisionId: revisionId,
   snapshot, memory, plan: plan(), diagnostics: { async listNormalizedFindings() { return [finding({ invalidAnchor: true })]; } } }),

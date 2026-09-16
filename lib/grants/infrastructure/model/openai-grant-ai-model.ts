@@ -24,8 +24,9 @@ import type { GrantFullDocumentAnalysisModel } from "../../ports/grant-full-docu
 import type { GrantDocumentMemoryModel } from "../../ports/grant-document-memory-model.ts";
 import type { GrantAssistantContextPlannerModel } from "../../ports/grant-assistant-context-planner-model.ts";
 import { GrantDocumentMemoryItemKindSchema } from "../../assistant/document-memory-contracts.ts";
-import { GrantAssistantAnswerModeSchema, GrantAssistantDiagnosticAccessSchema,
-  GrantAssistantDocumentAccessSchema, GrantAssistantWebRecommendationSchema } from "../../assistant/context-plan-contracts.ts";
+import { GrantAssistantAnswerModeSchema, GrantAssistantDiagnosticScopeProposalSchema,
+  GrantAssistantDocumentScopeProposalSchema, GrantAssistantMemoryScopeProposalSchema,
+  GrantAssistantWebRecommendationSchema } from "../../assistant/context-plan-contracts.ts";
 import { buildGrantAssistantChatMessages,
   buildGrantAssistantPlanningMessages } from "../../assistant/grant-assistant-model-request.ts";
 import { buildGrantFullDocumentSynthesisMessages,
@@ -87,9 +88,9 @@ const FullDocumentUnitAnalysisSchema = z.object({
 }).strict();
 
 const FullDocumentSynthesisSchema = z.object({
-  content: z.string().trim().min(1).max(12000),
-  claims: z.array(z.object({ statement: z.string().trim().min(1).max(2000),
-    sourceAliases: z.array(z.string().trim().min(1).max(80)).min(1).max(12) }).strict()).max(32),
+  content: z.string().trim().min(1).max(3200),
+  claims: z.array(z.object({ statement: z.string().trim().min(1).max(300),
+    sourceAliases: z.array(z.string().trim().min(1).max(80)).min(1).max(8) }).strict()).max(12),
 }).strict();
 
 const MemorySectionProposalSchema = z.object({ sectionAlias: z.string().trim().min(1).max(80),
@@ -102,10 +103,10 @@ const DocumentMemoryUnitSchema = z.object({ summary: z.string().trim().min(1).ma
   sectionSummaries: z.array(MemorySectionProposalSchema).max(48),
   semanticItems: z.array(MemorySemanticItemProposalSchema).max(64) }).strict();
 const AssistantContextPlanProposalSchema = z.object({ answerMode: GrantAssistantAnswerModeSchema,
-  documentAccess: GrantAssistantDocumentAccessSchema, diagnosticAccess: GrantAssistantDiagnosticAccessSchema,
+  memoryScope: GrantAssistantMemoryScopeProposalSchema,
+  documentScope: GrantAssistantDocumentScopeProposalSchema,
+  diagnosticScope: GrantAssistantDiagnosticScopeProposalSchema,
   webRecommendation: GrantAssistantWebRecommendationSchema,
-  targetSectionAliases: z.array(z.string().trim().min(1).max(80)).max(24),
-  targetMemoryItemAliases: z.array(z.string().trim().min(1).max(80)).max(32),
   needsClarification: z.boolean(), clarificationQuestion: z.string().trim().min(1).max(300).nullable(),
   confidence: z.number().min(0).max(1), rationale: z.string().trim().min(1).max(1000) }).strict();
 
@@ -416,7 +417,7 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
       response = await this.client.chat.completions.create({
         model: this.modelId,
         response_format: zodResponseFormat(FullDocumentSynthesisSchema, "grant_full_document_synthesis"),
-        reasoning_effort: "medium",
+        reasoning_effort: "low",
         max_completion_tokens: request.maximumOutputTokens,
         messages: buildGrantFullDocumentSynthesisMessages(request),
       });

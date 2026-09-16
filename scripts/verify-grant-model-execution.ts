@@ -22,7 +22,7 @@ assert.deepEqual(assistantChatPolicy.assistantContextLimits, {
   semanticPlanning: { maximumInputTokens: 24_000, maximumOutputTokens: 700 },
   groundedAnswer: { maximumInputTokens: 24_000, maximumOutputTokens: 2_400 },
   fullDocumentReview: { maximumUnitInputTokens: 12_000, maximumUnitOutputTokens: 800,
-    maximumSynthesisInputTokens: 16_000, maximumSynthesisOutputTokens: 2_400,
+    maximumSynthesisInputTokens: 16_000, maximumSynthesisOutputTokens: 4_800,
     maximumUnits: 12, maximumSectionsPerUnit: 4 },
 });
 assert.deepEqual(presentGrantModelFailure({ category: "provider_rate_limited" }), {
@@ -38,7 +38,10 @@ assert.doesNotMatch(presentGrantModelFailure({ category: "internal_contract_erro
   /AI 服务暂时不可用/u);
 
 const repository = new InMemoryGrantModelCallRepository();
-const executor = new GrantModelExecutor(repository);
+const observedUsage: Array<{ outcome: "succeeded" | "failed";
+  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number } }> = [];
+const executor = new GrantModelExecutor(repository, undefined, undefined,
+  async (event) => { observedUsage.push({ outcome: event.outcome, usage: event.usage }); });
 let calls = 0;
 const recovered = await executor.execute({
   documentId, inputHash: hash("safe-structured-input"), policy,
@@ -57,6 +60,8 @@ const attempts = await repository.listByTrace(documentId, recovered.traceId);
 assert.deepEqual(attempts.map((attempt) => attempt.status), ["failed", "succeeded"]);
 assert.deepEqual(attempts.map((attempt) => attempt.attemptPurpose), ["initial", "schema_repair"]);
 assert.equal(attempts[1]?.inputTokens, 10);
+assert.deepEqual(observedUsage, [{ outcome: "succeeded",
+  usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 2 } }]);
 
 let permanentCalls = 0;
 let permanentTraceId = "";
@@ -83,6 +88,9 @@ assert.deepEqual(failedAttempts[0]?.providerRequestIds, ["req_prior", "req_filte
 assert.equal(failedAttempts[0]?.failureStage, "answer_generation");
 assert.equal(failedAttempts[0]?.requestDispatched, true);
 assert.equal(failedAttempts[0]?.usageKnown, true);
+assert.deepEqual(observedUsage.at(-1), { outcome: "failed",
+  usage: { inputTokens: 31, outputTokens: 7, reasoningTokens: 2 } },
+"A provider-dispatched failed result with known usage must reach the billing ledger.");
 
 const unavailableRepository = new InMemoryGrantModelCallRepository();
 unavailableRepository.start = async () => { throw new Error("telemetry unavailable"); };
@@ -177,6 +185,24 @@ await assert.rejects(new GrantModelExecutor(completionFailureRepository).execute
   && error.failureReason?.reasonCode === "persistence.attempt_finish_failed"
   && error.requestDispatched === true);
 assert.equal(successfulProviderCalls, 1, "completion logging failure must not repeat a successful provider call");
+
+const usageFailureRepository = new InMemoryGrantModelCallRepository();
+let providerCallsBeforeUsageFailure = 0;
+await assert.rejects(new GrantModelExecutor(usageFailureRepository, undefined, undefined,
+  async () => { throw new Error("usage sink unavailable"); }).execute({
+    documentId, inputHash: hash("successful-but-usage-unlogged"), policy,
+    classifyFailure: () => "provider_transient_error",
+    invoke: async () => { providerCallsBeforeUsageFailure += 1; return {
+      value: "result", outputHash: hash("usage-result"),
+      usage: { inputTokens: 11, outputTokens: 3, reasoningTokens: 1 },
+    }; },
+  }), (error) => error instanceof GrantModelExecutionError
+    && error.failureStage === "persistence"
+    && error.failureReason?.reasonCode === "persistence.usage_event_failed"
+    && error.requestDispatched === true
+    && error.usageKnown === true);
+assert.equal(providerCallsBeforeUsageFailure, 1,
+  "usage persistence failure must not repeat a completed provider call");
 
 const failedCompletionRepository = new InMemoryGrantModelCallRepository();
 failedCompletionRepository.finish = async () => { throw new Error("failure telemetry unavailable"); };

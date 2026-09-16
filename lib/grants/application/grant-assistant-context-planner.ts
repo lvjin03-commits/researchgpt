@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { GrantAssistantAnswerModeSchema, GrantAssistantContextPlanSchema,
-  GrantAssistantDiagnosticAccessSchema, GrantAssistantDocumentAccessSchema,
+  GrantAssistantDiagnosticScopeProposalSchema, GrantAssistantDocumentScopeProposalSchema,
+  GrantAssistantMemoryScopeProposalSchema,
   GrantAssistantWebRecommendationSchema, type GrantAssistantContextPlan } from "../assistant/context-plan-contracts.ts";
 import { GrantDocumentMemorySnapshotSchema, type GrantDocumentMemorySnapshot } from "../assistant/document-memory-contracts.ts";
 import { sha256Canonical } from "../domain/canonical-json.ts";
-import type { GrantAssistantContextPlannerModel } from "../ports/grant-assistant-context-planner-model.ts";
+import type { GrantAssistantContextPlanModelRequest,
+  GrantAssistantContextPlannerModel } from "../ports/grant-assistant-context-planner-model.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import { admitGrantAssistantPlanningContext, type GrantAssistantContextBudgetManifest,
   type GrantAssistantContextBudgetPolicy } from "./grant-assistant-context-budget.ts";
@@ -50,6 +52,7 @@ export async function planGrantAssistantContext(input: {
   tokenCounter: GrantTokenCounter;
   contextBudgetPolicy: GrantAssistantContextBudgetPolicy;
   plannerPolicyVersion: string;
+  attemptPurpose?: GrantAssistantContextPlanModelRequest["attemptPurpose"];
   explicitContext?: {
     hasDocumentSelection?: boolean;
     hasCandidate?: boolean;
@@ -82,35 +85,52 @@ export async function planGrantAssistantContext(input: {
   const planning = admitGrantAssistantPlanningContext({ documentLanguage, question, documentMemoryText: projection.modelText,
     allowedSectionAliases: [...projection.sectionIdByAlias.keys()],
     allowedMemoryItemAliases: [...projection.memoryItemIdByAlias.keys()], explicitContext, recentConversation,
-    budgetPolicy: input.contextBudgetPolicy, tokenCounter: input.tokenCounter });
+    budgetPolicy: input.contextBudgetPolicy, tokenCounter: input.tokenCounter,
+    attemptPurpose: input.attemptPurpose });
   const proposal = await input.model.plan(planning.request);
   const proposalMetadata = { providerRequestId: proposal.providerRequestId, usage: proposal.usage };
   const answerMode = GrantAssistantAnswerModeSchema.safeParse(proposal.answerMode);
-  const documentAccess = GrantAssistantDocumentAccessSchema.safeParse(proposal.documentAccess);
-  const diagnosticAccess = GrantAssistantDiagnosticAccessSchema.safeParse(proposal.diagnosticAccess);
+  const memoryScope = GrantAssistantMemoryScopeProposalSchema.safeParse(proposal.memoryScope);
+  const documentScope = GrantAssistantDocumentScopeProposalSchema.safeParse(proposal.documentScope);
+  const diagnosticScope = GrantAssistantDiagnosticScopeProposalSchema.safeParse(proposal.diagnosticScope);
   const webRecommendation = GrantAssistantWebRecommendationSchema.safeParse(proposal.webRecommendation);
-  if (!answerMode.success || !documentAccess.success || !diagnosticAccess.success || !webRecommendation.success
+  if (!answerMode.success || !memoryScope.success || !documentScope.success || !diagnosticScope.success
+    || !webRecommendation.success
     || !proposal.rationale?.trim() || typeof proposal.confidence !== "number" || !Number.isFinite(proposal.confidence)) {
     throw new GrantAssistantContextPlannerError("invalid_model_output", "planner.output_contract_invalid",
       "Semantic planner returned an invalid context decision.", proposalMetadata);
   }
-  const sectionAliases = [...new Set(proposal.targetSectionAliases ?? [])];
-  const memoryItemAliases = [...new Set(proposal.targetMemoryItemAliases ?? [])];
-  if (sectionAliases.some((alias) => !projection.sectionIdByAlias.has(alias))
-    || memoryItemAliases.some((alias) => !projection.memoryItemIdByAlias.has(alias))) {
-    throw new GrantAssistantContextPlannerError("invalid_target", "planner.unavailable_target",
-      "Semantic planner selected an unavailable memory target.", { ...proposalMetadata,
-        safeFacts: { selectedTargetCount: sectionAliases.length + memoryItemAliases.length,
-          availableTargetCount: projection.sectionIdByAlias.size + projection.memoryItemIdByAlias.size } });
-  }
-  if (documentAccess.data === "targeted_original" && sectionAliases.length === 0 && memoryItemAliases.length === 0) {
-    throw new GrantAssistantContextPlannerError("invalid_target", "planner.targeted_original_missing_target",
-      "Targeted original-text access requires at least one source target.", proposalMetadata);
-  }
-  if (diagnosticAccess.data === "relevant" && sectionAliases.length === 0 && memoryItemAliases.length === 0) {
-    throw new GrantAssistantContextPlannerError("invalid_target", "planner.relevant_diagnostic_missing_target",
-      "Relevant diagnostic access requires at least one memory or section target.", proposalMetadata);
-  }
+  const resolveTargets = (targets: { sectionAliases: string[]; memoryItemAliases: string[] },
+    missingReason: "planner.targeted_original_missing_target" | "planner.relevant_diagnostic_missing_target" |
+      "planner.output_contract_invalid", label: string) => {
+    const sectionAliases = [...new Set(targets.sectionAliases)];
+    const memoryItemAliases = [...new Set(targets.memoryItemAliases)];
+    if (sectionAliases.length === 0 && memoryItemAliases.length === 0) {
+      throw new GrantAssistantContextPlannerError("invalid_target", missingReason,
+        `${label} requires at least one supplied target.`, proposalMetadata);
+    }
+    if (sectionAliases.some((alias) => !projection.sectionIdByAlias.has(alias))
+      || memoryItemAliases.some((alias) => !projection.memoryItemIdByAlias.has(alias))) {
+      throw new GrantAssistantContextPlannerError("invalid_target", "planner.unavailable_target",
+        `Semantic planner selected an unavailable ${label.toLowerCase()} target.`, { ...proposalMetadata,
+          safeFacts: { selectedTargetCount: sectionAliases.length + memoryItemAliases.length,
+            availableTargetCount: projection.sectionIdByAlias.size + projection.memoryItemIdByAlias.size } });
+    }
+    return { targetSectionIds: sectionAliases.map((alias) => projection.sectionIdByAlias.get(alias)!),
+      targetMemoryItemIds: memoryItemAliases.map((alias) => projection.memoryItemIdByAlias.get(alias)!) };
+  };
+  const resolvedMemoryScope = memoryScope.data.kind === "all_memory"
+    ? memoryScope.data
+    : { kind: "targets" as const, ...resolveTargets(memoryScope.data,
+      "planner.output_contract_invalid", "Targeted memory access") };
+  const resolvedDocumentScope = documentScope.data.kind === "targeted_original"
+    ? { kind: "targeted_original" as const, ...resolveTargets(documentScope.data,
+      "planner.targeted_original_missing_target", "Targeted original-text access") }
+    : documentScope.data;
+  const resolvedDiagnosticScope = diagnosticScope.data.kind === "relevant"
+    ? { kind: "relevant" as const, ...resolveTargets(diagnosticScope.data,
+      "planner.relevant_diagnostic_missing_target", "Relevant diagnostic access") }
+    : diagnosticScope.data;
   if (proposal.needsClarification && !proposal.clarificationQuestion?.trim()) {
     throw new GrantAssistantContextPlannerError("invalid_model_output", "planner.clarification_question_missing",
       "A clarification decision requires a user-facing question.", { ...proposalMetadata,
@@ -120,14 +140,13 @@ export async function planGrantAssistantContext(input: {
     throw new GrantAssistantContextPlannerError("inconsistent_model_identity", "planner.model_identity_mismatch",
       "Semantic planner did not report the configured provider and model identity.", proposalMetadata);
   }
-  const semanticDecision = { answerMode: answerMode.data, documentAccess: documentAccess.data,
-    diagnosticAccess: diagnosticAccess.data, webRecommendation: webRecommendation.data,
-    targetSectionIds: sectionAliases.map((alias) => projection.sectionIdByAlias.get(alias)!),
-    targetMemoryItemIds: memoryItemAliases.map((alias) => projection.memoryItemIdByAlias.get(alias)!),
+  const semanticDecision = { answerMode: answerMode.data, memoryScope: resolvedMemoryScope,
+    documentScope: resolvedDocumentScope, diagnosticScope: resolvedDiagnosticScope,
+    webRecommendation: webRecommendation.data,
     needsClarification: proposal.needsClarification,
     ...(proposal.clarificationQuestion?.trim() ? { clarificationQuestion: proposal.clarificationQuestion.trim() } : {}),
     confidence: Math.max(0, Math.min(1, proposal.confidence)), rationale: proposal.rationale.trim() };
-  const parsedPlan = GrantAssistantContextPlanSchema.safeParse({ schemaVersion: "grant-assistant-context-plan-v1",
+  const parsedPlan = GrantAssistantContextPlanSchema.safeParse({ schemaVersion: "grant-assistant-context-plan-v2",
     planId: (input.createId ?? randomUUID)(), planHash: sha256Canonical({ sourceRevisionId: input.sourceRevisionId,
       memoryHash: memory.memoryHash, plannerPolicyVersion: input.plannerPolicyVersion, question, semanticDecision }),
     documentId: input.documentId, sourceRevisionId: input.sourceRevisionId, memoryId: memory.memoryId,

@@ -47,6 +47,7 @@ export type GrantModelUsageObserver = (event: {
   provider: GrantModelOperationPolicy["provider"];
   modelId: string;
   attemptNumber: number;
+  outcome: "succeeded" | "failed";
   usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
   occurredAt: string;
 }) => Promise<void>;
@@ -120,6 +121,37 @@ export class GrantModelExecutor {
     let lastError: unknown;
     let lastCategory: GrantModelFailureCategory = "unknown_provider_failure";
 
+    const recordUsage = async (event: {
+      callId: string;
+      attemptNumber: number;
+      outcome: "succeeded" | "failed";
+      usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+      occurredAt: string;
+    }) => {
+      if (!this.onUsage) return;
+      try {
+        await this.onUsage({
+          usageEventId: event.callId,
+          billingOperationId: input.billingOperationId ?? input.turnId ?? event.callId,
+          operation: input.policy.operation,
+          provider: input.policy.provider,
+          modelId: input.policy.modelId,
+          attemptNumber: event.attemptNumber,
+          outcome: event.outcome,
+          usage: event.usage,
+          occurredAt: event.occurredAt,
+        });
+      } catch (error) {
+        throw new GrantModelExecutionError("internal_contract_error", traceId,
+          error instanceof Error ? error.message : "Grant model usage could not be persisted.",
+          "persistence", { requestDispatched: true, usageKnown: true,
+            failureReason: createGrantAssistantFailureReason({
+              reasonCode: "persistence.usage_event_failed", stage: "persistence",
+              safeFacts: { attemptNumber: event.attemptNumber, requestDispatched: true, usageKnown: true },
+            }) });
+      }
+    };
+
     for (let attemptNumber = 1; attemptNumber <= input.policy.maximumAttempts; attemptNumber += 1) {
       const callId = this.createId();
       try {
@@ -162,6 +194,11 @@ export class GrantModelExecutor {
                   usageKnown: failureMetadata.usageKnown },
               }) });
         }
+        if (failureMetadata.requestDispatched && failureMetadata.usageKnown) {
+          await recordUsage({ callId, attemptNumber, outcome: "failed",
+            usage: { inputTokens: failureMetadata.inputTokens, outputTokens: failureMetadata.outputTokens,
+              reasoningTokens: failureMetadata.reasoningTokens }, occurredAt: this.now() });
+        }
         if (attemptNumber >= input.policy.maximumAttempts || !input.policy.retryableCategories.has(lastCategory)) break;
         purpose = grantModelRetryPurpose(lastCategory);
         continue;
@@ -188,13 +225,7 @@ export class GrantModelExecutor {
                 usageKnown: result.usage !== undefined },
             }) });
       }
-      if (result.usage) await this.onUsage?.({
-        usageEventId: callId,
-        billingOperationId: input.billingOperationId ?? input.turnId ?? callId,
-        operation: input.policy.operation,
-        provider: input.policy.provider,
-        modelId: input.policy.modelId,
-        attemptNumber,
+      if (result.usage) await recordUsage({ callId, attemptNumber, outcome: "succeeded",
         usage: {
           inputTokens: result.usage?.inputTokens ?? 0,
           outputTokens: result.usage?.outputTokens ?? 0,

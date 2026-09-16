@@ -1,8 +1,8 @@
 import { sha256Canonical } from "../domain/canonical-json.ts";
 import type { GrantFullDocumentAnalysisModel, GrantFullDocumentAnalysisAnswer,
   GrantFullDocumentUnitAnalysis } from "../ports/grant-full-document-analysis-model.ts";
-import type { GrantFullDocumentSynthesisRequest,
-  GrantFullDocumentUnitRequest } from "../assistant/grant-full-document-review-request.ts";
+import { buildGrantFullDocumentSynthesisMessages, type GrantFullDocumentSynthesisRequest,
+  type GrantFullDocumentUnitRequest } from "../assistant/grant-full-document-review-request.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import { GrantAssistantModelError } from "../ports/grant-assistant-model.ts";
 import type { GrantFullDocumentCapacityRoute } from "./grant-full-document-capacity-router.ts";
@@ -11,6 +11,7 @@ import type { GrantFullDocumentContext, GrantFullDocumentContextNode,
 import { createGrantAssistantFailureReason, GrantAssistantFailureReasonSchema,
   type GrantAssistantFailureReason, type GrantAssistantFailureReasonCode,
   type GrantAssistantFailureStage } from "../model-execution/assistant-failure-reasons.ts";
+import { measureGrantAssistantFixedContext } from "./grant-assistant-context-budget.ts";
 
 type HierarchicalRoute = Extract<GrantFullDocumentCapacityRoute, { mode: "hierarchical" }>;
 
@@ -30,7 +31,10 @@ export type GrantFullDocumentHierarchicalAnalysisResult = {
   executionHash: string;
   answer: GrantFullDocumentAnalysisAnswer;
   units: Array<GrantFullDocumentAnalysisUnit & { analysis: GrantFullDocumentUnitAnalysis }>;
-  coverage: { sectionAliases: string[]; sourceAliases: string[]; complete: true };
+  status: "complete" | "partial";
+  coverage: { sectionAliases: string[]; sourceAliases: string[]; complete: boolean;
+    coveredUnitCount: number; totalUnitCount: number; synthesisComplete: boolean };
+  partialReason?: string;
   providerRequestIds: string[];
   usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
   provider: "openai";
@@ -196,6 +200,12 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
   maximumUnits: number;
   supplementalAnalyses?: GrantFullDocumentSynthesisRequest["analyses"];
   supplementalSourceAliases?: string[];
+  resumeUnits?: Array<{ unitId: string; unitHash: string; analysis: GrantFullDocumentUnitAnalysis }>;
+  resumeReductions?: Array<{ unitId: string; unitHash: string; analysis: GrantFullDocumentUnitAnalysis }>;
+  onUnitCompleted?: (unit: { unitId: string; unitHash: string;
+    analysis: GrantFullDocumentUnitAnalysis }) => void | Promise<void>;
+  onReductionCompleted?: (unit: { unitId: string; unitHash: string;
+    analysis: GrantFullDocumentUnitAnalysis }) => void | Promise<void>;
   beforeUnit?: (request: GrantFullDocumentUnitRequest) => void | Promise<void>;
   beforeSynthesis?: (request: GrantFullDocumentSynthesisRequest) => void | Promise<void>;
 }): Promise<GrantFullDocumentHierarchicalAnalysisResult> {
@@ -223,6 +233,14 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
     usage.outputTokens += result.usage?.outputTokens ?? 0;
     usage.reasoningTokens += result.usage?.reasoningTokens ?? 0;
   };
+  let recoveryAvailable = true;
+  const recoveryPurpose = (error: GrantAssistantModelError) => error.category === "output_truncated"
+    ? "capacity_retry" as const
+    : error.category === "structured_output_invalid"
+      ? "schema_repair" as const : "transient_retry" as const;
+  const canRecover = (error: GrantAssistantModelError) => recoveryAvailable &&
+    ["output_truncated", "structured_output_invalid",
+      "provider_rate_limited", "provider_transient_error"].includes(error.category);
   const throwWithAggregateMetadata = (error: unknown): never => {
     if (!(error instanceof GrantAssistantModelError)) throw error;
     const requestIds = [...new Set([...providerRequestIds, ...error.providerRequestIds])];
@@ -255,17 +273,44 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
         providerRequestIds: [...providerRequestIds], usage: { ...usage },
         failureStage: "context_admission", failureReason, requestDispatched: true, usageKnown });
   };
+  const resumedById = new Map((input.resumeUnits ?? []).map((unit) => [unit.unitId, unit]));
   for (const unit of units) {
-    const request: GrantFullDocumentUnitRequest = { documentLanguage, question: input.question,
+    const unitHash = sha256Canonical({ contextHash: input.context.contextHash, question: input.question,
+      unitId: unit.unitId, sectionAliases: unit.sectionAliases, sourceAliases: unit.sourceAliases,
+      modelText: unit.modelText });
+    const resumed = resumedById.get(unit.unitId);
+    if (resumed) {
+      if (resumed.unitHash !== unitHash) throw new GrantFullDocumentAnalysisError("context_mismatch",
+        `Saved analysis unit ${unit.unitId} does not match the current execution context.`);
+      validateUnitAnalysis(resumed.analysis, new Set(unit.sourceAliases));
+      analyzed.push({ ...unit, analysis: resumed.analysis });
+      continue;
+    }
+    let request: GrantFullDocumentUnitRequest = { documentLanguage, question: input.question,
       contextHash: input.context.contextHash, unitId: unit.unitId, modelText: unit.modelText,
-      allowedSourceAliases: unit.sourceAliases, maximumOutputTokens: input.unitMaximumOutputTokens };
+      allowedSourceAliases: unit.sourceAliases, maximumOutputTokens: input.unitMaximumOutputTokens,
+      attemptPurpose: "initial" };
     try {
       await input.beforeUnit?.(request);
     } catch (error) {
       throwAdmissionWithAggregateMetadata(error);
     }
-    const analysis: GrantFullDocumentUnitAnalysis = await input.model.analyzeUnit(request)
-      .catch((error: unknown) => throwWithAggregateMetadata(error));
+    let analysis!: GrantFullDocumentUnitAnalysis;
+    try {
+      analysis = await input.model.analyzeUnit(request);
+    } catch (error) {
+      if (!(error instanceof GrantAssistantModelError)) throw error;
+      if (!canRecover(error)) throwWithAggregateMetadata(error);
+      recoveryAvailable = false;
+      addMetadata({ providerRequestId: error.providerRequestId, usage: error.usage });
+      request = { ...request, attemptPurpose: recoveryPurpose(error) };
+      try {
+        await input.beforeUnit?.(request);
+        analysis = await input.model.analyzeUnit(request);
+      } catch (retryError) {
+        throwWithAggregateMetadata(retryError);
+      }
+    }
     const allowed = new Set(unit.sourceAliases);
     addMetadata(analysis);
     try {
@@ -281,6 +326,7 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
           requestDispatched: providerRequestIds.length > 0, usageKnown });
     }
     analyzed.push({ ...unit, analysis });
+    await input.onUnitCompleted?.({ unitId: unit.unitId, unitHash, analysis });
   }
   const supplementalAliases = input.supplementalSourceAliases ?? [];
   const documentAliases = input.context.nodes.map((node) => node.sourceAlias);
@@ -304,41 +350,116 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
             totalUnitCount: units.length, requestDispatched: providerRequestIds.length > 0, usageKnown } }),
         requestDispatched: providerRequestIds.length > 0, usageKnown });
   }
-  const synthesisPayload = { question: input.question, contextHash: input.context.contextHash,
-    analyses: analyzed.map(({ unitId, analysis }) => ({ unitId, summary: analysis.summary,
-      findings: analysis.findings })).concat(input.supplementalAnalyses ?? []) };
-  if (input.tokenCounter.count(JSON.stringify(synthesisPayload)) > input.synthesisMaximumInputTokens) {
-    throw new GrantAssistantModelError("answer_capacity_exceeded",
-      "Complete unit analyses exceed the synthesis input budget; a reduction stage is required.", {
-        providerRequestIds: [...providerRequestIds], usage: { ...usage },
-        failureStage: "context_admission",
-        failureReason: createGrantAssistantFailureReason({ reasonCode: "budget.review_synthesis_required_context_exceeded",
-          stage: "context_admission", safeFacts: {
-            maximumInputTokens: input.synthesisMaximumInputTokens,
-            requiredInputTokens: input.tokenCounter.count(JSON.stringify(synthesisPayload)),
-            requestDispatched: providerRequestIds.length > 0, usageKnown } }),
-        requestDispatched: providerRequestIds.length > 0, usageKnown });
-  }
   const allAliases = new Set([...documentAliases, ...supplementalAliases]);
-  const synthesisRequest: GrantFullDocumentSynthesisRequest = { documentLanguage, question: input.question,
-    contextHash: input.context.contextHash, analyses: synthesisPayload.analyses,
-    allowedSourceAliases: [...allAliases], maximumOutputTokens: input.synthesisMaximumOutputTokens };
-  try {
-    await input.beforeSynthesis?.(synthesisRequest);
-  } catch (error) {
-    throwAdmissionWithAggregateMetadata(error);
+  type SynthesisAnalysis = GrantFullDocumentSynthesisRequest["analyses"][number];
+  const compact = (analysis: SynthesisAnalysis): SynthesisAnalysis => ({ unitId: analysis.unitId,
+    summary: analysis.summary.slice(0, 1_200), findings: analysis.findings.slice(0, 12).map((finding) => ({
+      statement: finding.statement.slice(0, 500), sourceAliases: finding.sourceAliases.slice(0, 8) })) });
+  const requestTokens = (analyses: SynthesisAnalysis[], synthesisPurpose: "reduction" | "final",
+    synthesisLevel: number) => measureGrantAssistantFixedContext({ stage: "full_review_synthesis",
+      tokenCounter: input.tokenCounter, providerMessages: buildGrantFullDocumentSynthesisMessages({
+        documentLanguage, question: input.question, contextHash: input.context.contextHash, analyses,
+        allowedSourceAliases: [...new Set(analyses.flatMap((analysis) =>
+          analysis.findings.flatMap((finding) => finding.sourceAliases)))],
+        maximumOutputTokens: input.synthesisMaximumOutputTokens, attemptPurpose: "initial",
+        synthesisPurpose, synthesisLevel, coveredUnitIds: analyses.map((analysis) => analysis.unitId),
+      }) });
+  const callSynthesis = async (base: GrantFullDocumentSynthesisRequest) => {
+    let request = base;
+    try {
+      await input.beforeSynthesis?.(request);
+    } catch (error) {
+      throwAdmissionWithAggregateMetadata(error);
+    }
+    let generated!: GrantFullDocumentAnalysisAnswer;
+    try {
+      generated = await input.model.synthesize(request);
+    } catch (error) {
+      if (!(error instanceof GrantAssistantModelError)) throw error;
+      if (!canRecover(error)) throwWithAggregateMetadata(error);
+      recoveryAvailable = false;
+      addMetadata({ providerRequestId: error.providerRequestId, usage: error.usage });
+      request = { ...request, attemptPurpose: recoveryPurpose(error) };
+      try {
+        await input.beforeSynthesis?.(request);
+        generated = await input.model.synthesize(request);
+      } catch (retryError) {
+        throwWithAggregateMetadata(retryError);
+      }
+    }
+    addMetadata(generated);
+    return generated;
+  };
+  let synthesisAnalyses: SynthesisAnalysis[] = analyzed.map(({ unitId, analysis }) => ({ unitId,
+    summary: analysis.summary, findings: analysis.findings })).concat(input.supplementalAnalyses ?? []);
+  const reductionAnalyses: GrantFullDocumentUnitAnalysis[] = [];
+  const resumedReductions = new Map((input.resumeReductions ?? []).map((unit) => [unit.unitId, unit]));
+  let synthesisLevel = 0;
+  while (requestTokens(synthesisAnalyses, "final", synthesisLevel) > input.synthesisMaximumInputTokens) {
+    synthesisLevel += 1;
+    if (synthesisLevel > 6) throw new GrantFullDocumentAnalysisError("synthesis_capacity_exceeded",
+      "Hierarchical synthesis did not converge within six reduction levels.");
+    const groups: SynthesisAnalysis[][] = [];
+    let group: SynthesisAnalysis[] = [];
+    for (const raw of synthesisAnalyses.map(compact)) {
+      const candidate = [...group, raw];
+      if (group.length > 0 && requestTokens(candidate, "reduction", synthesisLevel) > input.synthesisMaximumInputTokens) {
+        groups.push(group); group = [raw];
+      } else group = candidate;
+      if (requestTokens(group, "reduction", synthesisLevel) > input.synthesisMaximumInputTokens) {
+        throw new GrantFullDocumentAnalysisError("synthesis_capacity_exceeded",
+          `Analysis ${raw.unitId} cannot fit a bounded reduction request.`);
+      }
+    }
+    if (group.length > 0) groups.push(group);
+    if (groups.length >= synthesisAnalyses.length) throw new GrantFullDocumentAnalysisError(
+      "synthesis_capacity_exceeded", "Hierarchical synthesis could not reduce the analysis set.");
+    const reduced: SynthesisAnalysis[] = [];
+    for (const [index, batch] of groups.entries()) {
+      const unitId = `R${synthesisLevel}-${index + 1}`;
+      const allowedSourceAliases = [...new Set(batch.flatMap((analysis) =>
+        analysis.findings.flatMap((finding) => finding.sourceAliases)))];
+      const unitHash = sha256Canonical({ contextHash: input.context.contextHash, question: input.question,
+        synthesisLevel, unitId, analyses: batch });
+      const resumed = resumedReductions.get(unitId);
+      let analysis: GrantFullDocumentUnitAnalysis;
+      if (resumed) {
+        if (resumed.unitHash !== unitHash) throw new GrantFullDocumentAnalysisError("context_mismatch",
+          `Saved reduction ${unitId} does not match the current synthesis context.`);
+        analysis = resumed.analysis;
+        validateUnitAnalysis(analysis, new Set(allowedSourceAliases));
+      } else {
+        const generated = await callSynthesis({ documentLanguage, question: input.question,
+          contextHash: input.context.contextHash, analyses: batch, allowedSourceAliases,
+          maximumOutputTokens: input.synthesisMaximumOutputTokens, attemptPurpose: "initial",
+          synthesisPurpose: "reduction", synthesisLevel,
+          coveredUnitIds: batch.map((item) => item.unitId) });
+        analysis = { summary: generated.content, findings: generated.claims,
+          providerRequestId: generated.providerRequestId, usage: generated.usage,
+          provider: generated.provider, modelId: generated.modelId };
+        validateUnitAnalysis(analysis, new Set(allowedSourceAliases));
+        await input.onReductionCompleted?.({ unitId, unitHash, analysis });
+      }
+      reductionAnalyses.push(analysis);
+      reduced.push({ unitId, summary: analysis.summary, findings: analysis.findings });
+    }
+    synthesisAnalyses = reduced;
   }
-  const answer: GrantFullDocumentAnalysisAnswer = await input.model.synthesize(synthesisRequest)
-    .catch((error: unknown) => throwWithAggregateMetadata(error));
-  addMetadata(answer);
+  const answer = await callSynthesis({ documentLanguage, question: input.question,
+    contextHash: input.context.contextHash, analyses: synthesisAnalyses,
+    allowedSourceAliases: [...allAliases], maximumOutputTokens: input.synthesisMaximumOutputTokens,
+    attemptPurpose: "initial", synthesisPurpose: "final", synthesisLevel,
+    coveredUnitIds: synthesisAnalyses.map((analysis) => analysis.unitId) });
   let modelIds: Set<string>;
   try {
     if (!answer.content.trim() || answer.claims.some((claim) => !claim.statement.trim())) {
       throw new GrantFullDocumentAnalysisError("invalid_source_reference", "Model synthesis returned empty required content.");
     }
-    modelIds = new Set([...analyzed.map((unit) => unit.analysis.modelId), answer.modelId]
+    modelIds = new Set([...analyzed.map((unit) => unit.analysis.modelId),
+      ...reductionAnalyses.map((analysis) => analysis.modelId), answer.modelId]
       .filter((value): value is string => Boolean(value)));
-    if (answer.provider !== "openai" || analyzed.some((unit) => unit.analysis.provider !== "openai") || modelIds.size !== 1) {
+    if (answer.provider !== "openai" || analyzed.some((unit) => unit.analysis.provider !== "openai") ||
+      reductionAnalyses.some((analysis) => analysis.provider !== "openai") || modelIds.size !== 1) {
       throw new GrantFullDocumentAnalysisError("invalid_source_reference",
         "Hierarchical analysis model identity is inconsistent.", {
           reasonCode: "review.model_identity_mismatch", stage: "answer_generation" });
@@ -365,6 +486,8 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
         unitId, sectionAliases, sourceAliases, modelText, summary: analysis.summary, findings: analysis.findings })),
       supplementalAnalyses: input.supplementalAnalyses ?? [],
       answer: { content: answer.content, claims: answer.claims } }), answer, units: analyzed,
-    coverage: { sectionAliases: coveredSectionAliases, sourceAliases: coveredSourceAliases, complete: true },
+    status: "complete", coverage: { sectionAliases: coveredSectionAliases,
+      sourceAliases: coveredSourceAliases, complete: true, coveredUnitCount: analyzed.length,
+      totalUnitCount: units.length, synthesisComplete: true },
     providerRequestIds, usage, provider: "openai", modelId: [...modelIds][0]! };
 }

@@ -122,7 +122,7 @@ export function resolveGrantModelOperationPolicy(input: {
           maximumUnitInputTokens: Math.min(12_000, executionLimits.maximumInputTokens),
           maximumUnitOutputTokens: 800,
           maximumSynthesisInputTokens: Math.min(16_000, executionLimits.maximumInputTokens),
-          maximumSynthesisOutputTokens: 2_400,
+          maximumSynthesisOutputTokens: 4_800,
           maximumUnits: 12,
           maximumSectionsPerUnit: 4,
         },

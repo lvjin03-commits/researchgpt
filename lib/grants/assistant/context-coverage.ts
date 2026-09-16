@@ -10,6 +10,9 @@ export const GrantAssistantContextCoverageSchema = z.object({
   coveredNodeCount: z.number().int().nonnegative(),
   complete: z.boolean(),
   unitCount: z.number().int().positive().optional(),
+  totalUnitCount: z.number().int().positive().optional(),
+  synthesisComplete: z.boolean().optional(),
+  partialReasonCode: z.string().min(1).max(120).optional(),
 }).strict();
 
 export type GrantAssistantContextCoverage = z.infer<typeof GrantAssistantContextCoverageSchema>;

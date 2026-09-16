@@ -128,20 +128,31 @@ export async function assembleGrantAssistantPlannedContext(input: {
         "L2 item references do not resolve inside their declared L1 sections.");
     }
   }
-  if (plan.targetSectionIds.some((sectionId) => !sectionById.has(sectionId))
-    || plan.targetMemoryItemIds.some((itemId) => !memoryItemById.has(itemId))) {
+  const scopedTargets = [
+    ...(plan.memoryScope.kind === "targets" ? [plan.memoryScope] : []),
+    ...(plan.documentScope.kind === "targeted_original" ? [plan.documentScope] : []),
+    ...(plan.diagnosticScope.kind === "relevant" ? [plan.diagnosticScope] : []),
+  ];
+  if (scopedTargets.some((scope) => scope.targetSectionIds.some((sectionId) => !sectionById.has(sectionId))
+    || scope.targetMemoryItemIds.some((itemId) => !memoryItemById.has(itemId)))) {
     throw new GrantAssistantPlannedContextError("invalid_target", "context.target_unavailable",
       "The plan selected content outside the current Revision memory.");
   }
 
+  const memoryTargetSectionIds = plan.memoryScope.kind === "all_memory"
+    ? snapshot.sections.map((section) => section.sectionId) : plan.memoryScope.targetSectionIds;
+  const memoryTargetItemIds = plan.memoryScope.kind === "all_memory"
+    ? memory.l1.items.map((item) => item.memoryItemId) : plan.memoryScope.targetMemoryItemIds;
+
   const memoryExcerpt = buildGrantAssistantAnswerMemoryProjection({ memory, answerMode: plan.answerMode,
-    targetSectionIds: plan.targetSectionIds, targetMemoryItemIds: plan.targetMemoryItemIds });
+    targetSectionIds: memoryTargetSectionIds, targetMemoryItemIds: memoryTargetItemIds });
   const sources: GrantAssistantPlannedContext["sources"] = [{ sourceAlias: "MEMORY1",
     sourceType: "document_memory", label: "当前申请书分层记忆", excerpt: memoryExcerpt,
     memoryId: memory.memoryId }];
-  const requestedSectionIds = new Set(plan.targetSectionIds);
+  const originalTargets = plan.documentScope.kind === "targeted_original" ? plan.documentScope : null;
+  const requestedSectionIds = new Set(originalTargets?.targetSectionIds ?? []);
   const requestedNodeIds = new Set<string>();
-  for (const itemId of plan.targetMemoryItemIds) {
+  for (const itemId of originalTargets?.targetMemoryItemIds ?? []) {
     const item = memoryItemById.get(itemId)!;
     item.sourceSectionIds.forEach((sectionId) => requestedSectionIds.add(sectionId));
     const itemAnchor = itemAnchorById.get(itemId);
@@ -149,20 +160,20 @@ export async function assembleGrantAssistantPlannedContext(input: {
       "context.item_anchor_outside_section", "The selected memory item has no current L2 source anchor.");
     itemAnchor.sourceNodeIds.forEach((nodeId) => requestedNodeIds.add(nodeId));
   }
-  const admittedSectionIds = plan.documentAccess === "full_original"
+  const admittedSectionIds = plan.documentScope.kind === "full_original"
     ? new Set(snapshot.sections.map((section) => section.sectionId))
     : descendantSectionIds(snapshot, requestedSectionIds);
-  if (plan.documentAccess !== "memory_only") {
+  if (plan.documentScope.kind !== "memory_only") {
     admittedSectionIds.forEach((sectionId) => sectionAnchorById.get(sectionId)?.sourceNodeIds
       .forEach((nodeId) => requestedNodeIds.add(nodeId)));
   }
-  const admittedNodeIds = plan.documentAccess === "memory_only" ? new Set<string>()
-    : plan.documentAccess === "full_original" ? new Set(snapshot.nodes.map((node) => node.nodeId)) : requestedNodeIds;
+  const admittedNodeIds = plan.documentScope.kind === "memory_only" ? new Set<string>()
+    : plan.documentScope.kind === "full_original" ? new Set(snapshot.nodes.map((node) => node.nodeId)) : requestedNodeIds;
 
   // Full-original plans report deterministic complete coverage here, but do
   // not materialize the whole document into one answer request. The memory
   // pipeline owns hierarchical original-text reading for that mode.
-  if (plan.documentAccess === "targeted_original") {
+  if (plan.documentScope.kind === "targeted_original") {
     snapshot.nodes.filter((node) => admittedNodeIds.has(node.nodeId))
       .sort((left, right) => {
         const leftSection = snapshot.sections.findIndex((section) => section.sectionId === left.sectionId);
@@ -174,7 +185,7 @@ export async function assembleGrantAssistantPlannedContext(input: {
   }
 
   let currentFindings: GrantNormalizedFinding[] = [];
-  if (plan.diagnosticAccess !== "none") {
+  if (plan.diagnosticScope.kind !== "none") {
     if (!input.diagnostics.listNormalizedFindings) throw new GrantAssistantPlannedContextError(
       "diagnostics_unavailable", "context.diagnostics_unavailable",
       "Current normalized diagnostic Findings are unavailable.");
@@ -193,11 +204,21 @@ export async function assembleGrantAssistantPlannedContext(input: {
     }).filter((finding) => finding.sourceRevisionId === input.sourceRevisionId && finding.lifecycleStatus === "open");
     currentFindings.forEach((finding) => validateFindingAnchors(finding, snapshot));
   }
-  const relevantSectionIds = descendantSectionIds(snapshot, requestedSectionIds);
-  const relevantNodeIds = new Set(requestedNodeIds);
-  const admittedFindings = plan.diagnosticAccess === "all" ? currentFindings
-    : plan.diagnosticAccess === "relevant" ? currentFindings.filter((finding) => findingLocations(finding)
-      .some((location) => relevantSectionIds.has(location.sectionId) || relevantNodeIds.has(location.nodeId))) : [];
+  const diagnosticTargets = plan.diagnosticScope.kind === "relevant" ? plan.diagnosticScope : null;
+  const diagnosticSectionIds = new Set(diagnosticTargets?.targetSectionIds ?? []);
+  const diagnosticNodeIds = new Set<string>();
+  for (const itemId of diagnosticTargets?.targetMemoryItemIds ?? []) {
+    const item = memoryItemById.get(itemId)!;
+    item.sourceSectionIds.forEach((sectionId) => diagnosticSectionIds.add(sectionId));
+    const itemAnchor = itemAnchorById.get(itemId);
+    if (!itemAnchor) throw new GrantAssistantPlannedContextError("stale_memory",
+      "context.item_anchor_outside_section", "The selected diagnostic memory item has no current L2 source anchor.");
+    itemAnchor.sourceNodeIds.forEach((nodeId) => diagnosticNodeIds.add(nodeId));
+  }
+  const relevantSectionIds = descendantSectionIds(snapshot, diagnosticSectionIds);
+  const admittedFindings = plan.diagnosticScope.kind === "all" ? currentFindings
+    : plan.diagnosticScope.kind === "relevant" ? currentFindings.filter((finding) => findingLocations(finding)
+      .some((location) => relevantSectionIds.has(location.sectionId) || diagnosticNodeIds.has(location.nodeId))) : [];
   admittedFindings.forEach((finding, index) => sources.push({ sourceAlias: `G${index + 1}`,
     sourceType: "diagnostic", label: finding.title ?? finding.category, excerpt: diagnosticExcerpt(finding),
     findingId: finding.findingId, ...(finding.sourceAnchor.sectionId ? { sectionId: finding.sourceAnchor.sectionId } : {}),
@@ -211,11 +232,11 @@ export async function assembleGrantAssistantPlannedContext(input: {
     documentId: input.documentId, sourceRevisionId: input.sourceRevisionId, planId: plan.planId,
     planHash: plan.planHash, memoryId: memory.memoryId, memoryHash: memory.memoryHash,
     contextHash: sha256Canonical(contextContent), sources,
-    coverage: { memoryIncluded: true, originalMode: plan.documentAccess,
+    coverage: { memoryIncluded: true, originalMode: plan.documentScope.kind,
       totalSectionCount: snapshot.sections.length, coveredSectionCount: coveredSectionIds.size,
       totalNodeCount: snapshot.nodes.length, coveredNodeCount: admittedNodeIds.size,
       completeOriginal: admittedNodeIds.size === snapshot.nodes.length,
-      diagnosticMode: plan.diagnosticAccess, availableCurrentFindingCount: currentFindings.length,
+      diagnosticMode: plan.diagnosticScope.kind, availableCurrentFindingCount: currentFindings.length,
       admittedFindingCount: admittedFindings.length } });
   if (!result.success) throw new GrantAssistantPlannedContextError("stale_plan",
     "context.output_contract_invalid", "The assembled Grant Assistant context is invalid.");

@@ -51,8 +51,11 @@ const model: GrantAssistantContextPlannerModel = {
     assert.match(input.documentMemoryText, /\[M2\] technical_route/u);
     assert.ok(nodeIds.every((nodeId) => !input.documentMemoryText.includes(nodeId)),
       "Planner must receive the compact L0/L1 index without L2 canonical node references.");
-    return { answerMode: "explain", documentAccess: "targeted_original", diagnosticAccess: "relevant",
-      webRecommendation: "recommended", targetSectionAliases: ["S2"], targetMemoryItemAliases: ["M2"],
+    return { answerMode: "explain",
+      memoryScope: { kind: "targets", sectionAliases: ["S2"], memoryItemAliases: ["M2"] },
+      documentScope: { kind: "targeted_original", sectionAliases: ["S2"], memoryItemAliases: ["M2"] },
+      diagnosticScope: { kind: "relevant", sectionAliases: ["S2"], memoryItemAliases: ["M2"] },
+      webRecommendation: "recommended",
       needsClarification: false, confidence: 0.91, rationale: "需要核对方案原文并结合相关诊断。",
       provider: "openai", modelId: "offline-planner-model", providerRequestId: "planner-request",
       usage: { inputTokens: 42, outputTokens: 11, reasoningTokens: 3 } };
@@ -65,11 +68,12 @@ const plan = await planGrantAssistantContext({ documentId, sourceRevisionId: rev
 assert.equal(receivedQuestion, "把这里为什么这样安排讲透");
 assert.equal(receivedExplicitWeb, false);
 assert.equal(receivedRecentConversationCount, 1);
-assert.equal(plan.documentAccess, "targeted_original");
-assert.equal(plan.diagnosticAccess, "relevant");
+assert.equal(plan.documentScope.kind, "targeted_original");
+assert.equal(plan.diagnosticScope.kind, "relevant");
 assert.equal(plan.webRecommendation, "recommended", "The model may recommend web search but cannot authorize it.");
-assert.deepEqual(plan.targetSectionIds, [sectionIds[1]]);
-assert.deepEqual(plan.targetMemoryItemIds, ["M2"]);
+assert.deepEqual(plan.memoryScope, { kind: "targets", targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M2"] });
+assert.deepEqual(plan.documentScope, { kind: "targeted_original", targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M2"] });
+assert.deepEqual(plan.diagnosticScope, { kind: "relevant", targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M2"] });
 assert.match(plan.planHash, /^[a-f0-9]{64}$/u);
 assert.equal(plan.contextManifest.stage, "semantic_planning");
 assert.equal(plan.contextManifest.reservedOutputTokens, 700);
@@ -82,20 +86,36 @@ await assert.rejects(() => planGrantAssistantContext({ documentId, sourceRevisio
 await assert.rejects(() => planGrantAssistantContext({ documentId, sourceRevisionId: revisionId,
   question: "任意问题", recentConversation: [], memory, tokenCounter: counter, contextBudgetPolicy,
   plannerPolicyVersion: "grant-context-planner-v1", model: { async plan() { return {
-    answerMode: "answer", documentAccess: "targeted_original", diagnosticAccess: "none", webRecommendation: "none",
-    targetSectionAliases: ["S99"], targetMemoryItemAliases: [], needsClarification: false, confidence: 0.8,
+    answerMode: "answer", memoryScope: { kind: "all_memory" },
+    documentScope: { kind: "targeted_original", sectionAliases: ["S99"], memoryItemAliases: [] },
+    diagnosticScope: { kind: "none" }, webRecommendation: "none", needsClarification: false, confidence: 0.8,
     rationale: "错误目标", provider: "openai", modelId: "offline-planner-model",
     providerRequestId: "planner-invalid-target", usage: { inputTokens: 21, outputTokens: 7, reasoningTokens: 2 } }; } } }),
   (error: unknown) => {
     assert.ok(error && typeof error === "object");
     const attributed = error as { message?: string; providerRequestIds?: string[]; usage?: unknown;
       failureReason?: { reasonCode?: string } };
-    assert.match(attributed.message ?? "", /unavailable memory target/u);
+    assert.match(attributed.message ?? "", /unavailable targeted original-text access target/u);
     assert.deepEqual(attributed.providerRequestIds, ["planner-invalid-target"]);
     assert.deepEqual(attributed.usage, { inputTokens: 21, outputTokens: 7, reasoningTokens: 2 });
     assert.equal(attributed.failureReason?.reasonCode, "planner.unavailable_target");
     return true;
   });
+
+const wholeDocumentPlan = await planGrantAssistantContext({ documentId, sourceRevisionId: revisionId,
+  question: "分析全文并结合研究方案相关诊断", recentConversation: [], memory, tokenCounter: counter,
+  contextBudgetPolicy, plannerPolicyVersion: "grant-context-planner-v2", model: { async plan() { return {
+    answerMode: "review", memoryScope: { kind: "all_memory" }, documentScope: { kind: "full_original" },
+    diagnosticScope: { kind: "relevant", sectionAliases: ["S2"], memoryItemAliases: ["M2"] },
+    webRecommendation: "none", needsClarification: false, confidence: 0.95,
+    rationale: "全文审查由程序覆盖，诊断只筛选研究方案。", provider: "openai",
+    modelId: "offline-planner-model", providerRequestId: "planner-whole-document",
+    usage: { inputTokens: 20, outputTokens: 6, reasoningTokens: 1 } }; } } });
+assert.deepEqual(wholeDocumentPlan.documentScope, { kind: "full_original" },
+  "Whole-Revision access must not enumerate document aliases.");
+assert.deepEqual(wholeDocumentPlan.diagnosticScope, { kind: "relevant",
+  targetSectionIds: [sectionIds[1]], targetMemoryItemIds: ["M2"] },
+"Whole-Revision access must preserve independently validated diagnostic targets.");
 
 await planGrantAssistantContext({ documentId, sourceRevisionId: revisionId,
   question: "基于全文给出改进建议", recentConversation: [{ role: "assistant", content: "冗长历史".repeat(20_000) }],

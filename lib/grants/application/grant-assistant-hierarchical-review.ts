@@ -9,7 +9,9 @@ import type { GrantAssistantPlannedContext } from "../assistant/planned-context-
 import type { GrantFullDocumentContext } from "./grant-full-document-context.ts";
 import { routeGrantFullDocumentContext,
   type GrantFullDocumentCapacityRoute } from "./grant-full-document-capacity-router.ts";
-import { executeGrantFullDocumentHierarchicalAnalysis } from "./grant-full-document-hierarchical-analysis.ts";
+import { buildGrantFullDocumentAnalysisUnits,
+  executeGrantFullDocumentHierarchicalAnalysis } from "./grant-full-document-hierarchical-analysis.ts";
+import { sha256Canonical } from "../domain/canonical-json.ts";
 import { admitGrantAssistantFixedContext,
   type GrantAssistantContextBudgetManifest,
   type GrantAssistantContextBudgetPolicy } from "./grant-assistant-context-budget.ts";
@@ -68,6 +70,10 @@ export async function executeGrantAssistantHierarchicalReview(input: {
   model: GrantFullDocumentAnalysisModel;
   tokenCounter: GrantTokenCounter;
   contextBudgetPolicy: GrantAssistantContextBudgetPolicy;
+  resumeUnits?: Parameters<typeof executeGrantFullDocumentHierarchicalAnalysis>[0]["resumeUnits"];
+  resumeReductions?: Parameters<typeof executeGrantFullDocumentHierarchicalAnalysis>[0]["resumeReductions"];
+  onUnitCompleted?: NonNullable<Parameters<typeof executeGrantFullDocumentHierarchicalAnalysis>[0]["onUnitCompleted"]>;
+  onReductionCompleted?: NonNullable<Parameters<typeof executeGrantFullDocumentHierarchicalAnalysis>[0]["onReductionCompleted"]>;
 }) {
   const budget = input.contextBudgetPolicy.fullDocumentReview;
   if (!budget) throw new GrantAssistantModelError("internal_contract_error",
@@ -85,7 +91,10 @@ export async function executeGrantAssistantHierarchicalReview(input: {
     summary: "Current program-validated diagnostic findings for this Revision.",
     findings: diagnostics.map((source) => ({ statement: source.excerpt, sourceAliases: [source.sourceAlias] })),
   }];
-  const execution = await executeGrantFullDocumentHierarchicalAnalysis({
+  const completedUnits = [...(input.resumeUnits ?? [])];
+  let execution: Awaited<ReturnType<typeof executeGrantFullDocumentHierarchicalAnalysis>>;
+  try {
+    execution = await executeGrantFullDocumentHierarchicalAnalysis({
     context: input.context,
     route,
     tokenCounter: input.tokenCounter,
@@ -97,6 +106,10 @@ export async function executeGrantAssistantHierarchicalReview(input: {
     maximumUnits: budget.maximumUnits,
     supplementalAnalyses,
     supplementalSourceAliases: diagnostics.map((source) => source.sourceAlias),
+    resumeUnits: input.resumeUnits,
+    resumeReductions: input.resumeReductions,
+    onUnitCompleted: async (unit) => { completedUnits.push(unit); await input.onUnitCompleted?.(unit); },
+    onReductionCompleted: input.onReductionCompleted,
     beforeUnit(request) {
       manifests.push(admitGrantAssistantFixedContext({ stage: "full_review_unit",
         budget: { maximumInputTokens: budget.maximumUnitInputTokens,
@@ -113,7 +126,46 @@ export async function executeGrantAssistantHierarchicalReview(input: {
         sourceAliases: request.allowedSourceAliases,
         providerMessages: buildGrantFullDocumentSynthesisMessages(request), tokenCounter: input.tokenCounter }));
     },
-  });
+    });
+  } catch (error) {
+    const canDeliverPartial = (error instanceof GrantAssistantModelError && ["structured_output_invalid",
+      "output_truncated", "provider_rate_limited", "provider_transient_error", "provider_unavailable",
+      "answer_capacity_exceeded"].includes(error.category)) ||
+      (error instanceof GrantFullDocumentAnalysisError && error.code === "synthesis_capacity_exceeded");
+    if (!canDeliverPartial || completedUnits.length === 0) throw error;
+    const definitions = buildGrantFullDocumentAnalysisUnits({ context: input.context, route,
+      tokenCounter: input.tokenCounter });
+    const definitionById = new Map(definitions.map((unit) => [unit.unitId, unit]));
+    const completed = completedUnits.flatMap((saved) => {
+      const definition = definitionById.get(saved.unitId);
+      return definition ? [{ ...definition, analysis: saved.analysis }] : [];
+    });
+    const claims = completed.flatMap((unit) => unit.analysis.findings).slice(0, 12);
+    const prefix = /[\u3400-\u9fff]/u.test(input.question)
+      ? `以下是系统中断前已完成的部分分析（覆盖 ${completed.length}/${definitions.length} 个单元），不能视为完整全文审查：`
+      : `This is a partial analysis completed before interruption (${completed.length}/${definitions.length} units); it is not a complete whole-document review:`;
+    const content = [prefix, ...completed.slice(0, 10).map((unit, index) =>
+      `${index + 1}. ${unit.analysis.summary}`)].join("\n").slice(0, 3_200);
+    const modelIds = new Set(completed.map((unit) => unit.analysis.modelId).filter((value): value is string => Boolean(value)));
+    if (modelIds.size !== 1 || completed.some((unit) => unit.analysis.provider !== "openai")) throw error;
+    const providerRequestIds = error instanceof GrantAssistantModelError ? error.providerRequestIds : [];
+    const usage = error instanceof GrantAssistantModelError ? {
+      inputTokens: error.usage?.inputTokens ?? 0, outputTokens: error.usage?.outputTokens ?? 0,
+      reasoningTokens: error.usage?.reasoningTokens ?? 0 } : { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+    const sectionAliases = [...new Set(completed.flatMap((unit) => unit.sectionAliases))];
+    const sourceAliases = [...new Set(completed.flatMap((unit) => unit.sourceAliases))];
+    execution = { schemaVersion: "grant-full-document-hierarchical-analysis-v1",
+      documentId: input.context.documentId, sourceRevisionId: input.context.sourceRevisionId,
+      contextHash: input.context.contextHash, status: "partial",
+      executionHash: sha256Canonical({ contextHash: input.context.contextHash, question: input.question,
+        completedUnitIds: completed.map((unit) => unit.unitId), partialReason: error instanceof Error ? error.message : "interrupted" }),
+      answer: { content, claims, provider: "openai", modelId: [...modelIds][0] }, units: completed,
+      coverage: { sectionAliases, sourceAliases, complete: false, coveredUnitCount: completed.length,
+        totalUnitCount: definitions.length, synthesisComplete: false },
+      partialReason: error instanceof GrantAssistantModelError
+        ? error.failureReason?.reasonCode ?? error.category : error.code,
+      providerRequestIds, usage, provider: "openai", modelId: [...modelIds][0]! };
+  }
 
   const citedAliases = [...new Set(execution.answer.claims.flatMap((claim) => claim.sourceAliases))];
   const nodeByAlias = new Map(input.context.nodes.map((node) => [node.sourceAlias, node]));

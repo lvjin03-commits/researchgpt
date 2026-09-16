@@ -1,13 +1,13 @@
-import type { GrantAssistantAnswerMode, GrantAssistantDiagnosticAccess,
-  GrantAssistantDocumentAccess, GrantAssistantWebRecommendation } from "../assistant/context-plan-contracts.ts";
+import type { GrantAssistantAnswerMode, GrantAssistantDiagnosticScopeProposal,
+  GrantAssistantDocumentScopeProposal, GrantAssistantMemoryScopeProposal,
+  GrantAssistantWebRecommendation } from "../assistant/context-plan-contracts.ts";
 
 export type GrantAssistantContextPlanProposal = {
   answerMode: GrantAssistantAnswerMode;
-  documentAccess: GrantAssistantDocumentAccess;
-  diagnosticAccess: GrantAssistantDiagnosticAccess;
+  memoryScope: GrantAssistantMemoryScopeProposal;
+  documentScope: GrantAssistantDocumentScopeProposal;
+  diagnosticScope: GrantAssistantDiagnosticScopeProposal;
   webRecommendation: GrantAssistantWebRecommendation;
-  targetSectionAliases: string[];
-  targetMemoryItemAliases: string[];
   needsClarification: boolean;
   clarificationQuestion?: string;
   confidence: number;
@@ -32,6 +32,7 @@ export type GrantAssistantContextPlanModelRequest = {
     webSearchEnabledByUser: boolean;
   };
   maximumOutputTokens: number;
+  attemptPurpose?: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
 };
 
 export interface GrantAssistantContextPlannerModel {

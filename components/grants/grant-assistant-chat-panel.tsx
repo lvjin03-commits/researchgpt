@@ -7,7 +7,8 @@ import { candidateContextFocus, documentSelectionFocuses, resolveGrantAssistantF
 
 type ContextCoverage = { mode: "full_document" | "document_memory" | "retrieved_excerpts"; strategy: "single_pass" | "hierarchical" | "long_context" | "semantic_memory" | "semantic_targeted" | "retrieval";
   sourceRevisionId: string; sectionCount: number; coveredSectionCount: number; nodeCount: number; coveredNodeCount: number;
-  complete: boolean; unitCount?: number };
+  complete: boolean; unitCount?: number; totalUnitCount?: number; synthesisComplete?: boolean;
+  partialReasonCode?: string };
 type Message = { messageId: string; turnId?: string; role: "user" | "assistant"; content: string; localStatus?: "failed"; grounding?: "general_reasoning" | "evidence_grounded"; citations?: Array<{ citationId: string; sourceAlias?: string; label: string; url?: string }>; recommendedQuestions?: string[]; contextCoverage?: ContextCoverage };
 type BillingPreview = { charging: "meter_only" | "canary" | "resumable"; canSubmit: boolean; maximumChargePoints: number; availablePoints: number | null; reason?: "insufficient_points" | "account_on_hold" | "daily_limit" };
 type PausedBudget = { budgetId: string; turnId: string; version: number; requiredAdditionalPoints: number;
@@ -242,7 +243,9 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
                   ? `全文记忆 + 定向原文 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点`
                   : message.contextCoverage.complete
                     ? `全文原文已覆盖 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点${message.contextCoverage.unitCount ? ` · ${message.contextCoverage.unitCount} 个分析单元` : ""}`
-                    : `相关片段 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点`}
+                    : message.contextCoverage.mode === "full_document"
+                      ? `部分全文分析 · ${message.contextCoverage.unitCount ?? 0}/${message.contextCoverage.totalUnitCount ?? "?"} 个单元 · 未完成综合`
+                      : `相关片段 · ${message.contextCoverage.coveredSectionCount}/${message.contextCoverage.sectionCount} 章 · ${message.contextCoverage.coveredNodeCount}/${message.contextCoverage.nodeCount} 节点`}
             </div>}
             {message.grounding === "evidence_grounded" && <div className="mt-3 border-t border-slate-100 pt-2 text-[11px] leading-5 text-slate-500">
               <div className="mb-1 font-semibold text-slate-600">参考来源</div>

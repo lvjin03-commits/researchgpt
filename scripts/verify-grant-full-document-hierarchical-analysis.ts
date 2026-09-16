@@ -7,6 +7,7 @@ import { CanonicalGrantSnapshotSchema } from "../lib/grants/domain/contracts.ts"
 import { TiktokenGrantTokenCounter } from "../lib/grants/infrastructure/model/tiktoken-grant-token-counter.ts";
 import type { GrantFullDocumentAnalysisModel } from "../lib/grants/ports/grant-full-document-analysis-model.ts";
 import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
+import { GrantFullDocumentAnalysisError } from "../lib/grants/application/grant-full-document-hierarchical-analysis.ts";
 import { createGrantAssistantProviderFailureReason } from "../lib/grants/model-execution/assistant-failure-reasons.ts";
 import { GrantModelDataGateway } from "../lib/grants/application/grant-model-data-gateway.ts";
 
@@ -67,7 +68,8 @@ assert.equal(admittedUnitCount, result.units.length);
 assert.equal(synthesisAdmitted, true);
 
 let failingUnitCall = 0;
-await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
+let retryPurpose: string | undefined;
+const recovered = await executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
   question: "验证分块失败审计", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,
   synthesisMaximumOutputTokens: 2_400, maximumUnits: 20, model: { ...model,
     async analyzeUnit(input) {
@@ -77,18 +79,14 @@ await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ contex
         failureStage: "answer_generation", requestDispatched: true, usageKnown: true,
         failureReason: createGrantAssistantProviderFailureReason({ category: "provider_transient_error",
           stage: "answer_generation", safeFacts: { requestDispatched: true, usageKnown: true } }) });
+      if (input.attemptPurpose !== "initial") retryPurpose = input.attemptPurpose;
       return { summary: "first unit", provider: "openai", modelId: "test-model",
         providerRequestId: "unit-succeeded", usage: { inputTokens: 7, outputTokens: 2, reasoningTokens: 1 },
         findings: [{ statement: "first finding", sourceAliases: [input.allowedSourceAliases[0]!] }] };
     },
-  } }), (error: unknown) => {
-    assert.ok(error instanceof GrantAssistantModelError);
-    assert.deepEqual(error.providerRequestIds, ["unit-succeeded", "unit-failed"]);
-    assert.deepEqual(error.usage, { inputTokens: 12, outputTokens: 3, reasoningTokens: 1 });
-    assert.equal(error.usageKnown, true);
-    assert.equal(error.failureReason?.reasonCode, "provider.transient_error");
-    return true;
-  });
+  } });
+assert.equal(retryPurpose, "transient_retry");
+assert.equal(recovered.coverage.complete, true);
 
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
   question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,
@@ -97,11 +95,24 @@ await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ contex
       findings: [{ statement: "错误", sourceAliases: ["D999"] }] }; } } }),
   /unavailable source alias/);
 
+const synthesisPurposes: string[] = [];
+const reduced = await executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
+  model: { ...model, async synthesize(input) {
+    synthesisPurposes.push(input.synthesisPurpose ?? "unknown");
+    return model.synthesize(input);
+  } },
+  question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 1_350,
+  synthesisMaximumOutputTokens: 2_400, maximumUnits: 20 });
+assert.equal(reduced.coverage.complete, true);
+assert.ok(synthesisPurposes.includes("reduction"),
+  "oversized synthesis input must be reduced hierarchically instead of failing immediately");
+assert.equal(synthesisPurposes.at(-1), "final");
+
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter, model,
   question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 1,
   synthesisMaximumOutputTokens: 2_400, maximumUnits: 20 }), (error: unknown) => {
-    assert.ok(error instanceof GrantAssistantModelError);
-    assert.match(error.message, /reduction stage is required/u);
+    assert.ok(error instanceof GrantFullDocumentAnalysisError);
+    assert.equal(error.code, "synthesis_capacity_exceeded");
     assert.equal(error.failureReason?.reasonCode, "budget.review_synthesis_required_context_exceeded");
     return true;
   });
@@ -109,6 +120,30 @@ await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ contex
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter, model,
   question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,
   synthesisMaximumOutputTokens: 2_400, maximumUnits: 1 }), /maximum is 1/);
+
+const savedUnits: Array<{ unitId: string; unitHash: string; analysis: Awaited<ReturnType<typeof model.analyzeUnit>> }> = [];
+let checkpointCalls = 0;
+await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
+  question: "验证断点恢复", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,
+  synthesisMaximumOutputTokens: 2_400, maximumUnits: 20,
+  onUnitCompleted(unit) { savedUnits.push(unit); }, model: { ...model,
+    async analyzeUnit(input) {
+      checkpointCalls += 1;
+      if (checkpointCalls === 2) throw new GrantAssistantModelError("provider_refusal", "stop after checkpoint", {
+        failureStage: "answer_generation", requestDispatched: true, usageKnown: true,
+        failureReason: createGrantAssistantProviderFailureReason({ category: "provider_refusal",
+          stage: "answer_generation", safeFacts: { requestDispatched: true, usageKnown: true } }) });
+      return model.analyzeUnit(input);
+    },
+  } }), /stop after checkpoint/);
+assert.equal(savedUnits.length, 1, "a successful unit must be checkpointed before a later unit fails");
+const resumedCalls: string[] = [];
+const resumed = await executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter,
+  question: "验证断点恢复", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,
+  synthesisMaximumOutputTokens: 2_400, maximumUnits: 20, resumeUnits: savedUnits,
+  model: { ...model, async analyzeUnit(input) { resumedCalls.push(input.unitId); return model.analyzeUnit(input); } } });
+assert.equal(resumed.coverage.complete, true);
+assert.ok(!resumedCalls.includes(savedUnits[0]!.unitId), "a resumed execution must not repay or rerun a saved unit");
 
 const gateway = new GrantModelDataGateway({ generate: async () => { throw new Error("not used"); } },
   undefined, undefined, undefined, tokenCounter);

@@ -57,10 +57,13 @@ const model: GrantPatchModel & GrantDocumentMemoryModel & GrantAssistantContextP
     const clarification = input.question.includes("模糊");
     const fullReview = input.question.includes("全文");
     return { answerMode: fullReview ? "review" : "explain",
-      documentAccess: clarification ? "memory_only" : fullReview ? "full_original" : "targeted_original",
-      diagnosticAccess: fullReview ? "all" : "none", webRecommendation: "none",
-      targetSectionAliases: clarification || fullReview ? [] : [input.allowedSectionAliases[0]!],
-      targetMemoryItemAliases: clarification || fullReview ? [] : [input.allowedMemoryItemAliases[0]!],
+      memoryScope: fullReview ? { kind: "all_memory" as const } : { kind: "targets" as const,
+        sectionAliases: [input.allowedSectionAliases[0]!], memoryItemAliases: [input.allowedMemoryItemAliases[0]!] },
+      documentScope: clarification ? { kind: "memory_only" as const } : fullReview
+        ? { kind: "full_original" as const } : { kind: "targeted_original" as const,
+          sectionAliases: [input.allowedSectionAliases[0]!], memoryItemAliases: [input.allowedMemoryItemAliases[0]!] },
+      diagnosticScope: fullReview ? { kind: "all" as const } : { kind: "none" as const },
+      webRecommendation: "none",
       needsClarification: clarification, ...(clarification ? { clarificationQuestion: "你希望解释哪一部分？" } : {}),
       confidence: clarification ? 0.4 : 0.93, rationale: clarification ? "目标不明确。" : "需要核对对应原文。",
       provider: "openai", modelId: "gpt-offline", providerRequestId: `planner-${plannerCalls}`,
@@ -76,7 +79,7 @@ const model: GrantPatchModel & GrantDocumentMemoryModel & GrantAssistantContextP
   },
   async synthesize(input) {
     reviewSynthesisCalls += 1;
-    assert.equal(input.maximumOutputTokens, 2_400);
+    assert.equal(input.maximumOutputTokens, 4_800);
     assert.deepEqual(input.allowedSourceAliases, ["D1", "G1"]);
     assert.equal(input.analyses.at(-1)?.unitId, "CURRENT_DIAGNOSTICS");
     return { content: "全文审查认为科学问题明确，但仍需加强验证闭环。",
@@ -120,7 +123,7 @@ const base = { documentId, sourceRevisionId: revisionId, snapshot, memoryReposit
     semanticPlanning: { maximumInputTokens: 8_000, maximumOutputTokens: 700 },
     groundedAnswer: { maximumInputTokens: 8_000, maximumOutputTokens: 2_400 },
     fullDocumentReview: { maximumUnitInputTokens: 8_000, maximumUnitOutputTokens: 800,
-      maximumSynthesisInputTokens: 8_000, maximumSynthesisOutputTokens: 2_400,
+      maximumSynthesisInputTokens: 8_000, maximumSynthesisOutputTokens: 4_800,
       maximumUnits: 12, maximumSectionsPerUnit: 4 } },
   attemptPurpose: "initial" as const };
 const first = await gateway.answerMemoryPlannedAssistantChat({ ...base,
@@ -181,11 +184,37 @@ await assert.rejects(
     assert.ok(error instanceof GrantAssistantModelError);
     assert.equal(error.failureStage, "answer_generation");
     assert.deepEqual(error.providerRequestIds, ["planner-5", "answer-failed"]);
-    assert.deepEqual(error.usage, { inputTokens: 12, outputTokens: 3, reasoningTokens: 1 });
+    assert.deepEqual(error.usage, { inputTokens: 20, outputTokens: 4, reasoningTokens: 1 });
     assert.equal(error.failureReason?.reasonCode, "provider.transient_error");
     return true;
   },
   "A later-stage failure must retain the usage and request IDs of earlier successful stages.",
 );
+
+const partialGateway = new GrantModelDataGateway({ ...model,
+  async synthesize() {
+    throw new GrantAssistantModelError("provider_unavailable", "offline synthesis outage", {
+      providerRequestId: "review-synthesis-unavailable",
+      usage: { inputTokens: 9, outputTokens: 0, reasoningTokens: 0 },
+      failureStage: "answer_generation", requestDispatched: true, usageKnown: true,
+      failureReason: createGrantAssistantProviderFailureReason({ category: "provider_unavailable",
+        stage: "answer_generation", safeFacts: { requestDispatched: true, usageKnown: true } }),
+    });
+  },
+}, undefined, undefined, undefined, counter);
+const partial = await partialGateway.answerMemoryPlannedAssistantChat({ ...base,
+  messages: [{ role: "user", content: "基于全文审查有哪些需要完善的地方？" }] });
+assert.equal(partial.status, "answered");
+if (partial.status !== "answered") throw new Error("Expected a truthful partial full-document answer.");
+assert.equal(partial.executionMode, "hierarchical_full_review");
+assert.equal(partial.reviewCoverage?.complete, false);
+assert.equal(partial.reviewCoverage?.synthesisComplete, false);
+assert.equal(partial.reviewCoverage?.coveredUnitCount, 1);
+assert.equal(partial.reviewCoverage?.totalUnitCount, 1);
+assert.equal(partial.reviewCoverage?.partialReasonCode, "provider.unavailable");
+assert.match(partial.answer.content, /部分分析/u);
+assert.ok(partial.providerRequestIds.includes("review-synthesis-unavailable"));
+assert.deepEqual(partial.usage, { inputTokens: 20, outputTokens: 5, reasoningTokens: 2 },
+  "Partial delivery must retain the planner, completed-unit and failed-synthesis usage actually incurred.");
 
 console.log("Grant memory, semantic planning, exact context admission and grounded answering execute as one auditable candidate pipeline.");

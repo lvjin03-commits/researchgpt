@@ -35,6 +35,7 @@ import type { GrantAssistantContextCoverage } from "../assistant/context-coverag
 import { executeGrantAssistantMemoryPipeline } from "./grant-assistant-memory-pipeline.ts";
 import { admitGrantAssistantAnswerContext,
   type GrantAssistantContextBudgetPolicy } from "./grant-assistant-context-budget.ts";
+import type { GrantAssistantExecutionCheckpoint } from "../assistant/execution-contracts.ts";
 import {
   GRANT_DIAGNOSTIC_IMAGE_MEDIA_TYPES,
   grantDiagnosticImageScopeFingerprint,
@@ -106,6 +107,10 @@ export class GrantModelDataGateway {
     memoryUnitMaximumOutputTokens: number;
     contextBudgetPolicy: GrantAssistantContextBudgetPolicy;
     attemptPurpose: GrantAssistantChatModelRequest["attemptPurpose"];
+    execution?: {
+      checkpoint: GrantAssistantExecutionCheckpoint;
+      save(checkpoint: GrantAssistantExecutionCheckpoint): Promise<void>;
+    };
     explicitContext?: {
       hasDocumentSelection?: boolean;
       hasCandidate?: boolean;

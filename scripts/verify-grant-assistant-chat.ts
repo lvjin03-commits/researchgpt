@@ -6,6 +6,7 @@ import { GrantModelExecutor } from "../lib/grants/application/grant-model-execut
 import type { GrantModelDataGateway } from "../lib/grants/application/grant-model-data-gateway.ts";
 import type { GrantRevisionService } from "../lib/grants/application/revision-service.ts";
 import { InMemoryGrantModelCallRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-model-call-repository.ts";
+import { InMemoryGrantAssistantExecutionRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-assistant-execution-repository.ts";
 import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
 import { GrantAssistantGroundingError, validateGrantAssistantGroundedAnswer } from "../lib/grants/assistant/grounded-answer-validator.ts";
 import type { GrantAssistantMessage, GrantAssistantSession } from "../lib/grants/assistant/session-contracts.ts";
@@ -28,7 +29,6 @@ const sessions = {
 };
 let providerCalls = 0;
 let memoryPlannedCalls = 0;
-let memoryInitialFailure: GrantAssistantModelError["category"] = "structured_output_invalid";
 const memoryExecutionPolicies: Array<{
   attemptPurpose: string;
   maximumSectionsPerChunk?: number;
@@ -61,7 +61,6 @@ const gateway = {
       maximumConcurrentUnitAnalyses: request.memoryMaximumConcurrentUnitAnalyses,
       unitOutputTokens: request.memoryUnitMaximumOutputTokens });
     lastProviderMessages = request.messages;
-    if (request.attemptPurpose === "initial") throw new GrantAssistantModelError(memoryInitialFailure, "bad plan");
     const answer = validateGrantAssistantGroundedAnswer({
       content: "这是基于全文记忆和按需原文的分析。", admittedContext: [{ sourceAlias: "MEMORY1",
         sourceType: "document_memory" as const, label: "当前申请书全文记忆", excerpt: "全文语义记忆" }],
@@ -98,6 +97,7 @@ const service = new GrantAssistantChatService({
   },
   documentMemories: { findReusable: async () => null, save: async (snapshot) => snapshot },
   diagnostics: { listNormalizedFindings: async () => [] },
+  executions: new InMemoryGrantAssistantExecutionRepository(),
   webGrounding: { actorId: randomUUID(), orchestrator: { async run() {
     webCalls += 1;
     return { status: "completed" as const, searchedCount: 2, recommendedCount: 1, excludedCount: 1, usedSourceIds: [randomUUID()], answer: {
@@ -113,14 +113,14 @@ const service = new GrantAssistantChatService({
 const result = await service.answer({ documentId, expectedRevisionId: revisionId, turnId, message: "解释一下研究假设。", contextCards: [], evidenceSourceIds: [] });
 assert.equal(result.operation, "grant.assistant.chat");
 assert.equal(result.traceId, turnId);
-assert.equal(result.attempts, 2);
-assert.equal(providerCalls, 2);
+assert.equal(result.attempts, 1);
+assert.equal(providerCalls, 1);
 assert.equal(storedMessages.length, 2);
 assert.equal((await service.getCurrent(documentId)).messages.length, 2);
-assert.deepEqual((await modelCalls.listByTrace(documentId, turnId)).map((item) => item.status), ["failed", "succeeded"]);
+assert.deepEqual((await modelCalls.listByTrace(documentId, turnId)).map((item) => item.status), ["succeeded"]);
 const traceDiagnostics = await service.getTraceDiagnostics(documentId, turnId);
 assert.equal(traceDiagnostics.traceId, turnId);
-assert.deepEqual(traceDiagnostics.attempts.map((attempt) => attempt.status), ["failed", "succeeded"]);
+assert.deepEqual(traceDiagnostics.attempts.map((attempt) => attempt.status), ["succeeded"]);
 assert.ok(traceDiagnostics.attempts.every((attempt) => !("inputHash" in attempt)
   && !("outputHash" in attempt) && !("contextManifestHash" in attempt)),
 "The owner-visible trace projection must not expose model input/output fingerprints.");
@@ -129,13 +129,13 @@ await assert.rejects(
   service.answer({ documentId, expectedRevisionId: revisionId, turnId, message: "重复请求", contextCards: [], evidenceSourceIds: [] }),
   (error) => error instanceof GrantAssistantChatError && error.code === "grant_assistant_duplicate_turn",
 );
-assert.equal(providerCalls, 2, "duplicate turn must not call the provider again");
+assert.equal(providerCalls, 1, "duplicate turn must not call the provider again");
 
 await assert.rejects(
   service.answer({ documentId, expectedRevisionId: randomUUID(), turnId: randomUUID(), message: "陈旧版本", contextCards: [], evidenceSourceIds: [] }),
   /changed after this operation began/,
 );
-assert.equal(providerCalls, 2, "stale revision must fail before provider dispatch");
+assert.equal(providerCalls, 1, "stale revision must fail before provider dispatch");
 
 await service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(), message: "继续解释第二个问题。", contextCards: [], evidenceSourceIds: [] });
 assert.equal(lastProviderMessages[0]?.content, "解释一下研究假设。");
@@ -143,19 +143,16 @@ assert.equal(lastProviderMessages.at(-1)?.content, "继续解释第二个问题�
 assert.equal(storedMessages.length, 4);
 
 const ordinaryCallsBeforeWholeDocument = providerCalls;
-memoryInitialFailure = "output_truncated";
 const fullDocumentResult = await service.answer({ documentId, expectedRevisionId: revisionId,
   turnId: randomUUID(), message: "请从整体上评价整篇申请书。", contextCards: [], evidenceSourceIds: [] });
-assert.equal(providerCalls, ordinaryCallsBeforeWholeDocument + 2,
+assert.equal(providerCalls, ordinaryCallsBeforeWholeDocument + 1,
   "whole-document wording must use the same semantic memory planner without keyword routing");
 assert.equal(fullDocumentResult.content, "这是基于全文记忆和按需原文的分析。");
 assert.equal(fullDocumentResult.contextCoverage?.mode, "document_memory");
-assert.deepEqual(memoryExecutionPolicies.slice(-2), [
+assert.deepEqual(memoryExecutionPolicies.slice(-1), [
   { attemptPurpose: "initial", maximumSectionsPerChunk: 4,
     maximumConcurrentUnitAnalyses: 4, unitOutputTokens: 2_400 },
-  { attemptPurpose: "capacity_retry", maximumSectionsPerChunk: 2,
-    maximumConcurrentUnitAnalyses: 4, unitOutputTokens: 4_000 },
-], "a capacity retry must shrink memory batches while keeping independent units concurrent");
+], "the composite memory pipeline must be invoked once; stage recovery is owned inside the pipeline");
 
 const webResult = await service.answer({ documentId, expectedRevisionId: revisionId, turnId: randomUUID(),
   message: "联网补充这一判断。", contextCards: [], evidenceSourceIds: [], webSearch: true });
@@ -206,7 +203,7 @@ const ignoredAmbiguityResult = await service.answer({
   documentId, expectedRevisionId: revisionId, turnId: randomUUID(), message: "换一个无关问题。",
   contextCards: focusCards, evidenceSourceIds: [], ignoreAmbiguousFocus: true,
 });
-assert.equal(memoryPlannedCalls, memoryCallsBeforeIgnoredAmbiguity + 2,
+assert.equal(memoryPlannedCalls, memoryCallsBeforeIgnoredAmbiguity + 1,
   "new prose after ignored ambiguity must use semantic memory planning with no stale focus");
 assert.equal(ignoredAmbiguityResult.contextCoverage?.mode, "document_memory");
 

@@ -70,6 +70,7 @@ import { OpenAlexStructuredAcademicProvider } from "../infrastructure/web/openal
 import { OpenAlexResearchSearchAdapter } from "../infrastructure/web/openalex-research-search-adapter.ts";
 import { TiktokenGrantTokenCounter } from "../infrastructure/model/tiktoken-grant-token-counter.ts";
 import { SupabaseGrantDocumentMemoryRepository } from "../infrastructure/supabase/supabase-grant-document-memory-repository.ts";
+import { SupabaseGrantAssistantExecutionRepository } from "../infrastructure/supabase/supabase-grant-assistant-execution-repository.ts";
 
 function createGrantSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -219,6 +220,7 @@ export function createGrantAssistantChatService(ownerId: string): GrantAssistant
     editSessions: new SupabaseGrantAiEditSessionRepository(client, ownerId),
     documentMemories: new SupabaseGrantDocumentMemoryRepository(client, ownerId),
     diagnostics: new SupabaseGrantDiagnosticRepository(client, ownerId),
+    executions: new SupabaseGrantAssistantExecutionRepository(client, ownerId),
     ...(webRuntime ? { webGrounding: { actorId: ownerId, orchestrator: webRuntime.orchestrator } } : {}),
   });
 }

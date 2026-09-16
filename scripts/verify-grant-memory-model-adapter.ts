@@ -9,10 +9,16 @@ const responses = [
     semanticItems: [{ kind: "scientific_problem", statement: "科学问题", concepts: ["界面"], sourceAliases: ["D1"] }],
   }) } }], usage: { prompt_tokens: 10, completion_tokens: 5, completion_tokens_details: { reasoning_tokens: 1 } } },
   { id: "req-planner", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
-    answerMode: "explain", documentAccess: "targeted_original", diagnosticAccess: "relevant",
-    webRecommendation: "none", targetSectionAliases: ["S1"], targetMemoryItemAliases: ["M1"],
+    answerMode: "explain",
+    memoryScope: { kind: "targets", sectionAliases: ["S1"], memoryItemAliases: ["M1"] },
+    documentScope: { kind: "targeted_original", sectionAliases: ["S1"], memoryItemAliases: ["M1"] },
+    diagnosticScope: { kind: "relevant", sectionAliases: ["S1"], memoryItemAliases: ["M1"] },
+    webRecommendation: "none",
     needsClarification: false, clarificationQuestion: null, confidence: 0.92, rationale: "需要核对原文。",
   }) } }], usage: { prompt_tokens: 6, completion_tokens: 3, completion_tokens_details: { reasoning_tokens: 1 } } },
+  { id: "req-full-synthesis", choices: [{ finish_reason: "stop", message: { content: JSON.stringify({
+    content: "全文分析结论。", claims: [{ statement: "核心问题需要进一步验证。", sourceAliases: ["D1"] }],
+  }) } }], usage: { prompt_tokens: 20, completion_tokens: 8, completion_tokens_details: { reasoning_tokens: 2 } } },
 ];
 const requestedFormats: string[] = [];
 const requestedOutputTokens: number[] = [];
@@ -35,13 +41,20 @@ const plan = await model.plan({ documentLanguage: "zh", question: "解释研究�
   documentMemoryText: "全文记忆", allowedSectionAliases: ["S1"], allowedMemoryItemAliases: ["M1"],
   explicitContext: { hasDocumentSelection: false, hasCandidate: false, hasEvidence: false,
     webSearchEnabledByUser: false }, maximumOutputTokens: 700 });
-assert.equal(plan.documentAccess, "targeted_original");
+assert.equal(plan.documentScope.kind, "targeted_original");
 assert.equal(plan.clarificationQuestion, undefined);
-assert.deepEqual(requestedFormats, ["grant_document_memory_unit", "grant_assistant_context_plan"]);
-assert.deepEqual(requestedOutputTokens, [2_400, 700],
+const synthesis = await model.synthesize({ documentLanguage: "zh", question: "分析全文", contextHash: "c".repeat(64),
+  analyses: [{ unitId: "U1", summary: "单元摘要", findings: [{ statement: "单元结论", sourceAliases: ["D1"] }] }],
+  allowedSourceAliases: ["D1"], maximumOutputTokens: 4_800 });
+assert.equal(synthesis.providerRequestId, "req-full-synthesis");
+assert.deepEqual(requestedFormats,
+  ["grant_document_memory_unit", "grant_assistant_context_plan", "grant_full_document_synthesis"]);
+assert.deepEqual(requestedOutputTokens, [2_400, 700, 4_800],
   "Memory extraction must consume its caller-owned output budget instead of an adapter hard-coded limit.");
 assert.equal(requestedReasoningEfforts[0], "none",
   "Deterministic memory extraction must not spend hidden reasoning tokens.");
+assert.equal(requestedReasoningEfforts[2], "low",
+  "Full-document synthesis must preserve completion capacity for the bounded visible answer.");
 assert.equal(responses.length, 0);
 
 const truncatedClient = { chat: { completions: { async create() {

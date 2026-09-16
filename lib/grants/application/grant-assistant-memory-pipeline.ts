@@ -11,7 +11,7 @@ import { sha256Canonical } from "../domain/canonical-json.ts";
 import { validateGrantAssistantGroundedAnswer } from "../assistant/grounded-answer-validator.ts";
 import type { GrantAssistantAnswer } from "../assistant/answer-contract.ts";
 import { buildGrantDocumentMemory } from "./grant-document-memory-builder.ts";
-import { planGrantAssistantContext } from "./grant-assistant-context-planner.ts";
+import { GrantAssistantContextPlannerError, planGrantAssistantContext } from "./grant-assistant-context-planner.ts";
 import { assembleGrantAssistantPlannedContext } from "./grant-assistant-planned-context.ts";
 import { buildGrantFullDocumentContext } from "./grant-full-document-context.ts";
 import { routeGrantFullDocumentContext, type GrantFullDocumentCapacityPolicy } from "./grant-full-document-capacity-router.ts";
@@ -22,6 +22,7 @@ import { createGrantAssistantFailureReason, createGrantAssistantProviderFailureR
   GrantAssistantFailureReasonSchema,
   type GrantAssistantFailureReason, type GrantAssistantFailureReasonCode,
   type GrantAssistantFailureStage } from "../model-execution/assistant-failure-reasons.ts";
+import type { GrantAssistantExecutionCheckpoint } from "../assistant/execution-contracts.ts";
 
 type PipelineModel = GrantDocumentMemoryModel & GrantAssistantContextPlannerModel & GrantAssistantModel &
   Partial<GrantFullDocumentAnalysisModel>;
@@ -57,6 +58,9 @@ type PipelineCommon = {
   providerRequestIds: string[];
   usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
   contextManifests: GrantAssistantContextBudgetManifest[];
+  reviewCoverage?: { complete: boolean; coveredSectionCount: number; coveredNodeCount: number;
+    coveredUnitCount: number; totalUnitCount: number; synthesisComplete: boolean;
+    partialReasonCode?: string };
 };
 
 export type GrantAssistantMemoryPipelineResult =
@@ -162,6 +166,10 @@ export async function executeGrantAssistantMemoryPipeline(input: {
   memoryUnitMaximumOutputTokens: number;
   contextBudgetPolicy: GrantAssistantContextBudgetPolicy;
   attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry";
+  execution?: {
+    checkpoint: GrantAssistantExecutionCheckpoint;
+    save(checkpoint: GrantAssistantExecutionCheckpoint): Promise<void>;
+  };
   explicitContext?: {
     hasDocumentSelection?: boolean;
     hasCandidate?: boolean;
@@ -198,18 +206,55 @@ export async function executeGrantAssistantMemoryPipeline(input: {
     addUsage(usage, memoryResult.snapshot.usage);
   }
   let plan: Awaited<ReturnType<typeof planGrantAssistantContext>>;
-  try {
-    plan = await planGrantAssistantContext({ documentId: input.documentId,
+  const savedPlan = input.execution?.checkpoint.plan;
+  let planReused = false;
+  if (savedPlan && savedPlan.documentId === input.documentId &&
+    savedPlan.sourceRevisionId === input.sourceRevisionId &&
+    savedPlan.memoryId === memoryResult.snapshot.memoryId &&
+    savedPlan.memoryHash === memoryResult.snapshot.memoryHash &&
+    savedPlan.plannerPolicyVersion === input.plannerPolicyVersion &&
+    savedPlan.modelId === input.expectedModelId) {
+    plan = savedPlan;
+    planReused = true;
+  } else try {
+    const runPlanner = (attemptPurpose: "initial" | "schema_repair" | "capacity_retry" | "transient_retry") =>
+      planGrantAssistantContext({ documentId: input.documentId,
       sourceRevisionId: input.sourceRevisionId, question, recentConversation: input.messages.slice(0, -1),
       memory: memoryResult.snapshot, model: input.model, tokenCounter: input.tokenCounter,
       contextBudgetPolicy: input.contextBudgetPolicy, plannerPolicyVersion: input.plannerPolicyVersion,
-      explicitContext: input.explicitContext });
+      explicitContext: input.explicitContext, attemptPurpose });
+    try {
+      plan = await runPlanner(input.attemptPurpose);
+    } catch (firstError) {
+      const recoverablePlanner = firstError instanceof GrantAssistantContextPlannerError &&
+        ["invalid_model_output", "invalid_target"].includes(firstError.code);
+      const recoverableProvider = firstError instanceof GrantAssistantModelError &&
+        ["structured_output_invalid", "output_truncated", "provider_rate_limited",
+          "provider_transient_error"].includes(firstError.category);
+      if (!recoverablePlanner && !recoverableProvider) throw firstError;
+      const failed = firstError as { providerRequestId?: string; usage?: {
+        inputTokens?: number; outputTokens?: number; reasoningTokens?: number } };
+      if (failed.providerRequestId) providerRequestIds.push(failed.providerRequestId);
+      addUsage(usage, failed.usage);
+      const retryPurpose = firstError instanceof GrantAssistantModelError &&
+        firstError.category === "output_truncated" ? "capacity_retry" as const
+        : firstError instanceof GrantAssistantModelError &&
+          ["provider_rate_limited", "provider_transient_error"].includes(firstError.category)
+          ? "transient_retry" as const : "schema_repair" as const;
+      plan = await runPlanner(retryPurpose);
+    }
+    if (input.execution) {
+      input.execution.checkpoint = { ...input.execution.checkpoint, plan };
+      await input.execution.save(input.execution.checkpoint);
+    }
   } catch (error) {
     throwPipelineFailure({ error, stage: error instanceof GrantAssistantContextBudgetError
       ? "context_admission" : "semantic_planning", providerRequestIds, usage });
   }
-  if (plan.providerRequestId) providerRequestIds.push(plan.providerRequestId);
-  addUsage(usage, plan.usage);
+  if (!planReused) {
+    if (plan.providerRequestId) providerRequestIds.push(plan.providerRequestId);
+    addUsage(usage, plan.usage);
+  }
   let plannedContext: Awaited<ReturnType<typeof assembleGrantAssistantPlannedContext>>;
   try {
     plannedContext = await assembleGrantAssistantPlannedContext({ documentId: input.documentId,
@@ -227,8 +272,8 @@ export async function executeGrantAssistantMemoryPipeline(input: {
   }
   const common = { memoryReused: memoryResult.reused, memoryId: memoryResult.snapshot.memoryId,
     memoryHash: memoryResult.snapshot.memoryHash, plan, plannedContext, provider: "openai" as const,
-    executionMode: plan.documentAccess === "full_original" ? "hierarchical_full_review" as const
-      : plan.documentAccess === "targeted_original" ? "targeted_original" as const : "memory_discussion" as const,
+    executionMode: plan.documentScope.kind === "full_original" ? "hierarchical_full_review" as const
+      : plan.documentScope.kind === "targeted_original" ? "targeted_original" as const : "memory_discussion" as const,
     modelId: input.expectedModelId, providerRequestIds, usage,
     contextManifests: [plan.contextManifest] };
   if (plan.needsClarification) return { ...common, status: "needs_clarification",
@@ -247,9 +292,51 @@ export async function executeGrantAssistantMemoryPipeline(input: {
     }
     let reviewed: Awaited<ReturnType<typeof executeGrantAssistantHierarchicalReview>>;
     try {
+      const questionHash = sha256Canonical(question);
+      const savedReview = input.execution?.checkpoint.fullReview;
+      const resumeUnits = savedReview?.contextHash === fullContext.contextHash &&
+        savedReview.questionHash === questionHash
+        ? savedReview.units.map((unit) => ({ unitId: unit.unitId, unitHash: unit.unitHash,
+          analysis: { summary: unit.summary, findings: unit.findings,
+            providerRequestId: unit.providerRequestId, usage: unit.usage,
+            provider: unit.provider, modelId: unit.modelId } }))
+        : [];
+      const resumeReductions = savedReview?.contextHash === fullContext.contextHash &&
+        savedReview.questionHash === questionHash
+        ? (savedReview.reductions ?? []).map((unit) => ({ unitId: unit.unitId, unitHash: unit.unitHash,
+          analysis: { summary: unit.summary, findings: unit.findings,
+            providerRequestId: unit.providerRequestId, usage: unit.usage,
+            provider: unit.provider, modelId: unit.modelId } }))
+        : [];
+      const persistAnalysis = async (kind: "units" | "reductions", unitId: string, unitHash: string,
+        analysis: Parameters<NonNullable<Parameters<typeof executeGrantAssistantHierarchicalReview>[0]["onUnitCompleted"]>>[0]["analysis"]) => {
+        const current = input.execution!.checkpoint.fullReview;
+        const items = current?.contextHash === fullContext.contextHash && current.questionHash === questionHash
+          ? [...(kind === "units" ? current.units : current.reductions ?? [])] : [];
+        const checkpointUnit = { unitId, unitHash, summary: analysis.summary,
+          findings: analysis.findings, ...(analysis.providerRequestId ? { providerRequestId: analysis.providerRequestId } : {}),
+          ...(analysis.usage ? { usage: { inputTokens: analysis.usage.inputTokens ?? 0,
+            outputTokens: analysis.usage.outputTokens ?? 0,
+            reasoningTokens: analysis.usage.reasoningTokens ?? 0 } } : {}),
+          ...(analysis.provider ? { provider: analysis.provider } : {}),
+          ...(analysis.modelId ? { modelId: analysis.modelId } : {}) };
+        const index = items.findIndex((unit) => unit.unitId === unitId);
+        if (index >= 0) items[index] = checkpointUnit;
+        else items.push(checkpointUnit);
+        const units = kind === "units" ? items : current?.units ?? [];
+        const reductions = kind === "reductions" ? items : current?.reductions ?? [];
+        input.execution!.checkpoint = { ...input.execution!.checkpoint,
+          fullReview: { contextHash: fullContext.contextHash, questionHash, units, reductions } };
+        await input.execution!.save(input.execution!.checkpoint);
+      };
       reviewed = await executeGrantAssistantHierarchicalReview({ context: fullContext,
         plannedContext, question, model: input.model as GrantFullDocumentAnalysisModel,
-        tokenCounter: input.tokenCounter, contextBudgetPolicy: input.contextBudgetPolicy });
+        tokenCounter: input.tokenCounter, contextBudgetPolicy: input.contextBudgetPolicy,
+        resumeUnits, resumeReductions,
+        onUnitCompleted: input.execution ? ({ unitId, unitHash, analysis }) =>
+          persistAnalysis("units", unitId, unitHash, analysis) : undefined,
+        onReductionCompleted: input.execution ? ({ unitId, unitHash, analysis }) =>
+          persistAnalysis("reductions", unitId, unitHash, analysis) : undefined });
     } catch (error) {
       throwPipelineFailure({ error, stage: error instanceof GrantAssistantContextBudgetError
         ? "context_admission" : "answer_generation", providerRequestIds, usage });
@@ -264,6 +351,14 @@ export async function executeGrantAssistantMemoryPipeline(input: {
         stage: "answer_generation", providerRequestIds, usage });
     }
     return { ...common, status: "answered", providerRequestIds, usage,
+      reviewCoverage: { complete: reviewed.execution.coverage.complete,
+        coveredSectionCount: reviewed.execution.coverage.sectionAliases.length,
+        coveredNodeCount: reviewed.execution.coverage.sourceAliases.length,
+        coveredUnitCount: reviewed.execution.coverage.coveredUnitCount,
+        totalUnitCount: reviewed.execution.coverage.totalUnitCount,
+        synthesisComplete: reviewed.execution.coverage.synthesisComplete,
+        ...(reviewed.execution.partialReason
+          ? { partialReasonCode: reviewed.execution.partialReason } : {}) },
       answer: reviewed.answer, admittedContext: reviewed.admittedContext,
       outputHash: sha256Canonical(reviewed.answer) };
   }
@@ -271,8 +366,8 @@ export async function executeGrantAssistantMemoryPipeline(input: {
   const admittedContext: GrantAssistantAdmittedContext[] = plannedContext.sources.map((source) => ({
     sourceAlias: source.sourceAlias, sourceType: source.sourceType, label: source.label, excerpt: source.excerpt }));
   const contextPlan = {
-    answerMode: plan.answerMode, documentAccess: plan.documentAccess,
-    diagnosticAccess: plan.diagnosticAccess, rationale: plan.rationale };
+    answerMode: plan.answerMode, documentAccess: plan.documentScope.kind,
+    diagnosticAccess: plan.diagnosticScope.kind, rationale: plan.rationale };
   let answerAdmission: ReturnType<typeof admitGrantAssistantAnswerContext>;
   try {
     answerAdmission = admitGrantAssistantAnswerContext({
@@ -288,7 +383,26 @@ export async function executeGrantAssistantMemoryPipeline(input: {
   try {
     generated = await input.model.answerChat(answerAdmission.request);
   } catch (error) {
-    throwPipelineFailure({ error, stage: "answer_generation", providerRequestIds, usage });
+    const recoverable = error instanceof GrantAssistantModelError &&
+      ["structured_output_invalid", "output_truncated", "provider_rate_limited",
+        "provider_transient_error"].includes(error.category);
+    if (!recoverable) throwPipelineFailure({ error, stage: "answer_generation", providerRequestIds, usage });
+    if (error.providerRequestId) providerRequestIds.push(error.providerRequestId);
+    addUsage(usage, error.usage);
+    const retryPurpose = error.category === "output_truncated" ? "capacity_retry" as const
+      : ["provider_rate_limited", "provider_transient_error"].includes(error.category)
+        ? "transient_retry" as const : "schema_repair" as const;
+    try {
+      answerAdmission = admitGrantAssistantAnswerContext({
+        documentLanguage: /[\u3400-\u9fff]/u.test(question) ? "zh" : "en",
+        messages: input.messages, admittedContext, contextPlan, attemptPurpose: retryPurpose,
+        budgetPolicy: input.contextBudgetPolicy, tokenCounter: input.tokenCounter,
+      });
+      common.contextManifests.push(answerAdmission.manifest);
+      generated = await input.model.answerChat(answerAdmission.request);
+    } catch (retryError) {
+      throwPipelineFailure({ error: retryError, stage: "answer_generation", providerRequestIds, usage });
+    }
   }
   if (generated.providerRequestId) providerRequestIds.push(generated.providerRequestId);
   addUsage(usage, generated.usage);

@@ -135,6 +135,14 @@ function countProviderRequest(messages: GrantAssistantProviderMessage[], tokenCo
     + STRUCTURED_OUTPUT_RESERVE_TOKENS[stage];
 }
 
+export function measureGrantAssistantFixedContext(input: {
+  stage: "full_review_unit" | "full_review_synthesis";
+  providerMessages: GrantAssistantProviderMessage[];
+  tokenCounter: GrantTokenCounter;
+}) {
+  return countProviderRequest(input.providerMessages, input.tokenCounter, input.stage);
+}
+
 export function admitGrantAssistantFixedContext(input: {
   stage: "full_review_unit" | "full_review_synthesis";
   budget: GrantAssistantStageBudget;
@@ -145,7 +153,8 @@ export function admitGrantAssistantFixedContext(input: {
 }): GrantAssistantContextBudgetManifest {
   positiveInteger(input.budget.maximumInputTokens, "Maximum input tokens");
   positiveInteger(input.budget.maximumOutputTokens, "Maximum output tokens");
-  const inputTokens = countProviderRequest(input.providerMessages, input.tokenCounter, input.stage);
+  const inputTokens = measureGrantAssistantFixedContext({ stage: input.stage,
+    providerMessages: input.providerMessages, tokenCounter: input.tokenCounter });
   if (inputTokens > input.budget.maximumInputTokens) {
     throw new GrantAssistantContextBudgetError({ stage: input.stage,
       maximumInputTokens: input.budget.maximumInputTokens, requiredInputTokens: inputTokens });
@@ -233,6 +242,7 @@ export function admitGrantAssistantPlanningContext(input: {
   recentConversation: ConversationMessage[];
   budgetPolicy: GrantAssistantContextBudgetPolicy;
   tokenCounter: GrantTokenCounter;
+  attemptPurpose?: GrantAssistantContextPlanModelRequest["attemptPurpose"];
 }) {
   const budget = input.budgetPolicy.semanticPlanning;
   const assembleRequest = (recentConversation: ConversationMessage[]): GrantAssistantContextPlanModelRequest => ({
@@ -244,6 +254,7 @@ export function admitGrantAssistantPlanningContext(input: {
     explicitContext: input.explicitContext,
     recentConversation,
     maximumOutputTokens: budget.maximumOutputTokens,
+    attemptPurpose: input.attemptPurpose ?? "initial",
   });
   return admitNewestConversation({ stage: "semantic_planning", budget,
     modelId: input.budgetPolicy.modelId, sourceAliases: [], conversation: input.recentConversation,

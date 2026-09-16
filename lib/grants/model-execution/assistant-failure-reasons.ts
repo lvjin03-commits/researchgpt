@@ -104,6 +104,7 @@ export const GRANT_ASSISTANT_FAILURE_REASON_CODES = [
   "executor.unclassified_failure",
   "persistence.attempt_start_failed",
   "persistence.attempt_finish_failed",
+  "persistence.usage_event_failed",
 ] as const;
 
 export const GrantAssistantFailureReasonCodeSchema = z.enum(
@@ -195,6 +196,7 @@ export const GRANT_ASSISTANT_FAILURE_REASON_DEFINITIONS = {
   "executor.unclassified_failure": { component: "model_executor", category: "internal_contract_error", allowedStages: ALL_PROVIDER_STAGES },
   "persistence.attempt_start_failed": { component: "persistence", category: "internal_contract_error", allowedStages: ["persistence"] },
   "persistence.attempt_finish_failed": { component: "persistence", category: "internal_contract_error", allowedStages: ["persistence"] },
+  "persistence.usage_event_failed": { component: "persistence", category: "internal_contract_error", allowedStages: ["persistence"] },
 } as const satisfies Record<GrantAssistantFailureReasonCode, FailureReasonDefinition>;
 
 const BaseFailureReasonSchema = z.object({
