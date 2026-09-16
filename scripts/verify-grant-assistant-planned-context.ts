@@ -87,6 +87,29 @@ assert.equal(targeted.coverage.availableCurrentFindingCount, 2);
 assert.equal(targeted.coverage.admittedFindingCount, 1);
 assert.equal(targeted.coverage.completeOriginal, false);
 
+const parentAnchoredMemory = GrantDocumentMemorySnapshotSchema.parse({
+  ...memory,
+  l2: { ...memory.l2, sectionAnchors: memory.l2.sectionAnchors.map((anchor) => anchor.sectionId === sectionIds[1]
+    ? { ...anchor, sourceNodeIds: [nodeIds[1]!, nodeIds[2]!] } : anchor) },
+});
+const parentAnchored = await assembleGrantAssistantPlannedContext({ documentId, sourceRevisionId: revisionId,
+  snapshot, memory: parentAnchoredMemory, plan: GrantAssistantContextPlanSchema.parse({ ...plan(),
+    memoryId: parentAnchoredMemory.memoryId, memoryHash: parentAnchoredMemory.memoryHash }), diagnostics });
+assert.deepEqual(parentAnchored.sources.filter((source) => source.sourceType === "original_text")
+  .map((source) => source.nodeId), [nodeIds[1], nodeIds[2]],
+"A parent-section memory anchor may safely reference canonical nodes in its descendant sections.");
+
+const crossTreeMemory = GrantDocumentMemorySnapshotSchema.parse({
+  ...memory,
+  l2: { ...memory.l2, sectionAnchors: memory.l2.sectionAnchors.map((anchor) => anchor.sectionId === sectionIds[1]
+    ? { ...anchor, sourceNodeIds: [nodeIds[0]!] } : anchor) },
+});
+await assert.rejects(() => assembleGrantAssistantPlannedContext({ documentId, sourceRevisionId: revisionId,
+  snapshot, memory: crossTreeMemory, plan: GrantAssistantContextPlanSchema.parse({ ...plan(),
+    memoryId: crossTreeMemory.memoryId, memoryHash: crossTreeMemory.memoryHash }), diagnostics }),
+/declared section subtree/,
+"A section memory anchor must still reject nodes from outside its canonical subtree.");
+
 const memoryOnly = await assembleGrantAssistantPlannedContext({ documentId, sourceRevisionId: revisionId,
   snapshot, memory, plan: plan({ documentAccess: "memory_only", diagnosticAccess: "none",
     targetSectionIds: [], targetMemoryItemIds: [] }), diagnostics });

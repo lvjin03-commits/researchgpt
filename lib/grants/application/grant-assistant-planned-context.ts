@@ -88,9 +88,13 @@ export async function assembleGrantAssistantPlannedContext(input: {
   const sectionAnchorById = new Map(memory.l2.sectionAnchors.map((anchor) => [anchor.sectionId, anchor]));
   const itemAnchorById = new Map(memory.l2.itemAnchors.map((anchor) => [anchor.memoryItemId, anchor]));
   for (const anchor of memory.l2.sectionAnchors) {
-    if (anchor.sourceNodeIds.some((nodeId) => nodeById.get(nodeId)?.sectionId !== anchor.sectionId)) {
+    const admittedSectionIds = descendantSectionIds(snapshot, new Set([anchor.sectionId]));
+    if (anchor.sourceNodeIds.some((nodeId) => {
+      const sectionId = nodeById.get(nodeId)?.sectionId;
+      return !sectionId || !admittedSectionIds.has(sectionId);
+    })) {
       throw new GrantAssistantPlannedContextError("stale_memory",
-        "L2 section references do not resolve inside the current canonical Revision.");
+        "L2 section references do not resolve inside the declared section subtree of the current canonical Revision.");
     }
   }
   for (const anchor of memory.l2.itemAnchors) {
