@@ -742,7 +742,7 @@ a deployment concern and must call the same retention owner rather than delete
 rows from UI code.
 
 Rollout now fails closed unless both `GRANT_ASSISTANT_CHAT_ENABLED=true` and
-`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=074` are present. Disabling the flag hides
+`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=075` are present. Disabling the flag hides
 the surface without deleting sessions, messages, Edit Session links or model
 call telemetry.
 
@@ -1097,6 +1097,40 @@ coverage, current diagnostic participation, exact pre-dispatch admission,
 capacity rejection, truncated-stage presentation and partial multi-call failure
 accounting. Production migration/deployment, signed-in browser verification and
 any real paid-provider probe remain separately authorized.
+
+## Grant Assistant Rule-Level Failure Attribution Step 4 Status
+
+The existing stage-aware execution facts now have a local, versioned rule-level
+contract. Stable reason codes cover document memory, semantic planning, context
+budgeting, planned-context assembly, hierarchical review, grounded-answer
+validation, provider adaptation, Model Executor fallback and persistence. One
+registry fixes each reason's component, broad category and legal stages, so
+downstream modules cannot relabel a local rule failure as provider outage.
+
+Safe reason facts accept only allowlisted counts, limits and booleans; raw
+messages and all grant/model content are rejected. Migration 075 adds nullable
+reason fields to the existing model-attempt row, validates the safe-facts shape
+at the database boundary, and extends the existing finish RPC and repositories.
+Historical rows remain valid and are not guessed or backfilled.
+
+Document memory, semantic
+planning, context admission, current-Revision context assembly, hierarchical
+review, grounded-answer validation and the OpenAI adapter now attach their
+specific reason at the detecting boundary. Pipeline aggregation preserves that
+reason together with all prior request IDs and known usage. A model call that
+succeeds before a later planner validation fails therefore remains recorded as
+dispatched and charged rather than becoming a false zero-token local failure.
+
+The runtime database marker is now 075, so code cannot enable this path against
+the old finish-RPC signature. Migration 075 was applied to production after
+authorization and a read-only probe confirmed its column, validator and finish
+RPC. Model failures now return a safe diagnostic code beside the trace ID, emit
+the same structured diagnostic to platform logs and support an authenticated,
+owner-scoped trace projection without exposing hashes, prompts, source text or
+model output. Database start/finish failures are also attributed to explicit
+`persistence.*` rules. Application deployment and signed-in effect-first
+verification are the remaining rollout actions; no paid provider probe has
+been run.
 
 ## Formal Research Evidence Pipeline Cutover
 

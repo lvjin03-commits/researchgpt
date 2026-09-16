@@ -84,7 +84,18 @@ await assert.rejects(() => planGrantAssistantContext({ documentId, sourceRevisio
   plannerPolicyVersion: "grant-context-planner-v1", model: { async plan() { return {
     answerMode: "answer", documentAccess: "targeted_original", diagnosticAccess: "none", webRecommendation: "none",
     targetSectionAliases: ["S99"], targetMemoryItemAliases: [], needsClarification: false, confidence: 0.8,
-    rationale: "错误目标", provider: "openai", modelId: "offline-planner-model" }; } } }), /unavailable memory target/);
+    rationale: "错误目标", provider: "openai", modelId: "offline-planner-model",
+    providerRequestId: "planner-invalid-target", usage: { inputTokens: 21, outputTokens: 7, reasoningTokens: 2 } }; } } }),
+  (error: unknown) => {
+    assert.ok(error && typeof error === "object");
+    const attributed = error as { message?: string; providerRequestIds?: string[]; usage?: unknown;
+      failureReason?: { reasonCode?: string } };
+    assert.match(attributed.message ?? "", /unavailable memory target/u);
+    assert.deepEqual(attributed.providerRequestIds, ["planner-invalid-target"]);
+    assert.deepEqual(attributed.usage, { inputTokens: 21, outputTokens: 7, reasoningTokens: 2 });
+    assert.equal(attributed.failureReason?.reasonCode, "planner.unavailable_target");
+    return true;
+  });
 
 await planGrantAssistantContext({ documentId, sourceRevisionId: revisionId,
   question: "基于全文给出改进建议", recentConversation: [{ role: "assistant", content: "冗长历史".repeat(20_000) }],
@@ -97,6 +108,18 @@ await assert.rejects(() => planGrantAssistantContext({ documentId, sourceRevisio
   question: "任意问题", recentConversation: [], memory, model, tokenCounter: counter,
   contextBudgetPolicy: { ...contextBudgetPolicy,
     semanticPlanning: { ...contextBudgetPolicy.semanticPlanning, maximumInputTokens: 1 } },
-  plannerPolicyVersion: "grant-context-planner-v1" }), /does not fit/);
+  plannerPolicyVersion: "grant-context-planner-v1" }), (error: unknown) => {
+    assert.ok(error && typeof error === "object");
+    const attributed = error as { message?: string; failureReason?: { reasonCode?: string; safeFacts?: unknown } };
+    assert.match(attributed.message ?? "", /does not fit/u);
+    assert.equal(attributed.failureReason?.reasonCode, "budget.planning_required_context_exceeded");
+    const facts = attributed.failureReason?.safeFacts as { maximumInputTokens?: number;
+      requiredInputTokens?: number; requestDispatched?: boolean; usageKnown?: boolean };
+    assert.equal(facts.maximumInputTokens, 1);
+    assert.ok((facts.requiredInputTokens ?? 0) > 1);
+    assert.equal(facts.requestDispatched, false);
+    assert.equal(facts.usageKnown, true);
+    return true;
+  });
 
 console.log("Grant context planning is semantic, memory-first, Revision-bound and cannot authorize web access.");

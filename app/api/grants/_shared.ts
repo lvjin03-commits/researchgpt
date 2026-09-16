@@ -102,8 +102,21 @@ export function grantApiError(error: unknown, operation: string): Response {
   if (error instanceof GrantModelExecutionError) {
     const presented = presentGrantModelFailure({ category: error.category,
       ...(error.failureStage ? { failureStage: error.failureStage } : {}) });
+    const diagnostic = error.failureReason ? {
+      contractVersion: error.failureReason.contractVersion,
+      reasonCode: error.failureReason.reasonCode,
+      component: error.failureReason.component,
+      stage: error.failureReason.stage,
+      safeFacts: error.failureReason.safeFacts,
+    } : undefined;
+    console.error("[grant-api] model execution failed", {
+      operation, traceId: error.traceId, category: error.category,
+      failureStage: error.failureStage, diagnostic,
+      requestDispatched: error.requestDispatched, usageKnown: error.usageKnown,
+    });
     return Response.json({ error: presented.message, code: error.category,
       failureStage: error.failureStage, traceId: error.traceId,
+      diagnostic,
       retryable: presented.retryable, requestDispatched: error.requestDispatched,
       usageKnown: error.usageKnown }, { status: presented.status });
   }

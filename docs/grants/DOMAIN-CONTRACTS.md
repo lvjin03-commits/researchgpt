@@ -317,7 +317,7 @@ provider dispatch. `grant_model_calls` admits only the registered
 operation/policy pairs; `grant.assistant.chat` must carry
 `grant-assistant-chat-v1`. The feature is default-off under
 `GRANT_ASSISTANT_CHAT_ENABLED` and fails closed unless
-`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=074` confirms assistant-session,
+`GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=075` confirms assistant-session,
 execution telemetry and layered Revision-bound document-memory readiness.
 
 Admitted-context grounding is program-owned. Valid selection cards, explicitly
@@ -351,6 +351,23 @@ aggregate token usage. User-facing presentation is derived from those facts by
 one application service. Capacity rejection and internal context failure must
 not be labeled as provider unavailability. The API returns a safe trace ID but
 never prompt, excerpt, diagnostic or generated content as failure telemetry.
+
+Rule-level attribution extends this same execution record; it is not a parallel
+logging authority. A versioned registry owns the stable mapping from reason code
+to detecting component, broad category and legal stages. The detecting
+component selects the rule code and the active pipeline supplies the stage;
+downstream code cannot reinterpret either. Optional reason facts are limited to
+strictly allowlisted numeric and boolean values. Raw exception messages,
+prompts, grant text, diagnostics, model output, provider response bodies, stack
+traces and source aliases are never durable rule facts. Historical attempts
+without a reason code remain unknown rather than being guessed.
+
+Rule-level attribution is stored on the same `grant_model_calls` attempt and is
+finished atomically with category, stage, dispatch and usage facts. The database
+fields are nullable for historical and non-attributed failures. A reason-bearing
+attempt must be failed, and its nested returned contract must agree with the
+stored category and stage. Migration 075 validates component vocabulary, reason
+shape and the numeric/boolean safe-facts allowlist at the database boundary.
 
 Generated images and image editing are not part of this contract. Imported-
 figure analysis authorization does not authorize derivative generation.

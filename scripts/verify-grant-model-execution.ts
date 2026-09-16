@@ -6,6 +6,8 @@ import { InMemoryGrantModelCallRepository } from "../lib/grants/infrastructure/m
 import { GRANT_ASSISTANT_CHAT_OPERATION, GRANT_EDIT_SESSION_TURN_OPERATION, resolveGrantModelOperationPolicy } from "../lib/grants/model-execution/operation-registry.ts";
 import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
 import { presentGrantModelFailure } from "../lib/grants/application/grant-model-failure-presentation.ts";
+import { createGrantAssistantFailureReason } from "../lib/grants/model-execution/assistant-failure-reasons.ts";
+import { SupabaseGrantModelCallRepository } from "../lib/grants/infrastructure/supabase/supabase-grant-model-call-repository.ts";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const documentId = randomUUID();
@@ -89,7 +91,11 @@ await assert.rejects(executor.execute.call(new GrantModelExecutor(unavailableRep
   documentId, inputHash: hash("blocked-before-call"), policy,
   classifyFailure: () => "provider_unavailable",
   invoke: async () => { unloggedCalls += 1; return { value: "never", outputHash: hash("never") }; },
-}), /telemetry unavailable/);
+}), (error) => error instanceof GrantModelExecutionError
+  && error.traceId.length > 0
+  && error.failureStage === "persistence"
+  && error.failureReason?.reasonCode === "persistence.attempt_start_failed"
+  && error.requestDispatched === false);
 assert.equal(unloggedCalls, 0, "a model call cannot start without its durable started record");
 
 const capacityRepository = new InMemoryGrantModelCallRepository();
@@ -101,6 +107,11 @@ await assert.rejects(new GrantModelExecutor(capacityRepository).execute({
   invoke: async () => { throw new GrantAssistantModelError("answer_capacity_exceeded", "too large", {
     failureStage: "context_admission", requestDispatched: false, usageKnown: true,
     usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+    failureReason: createGrantAssistantFailureReason({
+      reasonCode: "budget.answer_required_context_exceeded", stage: "context_admission",
+      safeFacts: { maximumInputTokens: 24_000, requiredInputTokens: 24_001,
+        requestDispatched: false, usageKnown: true },
+    }),
   }); },
 }), (error) => error instanceof GrantModelExecutionError
   && error.category === "answer_capacity_exceeded"
@@ -111,6 +122,44 @@ assert.equal(capacityAttempts.length, 1);
 assert.equal(capacityAttempts[0]?.failureStage, "context_admission");
 assert.equal(capacityAttempts[0]?.requestDispatched, false);
 assert.equal(capacityAttempts[0]?.usageKnown, true);
+assert.deepEqual(capacityAttempts[0]?.failureReason, {
+  contractVersion: "grant-assistant-failure-reason-v1",
+  reasonCode: "budget.answer_required_context_exceeded",
+  component: "context_budget",
+  category: "answer_capacity_exceeded",
+  stage: "context_admission",
+  safeFacts: { maximumInputTokens: 24_000, requiredInputTokens: 24_001,
+    requestDispatched: false, usageKnown: true },
+});
+
+let capturedFinishParameters: Record<string, unknown> | undefined;
+const supabaseRepository = new SupabaseGrantModelCallRepository({
+  rpc: async (_operation: string, parameters?: Record<string, unknown>) => {
+    capturedFinishParameters = parameters;
+    return { data: capacityAttempts[0], error: null };
+  },
+} as never, randomUUID());
+await supabaseRepository.finish({
+  callId: capacityAttempts[0]!.callId,
+  expectedStatus: "started",
+  status: "failed",
+  failureCategory: capacityAttempts[0]!.failureCategory,
+  failureStage: capacityAttempts[0]!.failureStage,
+  failureReason: capacityAttempts[0]!.failureReason,
+  requestDispatched: false,
+  usageKnown: true,
+  inputTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  completedAt: new Date().toISOString(),
+});
+assert.equal(capturedFinishParameters?.p_failure_reason_contract_version,
+  "grant-assistant-failure-reason-v1");
+assert.equal(capturedFinishParameters?.p_failure_reason_code,
+  "budget.answer_required_context_exceeded");
+assert.equal(capturedFinishParameters?.p_failure_component, "context_budget");
+assert.deepEqual(capturedFinishParameters?.p_failure_reason_facts,
+  capacityAttempts[0]!.failureReason!.safeFacts);
 
 const completionFailureRepository = new InMemoryGrantModelCallRepository();
 const originalFinish = completionFailureRepository.finish.bind(completionFailureRepository);
@@ -123,8 +172,26 @@ await assert.rejects(new GrantModelExecutor(completionFailureRepository).execute
   documentId, inputHash: hash("successful-but-unlogged"), policy,
   classifyFailure: () => "provider_transient_error",
   invoke: async () => { successfulProviderCalls += 1; return { value: "result", outputHash: hash("result") }; },
-}), /completion telemetry unavailable/);
+}), (error) => error instanceof GrantModelExecutionError
+  && error.failureStage === "persistence"
+  && error.failureReason?.reasonCode === "persistence.attempt_finish_failed"
+  && error.requestDispatched === true);
 assert.equal(successfulProviderCalls, 1, "completion logging failure must not repeat a successful provider call");
+
+const failedCompletionRepository = new InMemoryGrantModelCallRepository();
+failedCompletionRepository.finish = async () => { throw new Error("failure telemetry unavailable"); };
+await assert.rejects(new GrantModelExecutor(failedCompletionRepository).execute({
+  documentId, inputHash: hash("failed-and-unlogged"), policy,
+  classifyFailure: () => "provider_transient_error",
+  invoke: async () => { throw new GrantAssistantModelError("provider_transient_error", "upstream failed", {
+    providerRequestId: "req_failed_unlogged", requestDispatched: true, usageKnown: true,
+    usage: { inputTokens: 9, outputTokens: 1, reasoningTokens: 0 },
+  }); },
+}), (error) => error instanceof GrantModelExecutionError
+  && error.failureStage === "persistence"
+  && error.failureReason?.reasonCode === "persistence.attempt_finish_failed"
+  && error.failureReason.safeFacts.requestDispatched === true
+  && error.failureReason.safeFacts.usageKnown === true);
 
 const migration = await readFile(new URL("../supabase/migrations/052_grant_model_call_observability.sql", import.meta.url), "utf8");
 assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.grant_model_calls/);
@@ -139,5 +206,14 @@ assert.match(stageMigration, /usage_known BOOLEAN NOT NULL DEFAULT FALSE/);
 assert.match(stageMigration, /provider_request_ids TEXT\[\]/);
 assert.doesNotMatch(stageMigration, /prompt|excerpt|candidate_text|response_text/i,
   "stage telemetry must not persist sensitive model content");
+const reasonMigration = await readFile(new URL("../supabase/migrations/075_grant_assistant_rule_failure_telemetry.sql", import.meta.url), "utf8");
+assert.match(reasonMigration, /failure_reason_contract_version TEXT/);
+assert.match(reasonMigration, /failure_reason_code TEXT/);
+assert.match(reasonMigration, /failure_component TEXT/);
+assert.match(reasonMigration, /failure_reason_facts JSONB/);
+assert.match(reasonMigration, /grant_model_failure_reason_facts_safe/);
+assert.match(reasonMigration, /'failureReason'/);
+assert.doesNotMatch(reasonMigration, /prompt|excerpt|candidate_text|response_text|stack_trace/i,
+  "rule-level telemetry must not persist sensitive model or document content");
 
 console.log("Grant model execution foundation passed.");

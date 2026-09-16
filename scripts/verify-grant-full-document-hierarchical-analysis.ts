@@ -7,6 +7,7 @@ import { CanonicalGrantSnapshotSchema } from "../lib/grants/domain/contracts.ts"
 import { TiktokenGrantTokenCounter } from "../lib/grants/infrastructure/model/tiktoken-grant-token-counter.ts";
 import type { GrantFullDocumentAnalysisModel } from "../lib/grants/ports/grant-full-document-analysis-model.ts";
 import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
+import { createGrantAssistantProviderFailureReason } from "../lib/grants/model-execution/assistant-failure-reasons.ts";
 import { GrantModelDataGateway } from "../lib/grants/application/grant-model-data-gateway.ts";
 
 
@@ -73,7 +74,9 @@ await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ contex
       failingUnitCall += 1;
       if (failingUnitCall === 2) throw new GrantAssistantModelError("provider_transient_error", "unit failed", {
         providerRequestId: "unit-failed", usage: { inputTokens: 5, outputTokens: 1, reasoningTokens: 0 },
-        failureStage: "answer_generation", requestDispatched: true, usageKnown: true });
+        failureStage: "answer_generation", requestDispatched: true, usageKnown: true,
+        failureReason: createGrantAssistantProviderFailureReason({ category: "provider_transient_error",
+          stage: "answer_generation", safeFacts: { requestDispatched: true, usageKnown: true } }) });
       return { summary: "first unit", provider: "openai", modelId: "test-model",
         providerRequestId: "unit-succeeded", usage: { inputTokens: 7, outputTokens: 2, reasoningTokens: 1 },
         findings: [{ statement: "first finding", sourceAliases: [input.allowedSourceAliases[0]!] }] };
@@ -83,6 +86,7 @@ await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ contex
     assert.deepEqual(error.providerRequestIds, ["unit-succeeded", "unit-failed"]);
     assert.deepEqual(error.usage, { inputTokens: 12, outputTokens: 3, reasoningTokens: 1 });
     assert.equal(error.usageKnown, true);
+    assert.equal(error.failureReason?.reasonCode, "provider.transient_error");
     return true;
   });
 
@@ -95,7 +99,12 @@ await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ contex
 
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter, model,
   question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 1,
-  synthesisMaximumOutputTokens: 2_400, maximumUnits: 20 }), /reduction stage is required/);
+  synthesisMaximumOutputTokens: 2_400, maximumUnits: 20 }), (error: unknown) => {
+    assert.ok(error instanceof GrantAssistantModelError);
+    assert.match(error.message, /reduction stage is required/u);
+    assert.equal(error.failureReason?.reasonCode, "budget.review_synthesis_required_context_exceeded");
+    return true;
+  });
 
 await assert.rejects(() => executeGrantFullDocumentHierarchicalAnalysis({ context, route, tokenCounter, model,
   question: "评价整篇申请书", unitMaximumOutputTokens: 800, synthesisMaximumInputTokens: 10_000,

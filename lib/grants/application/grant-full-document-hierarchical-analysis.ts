@@ -8,6 +8,9 @@ import { GrantAssistantModelError } from "../ports/grant-assistant-model.ts";
 import type { GrantFullDocumentCapacityRoute } from "./grant-full-document-capacity-router.ts";
 import type { GrantFullDocumentContext, GrantFullDocumentContextNode,
   GrantFullDocumentContextSection } from "./grant-full-document-context.ts";
+import { createGrantAssistantFailureReason, GrantAssistantFailureReasonSchema,
+  type GrantAssistantFailureReason, type GrantAssistantFailureReasonCode,
+  type GrantAssistantFailureStage } from "../model-execution/assistant-failure-reasons.ts";
 
 type HierarchicalRoute = Extract<GrantFullDocumentCapacityRoute, { mode: "hierarchical" }>;
 
@@ -37,10 +40,31 @@ export type GrantFullDocumentHierarchicalAnalysisResult = {
 export class GrantFullDocumentAnalysisError extends Error {
   readonly code: "context_mismatch" | "unit_capacity_exceeded" | "invalid_source_reference" |
     "incomplete_coverage" | "synthesis_capacity_exceeded";
-  constructor(code: GrantFullDocumentAnalysisError["code"], message: string) {
+  readonly failureReason: GrantAssistantFailureReason;
+  readonly failureStage: GrantAssistantFailureStage;
+  readonly requestDispatched = false;
+  readonly usageKnown = true;
+  constructor(code: GrantFullDocumentAnalysisError["code"], message: string, attribution?: {
+    reasonCode: GrantAssistantFailureReasonCode; stage: GrantAssistantFailureStage;
+    safeFacts?: Parameters<typeof createGrantAssistantFailureReason>[0]["safeFacts"];
+  }) {
     super(message);
     this.name = "GrantFullDocumentAnalysisError";
     this.code = code;
+    const fallback = code === "context_mismatch"
+      ? { reasonCode: "review.context_mismatch" as const, stage: "original_retrieval" as const }
+      : code === "incomplete_coverage"
+        ? { reasonCode: "review.coverage_incomplete" as const, stage: "original_retrieval" as const }
+        : code === "unit_capacity_exceeded"
+          ? { reasonCode: "budget.review_unit_required_context_exceeded" as const, stage: "context_admission" as const }
+          : code === "synthesis_capacity_exceeded"
+            ? { reasonCode: "budget.review_synthesis_required_context_exceeded" as const, stage: "context_admission" as const }
+            : { reasonCode: "review.unit_output_invalid" as const, stage: "answer_generation" as const };
+    const resolved: { reasonCode: GrantAssistantFailureReasonCode; stage: GrantAssistantFailureStage;
+      safeFacts?: Parameters<typeof createGrantAssistantFailureReason>[0]["safeFacts"] } = attribution ?? fallback;
+    this.failureStage = resolved.stage;
+    this.failureReason = createGrantAssistantFailureReason({ reasonCode: resolved.reasonCode,
+      stage: resolved.stage, safeFacts: { ...resolved.safeFacts, requestDispatched: false, usageKnown: true } });
   }
 }
 
@@ -209,6 +233,7 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
         outputTokens: usage.outputTokens + (error.usage?.outputTokens ?? 0),
         reasoningTokens: usage.reasoningTokens + (error.usage?.reasoningTokens ?? 0) },
       failureStage: error.failureStage ?? "answer_generation",
+      failureReason: error.failureReason,
       requestDispatched: requestIds.length > 0 || error.requestDispatched,
       usageKnown: usageKnown && error.usageKnown,
     });
@@ -219,10 +244,16 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
     const category = candidate?.code === "planning_capacity_exceeded"
       ? "planning_capacity_exceeded" : candidate?.code === "answer_capacity_exceeded"
         ? "answer_capacity_exceeded" : "internal_contract_error";
-    throw new GrantAssistantModelError(category,
+    const attributed = GrantAssistantFailureReasonSchema.safeParse((error as { failureReason?: unknown })?.failureReason);
+    const failureReason = attributed.success ? attributed.data : createGrantAssistantFailureReason({
+      reasonCode: category === "planning_capacity_exceeded"
+        ? "budget.planning_required_context_exceeded" : category === "answer_capacity_exceeded"
+          ? "budget.review_unit_required_context_exceeded" : "executor.unclassified_failure",
+      stage: "context_admission", safeFacts: { requestDispatched: true, usageKnown } });
+    throw new GrantAssistantModelError(failureReason.category,
       error instanceof Error ? error.message : "Full-document context admission failed.", {
         providerRequestIds: [...providerRequestIds], usage: { ...usage },
-        failureStage: "context_admission", requestDispatched: true, usageKnown });
+        failureStage: "context_admission", failureReason, requestDispatched: true, usageKnown });
   };
   for (const unit of units) {
     const request: GrantFullDocumentUnitRequest = { documentLanguage, question: input.question,
@@ -243,7 +274,11 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
       throw new GrantAssistantModelError("structured_output_invalid",
         error instanceof Error ? error.message : "Full-document unit analysis is invalid.", {
           providerRequestIds: [...providerRequestIds], usage: { ...usage },
-          failureStage: "answer_generation", requestDispatched: providerRequestIds.length > 0, usageKnown });
+          failureStage: "answer_generation",
+          failureReason: createGrantAssistantFailureReason({ reasonCode: "review.unit_output_invalid",
+            stage: "answer_generation", safeFacts: { completedUnitCount: analyzed.length,
+              totalUnitCount: units.length, requestDispatched: providerRequestIds.length > 0, usageKnown } }),
+          requestDispatched: providerRequestIds.length > 0, usageKnown });
     }
     analyzed.push({ ...unit, analysis });
   }
@@ -263,7 +298,11 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
     throw new GrantAssistantModelError("internal_contract_error",
       error instanceof Error ? error.message : "Supplemental full-document context is invalid.", {
         providerRequestIds: [...providerRequestIds], usage: { ...usage },
-        failureStage: "answer_generation", requestDispatched: providerRequestIds.length > 0, usageKnown });
+        failureStage: "answer_generation",
+        failureReason: createGrantAssistantFailureReason({ reasonCode: "review.coverage_incomplete",
+          stage: "answer_generation", safeFacts: { completedUnitCount: analyzed.length,
+            totalUnitCount: units.length, requestDispatched: providerRequestIds.length > 0, usageKnown } }),
+        requestDispatched: providerRequestIds.length > 0, usageKnown });
   }
   const synthesisPayload = { question: input.question, contextHash: input.context.contextHash,
     analyses: analyzed.map(({ unitId, analysis }) => ({ unitId, summary: analysis.summary,
@@ -272,7 +311,13 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
     throw new GrantAssistantModelError("answer_capacity_exceeded",
       "Complete unit analyses exceed the synthesis input budget; a reduction stage is required.", {
         providerRequestIds: [...providerRequestIds], usage: { ...usage },
-        failureStage: "context_admission", requestDispatched: providerRequestIds.length > 0, usageKnown });
+        failureStage: "context_admission",
+        failureReason: createGrantAssistantFailureReason({ reasonCode: "budget.review_synthesis_required_context_exceeded",
+          stage: "context_admission", safeFacts: {
+            maximumInputTokens: input.synthesisMaximumInputTokens,
+            requiredInputTokens: input.tokenCounter.count(JSON.stringify(synthesisPayload)),
+            requestDispatched: providerRequestIds.length > 0, usageKnown } }),
+        requestDispatched: providerRequestIds.length > 0, usageKnown });
   }
   const allAliases = new Set([...documentAliases, ...supplementalAliases]);
   const synthesisRequest: GrantFullDocumentSynthesisRequest = { documentLanguage, question: input.question,
@@ -294,14 +339,22 @@ export async function executeGrantFullDocumentHierarchicalAnalysis(input: {
     modelIds = new Set([...analyzed.map((unit) => unit.analysis.modelId), answer.modelId]
       .filter((value): value is string => Boolean(value)));
     if (answer.provider !== "openai" || analyzed.some((unit) => unit.analysis.provider !== "openai") || modelIds.size !== 1) {
-      throw new GrantFullDocumentAnalysisError("invalid_source_reference", "Hierarchical analysis model identity is inconsistent.");
+      throw new GrantFullDocumentAnalysisError("invalid_source_reference",
+        "Hierarchical analysis model identity is inconsistent.", {
+          reasonCode: "review.model_identity_mismatch", stage: "answer_generation" });
     }
     answer.claims.forEach((claim) => validateReferences(claim.sourceAliases, allAliases));
   } catch (error) {
-    throw new GrantAssistantModelError("structured_output_invalid",
+    const attributed = GrantAssistantFailureReasonSchema.safeParse((error as { failureReason?: unknown })?.failureReason);
+    const failureReason = attributed.success ? attributed.data : createGrantAssistantFailureReason({
+      reasonCode: "review.synthesis_output_invalid", stage: "answer_generation",
+      safeFacts: { completedUnitCount: analyzed.length, totalUnitCount: units.length,
+        requestDispatched: providerRequestIds.length > 0, usageKnown } });
+    throw new GrantAssistantModelError(failureReason.category,
       error instanceof Error ? error.message : "Full-document synthesis is invalid.", {
         providerRequestIds: [...providerRequestIds], usage: { ...usage },
-        failureStage: "answer_generation", requestDispatched: providerRequestIds.length > 0, usageKnown });
+        failureStage: "answer_generation", failureReason,
+        requestDispatched: providerRequestIds.length > 0, usageKnown });
   }
   const coveredSectionAliases = [...new Set(analyzed.flatMap((unit) => unit.sectionAliases))];
   const coveredSourceAliases = [...new Set(analyzed.flatMap((unit) => unit.sourceAliases))];

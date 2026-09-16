@@ -9,6 +9,7 @@ import type { GrantDocumentMemoryModel } from "../lib/grants/ports/grant-documen
 import type { GrantFullDocumentAnalysisModel } from "../lib/grants/ports/grant-full-document-analysis-model.ts";
 import type { GrantPatchModel } from "../lib/grants/ports/grant-patch-model.ts";
 import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
+import { createGrantAssistantProviderFailureReason } from "../lib/grants/model-execution/assistant-failure-reasons.ts";
 import { GrantNormalizedFindingSchema } from "../lib/grants/diagnostics/normalized-finding.ts";
 
 const documentId = randomUUID();
@@ -92,6 +93,8 @@ const model: GrantPatchModel & GrantDocumentMemoryModel & GrantAssistantContextP
       throw new GrantAssistantModelError("provider_transient_error", "offline failure", {
         providerRequestId: "answer-failed", usage: { inputTokens: 8, outputTokens: 1, reasoningTokens: 0 },
         failureStage: "answer_generation", requestDispatched: true, usageKnown: true,
+        failureReason: createGrantAssistantProviderFailureReason({ category: "provider_transient_error",
+          stage: "answer_generation", safeFacts: { requestDispatched: true, usageKnown: true } }),
       });
     }
     if (answerCalls === 1) firstAnswerMessageCount = request.messages.length;
@@ -179,6 +182,7 @@ await assert.rejects(
     assert.equal(error.failureStage, "answer_generation");
     assert.deepEqual(error.providerRequestIds, ["planner-5", "answer-failed"]);
     assert.deepEqual(error.usage, { inputTokens: 12, outputTokens: 3, reasoningTokens: 1 });
+    assert.equal(error.failureReason?.reasonCode, "provider.transient_error");
     return true;
   },
   "A later-stage failure must retain the usage and request IDs of earlier successful stages.",

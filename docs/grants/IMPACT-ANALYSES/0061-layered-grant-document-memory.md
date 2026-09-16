@@ -42,8 +42,10 @@ is always read from the current canonical snapshot after anchor validation.
 
 ## Rollout and Rollback
 
-Apply migration 074 and set `GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=074` before
-enabling the runtime. The first later turn rebuilds the current Revision memory
+Migration 074 originally introduced this path. The current runtime additionally
+requires migration 075 and `GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA=075` so
+rule-level failure attribution is persisted atomically with each attempt. The
+first later turn rebuilds the current Revision memory
 under the new policy. Rollback disables the assistant or returns the runtime and
 schema marker to the prior version; retained derived memories do not affect
 canonical documents.

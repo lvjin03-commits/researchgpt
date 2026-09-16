@@ -63,6 +63,8 @@ await assert.rejects(
     assert.equal(error.category, "output_truncated");
     assert.equal(error.providerRequestId, "req-memory-truncated");
     assert.deepEqual(error.usage, { inputTokens: 31, outputTokens: 17, reasoningTokens: 3 });
+    assert.equal(error.failureReason?.reasonCode, "provider.output_truncated");
+    assert.equal(error.failureReason?.stage, "memory_build");
     return true;
   },
 );

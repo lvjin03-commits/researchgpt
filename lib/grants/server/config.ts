@@ -18,7 +18,7 @@ export function isGrantAiEditSessionEnabled(): boolean {
 
 export function isGrantAssistantChatEnabled(): boolean {
   return process.env.GRANT_ASSISTANT_CHAT_ENABLED?.trim().toLowerCase() === "true"
-    && process.env.GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA?.trim() === "074";
+    && process.env.GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA?.trim() === "075";
 }
 
 export function isGrantWebGroundingEnabled(): boolean {

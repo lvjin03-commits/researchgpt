@@ -118,6 +118,12 @@ assert.equal(providerCalls, 2);
 assert.equal(storedMessages.length, 2);
 assert.equal((await service.getCurrent(documentId)).messages.length, 2);
 assert.deepEqual((await modelCalls.listByTrace(documentId, turnId)).map((item) => item.status), ["failed", "succeeded"]);
+const traceDiagnostics = await service.getTraceDiagnostics(documentId, turnId);
+assert.equal(traceDiagnostics.traceId, turnId);
+assert.deepEqual(traceDiagnostics.attempts.map((attempt) => attempt.status), ["failed", "succeeded"]);
+assert.ok(traceDiagnostics.attempts.every((attempt) => !("inputHash" in attempt)
+  && !("outputHash" in attempt) && !("contextManifestHash" in attempt)),
+"The owner-visible trace projection must not expose model input/output fingerprints.");
 
 await assert.rejects(
   service.answer({ documentId, expectedRevisionId: revisionId, turnId, message: "重复请求", contextCards: [], evidenceSourceIds: [] }),
@@ -274,6 +280,7 @@ const migrationSource = await readFile(new URL("../supabase/migrations/055_grant
 const sessionMigrationSource = await readFile(new URL("../supabase/migrations/056_grant_assistant_sessions.sql", import.meta.url), "utf8");
 const configSource = await readFile(new URL("../lib/grants/server/config.ts", import.meta.url), "utf8");
 const sharedRouteSource = await readFile(new URL("../app/api/grants/_shared.ts", import.meta.url), "utf8");
+const traceRouteSource = await readFile(new URL("../app/api/grants/documents/[id]/assistant/traces/[traceId]/route.ts", import.meta.url), "utf8");
 assert.match(routeSource, /requireGrantAssistantChatRequestContext/);
 assert.match(routeSource, /Cache-Control.*no-store/);
 assert.match(routeSource, /message: z\.string\(\)/);
@@ -312,10 +319,15 @@ assert.match(sessionMigrationSource, /UNIQUE\(session_id, turn_id, role\)/);
 assert.match(sessionMigrationSource, /maintain_grant_assistant_sessions/);
 assert.match(sessionMigrationSource, /INTERVAL '7 days'/);
 assert.match(sessionMigrationSource, /INTERVAL '90 days'/);
-assert.match(configSource, /GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA\?\.trim\(\) === "074"/);
+assert.match(configSource, /GRANT_ASSISTANT_CHAT_DATABASE_SCHEMA\?\.trim\(\) === "075"/);
 assert.match(configSource, /GRANT_WEB_GROUNDING_PRICE_CATALOG_VERSION\?\.trim\(\) === "001"/);
 assert.match(sharedRouteSource, /presentGrantModelFailure/);
 assert.match(sharedRouteSource, /requestDispatched: error\.requestDispatched/);
+assert.match(sharedRouteSource, /reasonCode: error\.failureReason\.reasonCode/);
+assert.match(sharedRouteSource, /\[grant-api\] model execution failed/);
 assert.match(panelSource, /追踪编号/);
+assert.match(panelSource, /诊断码/);
+assert.match(traceRouteSource, /getTraceDiagnostics/);
+assert.match(traceRouteSource, /Cache-Control.*no-store/);
 
 console.log("Grant assistant ordinary-chat execution contracts passed.");

@@ -1,3 +1,5 @@
+import type { GrantAssistantFailureReason } from "../model-execution/assistant-failure-reasons.ts";
+
 export type GrantAssistantChatMessage = { role: "user" | "assistant"; content: string };
 
 export type GrantAssistantAdmittedContext = {
@@ -56,12 +58,14 @@ export class GrantAssistantModelError extends Error {
     "original_retrieval" | "answer_generation" | "persistence";
   readonly requestDispatched: boolean;
   readonly usageKnown: boolean;
+  readonly failureReason?: GrantAssistantFailureReason;
 
   constructor(category: GrantAssistantModelError["category"], message: string, metadata?: {
     providerRequestId?: string;
     providerRequestIds?: string[];
     usage?: { inputTokens?: number; outputTokens?: number; reasoningTokens?: number };
     failureStage?: GrantAssistantModelError["failureStage"];
+    failureReason?: GrantAssistantFailureReason;
     requestDispatched?: boolean;
     usageKnown?: boolean;
   }) {
@@ -77,6 +81,7 @@ export class GrantAssistantModelError extends Error {
     this.failureStage = metadata?.failureStage;
     this.requestDispatched = metadata?.requestDispatched ?? this.providerRequestIds.length > 0;
     this.usageKnown = metadata?.usageKnown ?? metadata?.usage !== undefined;
+    this.failureReason = metadata?.failureReason;
   }
 }
 

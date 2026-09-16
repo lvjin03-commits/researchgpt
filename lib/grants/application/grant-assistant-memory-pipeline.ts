@@ -16,9 +16,12 @@ import { assembleGrantAssistantPlannedContext } from "./grant-assistant-planned-
 import { buildGrantFullDocumentContext } from "./grant-full-document-context.ts";
 import { routeGrantFullDocumentContext, type GrantFullDocumentCapacityPolicy } from "./grant-full-document-capacity-router.ts";
 import { executeGrantAssistantHierarchicalReview } from "./grant-assistant-hierarchical-review.ts";
-import { GrantFullDocumentAnalysisError } from "./grant-full-document-hierarchical-analysis.ts";
 import { admitGrantAssistantAnswerContext, GrantAssistantContextBudgetError,
   type GrantAssistantContextBudgetManifest, type GrantAssistantContextBudgetPolicy } from "./grant-assistant-context-budget.ts";
+import { createGrantAssistantFailureReason, createGrantAssistantProviderFailureReason,
+  GrantAssistantFailureReasonSchema,
+  type GrantAssistantFailureReason, type GrantAssistantFailureReasonCode,
+  type GrantAssistantFailureStage } from "../model-execution/assistant-failure-reasons.ts";
 
 type PipelineModel = GrantDocumentMemoryModel & GrantAssistantContextPlannerModel & GrantAssistantModel &
   Partial<GrantFullDocumentAnalysisModel>;
@@ -28,10 +31,18 @@ export type GrantAssistantExecutionMode = "memory_discussion" | "targeted_origin
 
 export class GrantAssistantMemoryPipelineError extends Error {
   readonly code: "inconsistent_model_identity";
-  constructor(code: GrantAssistantMemoryPipelineError["code"], message: string) {
+  readonly failureReason: GrantAssistantFailureReason;
+  readonly failureStage: GrantAssistantFailureStage;
+  readonly requestDispatched = false;
+  readonly usageKnown = true;
+  constructor(code: GrantAssistantMemoryPipelineError["code"], reasonCode: GrantAssistantFailureReasonCode,
+    stage: GrantAssistantFailureStage, message: string) {
     super(message);
     this.name = "GrantAssistantMemoryPipelineError";
     this.code = code;
+    this.failureStage = stage;
+    this.failureReason = createGrantAssistantFailureReason({ reasonCode, stage,
+      safeFacts: { requestDispatched: false, usageKnown: true } });
   }
 }
 type PipelineCommon = {
@@ -67,25 +78,69 @@ function throwPipelineFailure(input: {
   usage: PipelineCommon["usage"];
 }): never {
   const modelError = input.error instanceof GrantAssistantModelError ? input.error : null;
-  const budgetError = input.error instanceof GrantAssistantContextBudgetError ? input.error : null;
-  const fullDocumentError = input.error instanceof GrantFullDocumentAnalysisError ? input.error : null;
+  const candidate = input.error && typeof input.error === "object" ? input.error as {
+    providerRequestId?: unknown; providerRequestIds?: unknown; usage?: {
+      inputTokens?: unknown; outputTokens?: unknown; reasoningTokens?: unknown };
+    requestDispatched?: unknown; usageKnown?: unknown; failureReason?: unknown } : null;
+  const attributed = GrantAssistantFailureReasonSchema.safeParse(candidate?.failureReason);
+  const candidateRequestIds = Array.isArray(candidate?.providerRequestIds)
+    ? candidate.providerRequestIds.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+    : [];
+  if (typeof candidate?.providerRequestId === "string" && candidate.providerRequestId.trim()) {
+    candidateRequestIds.push(candidate.providerRequestId);
+  }
   const providerRequestIds = [...new Set([
     ...input.providerRequestIds,
-    ...(modelError?.providerRequestIds ?? []),
+    ...candidateRequestIds,
   ])];
   const usage = { ...input.usage };
-  addUsage(usage, modelError?.usage);
+  const count = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+  addUsage(usage, candidate?.usage ? {
+    inputTokens: count(candidate.usage.inputTokens),
+    outputTokens: count(candidate.usage.outputTokens),
+    reasoningTokens: count(candidate.usage.reasoningTokens),
+  } : undefined);
+  const safeFacts = {
+    requestDispatched: providerRequestIds.length > 0 || candidate?.requestDispatched === true,
+    usageKnown: candidate?.usageKnown === true || candidate?.usage !== undefined,
+  };
+  const structuredOutputReasonCode = input.stage === "memory_build"
+    ? "memory.unit_output_invalid" as const
+    : input.stage === "semantic_planning"
+      ? "planner.output_contract_invalid" as const
+      : input.stage === "answer_generation"
+        ? "answer.output_contract_invalid" as const
+        : null;
+  const fallbackReason = modelError && ["output_truncated", "content_filtered", "provider_refusal",
+    "provider_rate_limited", "provider_transient_error", "provider_contract_error", "provider_unavailable"]
+    .includes(modelError.category)
+    ? createGrantAssistantProviderFailureReason({ category: modelError.category as
+        "output_truncated" | "content_filtered" | "provider_refusal" | "provider_rate_limited" |
+        "provider_transient_error" | "provider_contract_error" | "provider_unavailable",
+      stage: input.stage, safeFacts })
+    : modelError?.category === "structured_output_invalid" && structuredOutputReasonCode
+      ? createGrantAssistantFailureReason({ reasonCode: structuredOutputReasonCode,
+        stage: input.stage, safeFacts })
+      : modelError?.category === "planning_capacity_exceeded"
+        ? createGrantAssistantFailureReason({ reasonCode: "budget.planning_required_context_exceeded",
+          stage: "context_admission", safeFacts })
+        : modelError?.category === "answer_capacity_exceeded"
+          ? createGrantAssistantFailureReason({ reasonCode: "budget.answer_required_context_exceeded",
+            stage: "context_admission", safeFacts })
+          : createGrantAssistantFailureReason({ reasonCode: "executor.unclassified_failure",
+            stage: input.stage, safeFacts });
+  const failureReason = attributed.success ? attributed.data : fallbackReason;
   throw new GrantAssistantModelError(
-    budgetError?.code ?? modelError?.category ?? (fullDocumentError?.code === "unit_capacity_exceeded"
-      || fullDocumentError?.code === "synthesis_capacity_exceeded" ? "answer_capacity_exceeded" : "internal_contract_error"),
+    failureReason.category,
     input.error instanceof Error ? input.error.message : "Grant Assistant pipeline failed.",
     {
       providerRequestIds,
       ...(providerRequestIds.at(-1) ? { providerRequestId: providerRequestIds.at(-1) } : {}),
       usage,
-      failureStage: input.stage,
-      requestDispatched: providerRequestIds.length > 0 || Boolean(modelError?.requestDispatched),
-      usageKnown: modelError ? modelError.usageKnown : true,
+      failureStage: failureReason.stage,
+      failureReason,
+      requestDispatched: providerRequestIds.length > 0 || candidate?.requestDispatched === true,
+      usageKnown: candidate?.usageKnown === true || candidate?.usage !== undefined,
     },
   );
 }
@@ -115,7 +170,12 @@ export async function executeGrantAssistantMemoryPipeline(input: {
   };
 }): Promise<GrantAssistantMemoryPipelineResult> {
   const question = [...input.messages].reverse().find((message) => message.role === "user")?.content.trim();
-  if (!question) throw new GrantAssistantModelError("provider_contract_error", "A user question is required.");
+  if (!question) throw new GrantAssistantModelError("provider_contract_error", "A user question is required.", {
+    failureStage: "semantic_planning", requestDispatched: false, usageKnown: true,
+    usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+    failureReason: createGrantAssistantFailureReason({ reasonCode: "planner.question_missing",
+      stage: "semantic_planning", safeFacts: { requestDispatched: false, usageKnown: true } }),
+  });
   const fullContext = buildGrantFullDocumentContext({ documentId: input.documentId,
     sourceRevisionId: input.sourceRevisionId, snapshot: input.snapshot });
   const memoryRoute = routeGrantFullDocumentContext({ context: fullContext, tokenCounter: input.tokenCounter,
@@ -161,6 +221,7 @@ export async function executeGrantAssistantMemoryPipeline(input: {
   const identities = new Set([memoryResult.snapshot.modelId, plan.modelId]);
   if (identities.size !== 1 || !identities.has(input.expectedModelId)) {
     throwPipelineFailure({ error: new GrantAssistantMemoryPipelineError("inconsistent_model_identity",
+      "planner.model_identity_mismatch", "semantic_planning",
       "Memory and context planning must use the configured Grant Assistant model."),
       stage: "semantic_planning", providerRequestIds, usage });
   }
@@ -175,7 +236,13 @@ export async function executeGrantAssistantMemoryPipeline(input: {
 
   if (common.executionMode === "hierarchical_full_review") {
     if (!input.model.analyzeUnit || !input.model.synthesize) {
-      throwPipelineFailure({ error: new Error("Hierarchical full-document review model is not configured."),
+      throwPipelineFailure({ error: {
+        ...new Error("Hierarchical full-document review model is not configured."),
+        message: "Hierarchical full-document review model is not configured.",
+        failureReason: createGrantAssistantFailureReason({ reasonCode: "review.model_unavailable",
+          stage: "answer_generation", safeFacts: { requestDispatched: false, usageKnown: true } }),
+        requestDispatched: false, usageKnown: true,
+      },
         stage: "answer_generation", providerRequestIds, usage });
     }
     let reviewed: Awaited<ReturnType<typeof executeGrantAssistantHierarchicalReview>>;
@@ -192,6 +259,7 @@ export async function executeGrantAssistantMemoryPipeline(input: {
     common.contextManifests.push(...reviewed.contextManifests);
     if (reviewed.execution.provider !== "openai" || reviewed.execution.modelId !== input.expectedModelId) {
       throwPipelineFailure({ error: new GrantAssistantMemoryPipelineError("inconsistent_model_identity",
+        "review.model_identity_mismatch", "answer_generation",
         "The full-document review did not use the configured Grant Assistant model."),
         stage: "answer_generation", providerRequestIds, usage });
     }
@@ -226,6 +294,7 @@ export async function executeGrantAssistantMemoryPipeline(input: {
   addUsage(usage, generated.usage);
   if (generated.provider !== "openai" || generated.modelId !== input.expectedModelId) {
     throwPipelineFailure({ error: new GrantAssistantMemoryPipelineError("inconsistent_model_identity",
+      "answer.model_identity_mismatch", "answer_generation",
       "The answer did not use the configured Grant Assistant model."),
       stage: "answer_generation", providerRequestIds, usage });
   }

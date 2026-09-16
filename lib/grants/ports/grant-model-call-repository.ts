@@ -1,4 +1,5 @@
 import type { GrantModelCallAttempt } from "../model-execution/contracts.ts";
+import type { GrantAssistantFailureReason } from "../model-execution/assistant-failure-reasons.ts";
 
 export interface GrantModelCallRepository {
   start(attempt: GrantModelCallAttempt): Promise<GrantModelCallAttempt>;
@@ -12,6 +13,7 @@ export interface GrantModelCallRepository {
     failureCategory?: string;
     failureStage?: "memory_build" | "semantic_planning" | "context_admission" |
       "original_retrieval" | "answer_generation" | "persistence";
+    failureReason?: GrantAssistantFailureReason;
     requestDispatched: boolean;
     usageKnown: boolean;
     contextManifestHash?: string;

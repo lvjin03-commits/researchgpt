@@ -2,7 +2,7 @@ import { buildGrantFullDocumentSynthesisMessages,
   buildGrantFullDocumentUnitMessages } from "../assistant/grant-full-document-review-request.ts";
 import { validateGrantAssistantGroundedAnswer } from "../assistant/grounded-answer-validator.ts";
 import type { GrantAssistantAnswer } from "../assistant/answer-contract.ts";
-import type { GrantAssistantAdmittedContext } from "../ports/grant-assistant-model.ts";
+import { GrantAssistantModelError, type GrantAssistantAdmittedContext } from "../ports/grant-assistant-model.ts";
 import type { GrantFullDocumentAnalysisModel } from "../ports/grant-full-document-analysis-model.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import type { GrantAssistantPlannedContext } from "../assistant/planned-context-contracts.ts";
@@ -13,6 +13,8 @@ import { executeGrantFullDocumentHierarchicalAnalysis } from "./grant-full-docum
 import { admitGrantAssistantFixedContext,
   type GrantAssistantContextBudgetManifest,
   type GrantAssistantContextBudgetPolicy } from "./grant-assistant-context-budget.ts";
+import { createGrantAssistantFailureReason, GrantAssistantFailureReasonSchema } from "../model-execution/assistant-failure-reasons.ts";
+import { GrantFullDocumentAnalysisError } from "./grant-full-document-hierarchical-analysis.ts";
 
 type HierarchicalRoute = Extract<GrantFullDocumentCapacityRoute, { mode: "hierarchical" }>;
 
@@ -40,7 +42,8 @@ function forceHierarchicalRoute(input: {
     },
   });
   if (route.mode === "unavailable") {
-    throw new Error("The full-document review prompt leaves no capacity for document content.");
+    throw new GrantFullDocumentAnalysisError("unit_capacity_exceeded",
+      "The full-document review prompt leaves no capacity for document content.");
   }
   if (route.mode === "hierarchical") return route;
   return {
@@ -67,7 +70,13 @@ export async function executeGrantAssistantHierarchicalReview(input: {
   contextBudgetPolicy: GrantAssistantContextBudgetPolicy;
 }) {
   const budget = input.contextBudgetPolicy.fullDocumentReview;
-  if (!budget) throw new Error("Full-document review context policy is not configured.");
+  if (!budget) throw new GrantAssistantModelError("internal_contract_error",
+    "Full-document review context policy is not configured.", {
+      failureStage: "context_admission", requestDispatched: false, usageKnown: true,
+      usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+      failureReason: createGrantAssistantFailureReason({ reasonCode: "review.policy_invalid",
+        stage: "context_admission", safeFacts: { requestDispatched: false, usageKnown: true } }),
+    });
   const route = forceHierarchicalRoute({ context: input.context, tokenCounter: input.tokenCounter, budget });
   const manifests: GrantAssistantContextBudgetManifest[] = [];
   const diagnostics = input.plannedContext.sources.filter((source) => source.sourceType === "diagnostic");
@@ -121,19 +130,41 @@ export async function executeGrantAssistantHierarchicalReview(input: {
         label: `${section.title} / 原文`, excerpt: node.text };
     }
     const diagnostic = diagnosticByAlias.get(alias);
-    if (!diagnostic) throw new Error(`Full-document review cited unavailable alias ${alias}.`);
+    if (!diagnostic) throw new GrantAssistantModelError("internal_contract_error",
+      "Full-document review cited an unavailable source.", {
+        providerRequestIds: execution.providerRequestIds, usage: execution.usage,
+        failureStage: "answer_generation", requestDispatched: execution.providerRequestIds.length > 0,
+        usageKnown: true,
+        failureReason: createGrantAssistantFailureReason({ reasonCode: "review.cited_source_unavailable",
+          stage: "answer_generation", safeFacts: { admittedSourceCount: citedAliases.length,
+            requestDispatched: execution.providerRequestIds.length > 0, usageKnown: true } }),
+      });
     return { sourceAlias: alias, sourceType: "diagnostic" as const,
       label: diagnostic.label, excerpt: diagnostic.excerpt };
   });
   const citationIdByAlias = new Map(citedAliases.map((alias, index) => [alias, `FDR${index + 1}`]));
-  const answer: GrantAssistantAnswer = validateGrantAssistantGroundedAnswer({
-    content: execution.answer.content,
-    admittedContext,
-    claims: execution.answer.claims.map((claim, index) => ({ claimId: `FDC${index + 1}`,
-      statement: claim.statement,
-      citationIds: claim.sourceAliases.map((alias) => citationIdByAlias.get(alias)!) })),
-    citations: citedAliases.map((alias) => ({ citationId: citationIdByAlias.get(alias)!,
-      sourceAlias: canonicalAlias.get(alias)! })),
-  });
+  let answer: GrantAssistantAnswer;
+  try {
+    answer = validateGrantAssistantGroundedAnswer({
+      content: execution.answer.content,
+      admittedContext,
+      claims: execution.answer.claims.map((claim, index) => ({ claimId: `FDC${index + 1}`,
+        statement: claim.statement,
+        citationIds: claim.sourceAliases.map((alias) => citationIdByAlias.get(alias)!) })),
+      citations: citedAliases.map((alias) => ({ citationId: citationIdByAlias.get(alias)!,
+        sourceAlias: canonicalAlias.get(alias)! })),
+    });
+  } catch (error) {
+    const attributed = GrantAssistantFailureReasonSchema.safeParse((error as { failureReason?: unknown })?.failureReason);
+    throw new GrantAssistantModelError(attributed.success ? attributed.data.category : "internal_contract_error",
+      error instanceof Error ? error.message : "Full-document grounding validation failed.", {
+        providerRequestIds: execution.providerRequestIds, usage: execution.usage,
+        failureStage: "answer_generation", requestDispatched: execution.providerRequestIds.length > 0,
+        usageKnown: true,
+        failureReason: attributed.success ? attributed.data : createGrantAssistantFailureReason({
+          reasonCode: "executor.unclassified_failure", stage: "answer_generation",
+          safeFacts: { requestDispatched: execution.providerRequestIds.length > 0, usageKnown: true } }),
+      });
+  }
   return { execution, answer, admittedContext, contextManifests: manifests };
 }

@@ -17,6 +17,7 @@ import {
   GRANT_WEB_EXISTING_RESULTS_DELIVER_OPERATION,
   GRANT_WEB_EXISTING_RESULTS_DELIVER_POLICY_VERSION,
 } from "./operation-registry.ts";
+import { GrantAssistantFailureReasonSchema } from "./assistant-failure-reasons.ts";
 
 // Historical values remain parseable for audit. They are intentionally absent
 // from the executable Operation Registry and cannot be selected for new calls.
@@ -46,6 +47,7 @@ export const GrantModelCallAttemptSchema = z.object({
   failureCategory: z.string().trim().min(1).optional(),
   failureStage: z.enum(["memory_build", "semantic_planning", "context_admission",
     "original_retrieval", "answer_generation", "persistence"]).optional(),
+  failureReason: GrantAssistantFailureReasonSchema.optional(),
   requestDispatched: z.boolean().optional(),
   usageKnown: z.boolean().optional(),
   contextManifestHash: HashSchema.optional(),
@@ -71,6 +73,20 @@ export const GrantModelCallAttemptSchema = z.object({
       path: ["policyVersion"],
       message: `Policy ${attempt.policyVersion} does not own operation ${attempt.operation}.`,
     });
+  }
+  if (attempt.failureReason) {
+    if (attempt.status !== "failed") {
+      context.addIssue({ code: "custom", path: ["failureReason"],
+        message: "Rule-level failure attribution is valid only for failed attempts." });
+    }
+    if (attempt.failureCategory !== attempt.failureReason.category) {
+      context.addIssue({ code: "custom", path: ["failureCategory"],
+        message: "Failure category must match the registered rule-level reason." });
+    }
+    if (attempt.failureStage !== attempt.failureReason.stage) {
+      context.addIssue({ code: "custom", path: ["failureStage"],
+        message: "Failure stage must match the registered rule-level reason." });
+    }
   }
 });
 

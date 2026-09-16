@@ -96,6 +96,36 @@ export class GrantAssistantChatService {
       pausedBudget: await this.dependencies.webGrounding?.orchestrator.getPausedBudget?.(documentId) ?? null };
   }
 
+  async getTraceDiagnostics(documentId: string, traceId: string) {
+    await this.dependencies.revisionService.getDocument(documentId);
+    const attempts = await this.dependencies.modelCalls.listByTrace(documentId, traceId);
+    return {
+      traceId,
+      attempts: attempts.map((attempt) => ({
+        callId: attempt.callId,
+        operation: attempt.operation,
+        policyVersion: attempt.policyVersion,
+        provider: attempt.provider,
+        modelId: attempt.modelId,
+        attemptNumber: attempt.attemptNumber,
+        attemptPurpose: attempt.attemptPurpose,
+        status: attempt.status,
+        providerRequestId: attempt.providerRequestId,
+        providerRequestIds: attempt.providerRequestIds,
+        failureCategory: attempt.failureCategory,
+        failureStage: attempt.failureStage,
+        failureReason: attempt.failureReason,
+        requestDispatched: attempt.requestDispatched,
+        usageKnown: attempt.usageKnown,
+        inputTokens: attempt.inputTokens,
+        outputTokens: attempt.outputTokens,
+        reasoningTokens: attempt.reasoningTokens,
+        startedAt: attempt.startedAt,
+        completedAt: attempt.completedAt,
+      })),
+    };
+  }
+
   async linkEditSession(input: { documentId: string; editSessionId: string }) {
     await this.dependencies.revisionService.getDocument(input.documentId);
     const session = await this.dependencies.sessions.ensureSession({ documentId: input.documentId, sessionId: randomUUID(), now: new Date().toISOString() });

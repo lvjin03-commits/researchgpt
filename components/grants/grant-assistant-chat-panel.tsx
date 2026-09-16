@@ -120,8 +120,14 @@ export function GrantAssistantChatPanel({ documentId, currentRevisionId, canGene
           : "";
         const trace = typeof data.traceId === "string" && data.traceId.trim()
           ? `（追踪编号：${data.traceId}）` : "";
+        const reasonCode = typeof data.diagnostic?.reasonCode === "string"
+          ? data.diagnostic.reasonCode.trim() : "";
+        const failureStage = typeof data.diagnostic?.stage === "string"
+          ? data.diagnostic.stage.trim() : "";
+        const diagnostic = reasonCode
+          ? `（诊断码：${reasonCode}${failureStage ? `；阶段：${failureStage}` : ""}）` : "";
         const message = detail ? `${data.error ?? "请求失败"}（${detail}）` : (data.error ?? "Grant AI 对话失败。");
-        throw new Error(`${message}${trace}`);
+        throw new Error(`${message}${diagnostic}${trace}`);
       }
       setMessages((items) => [...items, { messageId: `${turnId}:assistant`, turnId, role: "assistant", content: data.content, grounding: data.grounding, citations: data.citations, recommendedQuestions: data.recommendedQuestions, contextCoverage: data.contextCoverage }]);
       const charge = data.webGrounding?.charging;

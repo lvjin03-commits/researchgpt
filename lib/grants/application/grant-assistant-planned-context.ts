@@ -7,14 +7,24 @@ import { sha256Canonical } from "../domain/canonical-json.ts";
 import { CanonicalGrantSnapshotSchema, type CanonicalGrantSnapshot } from "../domain/contracts.ts";
 import type { GrantDiagnosticRepository } from "../ports/grant-diagnostic-repository.ts";
 import { buildGrantAssistantAnswerMemoryProjection } from "./grant-document-memory-projection.ts";
+import { createGrantAssistantFailureReason, type GrantAssistantFailureReason,
+  type GrantAssistantFailureReasonCode } from "../model-execution/assistant-failure-reasons.ts";
 
 export class GrantAssistantPlannedContextError extends Error {
   readonly code: "stale_plan" | "stale_memory" | "invalid_target" | "diagnostics_unavailable" |
     "invalid_diagnostic_anchor";
-  constructor(code: GrantAssistantPlannedContextError["code"], message: string) {
+  readonly failureStage = "original_retrieval" as const;
+  readonly failureReason: GrantAssistantFailureReason;
+  readonly requestDispatched = false;
+  readonly usageKnown = true;
+  readonly usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+  constructor(code: GrantAssistantPlannedContextError["code"], reasonCode: GrantAssistantFailureReasonCode,
+    message: string) {
     super(message);
     this.name = "GrantAssistantPlannedContextError";
     this.code = code;
+    this.failureReason = createGrantAssistantFailureReason({ reasonCode, stage: "original_retrieval",
+      safeFacts: { requestDispatched: false, usageKnown: true } });
   }
 }
 function descendantSectionIds(snapshot: CanonicalGrantSnapshot, requested: ReadonlySet<string>) {
@@ -46,7 +56,7 @@ function validateFindingAnchors(finding: GrantNormalizedFinding, snapshot: Canon
   const nodeById = new Map(snapshot.nodes.map((node) => [node.nodeId, node]));
   for (const location of findingLocations(finding)) {
     if (nodeById.get(location.nodeId)?.sectionId !== location.sectionId) {
-      throw new GrantAssistantPlannedContextError("invalid_diagnostic_anchor",
+      throw new GrantAssistantPlannedContextError("invalid_diagnostic_anchor", "context.diagnostic_anchor_invalid",
         "A current diagnostic Finding points outside the canonical Revision.");
     }
   }
@@ -70,16 +80,25 @@ export async function assembleGrantAssistantPlannedContext(input: {
   plan: GrantAssistantContextPlan;
   diagnostics: Pick<GrantDiagnosticRepository, "listNormalizedFindings">;
 }): Promise<GrantAssistantPlannedContext> {
-  const snapshot = CanonicalGrantSnapshotSchema.parse(input.snapshot);
-  const memory = GrantDocumentMemorySnapshotSchema.parse(input.memory);
-  const plan = GrantAssistantContextPlanSchema.parse(input.plan);
+  const snapshotResult = CanonicalGrantSnapshotSchema.safeParse(input.snapshot);
+  if (!snapshotResult.success) throw new GrantAssistantPlannedContextError("stale_plan",
+    "context.snapshot_contract_invalid", "The canonical Revision snapshot is invalid.");
+  const snapshot = snapshotResult.data;
+  const memoryResult = GrantDocumentMemorySnapshotSchema.safeParse(input.memory);
+  if (!memoryResult.success) throw new GrantAssistantPlannedContextError("stale_memory",
+    "context.stale_memory", "The document memory contract is invalid.");
+  const memory = memoryResult.data;
+  const planResult = GrantAssistantContextPlanSchema.safeParse(input.plan);
+  if (!planResult.success) throw new GrantAssistantPlannedContextError("stale_plan",
+    "context.stale_plan", "The context plan contract is invalid.");
+  const plan = planResult.data;
   if (plan.documentId !== input.documentId || plan.sourceRevisionId !== input.sourceRevisionId
     || plan.memoryId !== memory.memoryId || plan.memoryHash !== memory.memoryHash) {
-    throw new GrantAssistantPlannedContextError("stale_plan",
+    throw new GrantAssistantPlannedContextError("stale_plan", "context.stale_plan",
       "The context plan does not belong to the current document memory and Revision.");
   }
   if (memory.documentId !== input.documentId || memory.sourceRevisionId !== input.sourceRevisionId) {
-    throw new GrantAssistantPlannedContextError("stale_memory",
+    throw new GrantAssistantPlannedContextError("stale_memory", "context.stale_memory",
       "The document memory does not belong to the current canonical Revision.");
   }
   const sectionById = new Map(snapshot.sections.map((section) => [section.sectionId, section]));
@@ -93,23 +112,26 @@ export async function assembleGrantAssistantPlannedContext(input: {
       const sectionId = nodeById.get(nodeId)?.sectionId;
       return !sectionId || !admittedSectionIds.has(sectionId);
     })) {
-      throw new GrantAssistantPlannedContextError("stale_memory",
+      throw new GrantAssistantPlannedContextError("stale_memory", "context.section_anchor_outside_subtree",
         "L2 section references do not resolve inside the declared section subtree of the current canonical Revision.");
     }
   }
   for (const anchor of memory.l2.itemAnchors) {
-    const item = memoryItemById.get(anchor.memoryItemId)!;
+    const item = memoryItemById.get(anchor.memoryItemId);
+    if (!item) throw new GrantAssistantPlannedContextError("stale_memory",
+      "context.item_anchor_outside_section", "L2 item references do not resolve to an L1 memory item.");
     if (anchor.sourceNodeIds.some((nodeId) => {
       const sectionId = nodeById.get(nodeId)?.sectionId;
       return !sectionId || !item.sourceSectionIds.includes(sectionId);
     })) {
-      throw new GrantAssistantPlannedContextError("stale_memory",
+      throw new GrantAssistantPlannedContextError("stale_memory", "context.item_anchor_outside_section",
         "L2 item references do not resolve inside their declared L1 sections.");
     }
   }
   if (plan.targetSectionIds.some((sectionId) => !sectionById.has(sectionId))
     || plan.targetMemoryItemIds.some((itemId) => !memoryItemById.has(itemId))) {
-    throw new GrantAssistantPlannedContextError("invalid_target", "The plan selected content outside the current Revision memory.");
+    throw new GrantAssistantPlannedContextError("invalid_target", "context.target_unavailable",
+      "The plan selected content outside the current Revision memory.");
   }
 
   const memoryExcerpt = buildGrantAssistantAnswerMemoryProjection({ memory, answerMode: plan.answerMode,
@@ -122,7 +144,10 @@ export async function assembleGrantAssistantPlannedContext(input: {
   for (const itemId of plan.targetMemoryItemIds) {
     const item = memoryItemById.get(itemId)!;
     item.sourceSectionIds.forEach((sectionId) => requestedSectionIds.add(sectionId));
-    itemAnchorById.get(itemId)!.sourceNodeIds.forEach((nodeId) => requestedNodeIds.add(nodeId));
+    const itemAnchor = itemAnchorById.get(itemId);
+    if (!itemAnchor) throw new GrantAssistantPlannedContextError("stale_memory",
+      "context.item_anchor_outside_section", "The selected memory item has no current L2 source anchor.");
+    itemAnchor.sourceNodeIds.forEach((nodeId) => requestedNodeIds.add(nodeId));
   }
   const admittedSectionIds = plan.documentAccess === "full_original"
     ? new Set(snapshot.sections.map((section) => section.sectionId))
@@ -151,10 +176,21 @@ export async function assembleGrantAssistantPlannedContext(input: {
   let currentFindings: GrantNormalizedFinding[] = [];
   if (plan.diagnosticAccess !== "none") {
     if (!input.diagnostics.listNormalizedFindings) throw new GrantAssistantPlannedContextError(
-      "diagnostics_unavailable", "Current normalized diagnostic Findings are unavailable.");
-    currentFindings = (await input.diagnostics.listNormalizedFindings(input.documentId))
-      .map((finding) => GrantNormalizedFindingSchema.parse(finding))
-      .filter((finding) => finding.sourceRevisionId === input.sourceRevisionId && finding.lifecycleStatus === "open");
+      "diagnostics_unavailable", "context.diagnostics_unavailable",
+      "Current normalized diagnostic Findings are unavailable.");
+    let storedFindings: Awaited<ReturnType<NonNullable<typeof input.diagnostics.listNormalizedFindings>>>;
+    try {
+      storedFindings = await input.diagnostics.listNormalizedFindings(input.documentId);
+    } catch {
+      throw new GrantAssistantPlannedContextError("diagnostics_unavailable", "context.diagnostics_unavailable",
+        "Current normalized diagnostic Findings could not be loaded.");
+    }
+    currentFindings = storedFindings.map((finding) => {
+      const parsed = GrantNormalizedFindingSchema.safeParse(finding);
+      if (!parsed.success) throw new GrantAssistantPlannedContextError("diagnostics_unavailable",
+        "context.diagnostic_contract_invalid", "A current diagnostic Finding violates its stored contract.");
+      return parsed.data;
+    }).filter((finding) => finding.sourceRevisionId === input.sourceRevisionId && finding.lifecycleStatus === "open");
     currentFindings.forEach((finding) => validateFindingAnchors(finding, snapshot));
   }
   const relevantSectionIds = descendantSectionIds(snapshot, requestedSectionIds);
@@ -171,7 +207,7 @@ export async function assembleGrantAssistantPlannedContext(input: {
   const contextContent = { planHash: plan.planHash, memoryHash: memory.memoryHash,
     sources: sources.map(({ sourceAlias, sourceType, label, excerpt, sectionId, nodeId, findingId, memoryId }) =>
       ({ sourceAlias, sourceType, label, excerpt, sectionId, nodeId, findingId, memoryId })) };
-  return GrantAssistantPlannedContextSchema.parse({ schemaVersion: "grant-assistant-planned-context-v1",
+  const result = GrantAssistantPlannedContextSchema.safeParse({ schemaVersion: "grant-assistant-planned-context-v1",
     documentId: input.documentId, sourceRevisionId: input.sourceRevisionId, planId: plan.planId,
     planHash: plan.planHash, memoryId: memory.memoryId, memoryHash: memory.memoryHash,
     contextHash: sha256Canonical(contextContent), sources,
@@ -181,4 +217,7 @@ export async function assembleGrantAssistantPlannedContext(input: {
       completeOriginal: admittedNodeIds.size === snapshot.nodes.length,
       diagnosticMode: plan.diagnosticAccess, availableCurrentFindingCount: currentFindings.length,
       admittedFindingCount: admittedFindings.length } });
+  if (!result.success) throw new GrantAssistantPlannedContextError("stale_plan",
+    "context.output_contract_invalid", "The assembled Grant Assistant context is invalid.");
+  return result.data;
 }

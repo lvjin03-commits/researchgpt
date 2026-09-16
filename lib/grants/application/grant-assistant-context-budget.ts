@@ -5,6 +5,8 @@ import type { GrantAssistantAdmittedContext, GrantAssistantChatMessage,
   GrantAssistantChatModelRequest } from "../ports/grant-assistant-model.ts";
 import type { GrantAssistantContextPlanModelRequest } from "../ports/grant-assistant-context-planner-model.ts";
 import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
+import { createGrantAssistantFailureReason,
+  type GrantAssistantFailureReason } from "../model-execution/assistant-failure-reasons.ts";
 
 export const GRANT_ASSISTANT_CONTEXT_BUDGET_POLICY_VERSION =
   "grant-assistant-context-budget-v2" as const;
@@ -59,6 +61,7 @@ export class GrantAssistantContextBudgetError extends Error {
   readonly requestDispatched = false;
   readonly usageKnown = true;
   readonly usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+  readonly failureReason: GrantAssistantFailureReason;
 
   constructor(input: {
     stage: GrantAssistantContextBudgetStage;
@@ -73,6 +76,35 @@ export class GrantAssistantContextBudgetError extends Error {
     this.stage = input.stage;
     this.maximumInputTokens = input.maximumInputTokens;
     this.requiredInputTokens = input.requiredInputTokens;
+    const reasonCode = input.stage === "semantic_planning"
+      ? "budget.planning_required_context_exceeded" as const
+      : input.stage === "full_review_unit"
+        ? "budget.review_unit_required_context_exceeded" as const
+        : input.stage === "full_review_synthesis"
+          ? "budget.review_synthesis_required_context_exceeded" as const
+          : "budget.answer_required_context_exceeded" as const;
+    this.failureReason = createGrantAssistantFailureReason({ reasonCode,
+      stage: "context_admission", safeFacts: {
+        maximumInputTokens: input.maximumInputTokens,
+        requiredInputTokens: input.requiredInputTokens,
+        requestDispatched: false,
+        usageKnown: true,
+      } });
+  }
+}
+
+export class GrantAssistantContextPolicyError extends Error {
+  readonly failureStage = "context_admission" as const;
+  readonly requestDispatched = false;
+  readonly usageKnown = true;
+  readonly usage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+  readonly failureReason: GrantAssistantFailureReason;
+
+  constructor(reasonCode: "budget.policy_limit_invalid" | "budget.current_question_missing", message: string) {
+    super(message);
+    this.name = "GrantAssistantContextPolicyError";
+    this.failureReason = createGrantAssistantFailureReason({ reasonCode, stage: "context_admission",
+      safeFacts: { requestDispatched: false, usageKnown: true } });
   }
 }
 
@@ -88,7 +120,8 @@ const STRUCTURED_OUTPUT_RESERVE_TOKENS: Record<GrantAssistantContextBudgetStage,
 };
 
 function positiveInteger(value: number, label: string) {
-  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${label} must be a positive integer.`);
+  if (!Number.isSafeInteger(value) || value <= 0) throw new GrantAssistantContextPolicyError(
+    "budget.policy_limit_invalid", `${label} must be a positive integer.`);
 }
 
 function countProviderRequest(messages: GrantAssistantProviderMessage[], tokenCounter: GrantTokenCounter,
@@ -229,7 +262,8 @@ export function admitGrantAssistantAnswerContext(input: {
 }) {
   const current = input.messages.at(-1);
   if (!current || current.role !== "user") {
-    throw new Error("The current user question is required for context admission.");
+    throw new GrantAssistantContextPolicyError("budget.current_question_missing",
+      "The current user question is required for context admission.");
   }
   const budget = input.budgetPolicy.groundedAnswer;
   const assembleRequest = (history: ConversationMessage[]): GrantAssistantChatModelRequest => ({

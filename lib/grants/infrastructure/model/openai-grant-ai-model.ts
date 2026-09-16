@@ -30,6 +30,9 @@ import { buildGrantAssistantChatMessages,
   buildGrantAssistantPlanningMessages } from "../../assistant/grant-assistant-model-request.ts";
 import { buildGrantFullDocumentSynthesisMessages,
   buildGrantFullDocumentUnitMessages } from "../../assistant/grant-full-document-review-request.ts";
+import { createGrantAssistantFailureReason, createGrantAssistantProviderFailureReason,
+  type GrantAssistantFailureReasonCode,
+  type GrantAssistantFailureStage } from "../../model-execution/assistant-failure-reasons.ts";
 import {
   GrantSemanticDiagnosticProviderResultV3Schema,
   GrantSemanticDiagnosticResultV3Schema,
@@ -157,6 +160,28 @@ function assistantResponseMetadata(response: {
   };
 }
 
+function withAssistantRule<T extends object>(metadata: T, reasonCode: GrantAssistantFailureReasonCode,
+  stage: GrantAssistantFailureStage) {
+  return { ...metadata, failureReason: createGrantAssistantFailureReason({ reasonCode, stage,
+    safeFacts: {
+      requestDispatched: (metadata as { requestDispatched?: unknown }).requestDispatched === true,
+      usageKnown: (metadata as { usageKnown?: unknown }).usageKnown === true,
+    } }) };
+}
+
+function withAssistantProviderRule<T extends object>(metadata: T,
+  category: "output_truncated" | "content_filtered" | "provider_refusal" |
+    "provider_rate_limited" | "provider_transient_error" | "provider_contract_error" | "provider_unavailable",
+  stage: GrantAssistantFailureStage, providerStatusCode?: number) {
+  return { ...metadata, failureReason: createGrantAssistantProviderFailureReason({ category, stage,
+    safeFacts: {
+      ...((Number.isSafeInteger(providerStatusCode) && providerStatusCode! >= 100 && providerStatusCode! <= 599)
+        ? { providerStatusCode } : {}),
+      requestDispatched: (metadata as { requestDispatched?: unknown }).requestDispatched === true,
+      usageKnown: (metadata as { usageKnown?: unknown }).usageKnown === true,
+    } }) };
+}
+
 function issuePaths(error: z.ZodError): string[] {
   return error.issues.map((issue) => issue.path.length > 0 ? issue.path.join(".") : "$");
 }
@@ -262,12 +287,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
       const choice = response.choices[0];
       const metadata = { ...assistantResponseMetadata(response), failureStage: "memory_build" as const,
         requestDispatched: true, usageKnown: response.usage != null };
-      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Document-memory unit analysis was truncated.", metadata);
-      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Document-memory unit analysis was filtered.", metadata);
+      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Document-memory unit analysis was truncated.",
+        withAssistantProviderRule(metadata, "output_truncated", "memory_build"));
+      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Document-memory unit analysis was filtered.",
+        withAssistantProviderRule(metadata, "content_filtered", "memory_build"));
       const raw = choice?.message.content;
-      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Document-memory unit analysis returned no content.", metadata);
+      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Document-memory unit analysis returned no content.",
+        withAssistantProviderRule(metadata, "provider_refusal", "memory_build"));
       const parsed = DocumentMemoryUnitSchema.safeParse(JSON.parse(raw));
-      if (!parsed.success) throw new GrantAssistantModelError("structured_output_invalid", "Document-memory unit analysis violated its contract.", metadata);
+      if (!parsed.success) throw new GrantAssistantModelError("structured_output_invalid", "Document-memory unit analysis violated its contract.",
+        withAssistantRule(metadata, "memory.unit_output_invalid", "memory_build"));
       return { ...parsed.data, provider: "openai" as const, modelId: this.modelId, providerRequestId: response.id,
         usage: metadata.usage };
     } catch (error) {
@@ -277,11 +306,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         failureStage: "memory_build" as const, requestDispatched: error instanceof OpenAI.APIError,
         usageKnown: false,
       };
-      if (error instanceof SyntaxError) throw new GrantAssistantModelError("structured_output_invalid", error.message, metadata);
-      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message, metadata);
+      if (error instanceof SyntaxError) throw new GrantAssistantModelError("structured_output_invalid", error.message,
+        withAssistantRule(metadata, "memory.unit_output_invalid", "memory_build"));
+      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message,
+        withAssistantProviderRule(metadata, "provider_rate_limited", "memory_build", error.status));
       if (error instanceof OpenAI.APIError) throw new GrantAssistantModelError(error.status >= 500
-        ? "provider_transient_error" : "provider_contract_error", error.message, metadata);
-      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Document memory is unavailable.", metadata);
+        ? "provider_transient_error" : "provider_contract_error", error.message,
+      withAssistantProviderRule(metadata, error.status >= 500 ? "provider_transient_error" : "provider_contract_error",
+        "memory_build", error.status));
+      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Document memory is unavailable.",
+        withAssistantProviderRule(metadata, "provider_unavailable", "memory_build"));
     }
   }
 
@@ -296,12 +330,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
       const choice = response.choices[0];
       const metadata = { ...assistantResponseMetadata(response), failureStage: "semantic_planning" as const,
         requestDispatched: true, usageKnown: response.usage != null };
-      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Context planning was truncated.", metadata);
-      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Context planning was filtered.", metadata);
+      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Context planning was truncated.",
+        withAssistantProviderRule(metadata, "output_truncated", "semantic_planning"));
+      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Context planning was filtered.",
+        withAssistantProviderRule(metadata, "content_filtered", "semantic_planning"));
       const raw = choice?.message.content;
-      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Context planning returned no content.", metadata);
+      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Context planning returned no content.",
+        withAssistantProviderRule(metadata, "provider_refusal", "semantic_planning"));
       const parsed = AssistantContextPlanProposalSchema.safeParse(JSON.parse(raw));
-      if (!parsed.success) throw new GrantAssistantModelError("structured_output_invalid", "Context planning violated its contract.", metadata);
+      if (!parsed.success) throw new GrantAssistantModelError("structured_output_invalid", "Context planning violated its contract.",
+        withAssistantRule(metadata, "planner.output_contract_invalid", "semantic_planning"));
       return { ...parsed.data, clarificationQuestion: parsed.data.clarificationQuestion ?? undefined,
         provider: "openai" as const, modelId: this.modelId, providerRequestId: response.id,
         usage: { inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0,
@@ -313,11 +351,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         failureStage: "semantic_planning" as const, requestDispatched: error instanceof OpenAI.APIError,
         usageKnown: false,
       };
-      if (error instanceof SyntaxError) throw new GrantAssistantModelError("structured_output_invalid", error.message, metadata);
-      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message, metadata);
+      if (error instanceof SyntaxError) throw new GrantAssistantModelError("structured_output_invalid", error.message,
+        withAssistantRule(metadata, "planner.output_contract_invalid", "semantic_planning"));
+      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message,
+        withAssistantProviderRule(metadata, "provider_rate_limited", "semantic_planning", error.status));
       if (error instanceof OpenAI.APIError) throw new GrantAssistantModelError(error.status >= 500
-        ? "provider_transient_error" : "provider_contract_error", error.message, metadata);
-      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Context planning is unavailable.", metadata);
+        ? "provider_transient_error" : "provider_contract_error", error.message,
+      withAssistantProviderRule(metadata, error.status >= 500 ? "provider_transient_error" : "provider_contract_error",
+        "semantic_planning", error.status));
+      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Context planning is unavailable.",
+        withAssistantProviderRule(metadata, "provider_unavailable", "semantic_planning"));
     }
   }
 
@@ -334,12 +377,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
       const choice = response.choices[0];
       const metadata = { ...assistantResponseMetadata(response), failureStage: "answer_generation" as const,
         requestDispatched: true, usageKnown: response.usage != null };
-      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Full-document unit analysis was truncated.", metadata);
-      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Full-document unit analysis was filtered.", metadata);
+      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Full-document unit analysis was truncated.",
+        withAssistantProviderRule(metadata, "output_truncated", "answer_generation"));
+      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Full-document unit analysis was filtered.",
+        withAssistantProviderRule(metadata, "content_filtered", "answer_generation"));
       const raw = choice?.message.content;
-      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Full-document unit analysis returned no content.", metadata);
+      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Full-document unit analysis returned no content.",
+        withAssistantProviderRule(metadata, "provider_refusal", "answer_generation"));
       const parsed = FullDocumentUnitAnalysisSchema.safeParse(JSON.parse(raw));
-      if (!parsed.success) throw new GrantAssistantModelError("structured_output_invalid", "Full-document unit analysis violated its contract.", metadata);
+      if (!parsed.success) throw new GrantAssistantModelError("structured_output_invalid", "Full-document unit analysis violated its contract.",
+        withAssistantRule(metadata, "review.unit_output_invalid", "answer_generation"));
       return { ...parsed.data, provider: "openai" as const, modelId: this.modelId, providerRequestId: response.id,
         usage: { inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0,
           reasoningTokens: response.usage?.completion_tokens_details?.reasoning_tokens ?? 0 } };
@@ -350,11 +397,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         failureStage: "answer_generation" as const, requestDispatched: error instanceof OpenAI.APIError,
         usageKnown: false,
       };
-      if (error instanceof SyntaxError) throw new GrantAssistantModelError("structured_output_invalid", error.message, metadata);
-      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message, metadata);
+      if (error instanceof SyntaxError) throw new GrantAssistantModelError("structured_output_invalid", error.message,
+        withAssistantRule(metadata, "review.unit_output_invalid", "answer_generation"));
+      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message,
+        withAssistantProviderRule(metadata, "provider_rate_limited", "answer_generation", error.status));
       if (error instanceof OpenAI.APIError) throw new GrantAssistantModelError(error.status >= 500
-        ? "provider_transient_error" : "provider_contract_error", error.message, metadata);
-      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Full-document analysis is unavailable.", metadata);
+        ? "provider_transient_error" : "provider_contract_error", error.message,
+      withAssistantProviderRule(metadata, error.status >= 500 ? "provider_transient_error" : "provider_contract_error",
+        "answer_generation", error.status));
+      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Full-document analysis is unavailable.",
+        withAssistantProviderRule(metadata, "provider_unavailable", "answer_generation"));
     }
   }
 
@@ -371,12 +423,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
       const choice = response.choices[0];
       const metadata = { ...assistantResponseMetadata(response), failureStage: "answer_generation" as const,
         requestDispatched: true, usageKnown: response.usage != null };
-      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Full-document synthesis was truncated.", metadata);
-      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Full-document synthesis was filtered.", metadata);
+      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Full-document synthesis was truncated.",
+        withAssistantProviderRule(metadata, "output_truncated", "answer_generation"));
+      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Full-document synthesis was filtered.",
+        withAssistantProviderRule(metadata, "content_filtered", "answer_generation"));
       const raw = choice?.message.content;
-      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Full-document synthesis returned no content.", metadata);
+      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Full-document synthesis returned no content.",
+        withAssistantProviderRule(metadata, "provider_refusal", "answer_generation"));
       const parsed = FullDocumentSynthesisSchema.safeParse(JSON.parse(raw));
-      if (!parsed.success) throw new GrantAssistantModelError("structured_output_invalid", "Full-document synthesis violated its contract.", metadata);
+      if (!parsed.success) throw new GrantAssistantModelError("structured_output_invalid", "Full-document synthesis violated its contract.",
+        withAssistantRule(metadata, "review.synthesis_output_invalid", "answer_generation"));
       return { ...parsed.data, provider: "openai" as const, modelId: this.modelId, providerRequestId: response.id,
         usage: { inputTokens: response.usage?.prompt_tokens ?? 0, outputTokens: response.usage?.completion_tokens ?? 0,
           reasoningTokens: response.usage?.completion_tokens_details?.reasoning_tokens ?? 0 } };
@@ -387,11 +443,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         failureStage: "answer_generation" as const, requestDispatched: error instanceof OpenAI.APIError,
         usageKnown: false,
       };
-      if (error instanceof SyntaxError) throw new GrantAssistantModelError("structured_output_invalid", error.message, metadata);
-      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message, metadata);
+      if (error instanceof SyntaxError) throw new GrantAssistantModelError("structured_output_invalid", error.message,
+        withAssistantRule(metadata, "review.synthesis_output_invalid", "answer_generation"));
+      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message,
+        withAssistantProviderRule(metadata, "provider_rate_limited", "answer_generation", error.status));
       if (error instanceof OpenAI.APIError) throw new GrantAssistantModelError(error.status >= 500
-        ? "provider_transient_error" : "provider_contract_error", error.message, metadata);
-      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Full-document synthesis is unavailable.", metadata);
+        ? "provider_transient_error" : "provider_contract_error", error.message,
+      withAssistantProviderRule(metadata, error.status >= 500 ? "provider_transient_error" : "provider_contract_error",
+        "answer_generation", error.status));
+      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Full-document synthesis is unavailable.",
+        withAssistantProviderRule(metadata, "provider_unavailable", "answer_generation"));
     }
   }
 
@@ -408,17 +469,23 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
       const choice = response.choices[0];
       const metadata = { ...assistantResponseMetadata(response), failureStage: "answer_generation" as const,
         requestDispatched: true, usageKnown: response.usage != null };
-      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Grant assistant response was truncated.", metadata);
-      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Grant assistant response was filtered.", metadata);
+      if (choice?.finish_reason === "length") throw new GrantAssistantModelError("output_truncated", "Grant assistant response was truncated.",
+        withAssistantProviderRule(metadata, "output_truncated", "answer_generation"));
+      if (choice?.finish_reason === "content_filter") throw new GrantAssistantModelError("content_filtered", "Grant assistant response was filtered.",
+        withAssistantProviderRule(metadata, "content_filtered", "answer_generation"));
       const raw = choice?.message.content;
-      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Grant assistant returned no answer.", metadata);
+      if (!raw) throw new GrantAssistantModelError("provider_refusal", "Grant assistant returned no answer.",
+        withAssistantProviderRule(metadata, "provider_refusal", "answer_generation"));
       let parsed: unknown;
-      try { parsed = JSON.parse(raw); } catch { throw new GrantAssistantModelError("structured_output_invalid", "Grant assistant returned invalid JSON.", metadata); }
+      try { parsed = JSON.parse(raw); } catch { throw new GrantAssistantModelError("structured_output_invalid",
+        "Grant assistant returned invalid JSON.", withAssistantRule(metadata, "answer.output_contract_invalid", "answer_generation")); }
         const normalized = request.admittedContext.length === 0 && parsed && typeof parsed === "object" && !Array.isArray(parsed)
           ? { ...parsed, claims: (parsed as { claims?: unknown }).claims ?? [], citations: (parsed as { citations?: unknown }).citations ?? [] }
           : parsed;
         const result = AssistantChatResultSchema.safeParse(normalized);
-      if (!result.success) throw new GrantAssistantModelError("structured_output_invalid", "Grant assistant returned an invalid answer contract.", metadata);
+      if (!result.success) throw new GrantAssistantModelError("structured_output_invalid",
+        "Grant assistant returned an invalid answer contract.",
+        withAssistantRule(metadata, "answer.output_contract_invalid", "answer_generation"));
       return {
         ...result.data,
         citations: result.data.citations.map((citation) => ({ ...citation, excerpt: citation.excerpt ?? undefined })),
@@ -438,12 +505,16 @@ export class OpenAIGrantAiModel implements GrantPatchModel, GrantDiagnosticModel
         failureStage: "answer_generation" as const, requestDispatched: error instanceof OpenAI.APIError,
         usageKnown: false,
       };
-      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message, metadata);
+      if (error instanceof OpenAI.RateLimitError) throw new GrantAssistantModelError("provider_rate_limited", error.message,
+        withAssistantProviderRule(metadata, "provider_rate_limited", "answer_generation", error.status));
       if (error instanceof OpenAI.APIError) {
-        if (error.status >= 500) throw new GrantAssistantModelError("provider_transient_error", error.message, metadata);
-        throw new GrantAssistantModelError("provider_contract_error", error.message, metadata);
+        if (error.status >= 500) throw new GrantAssistantModelError("provider_transient_error", error.message,
+          withAssistantProviderRule(metadata, "provider_transient_error", "answer_generation", error.status));
+        throw new GrantAssistantModelError("provider_contract_error", error.message,
+          withAssistantProviderRule(metadata, "provider_contract_error", "answer_generation", error.status));
       }
-      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Grant assistant provider is unavailable.", metadata);
+      throw new GrantAssistantModelError("provider_unavailable", error instanceof Error ? error.message : "Grant assistant provider is unavailable.",
+        withAssistantProviderRule(metadata, "provider_unavailable", "answer_generation"));
     }
   }
 

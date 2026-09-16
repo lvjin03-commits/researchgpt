@@ -11,14 +11,33 @@ import type { GrantTokenCounter } from "../ports/grant-token-counter.ts";
 import { buildGrantFullDocumentAnalysisUnits, type GrantFullDocumentAnalysisUnit } from "./grant-full-document-hierarchical-analysis.ts";
 import type { GrantFullDocumentCapacityRoute } from "./grant-full-document-capacity-router.ts";
 import type { GrantFullDocumentContext } from "./grant-full-document-context.ts";
+import { createGrantAssistantFailureReason, type GrantAssistantFailureReason,
+  type GrantAssistantFailureReasonCode } from "../model-execution/assistant-failure-reasons.ts";
 
 export class GrantDocumentMemoryError extends Error {
   readonly code: "context_unavailable" | "invalid_model_output" | "incomplete_section_memory" |
-    "inconsistent_model_identity";
-  constructor(code: GrantDocumentMemoryError["code"], message: string) {
+    "inconsistent_model_identity" | "invalid_policy";
+  readonly failureStage = "memory_build" as const;
+  readonly failureReason: GrantAssistantFailureReason;
+  readonly providerRequestId?: string;
+  readonly providerRequestIds: string[];
+  readonly usage?: GrantDocumentMemorySnapshot["usage"];
+  readonly requestDispatched: boolean;
+  readonly usageKnown: boolean;
+  constructor(code: GrantDocumentMemoryError["code"], reasonCode: GrantAssistantFailureReasonCode,
+    message: string, metadata?: { providerRequestId?: string; providerRequestIds?: string[];
+      usage?: GrantDocumentMemorySnapshot["usage"] }) {
     super(message);
     this.name = "GrantDocumentMemoryError";
     this.code = code;
+    this.providerRequestId = metadata?.providerRequestId;
+    this.providerRequestIds = [...new Set([...(metadata?.providerRequestIds ?? []),
+      ...(metadata?.providerRequestId ? [metadata.providerRequestId] : [])])];
+    this.usage = metadata?.usage;
+    this.requestDispatched = this.providerRequestIds.length > 0;
+    this.usageKnown = metadata?.usage !== undefined;
+    this.failureReason = createGrantAssistantFailureReason({ reasonCode, stage: "memory_build",
+      safeFacts: { requestDispatched: this.requestDispatched, usageKnown: this.usageKnown } });
   }
 }
 
@@ -27,6 +46,7 @@ type MemoryUnit = Pick<GrantFullDocumentAnalysisUnit, "unitId" | "sectionAliases
 function buildUnits(input: { context: GrantFullDocumentContext; route: GrantFullDocumentCapacityRoute;
   tokenCounter: GrantTokenCounter }): MemoryUnit[] {
   if (input.route.mode === "unavailable") throw new GrantDocumentMemoryError("context_unavailable",
+    "memory.context_capacity_exceeded",
     "The fixed memory prompt leaves no capacity for grant content.");
   if (input.route.mode === "single_pass") return [{ unitId: "FULL", modelText: input.context.modelText,
     sectionAliases: input.context.sections.map((section) => section.sectionAlias),
@@ -41,13 +61,15 @@ function validateAliases(input: { sections: GrantDocumentMemorySectionProposal[]
   for (const section of input.sections) {
     if (!section.summary.trim() || !input.allowedSections.has(section.sectionAlias)
       || section.sourceAliases.some((alias) => !input.allowedSources.has(alias))) {
-      throw new GrantDocumentMemoryError("invalid_model_output", "Memory section referenced unavailable grant content.");
+      throw new GrantDocumentMemoryError("invalid_model_output", "memory.unit_output_invalid",
+        "Memory section referenced unavailable grant content.");
     }
   }
   for (const item of input.items) {
     if (!item.statement.trim() || item.sourceAliases.length === 0
       || item.sourceAliases.some((alias) => !input.allowedSources.has(alias))) {
-      throw new GrantDocumentMemoryError("invalid_model_output", "Memory item referenced unavailable grant content.");
+      throw new GrantDocumentMemoryError("invalid_model_output", "memory.unit_output_invalid",
+        "Memory item referenced unavailable grant content.");
     }
   }
 }
@@ -74,6 +96,7 @@ function accumulateFailureMetadata(error: unknown, accumulated: GrantDocumentMem
       reasoningTokens: accumulated.reasoningTokens + (error.usage?.reasoningTokens ?? 0),
     },
     failureStage: "memory_build",
+    failureReason: error.failureReason,
     requestDispatched: providerRequestIds.length > 0 || error.requestDispatched,
     usageKnown: error.usageKnown || accumulatedRequestIds.length > 0,
   });
@@ -95,12 +118,19 @@ export async function buildGrantDocumentMemory(input: {
   const reusable = await input.repository.findReusable({ documentId: input.context.documentId,
     sourceRevisionId: input.context.sourceRevisionId, contextHash: input.context.contextHash,
     policyVersion: input.policyVersion });
-  if (reusable) return { snapshot: GrantDocumentMemorySnapshotSchema.parse(reusable), reused: true };
+  if (reusable) {
+    const parsedReusable = GrantDocumentMemorySnapshotSchema.safeParse(reusable);
+    if (!parsedReusable.success) throw new GrantDocumentMemoryError("invalid_model_output",
+      "memory.snapshot_contract_invalid", "Reusable document memory violates its persisted contract.");
+    return { snapshot: parsedReusable.data, reused: true };
+  }
   if (!Number.isSafeInteger(input.maximumConcurrentUnitAnalyses) || input.maximumConcurrentUnitAnalyses <= 0) {
-    throw new Error("Maximum concurrent memory-unit analyses must be a positive integer.");
+    throw new GrantDocumentMemoryError("invalid_policy", "memory.policy_invalid",
+      "Maximum concurrent memory-unit analyses must be a positive integer.");
   }
   if (!Number.isSafeInteger(input.unitMaximumOutputTokens) || input.unitMaximumOutputTokens <= 0) {
-    throw new Error("Memory unit output-token limit must be a positive integer.");
+    throw new GrantDocumentMemoryError("invalid_policy", "memory.policy_invalid",
+      "Memory unit output-token limit must be a positive integer.");
   }
 
   const units = buildUnits(input);
@@ -120,10 +150,20 @@ export async function buildGrantDocumentMemory(input: {
           contextHash: input.context.contextHash, unitId: unit.unitId, modelText: unit.modelText,
           allowedSectionAliases: unit.sectionAliases, allowedSourceAliases: unit.sourceAliases,
           attemptPurpose: input.attemptPurpose, maximumOutputTokens: input.unitMaximumOutputTokens });
-        if (!analysis.summary.trim()) throw new GrantDocumentMemoryError("invalid_model_output",
-          "Memory unit analysis returned an empty summary.");
-        validateAliases({ sections: analysis.sectionSummaries, items: analysis.semanticItems,
-          allowedSections: new Set(unit.sectionAliases), allowedSources: new Set(unit.sourceAliases) });
+        try {
+          if (!analysis.summary.trim()) throw new GrantDocumentMemoryError("invalid_model_output",
+            "memory.unit_output_invalid", "Memory unit analysis returned an empty summary.");
+          validateAliases({ sections: analysis.sectionSummaries, items: analysis.semanticItems,
+            allowedSections: new Set(unit.sectionAliases), allowedSources: new Set(unit.sourceAliases) });
+        } catch (error) {
+          if (!(error instanceof GrantDocumentMemoryError)) throw error;
+          throw new GrantDocumentMemoryError(error.code, error.failureReason.reasonCode, error.message, {
+            providerRequestId: analysis.providerRequestId,
+            usage: { inputTokens: analysis.usage?.inputTokens ?? 0,
+              outputTokens: analysis.usage?.outputTokens ?? 0,
+              reasoningTokens: analysis.usage?.reasoningTokens ?? 0 },
+          });
+        }
         analysisResults[unitIndex] = analysis;
       } catch (error) {
         firstError ??= error;
@@ -140,6 +180,7 @@ export async function buildGrantDocumentMemory(input: {
   }
   if (firstError != null) throw accumulateFailureMetadata(firstError, metadata.usage, metadata.requestIds);
   if (analyses.length !== units.length) throw new GrantDocumentMemoryError("invalid_model_output",
+    "memory.unit_output_invalid",
     "Memory unit analysis did not complete every declared unit.");
 
   const allSections = new Set(input.context.sections.map((section) => section.sectionAlias));
@@ -162,19 +203,28 @@ export async function buildGrantDocumentMemory(input: {
     }),
     semanticItems: analyses.flatMap(({ analysis }) => analysis.semanticItems),
   };
-  validateAliases({ sections: assembled.sectionSummaries, items: assembled.semanticItems,
-    allowedSections: allSections, allowedSources: allSources });
+  try {
+    validateAliases({ sections: assembled.sectionSummaries, items: assembled.semanticItems,
+      allowedSections: allSections, allowedSources: allSources });
+  } catch (error) {
+    if (!(error instanceof GrantDocumentMemoryError)) throw error;
+    throw new GrantDocumentMemoryError(error.code, error.failureReason.reasonCode, error.message, {
+      providerRequestIds: metadata.requestIds, usage: metadata.usage });
+  }
   const sectionAliases = assembled.sectionSummaries.map((section) => section.sectionAlias);
   if (sectionAliases.length !== input.context.sections.length || new Set(sectionAliases).size !== allSections.size
     || sectionAliases.some((alias) => !allSections.has(alias))) {
-    throw new GrantDocumentMemoryError("incomplete_section_memory",
-      "Memory assembly must summarize every canonical section exactly once.");
+    throw new GrantDocumentMemoryError("incomplete_section_memory", "memory.snapshot_contract_invalid",
+      "Memory assembly must summarize every canonical section exactly once.", {
+        providerRequestIds: metadata.requestIds, usage: metadata.usage });
   }
   if (metadata.identities.size !== 1) throw new GrantDocumentMemoryError("inconsistent_model_identity",
-    "All memory stages must report one consistent provider and model identity.");
+    "memory.model_identity_mismatch", "All memory stages must report one consistent provider and model identity.", {
+      providerRequestIds: metadata.requestIds, usage: metadata.usage });
   const [provider, modelId] = [...metadata.identities][0]!.split(":", 2);
   if (provider !== "openai" || !modelId) throw new GrantDocumentMemoryError("inconsistent_model_identity",
-    "Grant document memory currently admits only the configured OpenAI provider.");
+    "memory.model_identity_mismatch", "Grant document memory currently admits only the configured OpenAI provider.", {
+      providerRequestIds: metadata.requestIds, usage: metadata.usage });
 
   const sectionByAlias = new Map(input.context.sections.map((section) => [section.sectionAlias, section]));
   const nodeByAlias = new Map(input.context.nodes.map((node) => [node.sourceAlias, node]));
@@ -206,7 +256,7 @@ export async function buildGrantDocumentMemory(input: {
     l2: { sectionAnchors: sectionEntries.map((entry) => entry.anchor),
       itemAnchors: itemEntries.map((entry) => entry.anchor) },
   };
-  const snapshot = GrantDocumentMemorySnapshotSchema.parse({ schemaVersion: "grant-document-memory-v2",
+  const parsedSnapshot = GrantDocumentMemorySnapshotSchema.safeParse({ schemaVersion: "grant-document-memory-v2",
     memoryId: (input.createId ?? randomUUID)(), documentId: input.context.documentId,
     sourceRevisionId: input.context.sourceRevisionId, contextHash: input.context.contextHash,
     memoryHash: sha256Canonical(content), policyVersion: input.policyVersion, provider: "openai", modelId,
@@ -215,5 +265,9 @@ export async function buildGrantDocumentMemory(input: {
       coveredSectionCount: input.context.coverage.coveredSectionCount,
       coveredNodeCount: input.context.coverage.coveredNodeCount, complete: true },
     usage: metadata.usage, providerRequestIds: metadata.requestIds });
+  if (!parsedSnapshot.success) throw new GrantDocumentMemoryError("invalid_model_output",
+    "memory.snapshot_contract_invalid", "Built document memory violates its snapshot contract.", {
+      providerRequestIds: metadata.requestIds, usage: metadata.usage });
+  const snapshot = parsedSnapshot.data;
   return { snapshot: await input.repository.save(snapshot), reused: false };
 }
