@@ -7,6 +7,7 @@ import type { GrantModelDataGateway } from "../lib/grants/application/grant-mode
 import type { GrantRevisionService } from "../lib/grants/application/revision-service.ts";
 import { InMemoryGrantModelCallRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-model-call-repository.ts";
 import { InMemoryGrantAssistantExecutionRepository } from "../lib/grants/infrastructure/memory/in-memory-grant-assistant-execution-repository.ts";
+import { SupabaseGrantAssistantExecutionRepository } from "../lib/grants/infrastructure/supabase/supabase-grant-assistant-execution-repository.ts";
 import { GrantAssistantModelError } from "../lib/grants/ports/grant-assistant-model.ts";
 import { GrantAssistantGroundingError, validateGrantAssistantGroundedAnswer } from "../lib/grants/assistant/grounded-answer-validator.ts";
 import type { GrantAssistantMessage, GrantAssistantSession } from "../lib/grants/assistant/session-contracts.ts";
@@ -326,5 +327,70 @@ assert.match(panelSource, /追踪编号/);
 assert.match(panelSource, /诊断码/);
 assert.match(traceRouteSource, /getTraceDiagnostics/);
 assert.match(traceRouteSource, /Cache-Control.*no-store/);
+
+const executionId = randomUUID();
+const leaseToken = randomUUID();
+const postgresTimestamp = "2026-09-17 08:15:30.123456+00";
+const executionRpcValue = {
+  executionId,
+  documentId,
+  turnId,
+  sourceRevisionId: revisionId,
+  inputHash: "a".repeat(64),
+  policyVersion: "test-policy-v1",
+  modelId: "gpt-test",
+  status: "running",
+  version: 0,
+  leaseToken,
+  leaseExpiresAt: postgresTimestamp,
+  checkpoint: { schemaVersion: "grant-assistant-execution-checkpoint-v1" },
+  failureReasonCode: null,
+  createdAt: postgresTimestamp,
+  updatedAt: postgresTimestamp,
+};
+const executionClient = {
+  rpc: async (operation: string) => ({
+    data: operation === "claim_grant_assistant_execution"
+      ? { claimed: true, execution: executionRpcValue }
+      : executionRpcValue,
+    error: null,
+  }),
+};
+const executionRepository = new SupabaseGrantAssistantExecutionRepository(
+  executionClient as never,
+  randomUUID(),
+);
+const claimedExecution = await executionRepository.claim({
+  executionId,
+  documentId,
+  turnId,
+  sourceRevisionId: revisionId,
+  inputHash: "a".repeat(64),
+  policyVersion: "test-policy-v1",
+  modelId: "gpt-test",
+  leaseToken,
+  now: new Date(postgresTimestamp).toISOString(),
+  leaseExpiresAt: new Date(postgresTimestamp).toISOString(),
+});
+assert.equal(claimedExecution.execution.createdAt, "2026-09-17T08:15:30.123Z");
+assert.equal(claimedExecution.execution.updatedAt, "2026-09-17T08:15:30.123Z");
+assert.equal(claimedExecution.execution.leaseExpiresAt, "2026-09-17T08:15:30.123Z");
+await assert.rejects(
+  () => new SupabaseGrantAssistantExecutionRepository({
+    rpc: async () => ({
+      data: { ...executionRpcValue, createdAt: "invalid-private-value" },
+      error: null,
+    }),
+  } as never, randomUUID()).save({
+    executionId,
+    expectedVersion: 0,
+    leaseToken,
+    status: "running",
+    checkpoint: { schemaVersion: "grant-assistant-execution-checkpoint-v1" },
+    now: new Date().toISOString(),
+    leaseExpiresAt: new Date().toISOString(),
+  }),
+  /Invalid grant assistant execution timestamp: createdAt/,
+);
 
 console.log("Grant assistant ordinary-chat execution contracts passed.");
